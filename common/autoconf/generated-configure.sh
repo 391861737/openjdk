@@ -15888,7 +15888,7 @@ $as_echo "$as_me: This might be fixed by explicitely setting --with-boot-jdk" >&
   { $as_echo "$as_me:${as_lineno-$LINENO}: checking for java in Boot JDK" >&5
 $as_echo_n "checking for java in Boot JDK... " >&6; }
   JAVA=$BOOT_JDK/bin/java
-  if test ! -x $JAVA; then
+  if [[ ! -x $JAVA ]]; then
     { $as_echo "$as_me:${as_lineno-$LINENO}: result: not found" >&5
 $as_echo "not found" >&6; }
     { $as_echo "$as_me:${as_lineno-$LINENO}: Your Boot JDK seems broken. This might be fixed by explicitely setting --with-boot-jdk" >&5
@@ -15902,7 +15902,7 @@ $as_echo "ok" >&6; }
   { $as_echo "$as_me:${as_lineno-$LINENO}: checking for javac in Boot JDK" >&5
 $as_echo_n "checking for javac in Boot JDK... " >&6; }
   JAVAC=$BOOT_JDK/bin/javac
-  if test ! -x $JAVAC; then
+  if [[ ! -x $JAVAC ]]; then
     { $as_echo "$as_me:${as_lineno-$LINENO}: result: not found" >&5
 $as_echo "not found" >&6; }
     { $as_echo "$as_me:${as_lineno-$LINENO}: Your Boot JDK seems broken. This might be fixed by explicitely setting --with-boot-jdk" >&5
@@ -15916,7 +15916,7 @@ $as_echo "ok" >&6; }
   { $as_echo "$as_me:${as_lineno-$LINENO}: checking for javah in Boot JDK" >&5
 $as_echo_n "checking for javah in Boot JDK... " >&6; }
   JAVAH=$BOOT_JDK/bin/javah
-  if test ! -x $JAVAH; then
+  if [[ ! -x $JAVAH ]]; then
     { $as_echo "$as_me:${as_lineno-$LINENO}: result: not found" >&5
 $as_echo "not found" >&6; }
     { $as_echo "$as_me:${as_lineno-$LINENO}: Your Boot JDK seems broken. This might be fixed by explicitely setting --with-boot-jdk" >&5
@@ -15930,7 +15930,7 @@ $as_echo "ok" >&6; }
   { $as_echo "$as_me:${as_lineno-$LINENO}: checking for javap in Boot JDK" >&5
 $as_echo_n "checking for javap in Boot JDK... " >&6; }
   JAVAP=$BOOT_JDK/bin/javap
-  if test ! -x $JAVAP; then
+  if [[ ! -x $JAVAP ]]; then
     { $as_echo "$as_me:${as_lineno-$LINENO}: result: not found" >&5
 $as_echo "not found" >&6; }
     { $as_echo "$as_me:${as_lineno-$LINENO}: Your Boot JDK seems broken. This might be fixed by explicitely setting --with-boot-jdk" >&5
@@ -15944,7 +15944,7 @@ $as_echo "ok" >&6; }
   { $as_echo "$as_me:${as_lineno-$LINENO}: checking for jar in Boot JDK" >&5
 $as_echo_n "checking for jar in Boot JDK... " >&6; }
   JAR=$BOOT_JDK/bin/jar
-  if test ! -x $JAR; then
+  if [[ ! -x $JAR ]]; then
     { $as_echo "$as_me:${as_lineno-$LINENO}: result: not found" >&5
 $as_echo "not found" >&6; }
     { $as_echo "$as_me:${as_lineno-$LINENO}: Your Boot JDK seems broken. This might be fixed by explicitely setting --with-boot-jdk" >&5
@@ -15958,7 +15958,7 @@ $as_echo "ok" >&6; }
   { $as_echo "$as_me:${as_lineno-$LINENO}: checking for rmic in Boot JDK" >&5
 $as_echo_n "checking for rmic in Boot JDK... " >&6; }
   RMIC=$BOOT_JDK/bin/rmic
-  if test ! -x $RMIC; then
+  if [[ ! -x $RMIC ]]; then
     { $as_echo "$as_me:${as_lineno-$LINENO}: result: not found" >&5
 $as_echo "not found" >&6; }
     { $as_echo "$as_me:${as_lineno-$LINENO}: Your Boot JDK seems broken. This might be fixed by explicitely setting --with-boot-jdk" >&5
@@ -15972,7 +15972,7 @@ $as_echo "ok" >&6; }
   { $as_echo "$as_me:${as_lineno-$LINENO}: checking for native2ascii in Boot JDK" >&5
 $as_echo_n "checking for native2ascii in Boot JDK... " >&6; }
   NATIVE2ASCII=$BOOT_JDK/bin/native2ascii
-  if test ! -x $NATIVE2ASCII; then
+  if [[ ! -x $NATIVE2ASCII ]]; then
     { $as_echo "$as_me:${as_lineno-$LINENO}: result: not found" >&5
 $as_echo "not found" >&6; }
     { $as_echo "$as_me:${as_lineno-$LINENO}: Your Boot JDK seems broken. This might be fixed by explicitely setting --with-boot-jdk" >&5
@@ -16773,17 +16773,17 @@ $as_echo "no" >&6; }
   # First-hand choice is to locate and run the vsvars bat file.
 
   if test "x$OPENJDK_TARGET_CPU_BITS" = x32; then
-    VCVARSFILE="vc/bin/vcvars32.bat"
+    VCVARSFILE="VC/Auxiliary/Build/vcvars32.bat"
   else
-    VCVARSFILE="vc/bin/amd64/vcvars64.bat"
+    VCVARSFILE="VC/Auxiliary/Build/vcvars64.bat"
   fi
 
   VS_ENV_CMD=""
   VS_ENV_ARGS=""
-  if test "x$with_toolsdir" != x; then
+  if test "x$with_tools_dir" != x; then
 
   if test "x$VS_ENV_CMD" = x; then
-    VS100BASE="$with_toolsdir/../.."
+    VS100BASE="$with_tools_dir"
     METHOD="--with-tools-dir"
 
   windows_path="$VS100BASE"
@@ -16811,7 +16811,7 @@ $as_echo "$as_me: Warning: $VCVARSFILE is missing, this is probably Visual Studi
 
   fi
 
-  if test "x$with_toolsdir" != x && test "x$VS_ENV_CMD" = x; then
+  if test "x$with_tools_dir" != x && test "x$VS_ENV_CMD" = x; then
     # Having specified an argument which is incorrect will produce an instant failure;
     # we should not go on looking
     { $as_echo "$as_me:${as_lineno-$LINENO}: The path given by --with-tools-dir does not contain a valid Visual Studio installation" >&5
@@ -20037,9 +20037,9 @@ $as_echo "$as_me: The result from running with -V was: \"$COMPILER_VERSION_TEST\
     # First line typically looks something like:
     # Microsoft (R) 32-bit C/C++ Optimizing Compiler Version 16.00.40219.01 for 80x86
     COMPILER_VERSION_TEST=`$COMPILER 2>&1 | $HEAD -n 1 | $TR -d '\r'`
-    COMPILER_VERSION=`$ECHO $COMPILER_VERSION_TEST | $SED -n "s/^.*Version \([1-9][0-9.]*\) .*/\1/p"`
+    COMPILER_VERSION=`$ECHO $COMPILER_VERSION_TEST | $SED -n "s/^.* \([1-9][0-9.]*\) .*/\1/p"`
     COMPILER_VENDOR="Microsoft CL.EXE"
-    COMPILER_CPU_TEST=`$ECHO $COMPILER_VERSION_TEST | $SED -n "s/^.* for \(.*\)$/\1/p"`
+    COMPILER_CPU_TEST=`$ECHO $COMPILER_VERSION_TEST | $SED -n "s/^.* \([x8064]*\) .*/\1/p"`
     if test "x$OPENJDK_TARGET_CPU" = "xx86"; then
       if test "x$COMPILER_CPU_TEST" != "x80x86"; then
         as_fn_error $? "Target CPU mismatch. We are building for $OPENJDK_TARGET_CPU but CL is for \"$COMPILER_CPU_TEST\"; expected \"80x86\"." "$LINENO" 5
@@ -21616,9 +21616,9 @@ $as_echo "$as_me: The result from running with -V was: \"$COMPILER_VERSION_TEST\
     # First line typically looks something like:
     # Microsoft (R) 32-bit C/C++ Optimizing Compiler Version 16.00.40219.01 for 80x86
     COMPILER_VERSION_TEST=`$COMPILER 2>&1 | $HEAD -n 1 | $TR -d '\r'`
-    COMPILER_VERSION=`$ECHO $COMPILER_VERSION_TEST | $SED -n "s/^.*Version \([1-9][0-9.]*\) .*/\1/p"`
+    COMPILER_VERSION=`$ECHO $COMPILER_VERSION_TEST | $SED -n "s/^.* \([1-9][0-9.]*\) .*/\1/p"`
     COMPILER_VENDOR="Microsoft CL.EXE"
-    COMPILER_CPU_TEST=`$ECHO $COMPILER_VERSION_TEST | $SED -n "s/^.* for \(.*\)$/\1/p"`
+    COMPILER_CPU_TEST=`$ECHO $COMPILER_VERSION_TEST | $SED -n "s/^.* \([x8064]*\) .*/\1/p"`
     if test "x$OPENJDK_TARGET_CPU" = "xx86"; then
       if test "x$COMPILER_CPU_TEST" != "x80x86"; then
         as_fn_error $? "Target CPU mismatch. We are building for $OPENJDK_TARGET_CPU but CL is for \"$COMPILER_CPU_TEST\"; expected \"80x86\"." "$LINENO" 5
