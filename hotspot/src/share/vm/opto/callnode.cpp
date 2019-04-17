@@ -368,7 +368,7 @@ static void format_helper( PhaseRegAlloc *regalloc, outputStream* st, Node *n, c
       st->print(" %s%d]=#%fF",msg,i,t->is_float_constant()->_f);
       break;
     case Type::Long:
-      st->print(" %s%d]=#"INT64_FORMAT,msg,i,t->is_long()->get_con());
+      st->print(" %s%d]=#" INT64_FORMAT,msg,i,t->is_long()->get_con());
       break;
     case Type::Half:
     case Type::Top:

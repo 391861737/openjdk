@@ -5141,7 +5141,7 @@ bool os::check_heap(bool force) {
 }
 
 int local_vsnprintf(char* buf, size_t count, const char* format, va_list args) {
-  return ::vsnprintf(buf, count, format, args);
+  return ::jvsnprintf(buf, count, format, args);
 }
 
 // Is a (classpath) directory empty?

@@ -34,14 +34,14 @@
 void G1CardCounts::clear_range(size_t from_card_num, size_t to_card_num) {
   if (has_count_table()) {
     assert(from_card_num >= 0 && from_card_num < _committed_max_card_num,
-           err_msg("from card num out of range: "SIZE_FORMAT, from_card_num));
+           err_msg("from card num out of range: " SIZE_FORMAT, from_card_num));
     assert(from_card_num < to_card_num,
-           err_msg("Wrong order? from: " SIZE_FORMAT ", to: "SIZE_FORMAT,
+           err_msg("Wrong order? from: " SIZE_FORMAT ", to: " SIZE_FORMAT,
                    from_card_num, to_card_num));
     assert(to_card_num <= _committed_max_card_num,
            err_msg("to card num out of range: "
-                   "to: "SIZE_FORMAT ", "
-                   "max: "SIZE_FORMAT,
+                   "to: " SIZE_FORMAT ", "
+                   "max: " SIZE_FORMAT,
                    to_card_num, _committed_max_card_num));
 
     to_card_num = MIN2(_committed_max_card_num, to_card_num);
@@ -109,8 +109,8 @@ void G1CardCounts::resize(size_t heap_capacity) {
   assert(prev_committed_card_num == _committed_max_card_num,
          err_msg("Card mismatch: "
                  "prev: " SIZE_FORMAT ", "
-                 "committed: "SIZE_FORMAT", "
-                 "reserved: "SIZE_FORMAT,
+                 "committed: " SIZE_FORMAT", "
+                 "reserved: " SIZE_FORMAT,
                  prev_committed_card_num, _committed_max_card_num, _reserved_max_card_num));
 
   size_t new_size = (heap_capacity >> CardTableModRefBS::card_shift) * sizeof(jbyte);

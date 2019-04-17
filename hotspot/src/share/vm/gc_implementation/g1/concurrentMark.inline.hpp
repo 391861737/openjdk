@@ -277,7 +277,7 @@ inline void CMTask::push(oop obj) {
   assert(_nextMarkBitMap->isMarked(objAddr), "invariant");
 
   if (_cm->verbose_high()) {
-    gclog_or_tty->print_cr("[%u] pushing "PTR_FORMAT, _worker_id, (void*) obj);
+    gclog_or_tty->print_cr("[%u] pushing " PTR_FORMAT, _worker_id, (void*) obj);
   }
 
   if (!_task_queue->push(obj)) {
@@ -316,7 +316,7 @@ inline void CMTask::push(oop obj) {
 
 inline void CMTask::deal_with_reference(oop obj) {
   if (_cm->verbose_high()) {
-    gclog_or_tty->print_cr("[%u] we're dealing with reference = "PTR_FORMAT,
+    gclog_or_tty->print_cr("[%u] we're dealing with reference = " PTR_FORMAT,
                            _worker_id, (void*) obj);
   }
 
@@ -333,7 +333,7 @@ inline void CMTask::deal_with_reference(oop obj) {
       HeapRegion* hr = _g1h->heap_region_containing_raw(obj);
       if (!hr->obj_allocated_since_next_marking(obj)) {
         if (_cm->verbose_high()) {
-          gclog_or_tty->print_cr("[%u] "PTR_FORMAT" is not considered marked",
+          gclog_or_tty->print_cr("[%u] " PTR_FORMAT" is not considered marked",
                                  _worker_id, (void*) obj);
         }
 
@@ -348,7 +348,7 @@ inline void CMTask::deal_with_reference(oop obj) {
 
           if (_finger != NULL && objAddr < _finger) {
             if (_cm->verbose_high()) {
-              gclog_or_tty->print_cr("[%u] below the local finger ("PTR_FORMAT"), "
+              gclog_or_tty->print_cr("[%u] below the local finger (" PTR_FORMAT"), "
                                      "pushing it", _worker_id, _finger);
             }
             push(obj);
@@ -366,7 +366,7 @@ inline void CMTask::deal_with_reference(oop obj) {
 
             if (_cm->verbose_high()) {
               gclog_or_tty->print_cr("[%u] below the global finger "
-                                     "("PTR_FORMAT"), pushing it",
+                                     "(" PTR_FORMAT"), pushing it",
                                      _worker_id, global_finger);
             }
             push(obj);
@@ -381,7 +381,7 @@ inline void CMTask::deal_with_reference(oop obj) {
 
             if (_cm->verbose_high()) {
               gclog_or_tty->print_cr("[%u] below the global finger "
-                                     "("PTR_FORMAT"), pushing it",
+                                     "(" PTR_FORMAT"), pushing it",
                                      _worker_id, global_finger);
             }
             push(obj);
@@ -420,7 +420,7 @@ inline void ConcurrentMark::grayRoot(oop obj, size_t word_size,
   // assert that word_size is under an upper bound which is its
   // containing region's capacity.
   assert(word_size * HeapWordSize <= hr->capacity(),
-         err_msg("size: "SIZE_FORMAT" capacity: "SIZE_FORMAT" "HR_FORMAT,
+         err_msg("size: " SIZE_FORMAT" capacity: " SIZE_FORMAT" " HR_FORMAT,
                  word_size * HeapWordSize, hr->capacity(),
                  HR_FORMAT_PARAMS(hr)));
 

@@ -94,7 +94,7 @@ void FormatBuffer<bufsz>::printv(const char * format, va_list argp) {
 
 template <size_t bufsz>
 void FormatBuffer<bufsz>::append(const char* format, ...) {
-  // Given that the constructor does a vsnprintf we can assume that
+  // Given that the constructor does a jvsnprintf we can assume that
   // _buf is already initialized.
   size_t len = strlen(_buf);
   char* buf_end = _buf + len;

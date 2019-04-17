@@ -768,24 +768,24 @@ static void print_me(intptr_t *new_sp, intptr_t *old_sp, bool *was_oops) {
 #endif
   tty->print_cr("---SP---|");
   for( int i=0; i<16; i++ ) {
-    tty->print("blob %c%d |"PTR_FORMAT" ","LO"[i>>3],i&7,new_sp); print_ptrs(*old_sp++,*new_sp++,*was_oops++); }
+    tty->print("blob %c%d |" PTR_FORMAT" ","LO"[i>>3],i&7,new_sp); print_ptrs(*old_sp++,*new_sp++,*was_oops++); }
   tty->print_cr("--------|");
   for( int i1=0; i1<frame::memory_parameter_word_sp_offset-16; i1++ ) {
-    tty->print("argv pad|"PTR_FORMAT" ",new_sp); print_ptrs(*old_sp++,*new_sp++,*was_oops++); }
-  tty->print("     pad|"PTR_FORMAT" ",new_sp); print_ptrs(*old_sp++,*new_sp++,*was_oops++);
+    tty->print("argv pad|" PTR_FORMAT" ",new_sp); print_ptrs(*old_sp++,*new_sp++,*was_oops++); }
+  tty->print("     pad|" PTR_FORMAT" ",new_sp); print_ptrs(*old_sp++,*new_sp++,*was_oops++);
   tty->print_cr("--------|");
-  tty->print(" G1     |"PTR_FORMAT" ",new_sp); print_longs(*(jlong*)old_sp,*(jlong*)new_sp,was_oops[incr-1]); old_sp += incr; new_sp += incr; was_oops += incr;
-  tty->print(" G3     |"PTR_FORMAT" ",new_sp); print_longs(*(jlong*)old_sp,*(jlong*)new_sp,was_oops[incr-1]); old_sp += incr; new_sp += incr; was_oops += incr;
-  tty->print(" G4     |"PTR_FORMAT" ",new_sp); print_longs(*(jlong*)old_sp,*(jlong*)new_sp,was_oops[incr-1]); old_sp += incr; new_sp += incr; was_oops += incr;
-  tty->print(" G5     |"PTR_FORMAT" ",new_sp); print_longs(*(jlong*)old_sp,*(jlong*)new_sp,was_oops[incr-1]); old_sp += incr; new_sp += incr; was_oops += incr;
-  tty->print_cr(" FSR    |"PTR_FORMAT" "PTR64_FORMAT"       "PTR64_FORMAT,new_sp,*(jlong*)old_sp,*(jlong*)new_sp);
+  tty->print(" G1     |" PTR_FORMAT" ",new_sp); print_longs(*(jlong*)old_sp,*(jlong*)new_sp,was_oops[incr-1]); old_sp += incr; new_sp += incr; was_oops += incr;
+  tty->print(" G3     |" PTR_FORMAT" ",new_sp); print_longs(*(jlong*)old_sp,*(jlong*)new_sp,was_oops[incr-1]); old_sp += incr; new_sp += incr; was_oops += incr;
+  tty->print(" G4     |" PTR_FORMAT" ",new_sp); print_longs(*(jlong*)old_sp,*(jlong*)new_sp,was_oops[incr-1]); old_sp += incr; new_sp += incr; was_oops += incr;
+  tty->print(" G5     |" PTR_FORMAT" ",new_sp); print_longs(*(jlong*)old_sp,*(jlong*)new_sp,was_oops[incr-1]); old_sp += incr; new_sp += incr; was_oops += incr;
+  tty->print_cr(" FSR    |" PTR_FORMAT" "PTR64_FORMAT"       "PTR64_FORMAT,new_sp,*(jlong*)old_sp,*(jlong*)new_sp);
   old_sp += incr; new_sp += incr; was_oops += incr;
   // Skip the floats
-  tty->print_cr("--Float-|"PTR_FORMAT,new_sp);
+  tty->print_cr("--Float-|" PTR_FORMAT,new_sp);
   tty->print_cr("---FP---|");
   old_sp += incr*32;  new_sp += incr*32;  was_oops += incr*32;
   for( int i2=0; i2<16; i2++ ) {
-    tty->print("call %c%d |"PTR_FORMAT" ","LI"[i2>>3],i2&7,new_sp); print_ptrs(*old_sp++,*new_sp++,*was_oops++); }
+    tty->print("call %c%d |" PTR_FORMAT" ","LI"[i2>>3],i2&7,new_sp); print_ptrs(*old_sp++,*new_sp++,*was_oops++); }
   tty->print_cr("");
 }
 #endif  // SPARC
@@ -978,7 +978,7 @@ void ThreadSafepointState::restart() {
 
     case _running:
     default:
-       tty->print_cr("restart thread "INTPTR_FORMAT" with state %d",
+       tty->print_cr("restart thread " INTPTR_FORMAT " with state %d",
                       _thread, _type);
        _thread->print();
       ShouldNotReachHere();
@@ -1335,14 +1335,14 @@ void SafepointSynchronize::print_stat_on_exit() {
 
   for (int index = 0; index < VM_Operation::VMOp_Terminating; index++) {
     if (_safepoint_reasons[index] != 0) {
-      tty->print_cr("%-26s"UINT64_FORMAT_W(10), VM_Operation::name(index),
+      tty->print_cr("%-26s" UINT64_FORMAT_W(10), VM_Operation::name(index),
                     _safepoint_reasons[index]);
     }
   }
 
   tty->print_cr(UINT64_FORMAT_W(5)" VM operations coalesced during safepoint",
                 _coalesced_vmop_count);
-  tty->print_cr("Maximum sync time  "INT64_FORMAT_W(5)" ms",
+  tty->print_cr("Maximum sync time  " INT64_FORMAT_W(5) " ms",
                 _max_sync_time / MICROUNITS);
   tty->print_cr("Maximum vm operation time (except for Exit VM operation)  "
                 INT64_FORMAT_W(5)" ms",

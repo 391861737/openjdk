@@ -59,8 +59,8 @@ inline void HeapRegionSetBase::update_for_removal(HeapRegion* hr) {
 
   size_t used_bytes = hr->used();
   assert(used_bytes <= _total_used_bytes,
-         hrs_err_msg("[%s] region's used bytes: "SIZE_FORMAT" "
-                     "should be <= used bytes: "SIZE_FORMAT,
+         hrs_err_msg("[%s] region's used bytes: " SIZE_FORMAT" "
+                     "should be <= used bytes: " SIZE_FORMAT,
                      name(), used_bytes, _total_used_bytes));
   _total_used_bytes -= used_bytes;
 }

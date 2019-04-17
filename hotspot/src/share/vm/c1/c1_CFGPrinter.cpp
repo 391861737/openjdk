@@ -161,7 +161,7 @@ void CFGPrinterOutput::print_compilation() {
 
   print("name \"%s\"", method_name(_compilation->method(), true));
   print("method \"%s\"", method_name(_compilation->method()));
-  print("date "INT64_FORMAT, os::javaTimeMillis());
+  print("date " INT64_FORMAT, os::javaTimeMillis());
 
   print_end("compilation");
 }
@@ -309,7 +309,7 @@ void CFGPrinterOutput::print_block(BlockBegin* block) {
   if (block->is_set(BlockBegin::osr_entry_flag))                output()->print("\"osr\" ");
   if (block->is_set(BlockBegin::exception_entry_flag))          output()->print("\"ex\" ");
   if (block->is_set(BlockBegin::subroutine_entry_flag))         output()->print("\"sr\" ");
-  if (block->is_set(BlockBegin::backward_branch_target_flag))   output()->print("\"bb\" ");
+  if (block->is_set(BlockBegin::backward_branch_target_flag))   output()->print("\" BB\" ");
   if (block->is_set(BlockBegin::parser_loop_header_flag))       output()->print("\"plh\" ");
   if (block->is_set(BlockBegin::critical_edge_split_flag))      output()->print("\"ces\" ");
   if (block->is_set(BlockBegin::linear_scan_loop_header_flag))  output()->print("\"llh\" ");

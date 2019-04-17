@@ -37,7 +37,7 @@ inline HeapRegion* HeapRegionSeq::addr_to_region_unsafe(HeapWord* addr) const {
 inline HeapRegion* HeapRegionSeq::addr_to_region(HeapWord* addr) const {
   if (addr != NULL && addr < heap_end()) {
     assert(addr >= heap_bottom(),
-          err_msg("addr: "PTR_FORMAT" bottom: "PTR_FORMAT, addr, heap_bottom()));
+          err_msg("addr: " PTR_FORMAT" bottom: " PTR_FORMAT, addr, heap_bottom()));
     return addr_to_region_unsafe(addr);
   }
   return NULL;

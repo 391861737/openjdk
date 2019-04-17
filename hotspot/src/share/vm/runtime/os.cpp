@@ -129,7 +129,12 @@ char* os::iso8601_time(char* buffer, size_t buffer_length) {
 #if defined(_ALLBSD_SOURCE)
   const time_t zone = (time_t) time_struct.tm_gmtoff;
 #else
-  const time_t zone = timezone;
+  #if _MSC_VER < 1900
+    const time_t zone = timezone;
+  #else
+    const time_t zone = 0;
+    _get_timezone((long *)&zone);
+  #endif
 #endif
 
   // If daylight savings time is in effect,

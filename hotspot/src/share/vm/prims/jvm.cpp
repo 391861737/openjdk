@@ -2731,7 +2731,7 @@ extern "C" {
 int jio_vsnprintf(char *str, size_t count, const char *fmt, va_list args) {
   // see bug 4399518, 4417214
   if ((intptr_t)count <= 0) return -1;
-  return vsnprintf(str, count, fmt, args);
+  return jvsnprintf(str, count, fmt, args);
 }
 
 

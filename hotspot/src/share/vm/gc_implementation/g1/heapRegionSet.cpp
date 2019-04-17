@@ -36,7 +36,7 @@ void HeapRegionSetBase::set_unrealistically_long_length(uint len) {
 }
 
 void HeapRegionSetBase::fill_in_ext_msg(hrs_ext_msg* msg, const char* message) {
-  msg->append("[%s] %s ln: %u rn: %u cy: "SIZE_FORMAT" ud: "SIZE_FORMAT,
+  msg->append("[%s] %s ln: %u rn: %u cy: " SIZE_FORMAT" ud: " SIZE_FORMAT,
               name(), message, length(), region_num(),
               total_capacity_bytes(), total_used_bytes());
   fill_in_ext_msg_extra(msg);
@@ -82,12 +82,12 @@ bool HeapRegionSetBase::verify_region(HeapRegion* hr,
     outputStream* out = tty;
     out->cr();
     out->print_cr("## [%s] %s", name(), error_message);
-    out->print_cr("## Offending Region: "PTR_FORMAT, hr);
-    out->print_cr("   "HR_FORMAT, HR_FORMAT_PARAMS(hr));
+    out->print_cr("## Offending Region: " PTR_FORMAT, hr);
+    out->print_cr("   " HR_FORMAT, HR_FORMAT_PARAMS(hr));
 #ifdef ASSERT
-    out->print_cr("   containing set: "PTR_FORMAT, hr->containing_set());
+    out->print_cr("   containing set: " PTR_FORMAT, hr->containing_set());
 #endif // ASSERT
-    out->print_cr("## Offending Region Set: "PTR_FORMAT, this);
+    out->print_cr("## Offending Region Set: " PTR_FORMAT, this);
     print_on(out);
     return false;
   } else {
@@ -164,14 +164,14 @@ void HeapRegionSetBase::verify_end() {
                         name(), region_num(), _calc_region_num));
 
   guarantee(total_capacity_bytes() == _calc_total_capacity_bytes,
-            hrs_err_msg("[%s] capacity bytes: "SIZE_FORMAT" should be == "
-                        "calc capacity bytes: "SIZE_FORMAT,
+            hrs_err_msg("[%s] capacity bytes: " SIZE_FORMAT" should be == "
+                        "calc capacity bytes: " SIZE_FORMAT,
                         name(),
                         total_capacity_bytes(), _calc_total_capacity_bytes));
 
   guarantee(total_used_bytes() == _calc_total_used_bytes,
-            hrs_err_msg("[%s] used bytes: "SIZE_FORMAT" should be == "
-                        "calc used bytes: "SIZE_FORMAT,
+            hrs_err_msg("[%s] used bytes: " SIZE_FORMAT" should be == "
+                        "calc used bytes: " SIZE_FORMAT,
                         name(), total_used_bytes(), _calc_total_used_bytes));
 
   _verify_in_progress = false;
@@ -190,16 +190,16 @@ void HeapRegionSetBase::set_phase(HRSPhase phase) {
 
 void HeapRegionSetBase::print_on(outputStream* out, bool print_contents) {
   out->cr();
-  out->print_cr("Set: %s ("PTR_FORMAT")", name(), this);
+  out->print_cr("Set: %s (" PTR_FORMAT")", name(), this);
   out->print_cr("  Region Assumptions");
   out->print_cr("    humongous         : %s", BOOL_TO_STR(regions_humongous()));
   out->print_cr("    empty             : %s", BOOL_TO_STR(regions_empty()));
   out->print_cr("  Attributes");
   out->print_cr("    length            : %14u", length());
   out->print_cr("    region num        : %14u", region_num());
-  out->print_cr("    total capacity    : "SIZE_FORMAT_W(14)" bytes",
+  out->print_cr("    total capacity    : " SIZE_FORMAT_W(14)" bytes",
                 total_capacity_bytes());
-  out->print_cr("    total used        : "SIZE_FORMAT_W(14)" bytes",
+  out->print_cr("    total used        : " SIZE_FORMAT_W(14)" bytes",
                 total_used_bytes());
 }
 
@@ -237,8 +237,8 @@ void HeapRegionSet::update_from_proxy(HeapRegionSet* proxy_set) {
   _region_num -= proxy_set->region_num();
 
   assert(proxy_set->total_used_bytes() <= _total_used_bytes,
-         hrs_err_msg("[%s] proxy set used bytes: "SIZE_FORMAT" "
-                     "should be <= used bytes: "SIZE_FORMAT,
+         hrs_err_msg("[%s] proxy set used bytes: " SIZE_FORMAT" "
+                     "should be <= used bytes: " SIZE_FORMAT,
                      name(), proxy_set->total_used_bytes(),
                      _total_used_bytes));
   _total_used_bytes -= proxy_set->total_used_bytes();
@@ -252,7 +252,7 @@ void HeapRegionSet::update_from_proxy(HeapRegionSet* proxy_set) {
 //////////////////// HeapRegionLinkedList ////////////////////
 
 void HeapRegionLinkedList::fill_in_ext_msg_extra(hrs_ext_msg* msg) {
-  msg->append(" hd: "PTR_FORMAT" tl: "PTR_FORMAT, head(), tail());
+  msg->append(" hd: " PTR_FORMAT" tl: " PTR_FORMAT, head(), tail());
 }
 
 void HeapRegionLinkedList::add_as_head(HeapRegionLinkedList* from_list) {
@@ -433,8 +433,8 @@ void HeapRegionLinkedList::verify() {
     guarantee(count < _unrealistically_long_length,
               hrs_err_msg("[%s] the calculated length: %u "
                           "seems very long, is there maybe a cycle? "
-                          "curr: "PTR_FORMAT" prev0: "PTR_FORMAT" "
-                          "prev1: "PTR_FORMAT" length: %u",
+                          "curr: " PTR_FORMAT" prev0: " PTR_FORMAT" "
+                          "prev1: " PTR_FORMAT" length: %u",
                           name(), count, curr, prev0, prev1, length()));
 
     prev1 = prev0;
@@ -456,8 +456,8 @@ void HeapRegionLinkedList::clear() {
 void HeapRegionLinkedList::print_on(outputStream* out, bool print_contents) {
   HeapRegionSetBase::print_on(out, print_contents);
   out->print_cr("  Linking");
-  out->print_cr("    head              : "PTR_FORMAT, _head);
-  out->print_cr("    tail              : "PTR_FORMAT, _tail);
+  out->print_cr("    head              : " PTR_FORMAT, _head);
+  out->print_cr("    tail              : " PTR_FORMAT, _tail);
 
   if (print_contents) {
     out->print_cr("  Contents");

@@ -197,7 +197,7 @@ const jlong max_jlong = CONST64(0x7fffffffffffffff);
 #pragma warning( disable : 4996 ) // unsafe string functions. Same as define _CRT_SECURE_NO_WARNINGS/_CRT_SECURE_NO_DEPRICATE
 #endif
 
-inline int vsnprintf(char* buf, size_t count, const char* fmt, va_list argptr) {
+inline int jvsnprintf(char* buf, size_t count, const char* fmt, va_list argptr) {
   // If number of characters written == count, Windows doesn't write a
   // terminating NULL, so we do it ourselves.
   int ret = _vsnprintf(buf, count, fmt, argptr);

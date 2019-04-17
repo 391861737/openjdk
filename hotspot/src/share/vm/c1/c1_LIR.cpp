@@ -1644,7 +1644,7 @@ static void print_block(BlockBegin* x) {
   if (x->is_set(BlockBegin::osr_entry_flag))               tty->print("osr ");
   if (x->is_set(BlockBegin::exception_entry_flag))         tty->print("ex ");
   if (x->is_set(BlockBegin::subroutine_entry_flag))        tty->print("jsr ");
-  if (x->is_set(BlockBegin::backward_branch_target_flag))  tty->print("bb ");
+  if (x->is_set(BlockBegin::backward_branch_target_flag))  tty->print(" BB ");
   if (x->is_set(BlockBegin::linear_scan_loop_header_flag)) tty->print("lh ");
   if (x->is_set(BlockBegin::linear_scan_loop_end_flag))    tty->print("le ");
 

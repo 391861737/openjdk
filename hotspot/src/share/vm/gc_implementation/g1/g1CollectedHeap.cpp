@@ -241,7 +241,7 @@ bool YoungList::check_list_well_formed() {
   HeapRegion* last = NULL;
   while (curr != NULL) {
     if (!curr->is_young()) {
-      gclog_or_tty->print_cr("### YOUNG REGION "PTR_FORMAT"-"PTR_FORMAT" "
+      gclog_or_tty->print_cr("### YOUNG REGION " PTR_FORMAT"-" PTR_FORMAT" "
                              "incorrectly tagged (y: %d, surv: %d)",
                              curr->bottom(), curr->end(),
                              curr->is_young(), curr->is_survivor());
@@ -370,7 +370,7 @@ void YoungList::print() {
     if (curr == NULL)
       gclog_or_tty->print_cr("  empty");
     while (curr != NULL) {
-      gclog_or_tty->print_cr("  "HR_FORMAT", P: "PTR_FORMAT "N: "PTR_FORMAT", age: %4d",
+      gclog_or_tty->print_cr("  " HR_FORMAT", P: " PTR_FORMAT "N: " PTR_FORMAT", age: %4d",
                              HR_FORMAT_PARAMS(curr),
                              curr->prev_top_at_mark_start(),
                              curr->next_top_at_mark_start(),
@@ -543,7 +543,7 @@ G1CollectedHeap::new_region_try_secondary_free_list() {
       HeapRegion* res = _free_list.remove_head();
       if (G1ConcRegionFreeingVerbose) {
         gclog_or_tty->print_cr("G1ConcRegionFreeing [region alloc] : "
-                               "allocated "HR_FORMAT" from secondary_free_list",
+                               "allocated " HR_FORMAT" from secondary_free_list",
                                HR_FORMAT_PARAMS(res));
       }
       return res;
@@ -1617,8 +1617,8 @@ resize_if_necessary_after_full_collection(size_t word_size) {
   // This assert only makes sense here, before we adjust them
   // with respect to the min and max heap size.
   assert(minimum_desired_capacity <= maximum_desired_capacity,
-         err_msg("minimum_desired_capacity = "SIZE_FORMAT", "
-                 "maximum_desired_capacity = "SIZE_FORMAT,
+         err_msg("minimum_desired_capacity = " SIZE_FORMAT", "
+                 "maximum_desired_capacity = " SIZE_FORMAT,
                  minimum_desired_capacity, maximum_desired_capacity));
 
   // Should not be greater than the heap max size. No need to adjust
@@ -2302,7 +2302,7 @@ public:
   virtual bool doHeapRegion(HeapRegion* hr) {
     unsigned region_gc_time_stamp = hr->get_gc_time_stamp();
     if (_gc_time_stamp != region_gc_time_stamp) {
-      gclog_or_tty->print_cr("Region "HR_FORMAT" has GC time stamp = %d, "
+      gclog_or_tty->print_cr("Region " HR_FORMAT" has GC time stamp = %d, "
                              "expected %d", HR_FORMAT_PARAMS(hr),
                              region_gc_time_stamp, _gc_time_stamp);
       _failures = true;
@@ -2802,7 +2802,7 @@ public:
     } else if (r->continuesHumongous()) {
       if (r->humongous_start_region() != _sh_region) {
         gclog_or_tty->print_cr("Region " HR_FORMAT ", "
-                               "HS = "PTR_FORMAT", should be "PTR_FORMAT,
+                               "HS = " PTR_FORMAT", should be " PTR_FORMAT,
                                HR_FORMAT_PARAMS(r),
                                r->humongous_start_region(),
                                _sh_region);
@@ -3121,10 +3121,10 @@ public:
     if (!oopDesc::is_null(heap_oop)) {
       oop obj = oopDesc::decode_heap_oop_not_null(heap_oop);
       if (_g1h->is_obj_dead_cond(obj, _vo)) {
-        gclog_or_tty->print_cr("Root location "PTR_FORMAT" "
-                              "points to dead obj "PTR_FORMAT, p, (void*) obj);
+        gclog_or_tty->print_cr("Root location " PTR_FORMAT" "
+                              "points to dead obj " PTR_FORMAT, p, (void*) obj);
         if (_vo == VerifyOption_G1UseMarkWord) {
-          gclog_or_tty->print_cr("  Mark word: "PTR_FORMAT, (void*)(obj->mark()));
+          gclog_or_tty->print_cr("  Mark word: " PTR_FORMAT, (void*)(obj->mark()));
         }
         obj->print_on(gclog_or_tty);
         _failures = true;
@@ -3171,9 +3171,9 @@ class G1VerifyCodeRootOopClosure: public OopsInGenClosure {
       // Verify that the strong code root list for this region
       // contains the nmethod
       if (!hrrs->strong_code_roots_list_contains(_nm)) {
-        gclog_or_tty->print_cr("Code root location "PTR_FORMAT" "
-                              "from nmethod "PTR_FORMAT" not in strong "
-                              "code roots for region ["PTR_FORMAT","PTR_FORMAT")",
+        gclog_or_tty->print_cr("Code root location " PTR_FORMAT" "
+                              "from nmethod " PTR_FORMAT" not in strong "
+                              "code roots for region [" PTR_FORMAT"," PTR_FORMAT")",
                               p, _nm, hr->bottom(), hr->end());
         _failures = true;
       }
@@ -3303,7 +3303,7 @@ public:
     if (o != NULL) {
       HeapWord *start = (HeapWord *) o;
       size_t word_sz = o->size();
-      gclog_or_tty->print("\nPrinting obj "PTR_FORMAT" of size " SIZE_FORMAT
+      gclog_or_tty->print("\nPrinting obj " PTR_FORMAT" of size " SIZE_FORMAT
                           " isMarkedPrev %d isMarkedNext %d isAllocSince %d\n",
                           (void*) o, word_sz,
                           _g1->isMarkedPrev(o),
@@ -3314,7 +3314,7 @@ public:
       int *val;
       for (cur = start; cur < end; cur++) {
         val = (int *) cur;
-        gclog_or_tty->print("\t "PTR_FORMAT":"PTR_FORMAT"\n", val, *val);
+        gclog_or_tty->print("\t " PTR_FORMAT":" PTR_FORMAT"\n", val, *val);
       }
     }
   }
@@ -3349,9 +3349,9 @@ public:
         r->object_iterate(&not_dead_yet_cl);
         if (_vo != VerifyOption_G1UseNextMarking) {
           if (r->max_live_bytes() < not_dead_yet_cl.live_bytes()) {
-            gclog_or_tty->print_cr("["PTR_FORMAT","PTR_FORMAT"] "
-                                   "max_live_bytes "SIZE_FORMAT" "
-                                   "< calculated "SIZE_FORMAT,
+            gclog_or_tty->print_cr("[" PTR_FORMAT"," PTR_FORMAT"] "
+                                   "max_live_bytes " SIZE_FORMAT" "
+                                   "< calculated " SIZE_FORMAT,
                                    r->bottom(), r->end(),
                                    r->max_live_bytes(),
                                  not_dead_yet_cl.live_bytes());
@@ -3628,7 +3628,7 @@ public:
     size_t occupied = hrrs->occupied();
     _occupied_sum += occupied;
 
-    gclog_or_tty->print_cr("Printing RSet for region "HR_FORMAT,
+    gclog_or_tty->print_cr("Printing RSet for region " HR_FORMAT,
                            HR_FORMAT_PARAMS(r));
     if (occupied == 0) {
       gclog_or_tty->print_cr("  RSet is empty");
@@ -3647,7 +3647,7 @@ public:
   }
 
   ~PrintRSetsClosure() {
-    gclog_or_tty->print_cr("Occupied Sum: "SIZE_FORMAT, _occupied_sum);
+    gclog_or_tty->print_cr("Occupied Sum: " SIZE_FORMAT, _occupied_sum);
     gclog_or_tty->print_cr("========================================");
     gclog_or_tty->cr();
   }
@@ -4444,7 +4444,7 @@ oop
 G1CollectedHeap::handle_evacuation_failure_par(G1ParScanThreadState* _par_scan_state,
                                                oop old) {
   assert(obj_in_cs(old),
-         err_msg("obj: "PTR_FORMAT" should still be in the CSet",
+         err_msg("obj: " PTR_FORMAT" should still be in the CSet",
                  (HeapWord*) old));
   markOop m = old->mark();
   oop forward_ptr = old->forward_to_atomic(old);
@@ -4478,7 +4478,7 @@ G1CollectedHeap::handle_evacuation_failure_par(G1ParScanThreadState* _par_scan_s
     // space for this object (old != forward_ptr) or they beat us in
     // self-forwarding it (old == forward_ptr).
     assert(old == forward_ptr || !obj_in_cs(forward_ptr),
-           err_msg("obj: "PTR_FORMAT" forwarded to: "PTR_FORMAT" "
+           err_msg("obj: " PTR_FORMAT" forwarded to: " PTR_FORMAT" "
                    "should not be in the CSet",
                    (HeapWord*) old, (HeapWord*) forward_ptr));
     return forward_ptr;
@@ -5944,7 +5944,7 @@ void G1CollectedHeap::free_humongous_region(HeapRegion* hr,
     i += 1;
   }
   assert(hr_pre_used == hr_used,
-         err_msg("hr_pre_used: "SIZE_FORMAT" and hr_used: "SIZE_FORMAT" "
+         err_msg("hr_pre_used: " SIZE_FORMAT" and hr_used: " SIZE_FORMAT" "
                  "should be the same", hr_pre_used, hr_used));
   *pre_used += hr_pre_used;
 }
@@ -5958,8 +5958,8 @@ void G1CollectedHeap::update_sets_after_freeing_regions(size_t pre_used,
     Mutex* lock = (par) ? ParGCRareEvent_lock : NULL;
     MutexLockerEx x(lock, Mutex::_no_safepoint_check_flag);
     assert(_summary_bytes_used >= pre_used,
-           err_msg("invariant: _summary_bytes_used: "SIZE_FORMAT" "
-                   "should be >= pre_used: "SIZE_FORMAT,
+           err_msg("invariant: _summary_bytes_used: " SIZE_FORMAT" "
+                   "should be >= pre_used: " SIZE_FORMAT,
                    _summary_bytes_used, pre_used));
     _summary_bytes_used -= pre_used;
   }
@@ -6287,7 +6287,7 @@ public:
   NoYoungRegionsClosure() : _success(true) { }
   bool doHeapRegion(HeapRegion* r) {
     if (r->is_young()) {
-      gclog_or_tty->print_cr("Region ["PTR_FORMAT", "PTR_FORMAT") tagged as young",
+      gclog_or_tty->print_cr("Region [" PTR_FORMAT", " PTR_FORMAT") tagged as young",
                              r->bottom(), r->end());
       _success = false;
     }
@@ -6406,7 +6406,7 @@ void G1CollectedHeap::rebuild_region_sets(bool free_list_only) {
   }
   assert(_summary_bytes_used == recalculate_used(),
          err_msg("inconsistent _summary_bytes_used, "
-                 "value: "SIZE_FORMAT" recalculated: "SIZE_FORMAT,
+                 "value: " SIZE_FORMAT" recalculated: " SIZE_FORMAT,
                  _summary_bytes_used, recalculate_used()));
 }
 
@@ -6658,8 +6658,8 @@ class RegisterNMethodOopClosure: public OopClosure {
       oop obj = oopDesc::decode_heap_oop_not_null(heap_oop);
       HeapRegion* hr = _g1h->heap_region_containing(obj);
       assert(!hr->continuesHumongous(),
-             err_msg("trying to add code root "PTR_FORMAT" in continuation of humongous region "HR_FORMAT
-                     " starting at "HR_FORMAT,
+             err_msg("trying to add code root " PTR_FORMAT" in continuation of humongous region " HR_FORMAT
+                     " starting at " HR_FORMAT,
                      _nm, HR_FORMAT_PARAMS(hr), HR_FORMAT_PARAMS(hr->humongous_start_region())));
 
       // HeapRegion::add_strong_code_root() avoids adding duplicate
@@ -6667,7 +6667,7 @@ class RegisterNMethodOopClosure: public OopClosure {
       // as visited when we scan the strong code root lists during the GC.
       hr->add_strong_code_root(_nm);
       assert(hr->rem_set()->strong_code_roots_list_contains(_nm),
-             err_msg("failed to add code root "PTR_FORMAT" to remembered set of region "HR_FORMAT,
+             err_msg("failed to add code root " PTR_FORMAT" to remembered set of region " HR_FORMAT,
                      _nm, HR_FORMAT_PARAMS(hr)));
     }
   }
@@ -6690,13 +6690,13 @@ class UnregisterNMethodOopClosure: public OopClosure {
       oop obj = oopDesc::decode_heap_oop_not_null(heap_oop);
       HeapRegion* hr = _g1h->heap_region_containing(obj);
       assert(!hr->continuesHumongous(),
-             err_msg("trying to remove code root "PTR_FORMAT" in continuation of humongous region "HR_FORMAT
-                     " starting at "HR_FORMAT,
+             err_msg("trying to remove code root " PTR_FORMAT" in continuation of humongous region " HR_FORMAT
+                     " starting at " HR_FORMAT,
                      _nm, HR_FORMAT_PARAMS(hr), HR_FORMAT_PARAMS(hr->humongous_start_region())));
 
       hr->remove_strong_code_root(_nm);
       assert(!hr->rem_set()->strong_code_roots_list_contains(_nm),
-             err_msg("failed to remove code root "PTR_FORMAT" of region "HR_FORMAT,
+             err_msg("failed to remove code root " PTR_FORMAT" of region " HR_FORMAT,
                      _nm, HR_FORMAT_PARAMS(hr)));
     }
   }
@@ -6729,7 +6729,7 @@ class MigrateCodeRootsHeapRegionClosure: public HeapRegionClosure {
 public:
   bool doHeapRegion(HeapRegion *hr) {
     assert(!hr->isHumongous(),
-           err_msg("humongous region "HR_FORMAT" should not have been added to collection set",
+           err_msg("humongous region " HR_FORMAT" should not have been added to collection set",
                    HR_FORMAT_PARAMS(hr)));
     hr->migrate_strong_code_roots();
     return false;
@@ -6813,8 +6813,8 @@ public:
     if (hr->continuesHumongous()) {
       // Code roots should never be attached to a continuation of a humongous region
       assert(hrrs->strong_code_roots_list_length() == 0,
-             err_msg("code roots should never be attached to continuations of humongous region "HR_FORMAT
-                     " starting at "HR_FORMAT", but has "INT32_FORMAT,
+             err_msg("code roots should never be attached to continuations of humongous region " HR_FORMAT
+                     " starting at " HR_FORMAT", but has "INT32_FORMAT,
                      HR_FORMAT_PARAMS(hr), HR_FORMAT_PARAMS(hr->humongous_start_region()),
                      hrrs->strong_code_roots_list_length()));
       return false;

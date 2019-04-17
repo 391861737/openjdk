@@ -97,7 +97,7 @@ const char* outputStream::do_vsnprintf(char* buffer, size_t buflen,
     result = va_arg(ap, const char*);
     result_len = strlen(result);
     if (add_cr && result_len >= buflen)  result_len = buflen-1;  // truncate
-  } else if (vsnprintf(buffer, buflen, format, ap) >= 0) {
+  } else if (jvsnprintf(buffer, buflen, format, ap) >= 0) {
     result = buffer;
     result_len = strlen(result);
   } else {
@@ -824,7 +824,7 @@ void defaultStream::init_log() {
     // %%% Should be: jlong time_ms = os::start_time_milliseconds(), if
     // we ever get round to introduce that method on the os class
     xs->head("hotspot_log version='%d %d'"
-             " process='%d' time_ms='"INT64_FORMAT"'",
+             " process='%d' time_ms='" INT64_FORMAT "'",
              LOG_MAJOR_VERSION, LOG_MINOR_VERSION,
              os::current_process_id(), time_ms);
     // Write VM version header immediately.

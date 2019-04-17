@@ -232,7 +232,7 @@ void HeapRegionSeq::verify_optional() {
     HeapRegion* hr = _regions.get_by_index(i);
     guarantee(hr != NULL, err_msg("invariant: i: %u", i));
     guarantee(hr->bottom() == prev_end,
-              err_msg("invariant i: %u "HR_FORMAT" prev_end: "PTR_FORMAT,
+              err_msg("invariant i: %u " HR_FORMAT" prev_end: " PTR_FORMAT,
                       i, HR_FORMAT_PARAMS(hr), prev_end));
     guarantee(hr->hrs_index() == i,
               err_msg("invariant: i: %u hrs_index(): %u", i, hr->hrs_index()));

@@ -188,7 +188,7 @@ oop MethodHandles::init_method_MemberName(Handle mname, CallInfo& info) {
     flags |= IS_METHOD | (JVM_REF_invokeInterface << REFERENCE_KIND_SHIFT);
     if (TraceInvokeDynamic) {
       ResourceMark rm;
-      tty->print_cr("memberName: invokeinterface method_holder::method: %s, itableindex: %d, access_flags:",
+      tty->print_cr(" MEMberName: invokeinterface method_holder::method: %s, itableindex: %d, access_flags:",
             Method::name_and_sig_as_C_string(m->method_holder(), m->name(), m->signature()),
             vmindex);
        m->access_flags().print_on(tty);
@@ -228,7 +228,7 @@ oop MethodHandles::init_method_MemberName(Handle mname, CallInfo& info) {
     }
     if (TraceInvokeDynamic) {
       ResourceMark rm;
-      tty->print_cr("memberName: invokevirtual method_holder::method: %s, receiver: %s, vtableindex: %d, access_flags:",
+      tty->print_cr(" MEMberName: invokevirtual method_holder::method: %s, receiver: %s, vtableindex: %d, access_flags:",
             Method::name_and_sig_as_C_string(m->method_holder(), m->name(), m->signature()),
             m_klass->internal_name(), vmindex);
        m->access_flags().print_on(tty);
@@ -1000,7 +1000,7 @@ void MemberNameTable::adjust_method_entries(Method** old_methods, Method** new_m
           *trace_name_printed = true;
         }
         // RC_TRACE macro has an embedded ResourceMark
-        RC_TRACE(0x00400000, ("MemberName method update: %s(%s)",
+        RC_TRACE(0x00400000, (" MEMberName method update: %s(%s)",
                               new_method->name()->as_C_string(),
                               new_method->signature()->as_C_string()));
       }
@@ -1321,40 +1321,40 @@ JVM_END
 #define LANG "Ljava/lang/"
 #define JLINV "Ljava/lang/invoke/"
 
-#define OBJ   LANG"Object;"
+#define OBJ   LANG" OBJect;"
 #define CLS   LANG"Class;"
 #define STRG  LANG"String;"
 #define CS    JLINV"CallSite;"
 #define MT    JLINV"MethodType;"
 #define MH    JLINV"MethodHandle;"
-#define MEM   JLINV"MemberName;"
+#define MEM   JLINV" MEMberName;"
 
 #define CC (char*)  /*cast a literal from (const char*)*/
 #define FN_PTR(f) CAST_FROM_FN_PTR(void*, &f)
 
 // These are the native methods on java.lang.invoke.MethodHandleNatives.
 static JNINativeMethod MHN_methods[] = {
-  {CC"init",                      CC"("MEM""OBJ")V",                     FN_PTR(MHN_init_Mem)},
-  {CC"expand",                    CC"("MEM")V",                          FN_PTR(MHN_expand_Mem)},
-  {CC"resolve",                   CC"("MEM""CLS")"MEM,                   FN_PTR(MHN_resolve_Mem)},
+  {CC"init",                      CC"(" MEM"" OBJ")V",                     FN_PTR(MHN_init_Mem)},
+  {CC"expand",                    CC"(" MEM")V",                          FN_PTR(MHN_expand_Mem)},
+  {CC"resolve",                   CC"(" MEM"" CLS")" MEM,                   FN_PTR(MHN_resolve_Mem)},
   {CC"getConstant",               CC"(I)I",                              FN_PTR(MHN_getConstant)},
   //  static native int getNamedCon(int which, Object[] name)
-  {CC"getNamedCon",               CC"(I["OBJ")I",                        FN_PTR(MHN_getNamedCon)},
+  {CC"getNamedCon",               CC"(I[" OBJ")I",                        FN_PTR(MHN_getNamedCon)},
   //  static native int getMembers(Class<?> defc, String matchName, String matchSig,
   //          int matchFlags, Class<?> caller, int skip, MemberName[] results);
-  {CC"getMembers",                CC"("CLS""STRG""STRG"I"CLS"I["MEM")I", FN_PTR(MHN_getMembers)},
-  {CC"objectFieldOffset",         CC"("MEM")J",                          FN_PTR(MHN_objectFieldOffset)},
-  {CC"setCallSiteTargetNormal",   CC"("CS""MH")V",                       FN_PTR(MHN_setCallSiteTargetNormal)},
-  {CC"setCallSiteTargetVolatile", CC"("CS""MH")V",                       FN_PTR(MHN_setCallSiteTargetVolatile)},
-  {CC"staticFieldOffset",         CC"("MEM")J",                          FN_PTR(MHN_staticFieldOffset)},
-  {CC"staticFieldBase",           CC"("MEM")"OBJ,                        FN_PTR(MHN_staticFieldBase)},
-  {CC"getMemberVMInfo",           CC"("MEM")"OBJ,                        FN_PTR(MHN_getMemberVMInfo)}
+  {CC"getMembers",                CC"(" CLS"" STRG"" STRG"I" CLS"I[" MEM")I", FN_PTR(MHN_getMembers)},
+  {CC" OBJectFieldOffset",         CC"(" MEM")J",                          FN_PTR(MHN_objectFieldOffset)},
+  {CC"setCallSiteTargetNormal",   CC"(" CS"" MH")V",                       FN_PTR(MHN_setCallSiteTargetNormal)},
+  {CC"setCallSiteTargetVolatile", CC"(" CS"" MH")V",                       FN_PTR(MHN_setCallSiteTargetVolatile)},
+  {CC"staticFieldOffset",         CC"(" MEM")J",                          FN_PTR(MHN_staticFieldOffset)},
+  {CC"staticFieldBase",           CC"(" MEM")" OBJ,                        FN_PTR(MHN_staticFieldBase)},
+  {CC"getMemberVMInfo",           CC"(" MEM")" OBJ,                        FN_PTR(MHN_getMemberVMInfo)}
 };
 
 static JNINativeMethod MH_methods[] = {
   // UnsupportedOperationException throwers
-  {CC"invoke",                    CC"(["OBJ")"OBJ,                       FN_PTR(MH_invoke_UOE)},
-  {CC"invokeExact",               CC"(["OBJ")"OBJ,                       FN_PTR(MH_invokeExact_UOE)}
+  {CC"invoke",                    CC"([" OBJ")" OBJ,                       FN_PTR(MH_invoke_UOE)},
+  {CC"invokeExact",               CC"([" OBJ")" OBJ,                       FN_PTR(MH_invokeExact_UOE)}
 };
 
 /**

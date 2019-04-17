@@ -439,7 +439,7 @@ void HeapRegion::note_self_forwarding_removal_end(bool during_initial_mark,
                                                   bool during_conc_mark,
                                                   size_t marked_bytes) {
   assert(0 <= marked_bytes && marked_bytes <= used(),
-         err_msg("marked: "SIZE_FORMAT" used: "SIZE_FORMAT,
+         err_msg("marked: " SIZE_FORMAT" used: " SIZE_FORMAT,
                  marked_bytes, used()));
   _prev_marked_bytes = marked_bytes;
 }
@@ -602,7 +602,7 @@ void HeapRegion::remove_strong_code_root(nmethod* nm) {
 void HeapRegion::migrate_strong_code_roots() {
   assert(in_collection_set(), "only collection set regions");
   assert(!isHumongous(),
-          err_msg("humongous region "HR_FORMAT" should not have been added to collection set",
+          err_msg("humongous region " HR_FORMAT" should not have been added to collection set",
                   HR_FORMAT_PARAMS(this)));
 
   HeapRegionRemSet* hrrs = rem_set();
@@ -631,9 +631,9 @@ class VerifyStrongCodeRootOopClosure: public OopClosure {
         // Object is in the region. Check that its less than top
         if (_hr->top() <= (HeapWord*)obj) {
           // Object is above top
-          gclog_or_tty->print_cr("Object "PTR_FORMAT" in region "
-                                 "["PTR_FORMAT", "PTR_FORMAT") is above "
-                                 "top "PTR_FORMAT,
+          gclog_or_tty->print_cr("Object " PTR_FORMAT" in region "
+                                 "[" PTR_FORMAT", " PTR_FORMAT") is above "
+                                 "top " PTR_FORMAT,
                                  (void *)obj, _hr->bottom(), _hr->end(), _hr->top());
           _failures = true;
           return;
@@ -667,7 +667,7 @@ public:
     if (nm != NULL) {
       // Verify that the nemthod is live
       if (!nm->is_alive()) {
-        gclog_or_tty->print_cr("region ["PTR_FORMAT","PTR_FORMAT"] has dead nmethod "
+        gclog_or_tty->print_cr("region [" PTR_FORMAT"," PTR_FORMAT"] has dead nmethod "
                                PTR_FORMAT" in its strong code roots",
                                _hr->bottom(), _hr->end(), nm);
         _failures = true;
@@ -675,14 +675,14 @@ public:
         VerifyStrongCodeRootOopClosure oop_cl(_hr, nm);
         nm->oops_do(&oop_cl);
         if (!oop_cl.has_oops_in_region()) {
-          gclog_or_tty->print_cr("region ["PTR_FORMAT","PTR_FORMAT"] has nmethod "
+          gclog_or_tty->print_cr("region [" PTR_FORMAT"," PTR_FORMAT"] has nmethod "
                                  PTR_FORMAT" in its strong code roots "
                                  "with no pointers into region",
                                  _hr->bottom(), _hr->end(), nm);
           _failures = true;
         } else if (oop_cl.failures()) {
-          gclog_or_tty->print_cr("region ["PTR_FORMAT","PTR_FORMAT"] has other "
-                                 "failures for nmethod "PTR_FORMAT,
+          gclog_or_tty->print_cr("region [" PTR_FORMAT"," PTR_FORMAT"] has other "
+                                 "failures for nmethod " PTR_FORMAT,
                                  _hr->bottom(), _hr->end(), nm);
           _failures = true;
         }
@@ -716,8 +716,8 @@ void HeapRegion::verify_strong_code_roots(VerifyOption vo, bool* failures) const
   // on its strong code root list
   if (is_empty()) {
     if (strong_code_roots_length > 0) {
-      gclog_or_tty->print_cr("region ["PTR_FORMAT","PTR_FORMAT"] is empty "
-                             "but has "INT32_FORMAT" code root entries",
+      gclog_or_tty->print_cr("region [" PTR_FORMAT"," PTR_FORMAT"] is empty "
+                             "but has " INT32_FORMAT" code root entries",
                              bottom(), end(), strong_code_roots_length);
       *failures = true;
     }
@@ -726,8 +726,8 @@ void HeapRegion::verify_strong_code_roots(VerifyOption vo, bool* failures) const
 
   if (continuesHumongous()) {
     if (strong_code_roots_length > 0) {
-      gclog_or_tty->print_cr("region "HR_FORMAT" is a continuation of a humongous "
-                             "region but has "INT32_FORMAT" code root entries",
+      gclog_or_tty->print_cr("region " HR_FORMAT" is a continuation of a humongous "
+                             "region but has " INT32_FORMAT" code root entries",
                              HR_FORMAT_PARAMS(this), strong_code_roots_length);
       *failures = true;
     }
@@ -765,7 +765,7 @@ void HeapRegion::print_on(outputStream* st) const {
   else
     st->print("  ");
   st->print(" TS %5d", _gc_time_stamp);
-  st->print(" PTAMS "PTR_FORMAT" NTAMS "PTR_FORMAT,
+  st->print(" PTAMS " PTR_FORMAT" NTAMS " PTR_FORMAT,
             prev_top_at_mark_start(), next_top_at_mark_start());
   G1OffsetTableContigSpace::print_on(st);
 }
@@ -830,25 +830,25 @@ public:
         }
         if (!_g1h->is_in_closed_subset(obj)) {
           HeapRegion* from = _g1h->heap_region_containing((HeapWord*)p);
-          gclog_or_tty->print_cr("Field "PTR_FORMAT
-                                 " of live obj "PTR_FORMAT" in region "
-                                 "["PTR_FORMAT", "PTR_FORMAT")",
+          gclog_or_tty->print_cr("Field " PTR_FORMAT
+                                 " of live obj " PTR_FORMAT" in region "
+                                 "[" PTR_FORMAT", " PTR_FORMAT")",
                                  p, (void*) _containing_obj,
                                  from->bottom(), from->end());
           print_object(gclog_or_tty, _containing_obj);
-          gclog_or_tty->print_cr("points to obj "PTR_FORMAT" not in the heap",
+          gclog_or_tty->print_cr("points to obj " PTR_FORMAT" not in the heap",
                                  (void*) obj);
         } else {
           HeapRegion* from = _g1h->heap_region_containing((HeapWord*)p);
           HeapRegion* to   = _g1h->heap_region_containing((HeapWord*)obj);
-          gclog_or_tty->print_cr("Field "PTR_FORMAT
-                                 " of live obj "PTR_FORMAT" in region "
-                                 "["PTR_FORMAT", "PTR_FORMAT")",
+          gclog_or_tty->print_cr("Field " PTR_FORMAT
+                                 " of live obj " PTR_FORMAT" in region "
+                                 "[" PTR_FORMAT", " PTR_FORMAT")",
                                  p, (void*) _containing_obj,
                                  from->bottom(), from->end());
           print_object(gclog_or_tty, _containing_obj);
-          gclog_or_tty->print_cr("points to dead obj "PTR_FORMAT" in region "
-                                 "["PTR_FORMAT", "PTR_FORMAT")",
+          gclog_or_tty->print_cr("points to dead obj " PTR_FORMAT" in region "
+                                 "[" PTR_FORMAT", " PTR_FORMAT")",
                                  (void*) obj, to->bottom(), to->end());
           print_object(gclog_or_tty, obj);
         }
@@ -884,14 +884,14 @@ public:
               gclog_or_tty->print_cr("----------");
             }
             gclog_or_tty->print_cr("Missing rem set entry:");
-            gclog_or_tty->print_cr("Field "PTR_FORMAT" "
-                                   "of obj "PTR_FORMAT", "
-                                   "in region "HR_FORMAT,
+            gclog_or_tty->print_cr("Field " PTR_FORMAT" "
+                                   "of obj " PTR_FORMAT", "
+                                   "in region " HR_FORMAT,
                                    p, (void*) _containing_obj,
                                    HR_FORMAT_PARAMS(from));
             _containing_obj->print_on(gclog_or_tty);
-            gclog_or_tty->print_cr("points to obj "PTR_FORMAT" "
-                                   "in region "HR_FORMAT,
+            gclog_or_tty->print_cr("points to obj " PTR_FORMAT" "
+                                   "in region " HR_FORMAT,
                                    (void*) obj,
                                    HR_FORMAT_PARAMS(to));
             obj->print_on(gclog_or_tty);
@@ -927,7 +927,7 @@ void HeapRegion::verify(VerifyOption vo,
     object_num += 1;
 
     if (is_humongous != g1->isHumongous(obj_size)) {
-      gclog_or_tty->print_cr("obj "PTR_FORMAT" is of %shumongous size ("
+      gclog_or_tty->print_cr("obj " PTR_FORMAT" is of %shumongous size ("
                              SIZE_FORMAT" words) in a %shumongous region",
                              p, g1->isHumongous(obj_size) ? "" : "non-",
                              obj_size, is_humongous ? "" : "non-");
@@ -946,12 +946,12 @@ void HeapRegion::verify(VerifyOption vo,
       if (obj->is_oop()) {
         Klass* klass = obj->klass();
         if (!klass->is_metaspace_object()) {
-          gclog_or_tty->print_cr("klass "PTR_FORMAT" of object "PTR_FORMAT" "
+          gclog_or_tty->print_cr("klass " PTR_FORMAT" of object " PTR_FORMAT" "
                                  "not metadata", klass, (void *)obj);
           *failures = true;
           return;
         } else if (!klass->is_klass()) {
-          gclog_or_tty->print_cr("klass "PTR_FORMAT" of object "PTR_FORMAT" "
+          gclog_or_tty->print_cr("klass " PTR_FORMAT" of object " PTR_FORMAT" "
                                  "not a klass", klass, (void *)obj);
           *failures = true;
           return;
@@ -977,8 +977,8 @@ void HeapRegion::verify(VerifyOption vo,
   }
 
   if (p != top()) {
-    gclog_or_tty->print_cr("end of last object "PTR_FORMAT" "
-                           "does not match top "PTR_FORMAT, p, top());
+    gclog_or_tty->print_cr("end of last object " PTR_FORMAT" "
+                           "does not match top " PTR_FORMAT, p, top());
     *failures = true;
     return;
   }
@@ -993,8 +993,8 @@ void HeapRegion::verify(VerifyOption vo,
     HeapWord* addr_1 = p;
     HeapWord* b_start_1 = _offsets.block_start_const(addr_1);
     if (b_start_1 != p) {
-      gclog_or_tty->print_cr("BOT look up for top: "PTR_FORMAT" "
-                             " yielded "PTR_FORMAT", expecting "PTR_FORMAT,
+      gclog_or_tty->print_cr("BOT look up for top: " PTR_FORMAT" "
+                             " yielded " PTR_FORMAT", expecting " PTR_FORMAT,
                              addr_1, b_start_1, p);
       *failures = true;
       return;
@@ -1005,8 +1005,8 @@ void HeapRegion::verify(VerifyOption vo,
     if (addr_2 < the_end) {
       HeapWord* b_start_2 = _offsets.block_start_const(addr_2);
       if (b_start_2 != p) {
-        gclog_or_tty->print_cr("BOT look up for top + 1: "PTR_FORMAT" "
-                               " yielded "PTR_FORMAT", expecting "PTR_FORMAT,
+        gclog_or_tty->print_cr("BOT look up for top + 1: " PTR_FORMAT" "
+                               " yielded " PTR_FORMAT", expecting " PTR_FORMAT,
                                addr_2, b_start_2, p);
         *failures = true;
         return;
@@ -1019,8 +1019,8 @@ void HeapRegion::verify(VerifyOption vo,
     if (addr_3 < the_end) {
       HeapWord* b_start_3 = _offsets.block_start_const(addr_3);
       if (b_start_3 != p) {
-        gclog_or_tty->print_cr("BOT look up for top + diff: "PTR_FORMAT" "
-                               " yielded "PTR_FORMAT", expecting "PTR_FORMAT,
+        gclog_or_tty->print_cr("BOT look up for top + diff: " PTR_FORMAT" "
+                               " yielded " PTR_FORMAT", expecting " PTR_FORMAT,
                                addr_3, b_start_3, p);
         *failures = true;
         return;
@@ -1031,8 +1031,8 @@ void HeapRegion::verify(VerifyOption vo,
     HeapWord* addr_4 = the_end - 1;
     HeapWord* b_start_4 = _offsets.block_start_const(addr_4);
     if (b_start_4 != p) {
-      gclog_or_tty->print_cr("BOT look up for end - 1: "PTR_FORMAT" "
-                             " yielded "PTR_FORMAT", expecting "PTR_FORMAT,
+      gclog_or_tty->print_cr("BOT look up for end - 1: " PTR_FORMAT" "
+                             " yielded " PTR_FORMAT", expecting " PTR_FORMAT,
                              addr_4, b_start_4, p);
       *failures = true;
       return;
@@ -1040,8 +1040,8 @@ void HeapRegion::verify(VerifyOption vo,
   }
 
   if (is_humongous && object_num > 1) {
-    gclog_or_tty->print_cr("region ["PTR_FORMAT","PTR_FORMAT"] is humongous "
-                           "but has "SIZE_FORMAT", objects",
+    gclog_or_tty->print_cr("region [" PTR_FORMAT"," PTR_FORMAT"] is humongous "
+                           "but has " SIZE_FORMAT", objects",
                            bottom(), end(), object_num);
     *failures = true;
     return;

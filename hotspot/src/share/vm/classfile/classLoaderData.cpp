@@ -307,11 +307,11 @@ void ClassLoaderData::unload() {
 
   if (TraceClassLoaderData) {
     ResourceMark rm;
-    tty->print("[ClassLoaderData: unload loader data "PTR_FORMAT, this);
-    tty->print(" for instance "PTR_FORMAT" of %s", (void *)class_loader(),
+    tty->print("[ClassLoaderData: unload loader data " PTR_FORMAT, this);
+    tty->print(" for instance " PTR_FORMAT" of %s", (void *)class_loader(),
                loader_name());
     if (is_anonymous()) {
-      tty->print(" for anonymous class  "PTR_FORMAT " ", _klasses);
+      tty->print(" for anonymous class  " PTR_FORMAT " ", _klasses);
     }
     tty->print_cr("]");
   }
@@ -468,7 +468,7 @@ const char* ClassLoaderData::loader_name() {
 
 void ClassLoaderData::dump(outputStream * const out) {
   ResourceMark rm;
-  out->print("ClassLoaderData CLD: "PTR_FORMAT", loader: "PTR_FORMAT", loader_klass: "PTR_FORMAT" %s {",
+  out->print("ClassLoaderData CLD: " PTR_FORMAT", loader: " PTR_FORMAT", loader_klass: " PTR_FORMAT" %s {",
       this, (void *)class_loader(),
       class_loader() != NULL ? class_loader()->klass() : NULL, loader_name());
   if (claimed()) out->print(" claimed ");
@@ -487,7 +487,7 @@ void ClassLoaderData::dump(outputStream * const out) {
     ResourceMark rm;
     Klass* k = _klasses;
     while (k != NULL) {
-      out->print_cr("klass "PTR_FORMAT", %s, CT: %d, MUT: %d", k, k->name()->as_C_string(),
+      out->print_cr("klass " PTR_FORMAT", %s, CT: %d, MUT: %d", k, k->name()->as_C_string(),
           k->has_modified_oops(), k->has_accumulated_modified_oops());
       assert(k != k->next_link(), "no loops!");
       k = k->next_link();
@@ -563,8 +563,8 @@ ClassLoaderData* ClassLoaderDataGraph::add(Handle loader, bool is_anonymous, TRA
       if (TraceClassLoaderData) {
         ResourceMark rm;
         tty->print("[ClassLoaderData: ");
-        tty->print("create class loader data "PTR_FORMAT, cld);
-        tty->print(" for instance "PTR_FORMAT" of %s", (void *)cld->class_loader(),
+        tty->print("create class loader data " PTR_FORMAT, cld);
+        tty->print(" for instance " PTR_FORMAT" of %s", (void *)cld->class_loader(),
                    cld->loader_name());
         tty->print_cr("]");
       }
@@ -825,7 +825,7 @@ void ClassLoaderData::print_value_on(outputStream* out) const {
   if (class_loader() == NULL) {
     out->print("NULL class_loader");
   } else {
-    out->print("class loader "PTR_FORMAT, this);
+    out->print("class loader " PTR_FORMAT, this);
     class_loader()->print_value_on(out);
   }
 }

@@ -39,13 +39,13 @@ private:
   int _cur;
 
   void vappend(const char* format, va_list ap) {
-    int res = vsnprintf(&_buffer[_cur], BUFFER_LEN - _cur, format, ap);
+    int res = jvsnprintf(&_buffer[_cur], BUFFER_LEN - _cur, format, ap);
     if (res != -1) {
       _cur += res;
     } else {
       DEBUG_ONLY(warning("buffer too small in LineBuffer");)
       _buffer[BUFFER_LEN -1] = 0;
-      _cur = BUFFER_LEN; // vsnprintf above should not add to _buffer if we are called again
+      _cur = BUFFER_LEN; // jvsnprintf above should not add to _buffer if we are called again
     }
   }
 

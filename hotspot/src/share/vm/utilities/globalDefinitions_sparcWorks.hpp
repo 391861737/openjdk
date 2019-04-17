@@ -279,7 +279,7 @@ inline int wcslen(const jchar* x) { return wcslen((const wchar_t*)x); }
 // NOTE: This one leads to an infinite recursion on Linux
 #ifndef LINUX
 int local_vsnprintf(char* buf, size_t count, const char* fmt, va_list argptr);
-#define vsnprintf local_vsnprintf
+#define jvsnprintf local_vsnprintf
 #endif
 
 // Portability macros

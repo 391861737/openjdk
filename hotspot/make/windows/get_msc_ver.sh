@@ -23,6 +23,8 @@
 #
 
 set -e
+FORCE_MSC_VER=1700
+FORCE_LD_VER=1100
 
 # This shell script echoes "MSC_VER=<munged version of cl>"
 # It ignores the micro version component.
@@ -54,11 +56,14 @@ ECHO="$TOOL_DIR/echo"
 EXPR="$TOOL_DIR/expr"
 CUT="$TOOL_DIR/cut"
 SED="$TOOL_DIR/sed"
+TR="$TOOL_DIR/tr"
+AWK="$TOOL_DIR/awk"
 
 if [ "x$FORCE_MSC_VER" != "x" ]; then
   echo "MSC_VER=$FORCE_MSC_VER"
 else
-  MSC_VER_RAW=`cl 2>&1 | "$HEAD" -n 1 | "$SED" 's/.*Version[\ ]*\([0-9][0-9.]*\).*/\1/'`
+  #MSC_VER_RAW=`cl 2>&1 | "$HEAD" -n 1 | "$SED" 's/.*Version[\ ]*\([0-9][0-9.]*\).*/\1/'`
+  MSC_VER_RAW=`cl 2>&1 | $AWK 'NR==1 {print $8}'`
   MSC_VER_MAJOR=`"$ECHO" $MSC_VER_RAW | "$CUT" -d'.' -f1`
   MSC_VER_MINOR=`"$ECHO" $MSC_VER_RAW | "$CUT" -d'.' -f2`
   MSC_VER_MICRO=`"$ECHO" $MSC_VER_RAW | "$CUT" -d'.' -f3`

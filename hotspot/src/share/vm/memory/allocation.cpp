@@ -77,7 +77,7 @@ bool MetaspaceObj::is_metaspace_object() const {
 }
 
 void MetaspaceObj::print_address_on(outputStream* st) const {
-  st->print(" {"INTPTR_FORMAT"}", this);
+  st->print(" {" INTPTR_FORMAT"}", this);
 }
 
 void* ResourceObj::operator new(size_t size, allocation_type type, MEMFLAGS flags) throw() {

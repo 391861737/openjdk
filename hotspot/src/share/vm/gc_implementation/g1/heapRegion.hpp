@@ -54,7 +54,7 @@ class HeapRegion;
 class HeapRegionSetBase;
 class nmethod;
 
-#define HR_FORMAT "%u:(%s)["PTR_FORMAT","PTR_FORMAT","PTR_FORMAT"]"
+#define HR_FORMAT "%u:(%s)[" PTR_FORMAT"," PTR_FORMAT"," PTR_FORMAT"]"
 #define HR_FORMAT_PARAMS(_hr_) \
                 (_hr_)->hrs_index(), \
                 (_hr_)->is_survivor() ? "S" : (_hr_)->is_young() ? "E" : \
@@ -545,8 +545,8 @@ class HeapRegion: public G1OffsetTableContigSpace {
   void set_containing_set(HeapRegionSetBase* containing_set) {
     assert((containing_set == NULL && _containing_set != NULL) ||
            (containing_set != NULL && _containing_set == NULL),
-           err_msg("containing_set: "PTR_FORMAT" "
-                   "_containing_set: "PTR_FORMAT,
+           err_msg("containing_set: " PTR_FORMAT" "
+                   "_containing_set: " PTR_FORMAT,
                    containing_set, _containing_set));
 
     _containing_set = containing_set;

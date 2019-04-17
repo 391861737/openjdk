@@ -5336,13 +5336,13 @@ int local_vsnprintf(char* buf, size_t count, const char* fmt, va_list argptr) {
     //search  for the named symbol in the objects that were loaded after libjvm
     void* where = RTLD_NEXT;
     if ((sol_vsnprintf = CAST_TO_FN_PTR(vsnprintf_t, dlsym(where, "__vsnprintf"))) == NULL)
-        sol_vsnprintf = CAST_TO_FN_PTR(vsnprintf_t, dlsym(where, "vsnprintf"));
+        sol_vsnprintf = CAST_TO_FN_PTR(vsnprintf_t, dlsym(where, "jvsnprintf"));
     if (!sol_vsnprintf){
       //search  for the named symbol in the objects that were loaded before libjvm
       where = RTLD_DEFAULT;
       if ((sol_vsnprintf = CAST_TO_FN_PTR(vsnprintf_t, dlsym(where, "__vsnprintf"))) == NULL)
-        sol_vsnprintf = CAST_TO_FN_PTR(vsnprintf_t, dlsym(where, "vsnprintf"));
-      assert(sol_vsnprintf != NULL, "vsnprintf not found");
+        sol_vsnprintf = CAST_TO_FN_PTR(vsnprintf_t, dlsym(where, "jvsnprintf"));
+      assert(sol_vsnprintf != NULL, "jvsnprintf not found");
     }
   }
   return (*sol_vsnprintf)(buf, count, fmt, argptr);
