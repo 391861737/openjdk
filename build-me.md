@@ -51,8 +51,9 @@ free.exe|System|procps|Display amount of free and used memory in the system
 	./configure --with-freetype=/cygdrive/e/Coding/opensource/freetype-2.10.0 --enable-debug --with-target-bits=64 --with-tools-dir="/cygdrive/d/VS/2017/Community"
 	```
 	
-* 按照`configure`所提示的报错信息修改，作者所作修改如下`git diff`所示:  
+* 按照`configure`所提示的错误信息修改—— 
 
+	+ 指定正确的vcvars32/64.bat脚本位置，并将所有的$with_toolsdir改为$with_tools_dir，因为$with_toolsdir获取不到参数--with-tools-dir的值
 	```
 	@@ -16773,17 +16773,17 @@ $as_echo "no" >&6; }
 	   # First-hand choice is to locate and run the vsvars bat file.
@@ -76,8 +77,7 @@ free.exe|System|procps|Display amount of free and used memory in the system
 		 METHOD="--with-tools-dir"
 
 	   windows_path="$VS100BASE"
-	```
-	```
+	————————
 	@@ -16811,7 +16811,7 @@ $as_echo "$as_me: Warning: $VCVARSFILE is missing, this is probably Visual Studi
 
 	   fi
@@ -88,6 +88,7 @@ free.exe|System|procps|Display amount of free and used memory in the system
 		 # we should not go on looking
 		 { $as_echo "$as_me:${as_lineno-$LINENO}: The path given by --with-tools-dir does not contain a valid Visual Studio installation" >&5
 	```
+	+ 修改用来判断VS编译器版本的正则表达式
 	```
 	@@ -20037,9 +20037,9 @@ $as_echo "$as_me: The result from running with -V was: \"$COMPILER_VERSION_TEST\
 		 # First line typically looks something like:
@@ -101,8 +102,7 @@ free.exe|System|procps|Display amount of free and used memory in the system
 		 if test "x$OPENJDK_TARGET_CPU" = "xx86"; then
 		   if test "x$COMPILER_CPU_TEST" != "x80x86"; then
 			 as_fn_error $? "Target CPU mismatch. We are building for $OPENJDK_TARGET_CPU but CL is for \"$COMPILER_CPU_TEST\"; expected \"80x86\"." "$LINENO" 5
-	```
-	```
+	————————
 	@@ -21616,9 +21616,9 @@ $as_echo "$as_me: The result from running with -V was: \"$COMPILER_VERSION_TEST\
 		 # First line typically looks something like:
 		 # Microsoft (R) 32-bit C/C++ Optimizing Compiler Version 16.00.40219.01 for 80x86
@@ -116,6 +116,14 @@ free.exe|System|procps|Display amount of free and used memory in the system
 		   if test "x$COMPILER_CPU_TEST" != "x80x86"; then
 			 as_fn_error $? "Target CPU mismatch. We are building for $OPENJDK_TARGET_CPU but CL is for \"$COMPILER_CPU_TEST\"; expected \"80x86\"." "$LINENO" 5
 	```
+	+ 搜索`D_STATIC_CPPLIB`，去除`-D_STATIC_CPPLIB -D_DISABLE_DEPRECATE_STATIC_CPPLIB`参数选项
+	```
+	CCXXFLAGS_JDK="$CCXXFLAGS $CCXXFLAGS_JDK -Zi -MD -Zc:wchar_t- -W3 -wd4800 \
+    - -D_STATIC_CPPLIB -D_DISABLE_DEPRECATE_STATIC_CPPLIB -DWIN32_LEAN_AND_MEAN \
+	+ -DWIN32_LEAN_AND_MEAN \
+      -D_CRT_SECURE_NO_DEPRECATE -D_CRT_NONSTDC_NO_DEPRECATE \
+      -DWIN32 -DIAL"
+	```  
 ## 6. 编译 / Make
 
 * 添加VC编译工具的`Path`环境变量，例如：  
