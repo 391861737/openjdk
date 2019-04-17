@@ -339,7 +339,7 @@ static void format_helper( PhaseRegAlloc *regalloc, outputStream* st, Node *n, c
     const Type *t = n->bottom_type();
     switch (t->base()) {
     case Type::Int:
-      st->print(" %s%d]=#"INT32_FORMAT,msg,i,t->is_int()->get_con());
+      st->print(" %s%d]=#" INT32_FORMAT,msg,i,t->is_int()->get_con());
       break;
     case Type::AnyPtr:
       assert( t == TypePtr::NULL_PTR, "" );

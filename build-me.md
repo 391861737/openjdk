@@ -1,3 +1,7 @@
+## 0. 预备 / Preparation
+* 下载并安装`VS2017`
+* 下载并安装`JDK1.8`
+
 ## 1. 获取并配置Cygwin / Get and configure the Cygwin
 * 下载 <http://www.cygwin.com/setup-x86_64.exe> 并安装  
 * 然后通过`cygwin`包管理器添加如下包  
@@ -122,11 +126,11 @@ free.exe|System|procps|Display amount of free and used memory in the system
 	FORCE_LD_VER=1100
 	```
 * 通过VS自带的脚本启动VS命令行（例如: `D:\VS\2017\Community\Common7\Tools\LaunchDevCmd.bat`），`cd`进入jdk根目录下的`\hotspot\make\windows`目录，设置变量`HOTSPOTMKSHOME`为`Cygwin`的bin目录（例如: `set HOTSPOTMKSHOME=D:\Lang\cygwin64\bin`），然后执行脚本`create.bat`
-* `create.bat`脚本会在jdk根目录下的`E:\Coding\opensource\openjdk\jdk8\hotspot\build\vs-amd64`生成对应版本的vs项目，通过`Visual Studio`打开它，然后对弹出的升级提示框选择"确定"升级，然后修改`项目属性 -> 配置属性 -> C/C++ -> 将警告视为错误`为否。
+* `create.bat`脚本会在jdk根目录下的`E:\Coding\opensource\openjdk\jdk8\hotspot\build\vs-amd64`生成对应版本的vs项目，通过`Visual Studio`打开它，然后对弹出的升级提示框选择"确定"升级，然后修改`项目属性 -> 配置属性 -> C/C++ -> 将警告视为错误`为否。对项目进行`Build`（或`生成`），针对错误信息进行处理——
 
-* 针对错误`error C3688`，在字符串与宏之间添加空格（`see` <https://msdn.microsoft.com/en-us/library/bb531344.aspx>，`section` "String literals followed by macros"）。
+* 针对错误`error C3688`，参见<https://msdn.microsoft.com/en-us/library/bb531344.aspx>`§ String literals followed by macros`，在字符串与宏之间添加空格
 
-* 针对错误`error C2065 “timezone”: 未声明的标识符`，将以下代码（129行）
+* 针对错误`error C2065 “timezone”: 未声明的标识符`，将`...\hotspot\src\share\vm\runtime\os.cpp` `129行` 附近的下述代码
 	```
 	#if defined(_ALLBSD_SOURCE)
 	  const time_t zone = (time_t) time_struct.tm_gmtoff;
@@ -148,4 +152,26 @@ free.exe|System|procps|Display amount of free and used memory in the system
 	#endif
 	```
 	
-* 编译成功
+* VS中编译成功，重新运行`make images`，对错误信息进行处理——
+* 针对错误`error C2956`，参见<https://msdn.microsoft.com/en-us/library/bb531344.aspx>`§ Placement new and delete`， 将`...\hotspot\src\share\vm\adlc\arena.hpp` `70行` 附近的下述代码
+	```
+	// Linked list of raw memory chunks
+	class Chunk: public CHeapObj {
+	 public:
+	  void* operator new(size_t size, size_t length) throw();
+	  void  operator delete(void* p, m_size_t length);
+	  Chunk(size_t length);
+	...  
+	```
+	修改为
+	```
+	enum class m_size_t : size_t {};
+
+	// Linked list of raw memory chunks
+	class Chunk: public CHeapObj {
+	 public:
+	  void* operator new(size_t size, m_size_t length) throw();
+	  void  operator delete(void* p, m_size_t length);
+	  Chunk(size_t length);
+	```
+* 针对错误`error C2220`，修改`...\hotspot\make\windows\makefiles\compile.make` `56行`，去掉`/WX`的编译参数

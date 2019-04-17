@@ -24,11 +24,11 @@
 
 #include "adlc.hpp"
 
-void* Chunk::operator new(size_t requested_size, size_t length) throw() {
-  return CHeapObj::operator new(requested_size + length);
+void* Chunk::operator new(size_t requested_size, m_size_t length) throw() {
+  return CHeapObj::operator new(requested_size + static_cast<size_t>(length));
 }
 
-void  Chunk::operator delete(void* p, size_t length) {
+void  Chunk::operator delete(void* p, m_size_t length) {
   CHeapObj::operator delete(p);
 }
 
@@ -57,14 +57,14 @@ void Chunk::next_chop() {
 //------------------------------Arena------------------------------------------
 Arena::Arena( size_t init_size ) {
   init_size = (init_size+3) & ~3;
-  _first = _chunk = new (init_size) Chunk(init_size);
+  _first = _chunk = new (static_cast<m_size_t>(init_size)) Chunk(init_size);
   _hwm = _chunk->bottom();      // Save the cached hwm, max
   _max = _chunk->top();
   set_size_in_bytes(init_size);
 }
 
 Arena::Arena() {
-  _first = _chunk = new (Chunk::init_size) Chunk(Chunk::init_size);
+  _first = _chunk = new (static_cast<m_size_t>(Chunk::init_size)) Chunk(Chunk::init_size);
   _hwm = _chunk->bottom();      // Save the cached hwm, max
   _max = _chunk->top();
   set_size_in_bytes(Chunk::init_size);
@@ -94,7 +94,7 @@ void* Arena::grow( size_t x ) {
   size_t len = max(x, Chunk::size);
 
   register Chunk *k = _chunk;   // Get filled-up chunk address
-  _chunk = new (len) Chunk(len);
+  _chunk = new (static_cast<m_size_t>(len)) Chunk(len);
 
   if( k ) k->_next = _chunk;    // Append new chunk to end of linked list
   else _first = _chunk;
