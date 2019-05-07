@@ -31,32 +31,35 @@ import static jdk.internal.org.objectweb.asm.Opcodes.ACC_PUBLIC;
 import static jdk.internal.org.objectweb.asm.Opcodes.ACC_STATIC;
 import static jdk.internal.org.objectweb.asm.Opcodes.H_INVOKESTATIC;
 import static jdk.internal.org.objectweb.asm.Opcodes.H_INVOKEVIRTUAL;
-import static jdk.nashorn.internal.tools.nasgen.StringConstants.ACCESSORPROPERTY_CREATE;
-import static jdk.nashorn.internal.tools.nasgen.StringConstants.ACCESSORPROPERTY_CREATE_DESC;
-import static jdk.nashorn.internal.tools.nasgen.StringConstants.ACCESSORPROPERTY_TYPE;
-import static jdk.nashorn.internal.tools.nasgen.StringConstants.ARRAYLIST_INIT_DESC;
-import static jdk.nashorn.internal.tools.nasgen.StringConstants.ARRAYLIST_TYPE;
 import static jdk.nashorn.internal.tools.nasgen.StringConstants.CLINIT;
-import static jdk.nashorn.internal.tools.nasgen.StringConstants.COLLECTIONS_EMPTY_LIST;
-import static jdk.nashorn.internal.tools.nasgen.StringConstants.COLLECTIONS_TYPE;
-import static jdk.nashorn.internal.tools.nasgen.StringConstants.COLLECTION_ADD;
-import static jdk.nashorn.internal.tools.nasgen.StringConstants.COLLECTION_ADD_DESC;
-import static jdk.nashorn.internal.tools.nasgen.StringConstants.COLLECTION_TYPE;
 import static jdk.nashorn.internal.tools.nasgen.StringConstants.DEFAULT_INIT_DESC;
 import static jdk.nashorn.internal.tools.nasgen.StringConstants.GETTER_PREFIX;
 import static jdk.nashorn.internal.tools.nasgen.StringConstants.GET_CLASS_NAME;
 import static jdk.nashorn.internal.tools.nasgen.StringConstants.GET_CLASS_NAME_DESC;
 import static jdk.nashorn.internal.tools.nasgen.StringConstants.INIT;
+import static jdk.nashorn.internal.tools.nasgen.StringConstants.ACCESSORPROPERTY_CREATE;
+import static jdk.nashorn.internal.tools.nasgen.StringConstants.ACCESSORPROPERTY_CREATE_DESC;
+import static jdk.nashorn.internal.tools.nasgen.StringConstants.ACCESSORPROPERTY_TYPE;
 import static jdk.nashorn.internal.tools.nasgen.StringConstants.LIST_DESC;
-import static jdk.nashorn.internal.tools.nasgen.StringConstants.OBJECT_DESC;
+import static jdk.nashorn.internal.tools.nasgen.StringConstants.ARRAYLIST_TYPE;
+import static jdk.nashorn.internal.tools.nasgen.StringConstants.ARRAYLIST_INIT_DESC;
+import static jdk.nashorn.internal.tools.nasgen.StringConstants.COLLECTION_TYPE;
+import static jdk.nashorn.internal.tools.nasgen.StringConstants.COLLECTION_ADD;
+import static jdk.nashorn.internal.tools.nasgen.StringConstants.COLLECTION_ADD_DESC;
+import static jdk.nashorn.internal.tools.nasgen.StringConstants.COLLECTIONS_TYPE;
+import static jdk.nashorn.internal.tools.nasgen.StringConstants.COLLECTIONS_EMPTY_LIST;
 import static jdk.nashorn.internal.tools.nasgen.StringConstants.PROPERTYMAP_DESC;
 import static jdk.nashorn.internal.tools.nasgen.StringConstants.PROPERTYMAP_FIELD_NAME;
+import static jdk.nashorn.internal.tools.nasgen.StringConstants.PROPERTYMAP_SETISSHARED;
+import static jdk.nashorn.internal.tools.nasgen.StringConstants.PROPERTYMAP_SETISSHARED_DESC;
 import static jdk.nashorn.internal.tools.nasgen.StringConstants.PROPERTYMAP_NEWMAP;
 import static jdk.nashorn.internal.tools.nasgen.StringConstants.PROPERTYMAP_NEWMAP_DESC;
 import static jdk.nashorn.internal.tools.nasgen.StringConstants.PROPERTYMAP_TYPE;
-import static jdk.nashorn.internal.tools.nasgen.StringConstants.SCRIPTFUNCTION_CREATEBUILTIN;
-import static jdk.nashorn.internal.tools.nasgen.StringConstants.SCRIPTFUNCTION_CREATEBUILTIN_DESC;
-import static jdk.nashorn.internal.tools.nasgen.StringConstants.SCRIPTFUNCTION_CREATEBUILTIN_SPECS_DESC;
+import static jdk.nashorn.internal.tools.nasgen.StringConstants.OBJECT_DESC;
+import static jdk.nashorn.internal.tools.nasgen.StringConstants.SCRIPTFUNCTIONIMPL_MAKEFUNCTION;
+import static jdk.nashorn.internal.tools.nasgen.StringConstants.SCRIPTFUNCTIONIMPL_MAKEFUNCTION_DESC;
+import static jdk.nashorn.internal.tools.nasgen.StringConstants.SCRIPTFUNCTIONIMPL_MAKEFUNCTION_SPECS_DESC;
+import static jdk.nashorn.internal.tools.nasgen.StringConstants.SCRIPTFUNCTIONIMPL_TYPE;
 import static jdk.nashorn.internal.tools.nasgen.StringConstants.SCRIPTFUNCTION_SETARITY;
 import static jdk.nashorn.internal.tools.nasgen.StringConstants.SCRIPTFUNCTION_SETARITY_DESC;
 import static jdk.nashorn.internal.tools.nasgen.StringConstants.SCRIPTFUNCTION_TYPE;
@@ -188,6 +191,8 @@ public class ClassGenerator {
         // stack: Collection
         // pmap = PropertyMap.newMap(Collection<Property>);
         mi.invokeStatic(PROPERTYMAP_TYPE, PROPERTYMAP_NEWMAP, PROPERTYMAP_NEWMAP_DESC);
+        // pmap.setIsShared();
+        mi.invokeVirtual(PROPERTYMAP_TYPE, PROPERTYMAP_SETISSHARED, PROPERTYMAP_SETISSHARED_DESC);
         // $nasgenmap$ = pmap;
         mi.putStatic(className, PROPERTYMAP_FIELD_NAME, PROPERTYMAP_DESC);
         mi.returnVoid();
@@ -281,9 +286,9 @@ public class ClassGenerator {
         assert specs != null;
         if (!specs.isEmpty()) {
             mi.memberInfoArray(className, specs);
-            mi.invokeStatic(SCRIPTFUNCTION_TYPE, SCRIPTFUNCTION_CREATEBUILTIN, SCRIPTFUNCTION_CREATEBUILTIN_SPECS_DESC);
+            mi.invokeStatic(SCRIPTFUNCTIONIMPL_TYPE, SCRIPTFUNCTIONIMPL_MAKEFUNCTION, SCRIPTFUNCTIONIMPL_MAKEFUNCTION_SPECS_DESC);
         } else {
-            mi.invokeStatic(SCRIPTFUNCTION_TYPE, SCRIPTFUNCTION_CREATEBUILTIN, SCRIPTFUNCTION_CREATEBUILTIN_DESC);
+            mi.invokeStatic(SCRIPTFUNCTIONIMPL_TYPE, SCRIPTFUNCTIONIMPL_MAKEFUNCTION, SCRIPTFUNCTIONIMPL_MAKEFUNCTION_DESC);
         }
 
         if (arityFound) {
@@ -291,6 +296,7 @@ public class ClassGenerator {
             mi.push(memInfo.getArity());
             mi.invokeVirtual(SCRIPTFUNCTION_TYPE, SCRIPTFUNCTION_SETARITY, SCRIPTFUNCTION_SETARITY_DESC);
         }
+
     }
 
     static void linkerAddGetterSetter(final MethodGenerator mi, final String className, final MemberInfo memInfo) {

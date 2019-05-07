@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008, 2013 Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2008, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -44,7 +44,6 @@ public class LocalRMIServerSocketFactoryTest {
 
     private static final SynchronousQueue<Exception> queue =
             new SynchronousQueue<Exception>();
-    private static volatile boolean isRunning = true;
 
     static final class Result extends Exception {
 
@@ -92,23 +91,19 @@ public class LocalRMIServerSocketFactoryTest {
         Thread t = new Thread() {
 
             public void run() {
-                while (isRunning) {
+                while (true) {
                     Exception error = Result.SUCCESS;
                     try {
                         System.err.println("Accepting: ");
                         final Socket ss = s.accept();
                         System.err.println(ss.getInetAddress() + " accepted");
                     } catch (Exception x) {
-                        if (isRunning) {
-                            x.printStackTrace();
-                        }
+                        x.printStackTrace();
                         error = x;
                     } finally {
                         try {
-                            if (isRunning) {
-                                // wait for the client to get the exception.
-                                queue.put(error);
-                            }
+                            // wait for the client to get the exception.
+                            queue.put(error);
                         } catch (Exception x) {
                             // too bad!
                             System.err.println("Could't send result to client!");
@@ -119,38 +114,32 @@ public class LocalRMIServerSocketFactoryTest {
                 }
             }
         };
+        t.setDaemon(true);
+        t.start();
 
-        try {
-            t.start();
+        System.err.println("new Socket((String)null, port)");
+        final Socket s1 = new Socket((String) null, port);
+        checkError("new Socket((String)null, port)");
+        s1.close();
+        System.err.println("new Socket((String)null, port): PASSED");
 
-            System.err.println("new Socket((String)null, port)");
-            final Socket s1 = new Socket((String) null, port);
-            checkError("new Socket((String)null, port)");
-            s1.close();
-            System.err.println("new Socket((String)null, port): PASSED");
+        System.err.println("new Socket(InetAddress.getByName(null), port)");
+        final Socket s2 = new Socket(InetAddress.getByName(null), port);
+        checkError("new Socket(InetAddress.getByName(null), port)");
+        s2.close();
+        System.err.println("new Socket(InetAddress.getByName(null), port): PASSED");
 
-            System.err.println("new Socket(InetAddress.getByName(null), port)");
-            final Socket s2 = new Socket(InetAddress.getByName(null), port);
-            checkError("new Socket(InetAddress.getByName(null), port)");
-            s2.close();
-            System.err.println("new Socket(InetAddress.getByName(null), port): PASSED");
+        System.err.println("new Socket(localhost, port)");
+        final Socket s3 = new Socket("localhost", port);
+        checkError("new Socket(localhost, port)");
+        s3.close();
+        System.err.println("new Socket(localhost, port): PASSED");
 
-            System.err.println("new Socket(localhost, port)");
-            final Socket s3 = new Socket("localhost", port);
-            checkError("new Socket(localhost, port)");
-            s3.close();
-            System.err.println("new Socket(localhost, port): PASSED");
+        System.err.println("new Socket(127.0.0.1, port)");
+        final Socket s4 = new Socket("127.0.0.1", port);
+        checkError("new Socket(127.0.0.1, port)");
+        s4.close();
+        System.err.println("new Socket(127.0.0.1, port): PASSED");
 
-            System.err.println("new Socket(127.0.0.1, port)");
-            final Socket s4 = new Socket("127.0.0.1", port);
-            checkError("new Socket(127.0.0.1, port)");
-            s4.close();
-            System.err.println("new Socket(127.0.0.1, port): PASSED");
-        }
-        finally {
-            isRunning = false;
-            s.close();
-            t.join();
-        }
     }
 }

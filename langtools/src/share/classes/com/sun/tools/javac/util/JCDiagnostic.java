@@ -355,40 +355,12 @@ public class JCDiagnostic implements Diagnostic<JavaFileObject> {
     private final DiagnosticType type;
     private final DiagnosticSource source;
     private final DiagnosticPosition position;
+    private final int line;
+    private final int column;
     private final String key;
     protected final Object[] args;
     private final Set<DiagnosticFlag> flags;
     private final LintCategory lintCategory;
-
-    /** source line position (set lazily) */
-    private SourcePosition sourcePosition;
-
-    /**
-     * This class is used to defer the line/column position fetch logic after diagnostic construction.
-     */
-    class SourcePosition {
-
-        private final int line;
-        private final int column;
-
-        SourcePosition() {
-            int n = (position == null ? Position.NOPOS : position.getPreferredPosition());
-            if (n == Position.NOPOS || source == null)
-                line = column = -1;
-            else {
-                line = source.getLineNumber(n);
-                column = source.getColumnNumber(n, true);
-            }
-        }
-
-        public int getLineNumber() {
-            return line;
-        }
-
-        public int getColumnNumber() {
-            return column;
-        }
-    }
 
     /**
      * Create a diagnostic object.
@@ -419,6 +391,14 @@ public class JCDiagnostic implements Diagnostic<JavaFileObject> {
         this.position = pos;
         this.key = key;
         this.args = args;
+
+        int n = (pos == null ? Position.NOPOS : pos.getPreferredPosition());
+        if (n == Position.NOPOS || source == null)
+            line = column = -1;
+        else {
+            line = source.getLineNumber(n);
+            column = source.getColumnNumber(n, true);
+        }
     }
 
     /**
@@ -515,10 +495,7 @@ public class JCDiagnostic implements Diagnostic<JavaFileObject> {
      * @return  the line number within the source referred to by this diagnostic
      */
     public long getLineNumber() {
-        if (sourcePosition == null) {
-            sourcePosition = new SourcePosition();
-        }
-        return sourcePosition.getLineNumber();
+        return line;
     }
 
     /**
@@ -526,10 +503,7 @@ public class JCDiagnostic implements Diagnostic<JavaFileObject> {
      * @return  the column number within the line of source referred to by this diagnostic
      */
     public long getColumnNumber() {
-        if (sourcePosition == null) {
-            sourcePosition = new SourcePosition();
-        }
-        return sourcePosition.getColumnNumber();
+        return column;
     }
 
     /**

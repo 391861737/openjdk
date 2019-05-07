@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 1997, 2017, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 1997, 2013, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -39,16 +39,15 @@ class ExceptionCache : public CHeapObj<mtCode> {
   Klass*   _exception_type;
   address  _pc[cache_size];
   address  _handler[cache_size];
-  volatile int _count;
+  int      _count;
   ExceptionCache* _next;
 
   address pc_at(int index)                     { assert(index >= 0 && index < count(),""); return _pc[index]; }
   void    set_pc_at(int index, address a)      { assert(index >= 0 && index < cache_size,""); _pc[index] = a; }
   address handler_at(int index)                { assert(index >= 0 && index < count(),""); return _handler[index]; }
   void    set_handler_at(int index, address a) { assert(index >= 0 && index < cache_size,""); _handler[index] = a; }
-  int     count()                              { return OrderAccess::load_acquire(&_count); }
-  // increment_count is only called under lock, but there may be concurrent readers.
-  void    increment_count()                    { OrderAccess::release_store(&_count, _count + 1); }
+  int     count()                              { return _count; }
+  void    increment_count()                    { _count++; }
 
  public:
 
@@ -70,12 +69,7 @@ class PcDescCache VALUE_OBJ_CLASS_SPEC {
   friend class VMStructs;
  private:
   enum { cache_size = 4 };
-  // The array elements MUST be volatile! Several threads may modify
-  // and read from the cache concurrently. find_pc_desc_internal has
-  // returned wrong results. C++ compiler (namely xlC12) may duplicate
-  // C++ field accesses if the elements are not volatile.
-  typedef PcDesc* PcDescPtr;
-  volatile PcDescPtr _pc_descs[cache_size]; // last cache_size pc_descs found
+  PcDesc* _pc_descs[cache_size]; // last cache_size pc_descs found
  public:
   PcDescCache() { debug_only(_pc_descs[0] = NULL); }
   void    reset_to(PcDesc* initial_pc_desc);
@@ -117,11 +111,6 @@ class nmethod : public CodeBlob {
   friend class NMethodSweeper;
   friend class CodeCache;  // scavengable oops
  private:
-
-  // GC support to help figure out if an nmethod has been
-  // cleaned/unloaded by the current GC.
-  static unsigned char _global_unloading_clock;
-
   // Shared fields for all nmethod's
   Method*   _method;
   int       _entry_bci;        // != InvocationEntryBci if this nmethod is an on-stack replacement method
@@ -129,13 +118,7 @@ class nmethod : public CodeBlob {
 
   // To support simple linked-list chaining of nmethods:
   nmethod*  _osr_link;         // from InstanceKlass::osr_nmethods_head
-
-  union {
-    // Used by G1 to chain nmethods.
-    nmethod* _unloading_next;
-    // Used by non-G1 GCs to chain nmethods.
-    nmethod* _scavenge_root_link; // from CodeCache::scavenge_root_nmethods
-  };
+  nmethod*  _scavenge_root_link; // from CodeCache::scavenge_root_nmethods
 
   static nmethod* volatile _oops_do_mark_nmethods;
   nmethod*        volatile _oops_do_mark_link;
@@ -197,8 +180,6 @@ class nmethod : public CodeBlob {
   // Protected by Patching_lock
   volatile unsigned char _state;             // {alive, not_entrant, zombie, unloaded}
 
-  volatile unsigned char _unloading_clock;   // Incremented after GC unloaded/cleaned the nmethod
-
 #ifdef ASSERT
   bool _oops_are_stale;  // indicates that it's no longer safe to access oops section
 #endif
@@ -211,12 +192,6 @@ class nmethod : public CodeBlob {
                              // will be transformed to zombie immediately
 
   jbyte _scavenge_root_state;
-
-#if INCLUDE_RTM_OPT
-  // RTM state at compile time. Used during deoptimization to decide
-  // whether to restart collecting RTM locking abort statistic again.
-  RTMState _rtm_state;
-#endif
 
   // Nmethod Flushing lock. If non-zero, then the nmethod is not removed
   // and is not made into a zombie. However, once the nmethod is made into
@@ -238,7 +213,7 @@ class nmethod : public CodeBlob {
   // counter is decreased (by 1) while sweeping.
   int _hotness_counter;
 
-  ExceptionCache * volatile _exception_cache;
+  ExceptionCache *_exception_cache;
   PcDescCache     _pc_desc_cache;
 
   // These are used for compiled synchronized native methods to
@@ -434,39 +409,21 @@ class nmethod : public CodeBlob {
 
   // flag accessing and manipulation
   bool  is_in_use() const                         { return _state == in_use; }
-  bool  is_alive() const                          { unsigned char s = _state; return s == in_use || s == not_entrant; }
+  bool  is_alive() const                          { return _state == in_use || _state == not_entrant; }
   bool  is_not_entrant() const                    { return _state == not_entrant; }
   bool  is_zombie() const                         { return _state == zombie; }
   bool  is_unloaded() const                       { return _state == unloaded;   }
-
-#if INCLUDE_RTM_OPT
-  // rtm state accessing and manipulating
-  RTMState  rtm_state() const                     { return _rtm_state; }
-  void set_rtm_state(RTMState state)              { _rtm_state = state; }
-#endif
 
   // Make the nmethod non entrant. The nmethod will continue to be
   // alive.  It is used when an uncommon trap happens.  Returns true
   // if this thread changed the state of the nmethod or false if
   // another thread performed the transition.
-  bool  make_not_entrant() {
-    assert(!method()->is_method_handle_intrinsic(), "Cannot make MH intrinsic not entrant");
-    return make_not_entrant_or_zombie(not_entrant);
-  }
+  bool  make_not_entrant() { return make_not_entrant_or_zombie(not_entrant); }
   bool  make_zombie()      { return make_not_entrant_or_zombie(zombie); }
 
   // used by jvmti to track if the unload event has been reported
   bool  unload_reported()                         { return _unload_reported; }
   void  set_unload_reported()                     { _unload_reported = true; }
-
-  void set_unloading_next(nmethod* next)          { _unloading_next = next; }
-  nmethod* unloading_next()                       { return _unloading_next; }
-
-  static unsigned char global_unloading_clock()   { return _global_unloading_clock; }
-  static void increase_unloading_clock();
-
-  void set_unloading_clock(unsigned char unloading_clock);
-  unsigned char unloading_clock();
 
   bool  is_marked_for_deoptimization() const      { return _marked_for_deoptimization; }
   void  mark_for_deoptimization()                 { _marked_for_deoptimization = true; }
@@ -556,13 +513,11 @@ public:
   void  set_stack_traversal_mark(long l)          { _stack_traversal_mark = l; }
 
   // Exception cache support
-  // Note: _exception_cache may be read concurrently. We rely on memory_order_consume here.
   ExceptionCache* exception_cache() const         { return _exception_cache; }
   void set_exception_cache(ExceptionCache *ec)    { _exception_cache = ec; }
-  void release_set_exception_cache(ExceptionCache *ec) { OrderAccess::release_store_ptr(&_exception_cache, ec); }
   address handler_for_exception_and_pc(Handle exception, address pc);
   void add_handler_for_exception_and_pc(Handle exception, address pc, address handler);
-  void clean_exception_cache(BoolObjectClosure* is_alive);
+  void remove_from_exception_cache(ExceptionCache* ec);
 
   // implicit exceptions support
   address continuation_for_implicit_exception(address pc);
@@ -580,16 +535,11 @@ public:
 
   // Inline cache support
   void clear_inline_caches();
-  void clear_ic_stubs();
   void cleanup_inline_caches();
   bool inlinecache_check_contains(address addr) const {
     return (addr >= code_begin() && addr < verified_entry_point());
   }
 
-  // Verify calls to dead methods have been cleaned.
-  void verify_clean_inline_caches();
-  // Verify and count cached icholder relocations.
-  int  verify_icholder_relocations();
   // Check that all metadata is still alive
   void verify_metadata_loaders(address low_boundary, BoolObjectClosure* is_alive);
 
@@ -608,26 +558,15 @@ public:
 
   // See comment at definition of _last_seen_on_stack
   void mark_as_seen_on_stack();
-  bool can_convert_to_zombie();
+  bool can_not_entrant_be_converted();
 
   // Evolution support. We make old (discarded) compiled methods point to new Method*s.
   void set_method(Method* method) { _method = method; }
 
   // GC support
   void do_unloading(BoolObjectClosure* is_alive, bool unloading_occurred);
-  //  The parallel versions are used by G1.
-  bool do_unloading_parallel(BoolObjectClosure* is_alive, bool unloading_occurred);
-  void do_unloading_parallel_postponed(BoolObjectClosure* is_alive, bool unloading_occurred);
-
- private:
-  //  Unload a nmethod if the *root object is dead.
   bool can_unload(BoolObjectClosure* is_alive, oop* root, bool unloading_occurred);
-  bool unload_if_dead_at(RelocIterator *iter_at_oop, BoolObjectClosure* is_alive, bool unloading_occurred);
 
-  void mark_metadata_on_stack_at(RelocIterator* iter_at_metadata);
-  void mark_metadata_on_stack_non_relocs();
-
- public:
   void preserve_callee_argument_oops(frame fr, const RegisterMap *reg_map,
                                      OopClosure* f);
   void oops_do(OopClosure* f) { oops_do(f, false); }

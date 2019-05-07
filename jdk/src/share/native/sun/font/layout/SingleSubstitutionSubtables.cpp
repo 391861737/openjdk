@@ -94,9 +94,7 @@ le_uint32 SingleSubstitutionFormat2Subtable::process(const LEReferenceTo<SingleS
         return 0;
     }
 
-    LEReferenceToArrayOf<TTGlyphID> substituteArrayRef(base, success, substituteArray, SWAPW(glyphCount));
-
-    if (coverageIndex >= 0 && LE_SUCCESS(success) && coverageIndex < substituteArrayRef.getCount()) {
+    if (coverageIndex >= 0) {
         TTGlyphID substitute = SWAPW(substituteArray[coverageIndex]);
 
         if (filter == NULL || filter->accept(LE_SET_GLYPH(glyph, substitute), success)) {

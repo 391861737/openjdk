@@ -25,13 +25,12 @@
 
 package jdk.nashorn.test.models;
 
-@SuppressWarnings("javadoc")
 public class DessertToppingFloorWaxDriver {
-    public void decorateDessert(final DessertTopping dt) {
+    public void decorateDessert(DessertTopping dt) {
         dt.pourOnDessert();
     }
 
-    public void waxFloor(final FloorWax fw) {
+    public void waxFloor(FloorWax fw) {
         fw.shineUpTheFloor();
     }
 }

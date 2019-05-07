@@ -57,7 +57,7 @@ static CFMutableArrayRef getAllValidDisplayModes(jint displayID){
     CFArrayRef allModes = CGDisplayCopyAllDisplayModes(displayID, NULL);
 
     CFIndex numModes = CFArrayGetCount(allModes);
-    CFMutableArrayRef validModes = CFArrayCreateMutable(kCFAllocatorDefault, numModes + 1, &kCFTypeArrayCallBacks);
+    CFMutableArrayRef validModes = CFArrayCreateMutable(kCFAllocatorDefault, numModes + 1, NULL);
 
     CFIndex n;
     for (n=0; n < numModes; n++) {
@@ -66,8 +66,7 @@ static CFMutableArrayRef getAllValidDisplayModes(jint displayID){
             CFArrayAppendValue(validModes, cRef);
         }
     }
-    CFRelease(allModes);
-    
+
     CGDisplayModeRef currentMode = CGDisplayCopyDisplayMode(displayID);
 
     BOOL containsCurrentMode = NO;
@@ -82,7 +81,6 @@ static CFMutableArrayRef getAllValidDisplayModes(jint displayID){
     if (!containsCurrentMode) {
         CFArrayAppendValue(validModes, currentMode);
     }
-    CGDisplayModeRelease(currentMode);
 
     return validModes;
 }
@@ -237,19 +235,17 @@ Java_sun_awt_CGraphicsDevice_nativeSetDisplayMode
 {
     JNF_COCOA_ENTER(env);
     CFArrayRef allModes = getAllValidDisplayModes(displayID);
+
     CGDisplayModeRef closestMatch = getBestModeForParameters(allModes, (int)w, (int)h, (int)bpp, (int)refrate);
-    
     __block CGError retCode = kCGErrorSuccess;
     if (closestMatch != NULL) {
-        CGDisplayModeRetain(closestMatch);
-        [ThreadUtilities performOnMainThreadWaiting:YES block:^(){
+        [JNFRunLoop performOnMainThreadWaiting:YES withBlock:^(){
             CGDisplayConfigRef config;
             retCode = CGBeginDisplayConfiguration(&config);
             if (retCode == kCGErrorSuccess) {
                 CGConfigureDisplayWithDisplayMode(config, displayID, closestMatch, NULL);
                 retCode = CGCompleteDisplayConfiguration(config, kCGConfigureForAppOnly);
             }
-            CGDisplayModeRelease(closestMatch);
         }];
     } else {
         [JNFException raise:env as:kIllegalArgumentException reason:"Invalid display mode"];
@@ -257,7 +253,8 @@ Java_sun_awt_CGraphicsDevice_nativeSetDisplayMode
 
     if (retCode != kCGErrorSuccess){
         [JNFException raise:env as:kIllegalArgumentException reason:"Unable to set display mode!"];
-    }
+    }    
+
     CFRelease(allModes);
     JNF_COCOA_EXIT(env);
 }

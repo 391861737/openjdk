@@ -27,7 +27,36 @@
 
 #include "oops/arrayOop.hpp"
 #include "oops/typeArrayKlass.hpp"
-#include "runtime/orderAccess.inline.hpp"
+#ifdef TARGET_OS_ARCH_linux_x86
+# include "orderAccess_linux_x86.inline.hpp"
+#endif
+#ifdef TARGET_OS_ARCH_linux_sparc
+# include "orderAccess_linux_sparc.inline.hpp"
+#endif
+#ifdef TARGET_OS_ARCH_linux_zero
+# include "orderAccess_linux_zero.inline.hpp"
+#endif
+#ifdef TARGET_OS_ARCH_solaris_x86
+# include "orderAccess_solaris_x86.inline.hpp"
+#endif
+#ifdef TARGET_OS_ARCH_solaris_sparc
+# include "orderAccess_solaris_sparc.inline.hpp"
+#endif
+#ifdef TARGET_OS_ARCH_windows_x86
+# include "orderAccess_windows_x86.inline.hpp"
+#endif
+#ifdef TARGET_OS_ARCH_linux_arm
+# include "orderAccess_linux_arm.inline.hpp"
+#endif
+#ifdef TARGET_OS_ARCH_linux_ppc
+# include "orderAccess_linux_ppc.inline.hpp"
+#endif
+#ifdef TARGET_OS_ARCH_bsd_x86
+# include "orderAccess_bsd_x86.inline.hpp"
+#endif
+#ifdef TARGET_OS_ARCH_bsd_zero
+# include "orderAccess_bsd_zero.inline.hpp"
+#endif
 
 // A typeArrayOop is an array containing basic types (non oop elements).
 // It is used for arrays of {characters, singles, doubles, bytes, shorts, integers, longs}
@@ -96,7 +125,7 @@ class typeArrayOopDesc : public arrayOopDesc {
   void byte_at_put(int which, jbyte contents)     { *byte_at_addr(which) = contents; }
 
   jboolean bool_at(int which) const               { return *bool_at_addr(which); }
-  void bool_at_put(int which, jboolean contents)  { *bool_at_addr(which) = (((jint)contents) & 1); }
+  void bool_at_put(int which, jboolean contents)  { *bool_at_addr(which) = contents; }
 
   jchar char_at(int which) const                  { return *char_at_addr(which); }
   void char_at_put(int which, jchar contents)     { *char_at_addr(which) = contents; }
@@ -150,7 +179,7 @@ class typeArrayOopDesc : public arrayOopDesc {
     DEBUG_ONLY(BasicType etype = Klass::layout_helper_element_type(lh));
     assert(length <= arrayOopDesc::max_array_length(etype), "no overflow");
 
-    julong size_in_bytes = (juint)length;
+    julong size_in_bytes = length;
     size_in_bytes <<= element_shift;
     size_in_bytes += instance_header_size;
     julong size_in_words = ((size_in_bytes + (HeapWordSize-1)) >> LogHeapWordSize);

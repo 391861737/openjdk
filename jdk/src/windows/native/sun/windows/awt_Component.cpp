@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 1996, 2016, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 1996, 2013, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -98,6 +98,7 @@ BOOL AwtComponent::sm_restoreFocusAndActivation = FALSE;
 HWND AwtComponent::sm_focusOwner = NULL;
 HWND AwtComponent::sm_focusedWindow = NULL;
 BOOL AwtComponent::sm_bMenuLoop = FALSE;
+AwtComponent* AwtComponent::sm_getComponentCache = NULL;
 BOOL AwtComponent::sm_inSynthesizeFocus = FALSE;
 
 /************************************************************************/
@@ -255,8 +256,6 @@ AwtComponent::AwtComponent()
         AwtComponent::BuildPrimaryDynamicTable();
         sm_PrimaryDynamicTableBuilt = TRUE;
     }
-
-    deadKeyActive = FALSE;
 }
 
 AwtComponent::~AwtComponent()
@@ -273,6 +272,10 @@ AwtComponent::~AwtComponent()
      * handle.
      */
     DestroyHWnd();
+
+    if (sm_getComponentCache == this) {
+        sm_getComponentCache = NULL;
+    }
 }
 
 void AwtComponent::Dispose()
@@ -345,6 +348,9 @@ AwtComponent* AwtComponent::GetComponent(HWND hWnd) {
     if (hWnd == AwtToolkit::GetInstance().GetHWnd()) {
         return NULL;
     }
+    if (sm_getComponentCache && sm_getComponentCache->GetHWnd() == hWnd) {
+        return sm_getComponentCache;
+    }
 
     // check that it's an AWT component from the same toolkit as the caller
     if (::IsWindow(hWnd) &&
@@ -352,7 +358,7 @@ AwtComponent* AwtComponent::GetComponent(HWND hWnd) {
     {
         DASSERT(WmAwtIsComponent != 0);
         if (::SendMessage(hWnd, WmAwtIsComponent, 0, 0L)) {
-            return GetComponentImpl(hWnd);
+            return sm_getComponentCache = GetComponentImpl(hWnd);
         }
     }
     return NULL;
@@ -461,9 +467,6 @@ void AwtComponent::InitPeerGraphicsConfig(JNIEnv *env, jobject peer)
         jclass win32GCCls = env->FindClass("sun/awt/Win32GraphicsConfig");
         DASSERT(win32GCCls != NULL);
         DASSERT(env->IsInstanceOf(compGC, win32GCCls));
-        if (win32GCCls == NULL) {
-            throw std::bad_alloc();
-        }
         env->SetObjectField(peer, AwtComponent::peerGCID, compGC);
     }
 }
@@ -488,12 +491,7 @@ AwtComponent::CreateHWnd(JNIEnv *env, LPCWSTR title,
      * member is referred in the GetClassName method of AwtLabel class.
      * So m_peerObject member must be set here.
      */
-    if (m_peerObject == NULL) {
-        m_peerObject = env->NewGlobalRef(peer);
-    } else {
-        assert(env->IsSameObject(m_peerObject, peer));
-    }
-
+    m_peerObject = env->NewGlobalRef(peer);
     RegisterClass();
 
     jobject target = env->GetObjectField(peer, AwtObject::targetID);
@@ -532,15 +530,10 @@ AwtComponent::CreateHWnd(JNIEnv *env, LPCWSTR title,
         if (dw == ERROR_OUTOFMEMORY)
         {
             jstring errorMsg = JNU_NewStringPlatform(env, L"too many window handles");
-            if (errorMsg == NULL || env->ExceptionCheck()) {
-                env->ExceptionClear();
-                createError = JNU_NewObjectByName(env, "java/lang/OutOfMemoryError", "()V");
-            } else {
-                createError = JNU_NewObjectByName(env, "java/lang/OutOfMemoryError",
+            createError = JNU_NewObjectByName(env, "java/lang/OutOfMemoryError",
                                                       "(Ljava/lang/String;)V",
                                                       errorMsg);
-                env->DeleteLocalRef(errorMsg);
-            }
+            env->DeleteLocalRef(errorMsg);
         }
         else
         {
@@ -549,18 +542,14 @@ AwtComponent::CreateHWnd(JNIEnv *env, LPCWSTR title,
                 NULL, dw, MAKELANGID(LANG_NEUTRAL, SUBLANG_DEFAULT),
                 (LPTSTR)&buf, 0, NULL);
             jstring s = JNU_NewStringPlatform(env, buf);
-            if (s == NULL || env->ExceptionCheck()) {
-                env->ExceptionClear();
-                createError = JNU_NewObjectByName(env, "java/lang/InternalError", "()V");
-            } else {
-                createError = JNU_NewObjectByName(env, "java/lang/InternalError",
-                                                                  "(Ljava/lang/String;)V", s);
-                env->DeleteLocalRef(s);
-            }
+            createError = JNU_NewObjectByName(env, "java/lang/InternalError",
+                                                  "(Ljava/lang/String;)V", s);
             LocalFree(buf);
+            env->DeleteLocalRef(s);
         }
-        if (createError != NULL) {
-            env->SetObjectField(peer, AwtObject::createErrorID, createError);
+        env->SetObjectField(peer, AwtObject::createErrorID, createError);
+        if (createError != NULL)
+        {
             env->DeleteLocalRef(createError);
         }
         env->DeleteLocalRef(target);
@@ -1376,7 +1365,7 @@ LRESULT AwtComponent::WindowProc(UINT message, WPARAM wParam, LPARAM lParam)
       case WM_AWT_RELEASEDC:
       {
             HDC hDC = (HDC)wParam;
-            MoveDCToPassiveList(hDC, GetHWnd());
+            MoveDCToPassiveList(hDC);
             ReleaseDCList(GetHWnd(), passiveDCList);
             mr = mrConsume;
             break;
@@ -1730,11 +1719,9 @@ LRESULT AwtComponent::WindowProc(UINT message, WPARAM wParam, LPARAM lParam)
       case WM_IME_SETCONTEXT:
           // lParam is passed as pointer and it can be modified.
           mr = WmImeSetContext(static_cast<BOOL>(wParam), &lParam);
-          CallProxyDefWindowProc(message, wParam, lParam, retValue, mr);
           break;
       case WM_IME_NOTIFY:
           mr = WmImeNotify(wParam, lParam);
-          CallProxyDefWindowProc(message, wParam, lParam, retValue, mr);
           break;
       case WM_IME_STARTCOMPOSITION:
           mr = WmImeStartComposition();
@@ -2137,7 +2124,19 @@ namespace TimeHelper {
     }
 
     jlong getMessageTimeUTC() {
-        return ::JVM_CurrentTimeMillis(NULL, 0);
+        return windowsToUTC(getMessageTimeWindows());
+    }
+
+    // If calling order of GetTickCount and JVM_CurrentTimeMillis
+    // is swapped, it would sometimes give different result.
+    // Anyway, we would not always have determinism
+    // and sortedness of time conversion here (due to Windows's
+    // timers peculiarities). Having some euristic algorithm might
+    // help here.
+    jlong windowsToUTC(DWORD windowsTime) {
+        jlong offset = ::GetTickCount() - windowsTime;
+        jlong jvm_time = ::JVM_CurrentTimeMillis(NULL, 0);
+        return jvm_time - offset;
     }
 } //TimeHelper
 
@@ -2930,7 +2929,6 @@ static const CharToVKEntry charToDeadVKTable[] = {
     {0x037A, java_awt_event_KeyEvent_VK_DEAD_IOTA},             // ASCII ???
     {0x309B, java_awt_event_KeyEvent_VK_DEAD_VOICED_SOUND},
     {0x309C, java_awt_event_KeyEvent_VK_DEAD_SEMIVOICED_SOUND},
-    {0x0004, java_awt_event_KeyEvent_VK_COMPOSE},
     {0,0}
 };
 
@@ -3311,7 +3309,10 @@ AwtComponent::BuildPrimaryDynamicTable() {
     if( extKeyCodesCls == NULL) {
         jclass extKeyCodesClsLocal = env->FindClass("sun/awt/ExtendedKeyCodes");
         DASSERT(extKeyCodesClsLocal);
-        CHECK_NULL(extKeyCodesClsLocal);
+        if (extKeyCodesClsLocal == NULL) {
+            /* exception already thrown */
+            return;
+        }
         extKeyCodesCls = (jclass)env->NewGlobalRef(extKeyCodesClsLocal);
         env->DeleteLocalRef(extKeyCodesClsLocal);
     }
@@ -3320,7 +3321,6 @@ AwtComponent::BuildPrimaryDynamicTable() {
         getExtendedKeyCodeForChar =
                   env->GetStaticMethodID(extKeyCodesCls, "getExtendedKeyCodeForChar", "(I)I");
         DASSERT(getExtendedKeyCodeForChar);
-        CHECK_NULL(getExtendedKeyCodeForChar);
     }
     jint extJKC; //extended Java key code
 
@@ -3423,9 +3423,8 @@ UINT AwtComponent::WindowsKeyToJavaChar(UINT wkey, UINT modifiers, TransOps ops,
     AwtToolkit::GetKeyboardState(keyboardState);
 
     // apply modifiers to keyboard state if necessary
-    BOOL shiftIsDown = FALSE;
     if (modifiers) {
-        shiftIsDown = modifiers & java_awt_event_InputEvent_SHIFT_DOWN_MASK;
+        BOOL shiftIsDown = modifiers & java_awt_event_InputEvent_SHIFT_DOWN_MASK;
         BOOL altIsDown = modifiers & java_awt_event_InputEvent_ALT_DOWN_MASK;
         BOOL ctrlIsDown = modifiers & java_awt_event_InputEvent_CTRL_DOWN_MASK;
 
@@ -3497,27 +3496,18 @@ UINT AwtComponent::WindowsKeyToJavaChar(UINT wkey, UINT modifiers, TransOps ops,
         } // ctrlIsDown
     } // modifiers
 
+    // instead of creating our own conversion tables, I'll let Win32
+    // convert the character for me.
     WORD wChar[2];
-    int converted = 1;
-    UINT ch = ::MapVirtualKeyEx(wkey, 2, GetKeyboardLayout());
-    if (ch & 0x80000000) {
-        // Dead key which is handled as a normal key
-        isDeadKey = deadKeyActive = TRUE;
-    } else if (deadKeyActive) {
-        // We cannot use ::ToUnicodeEx if dead key is active because this will
-        // break dead key function
-        wChar[0] = shiftIsDown ? ch : tolower(ch);
-    } else {
-        UINT scancode = ::MapVirtualKey(wkey, 0);
-        converted = ::ToUnicodeEx(wkey, scancode, keyboardState,
-                                              wChar, 2, 0, GetKeyboardLayout());
-    }
+    UINT scancode = ::MapVirtualKey(wkey, 0);
+    int converted = ::ToUnicodeEx(wkey, scancode, keyboardState,
+                                  wChar, 2, 0, GetKeyboardLayout());
 
     UINT translation;
     BOOL deadKeyFlag = (converted == 2);
 
     // Dead Key
-    if (converted < 0 || isDeadKey) {
+    if (converted < 0) {
         translation = java_awt_event_KeyEvent_CHAR_UNDEFINED;
     } else
     // No translation available -- try known conversions or else punt.
@@ -3573,7 +3563,7 @@ MsgRouting AwtComponent::WmKeyDown(UINT wkey, UINT repCnt,
 
 
     SendKeyEventToFocusOwner(java_awt_event_KeyEvent_KEY_PRESSED,
-                             TimeHelper::getMessageTimeUTC(), jkey, character,
+                             TimeHelper::windowsToUTC(msg.time), jkey, character,
                              modifiers, keyLocation, (jlong)wkey, &msg);
 
     // bugid 4724007: Windows does not create a WM_CHAR for the Del key
@@ -3583,7 +3573,7 @@ MsgRouting AwtComponent::WmKeyDown(UINT wkey, UINT repCnt,
     // for Java - we don't want Windows trying to process it).
     if (jkey == java_awt_event_KeyEvent_VK_DELETE) {
         SendKeyEventToFocusOwner(java_awt_event_KeyEvent_KEY_TYPED,
-                                 TimeHelper::getMessageTimeUTC(),
+                                 TimeHelper::windowsToUTC(msg.time),
                                  java_awt_event_KeyEvent_VK_UNDEFINED,
                                  character, modifiers,
                                  java_awt_event_KeyEvent_KEY_LOCATION_UNKNOWN, (jlong)0);
@@ -3615,7 +3605,7 @@ MsgRouting AwtComponent::WmKeyUp(UINT wkey, UINT repCnt,
     UpdateDynPrimaryKeymap(wkey, jkey, keyLocation, modifiers);
 
     SendKeyEventToFocusOwner(java_awt_event_KeyEvent_KEY_RELEASED,
-                             TimeHelper::getMessageTimeUTC(), jkey, character,
+                             TimeHelper::windowsToUTC(msg.time), jkey, character,
                              modifiers, keyLocation, (jlong)wkey, &msg);
     return mrConsume;
 }
@@ -3660,7 +3650,7 @@ MsgRouting AwtComponent::WmIMEChar(UINT character, UINT repCnt, UINT flags, BOOL
 
     jint modifiers = GetJavaModifiers();
     SendKeyEventToFocusOwner(java_awt_event_KeyEvent_KEY_TYPED,
-                             TimeHelper::getMessageTimeUTC(),
+                             TimeHelper::windowsToUTC(msg.time),
                              java_awt_event_KeyEvent_VK_UNDEFINED,
                              unicodeChar, modifiers,
                              java_awt_event_KeyEvent_KEY_LOCATION_UNKNOWN, (jlong)0,
@@ -3671,8 +3661,6 @@ MsgRouting AwtComponent::WmIMEChar(UINT character, UINT repCnt, UINT flags, BOOL
 MsgRouting AwtComponent::WmChar(UINT character, UINT repCnt, UINT flags,
                                 BOOL system)
 {
-    deadKeyActive = FALSE;
-
     // Will only get WmChar messages with DBCS if we create them for
     // an Edit class in the WmForwardChar method. These synthesized
     // DBCS chars are ok to pass on directly to the default window
@@ -3731,7 +3719,7 @@ MsgRouting AwtComponent::WmChar(UINT character, UINT repCnt, UINT flags,
     InitMessage(&msg, message, character,
                               MAKELPARAM(repCnt, flags));
     SendKeyEventToFocusOwner(java_awt_event_KeyEvent_KEY_TYPED,
-                             TimeHelper::getMessageTimeUTC(),
+                             TimeHelper::windowsToUTC(msg.time),
                              java_awt_event_KeyEvent_VK_UNDEFINED,
                              unicodeChar, modifiers,
                              java_awt_event_KeyEvent_KEY_LOCATION_UNKNOWN, (jlong)0,
@@ -3768,17 +3756,12 @@ void AwtComponent::SetCompositionWindow(RECT& r)
 void AwtComponent::OpenCandidateWindow(int x, int y)
 {
     UINT bits = 1;
-    POINT p = {0, 0}; // upper left corner of the client area
-    HWND hWnd = GetHWnd();
-    HWND hTop = GetTopLevelParentForWindow(hWnd);
-    ::ClientToScreen(hTop, &p);
-    if (!m_bitsCandType) {
-        SetCandidateWindow(m_bitsCandType, x - p.x, y - p.y);
-        return;
-    }
+    RECT rc;
+    GetWindowRect(GetHWnd(), &rc);
+
     for (int iCandType=0; iCandType<32; iCandType++, bits<<=1) {
         if ( m_bitsCandType & bits )
-            SetCandidateWindow(iCandType, x - p.x, y - p.y);
+            SetCandidateWindow(iCandType, x-rc.left, y-rc.top);
     }
     if (m_bitsCandType != 0) {
         // REMIND: is there any chance GetProxyFocusOwner() returns NULL here?
@@ -3793,7 +3776,7 @@ void AwtComponent::SetCandidateWindow(int iCandType, int x, int y)
     HIMC hIMC = ImmGetContext(hwnd);
     CANDIDATEFORM cf;
     cf.dwIndex = iCandType;
-    cf.dwStyle = CFS_POINT;
+    cf.dwStyle = CFS_CANDIDATEPOS;
     cf.ptCurrentPos.x = x;
     cf.ptCurrentPos.y = y;
 
@@ -3825,15 +3808,9 @@ MsgRouting AwtComponent::WmImeSetContext(BOOL fSet, LPARAM *lplParam)
 
 MsgRouting AwtComponent::WmImeNotify(WPARAM subMsg, LPARAM bitsCandType)
 {
-    if (!m_useNativeCompWindow) {
-        if (subMsg == IMN_OPENCANDIDATE) {
-            m_bitsCandType = subMsg;
-            InquireCandidatePosition();
-        } else if (subMsg == IMN_OPENSTATUSWINDOW ||
-                   subMsg == WM_IME_STARTCOMPOSITION) {
-            m_bitsCandType = 0;
-            InquireCandidatePosition();
-        }
+    if (!m_useNativeCompWindow && subMsg == IMN_OPENCANDIDATE) {
+        m_bitsCandType = bitsCandType;
+        InquireCandidatePosition();
         return mrConsume;
     }
     return mrDoDefault;
@@ -3963,18 +3940,11 @@ void AwtComponent::SendInputMethodEvent(jint id, jstring text,
     if (cClause && rgClauseBoundary && rgClauseReading) {
         // convert clause boundary offset array to java array
         clauseBoundary = env->NewIntArray(cClause+1);
-        DASSERT(clauseBoundary);
-        CHECK_NULL(clauseBoundary);
         env->SetIntArrayRegion(clauseBoundary, 0, cClause+1, (jint *)rgClauseBoundary);
         DASSERT(!safe_ExceptionOccurred(env));
 
         // convert clause reading string array to java array
-        jclass stringCls = JNU_ClassString(env);
-        DASSERT(stringCls);
-        CHECK_NULL(stringCls);
-        clauseReading = env->NewObjectArray(cClause, stringCls, NULL);
-        DASSERT(clauseReading);
-        CHECK_NULL(clauseReading);
+        clauseReading = env->NewObjectArray(cClause, JNU_ClassString(env), NULL);
         for (int i=0; i<cClause; i++)   env->SetObjectArrayElement(clauseReading, i, rgClauseReading[i]);
         DASSERT(!safe_ExceptionOccurred(env));
     }
@@ -3993,15 +3963,11 @@ void AwtComponent::SendInputMethodEvent(jint id, jstring text,
     if (cAttrBlock && rgAttrBoundary && rgAttrValue) {
         // convert attribute boundary offset array to java array
         attrBoundary = env->NewIntArray(cAttrBlock+1);
-        DASSERT(attrBoundary);
-        CHECK_NULL(attrBoundary);
         env->SetIntArrayRegion(attrBoundary, 0, cAttrBlock+1, (jint *)rgAttrBoundary);
         DASSERT(!safe_ExceptionOccurred(env));
 
         // convert attribute value byte array to java array
         attrValue = env->NewByteArray(cAttrBlock);
-        DASSERT(attrValue);
-        CHECK_NULL(attrValue);
         env->SetByteArrayRegion(attrValue, 0, cAttrBlock, (jbyte *)rgAttrValue);
         DASSERT(!safe_ExceptionOccurred(env));
     }
@@ -4012,7 +3978,10 @@ void AwtComponent::SendInputMethodEvent(jint id, jstring text,
     if (wInputMethodCls == NULL) {
         jclass wInputMethodClsLocal = env->FindClass("sun/awt/windows/WInputMethod");
         DASSERT(wInputMethodClsLocal);
-        CHECK_NULL(wInputMethodClsLocal);
+        if (wInputMethodClsLocal == NULL) {
+            /* exception already thrown */
+            return;
+        }
         wInputMethodCls = (jclass)env->NewGlobalRef(wInputMethodClsLocal);
         env->DeleteLocalRef(wInputMethodClsLocal);
     }
@@ -4023,7 +3992,6 @@ void AwtComponent::SendInputMethodEvent(jint id, jstring text,
         sendIMEventMid =  env->GetMethodID(wInputMethodCls, "sendInputMethodEvent",
                                            "(IJLjava/lang/String;[I[Ljava/lang/String;[I[BIII)V");
         DASSERT(sendIMEventMid);
-        CHECK_NULL(sendIMEventMid);
     }
 
     // call m_InputMethod.sendInputMethod()
@@ -4049,7 +4017,10 @@ void AwtComponent::InquireCandidatePosition()
     if (wInputMethodCls == NULL) {
         jclass wInputMethodClsLocal = env->FindClass("sun/awt/windows/WInputMethod");
         DASSERT(wInputMethodClsLocal);
-        CHECK_NULL(wInputMethodClsLocal);
+        if (wInputMethodClsLocal == NULL) {
+            /* exception already thrown */
+            return;
+        }
         wInputMethodCls = (jclass)env->NewGlobalRef(wInputMethodClsLocal);
         env->DeleteLocalRef(wInputMethodClsLocal);
     }
@@ -4057,10 +4028,10 @@ void AwtComponent::InquireCandidatePosition()
     // get method ID of sendInputMethodEvent() (run only once)
     static jmethodID inqCandPosMid = 0;
     if (inqCandPosMid == 0) {
-        inqCandPosMid =  env->GetMethodID(wInputMethodCls, "inquireCandidatePosition", "()V");
+        inqCandPosMid =  env->GetMethodID(wInputMethodCls, "inquireCandidatePosition",
+                                           "()V");
         DASSERT(!safe_ExceptionOccurred(env));
         DASSERT(inqCandPosMid);
-        CHECK_NULL(inqCandPosMid);
     }
 
     // call m_InputMethod.sendInputMethod()
@@ -4093,14 +4064,14 @@ HWND AwtComponent::GetProxyFocusOwner()
     return (HWND)NULL;
 }
 
-/* Redirects message to the focus proxy, if any */
+/* Call DefWindowProc for the focus proxy, if any */
 void AwtComponent::CallProxyDefWindowProc(UINT message, WPARAM wParam,
     LPARAM lParam, LRESULT &retVal, MsgRouting &mr)
 {
     if (mr != mrConsume)  {
         HWND proxy = GetProxyFocusOwner();
-        if (proxy != NULL && ::IsWindowEnabled(proxy)) {
-            retVal = ::DefWindowProc(proxy, message, wParam, lParam);
+        if (proxy != NULL) {
+            retVal = ComCtl32Util::GetInstance().DefWindowProc(NULL, proxy, message, wParam, lParam);
             mr = mrConsume;
         }
     }
@@ -4179,7 +4150,7 @@ MsgRouting AwtComponent::WmDrawItem(UINT ctrlId, DRAWITEMSTRUCT &drawInfo)
     JNIEnv *env = (JNIEnv *)JNU_GetEnv(jvm, JNI_VERSION_1_2);
 
     if (drawInfo.CtlType == ODT_MENU) {
-        if (IsMenu((HMENU)drawInfo.hwndItem) && drawInfo.itemData != 0) {
+        if (drawInfo.itemData != 0) {
             AwtMenu* menu = (AwtMenu*)(drawInfo.itemData);
             menu->DrawItem(drawInfo);
         }
@@ -4342,11 +4313,6 @@ void AwtComponent::DrawListItem(JNIEnv *env, DRAWITEMSTRUCT &drawInfo)
     if ((int) (drawInfo.itemID) >= 0) {
             jobject font = GET_FONT(target, peer);
             jstring text = GetItemString(env, target, drawInfo.itemID);
-            if (env->ExceptionCheck()) {
-                env->DeleteLocalRef(font);
-                env->DeleteLocalRef(target);
-                return;
-            }
             SIZE size = AwtFont::getMFStringSize(hDC, font, text);
             AwtFont::drawMFString(hDC, font, text,
                                   (GetRTL()) ? rect.right - size.cx - 1
@@ -4806,7 +4772,6 @@ void AwtComponent::SendKeyEvent(jint id, jlong when, jint raw, jint cooked,
         keyEventConst =  env->GetMethodID(keyEventCls, "<init>",
                                           "(Ljava/awt/Component;IJIICI)V");
         DASSERT(keyEventConst);
-        CHECK_NULL(keyEventConst);
     }
     if (env->EnsureLocalCapacity(2) < 0) {
         return;
@@ -4818,10 +4783,6 @@ void AwtComponent::SendKeyEvent(jint id, jlong when, jint raw, jint cooked,
     if (safe_ExceptionOccurred(env)) env->ExceptionDescribe();
     DASSERT(!safe_ExceptionOccurred(env));
     DASSERT(keyEvent != NULL);
-    if (keyEvent == NULL) {
-        env->DeleteLocalRef(target);
-        return;
-    }
     env->SetLongField(keyEvent, AwtKeyEvent::rawCodeID, nativeCode);
     if( nativeCode && nativeCode < 256 ) {
         env->SetLongField(keyEvent, AwtKeyEvent::primaryLevelUnicodeID, (jlong)(dynPrimaryKeymap[nativeCode].unicode));
@@ -4905,7 +4866,10 @@ void AwtComponent::SendMouseEvent(jint id, jlong when, jint x, jint y,
     if (mouseEventCls == NULL) {
         jclass mouseEventClsLocal =
             env->FindClass("java/awt/event/MouseEvent");
-        CHECK_NULL(mouseEventClsLocal);
+        if (!mouseEventClsLocal) {
+            /* exception already thrown */
+            return;
+        }
         mouseEventCls = (jclass)env->NewGlobalRef(mouseEventClsLocal);
         env->DeleteLocalRef(mouseEventClsLocal);
     }
@@ -4918,7 +4882,6 @@ void AwtComponent::SendMouseEvent(jint id, jlong when, jint x, jint y,
             env->GetMethodID(mouseEventCls, "<init>",
                  "(Ljava/awt/Component;IJIIIIIIZI)V");
         DASSERT(mouseEventConst);
-        CHECK_NULL(mouseEventConst);
     }
     if (env->EnsureLocalCapacity(2) < 0) {
         return;
@@ -4931,7 +4894,7 @@ void AwtComponent::SendMouseEvent(jint id, jlong when, jint x, jint y,
                                         target,
                                         id, when, modifiers,
                                         x+insets.left, y+insets.top,
-                                        xAbs, yAbs,
+                    xAbs, yAbs,
                                         clickCount, popupTrigger, button);
 
     if (safe_ExceptionOccurred(env)) {
@@ -4940,7 +4903,6 @@ void AwtComponent::SendMouseEvent(jint id, jlong when, jint x, jint y,
     }
 
     DASSERT(mouseEvent != NULL);
-    CHECK_NULL(mouseEvent);
     if (pMsg != 0) {
         AwtAWTEvent::saveMSG(env, pMsg, mouseEvent);
     }
@@ -4969,7 +4931,10 @@ AwtComponent::SendMouseWheelEvent(jint id, jlong when, jint x, jint y,
     if (mouseWheelEventCls == NULL) {
         jclass mouseWheelEventClsLocal =
             env->FindClass("java/awt/event/MouseWheelEvent");
-        CHECK_NULL(mouseWheelEventClsLocal);
+        if (!mouseWheelEventClsLocal) {
+            /* exception already thrown */
+            return;
+        }
         mouseWheelEventCls = (jclass)env->NewGlobalRef(mouseWheelEventClsLocal);
         env->DeleteLocalRef(mouseWheelEventClsLocal);
     }
@@ -4982,7 +4947,6 @@ AwtComponent::SendMouseWheelEvent(jint id, jlong when, jint x, jint y,
             env->GetMethodID(mouseWheelEventCls, "<init>",
                            "(Ljava/awt/Component;IJIIIIIIZIIID)V");
         DASSERT(mouseWheelEventConst);
-        CHECK_NULL(mouseWheelEventConst);
     }
     if (env->EnsureLocalCapacity(2) < 0) {
         return;
@@ -4999,14 +4963,11 @@ AwtComponent::SendMouseWheelEvent(jint id, jlong when, jint x, jint y,
                                              clickCount, popupTrigger,
                                              scrollType, scrollAmount,
                                              roundedWheelRotation, preciseWheelRotation);
-
-    DASSERT(mouseWheelEvent != NULL);
-    if (mouseWheelEvent == NULL || safe_ExceptionOccurred(env)) {
+    if (safe_ExceptionOccurred(env)) {
         env->ExceptionDescribe();
         env->ExceptionClear();
-        env->DeleteLocalRef(target);
-        return;
     }
+    DASSERT(mouseWheelEvent != NULL);
     if (pMsg != NULL) {
         AwtAWTEvent::saveMSG(env, pMsg, mouseWheelEvent);
     }
@@ -5031,7 +4992,10 @@ void AwtComponent::SendFocusEvent(jint id, HWND opposite)
         jclass focusEventClsLocal
             = env->FindClass("java/awt/event/FocusEvent");
         DASSERT(focusEventClsLocal);
-        CHECK_NULL(focusEventClsLocal);
+        if (focusEventClsLocal == NULL) {
+            /* exception already thrown */
+            return;
+        }
         focusEventCls = (jclass)env->NewGlobalRef(focusEventClsLocal);
         env->DeleteLocalRef(focusEventClsLocal);
     }
@@ -5042,7 +5006,6 @@ void AwtComponent::SendFocusEvent(jint id, HWND opposite)
             env->GetMethodID(focusEventCls, "<init>",
                              "(Ljava/awt/Component;IZLjava/awt/Component;)V");
         DASSERT(focusEventConst);
-        CHECK_NULL(focusEventConst);
     }
 
     static jclass sequencedEventCls;
@@ -5050,7 +5013,10 @@ void AwtComponent::SendFocusEvent(jint id, HWND opposite)
         jclass sequencedEventClsLocal =
             env->FindClass("java/awt/SequencedEvent");
         DASSERT(sequencedEventClsLocal);
-        CHECK_NULL(sequencedEventClsLocal);
+        if (sequencedEventClsLocal == NULL) {
+            /* exception already thrown */
+            return;
+        }
         sequencedEventCls =
             (jclass)env->NewGlobalRef(sequencedEventClsLocal);
         env->DeleteLocalRef(sequencedEventClsLocal);
@@ -5061,8 +5027,6 @@ void AwtComponent::SendFocusEvent(jint id, HWND opposite)
         sequencedEventConst =
             env->GetMethodID(sequencedEventCls, "<init>",
                              "(Ljava/awt/AWTEvent;)V");
-        DASSERT(sequencedEventConst);
-        CHECK_NULL(sequencedEventConst);
     }
 
     if (env->EnsureLocalCapacity(3) < 0) {
@@ -5085,7 +5049,6 @@ void AwtComponent::SendFocusEvent(jint id, HWND opposite)
         env->DeleteLocalRef(jOpposite); jOpposite = NULL;
     }
     env->DeleteLocalRef(target); target = NULL;
-    CHECK_NULL(focusEvent);
 
     jobject sequencedEvent = env->NewObject(sequencedEventCls,
                                             sequencedEventConst,
@@ -5093,7 +5056,7 @@ void AwtComponent::SendFocusEvent(jint id, HWND opposite)
     DASSERT(!safe_ExceptionOccurred(env));
     DASSERT(sequencedEvent != NULL);
     env->DeleteLocalRef(focusEvent); focusEvent = NULL;
-    CHECK_NULL(sequencedEvent);
+
     SendEvent(sequencedEvent);
 
     env->DeleteLocalRef(sequencedEvent);
@@ -5216,8 +5179,6 @@ void AwtComponent::SynthesizeMouseMessage(JNIEnv *env, jobject mouseEvent)
                 message = WM_MBUTTONDOWN; break;
             case java_awt_event_MouseEvent_BUTTON2:
                 message = WM_RBUTTONDOWN; break;
-            default:
-                return;
           }
           break;
       }
@@ -5229,8 +5190,6 @@ void AwtComponent::SynthesizeMouseMessage(JNIEnv *env, jobject mouseEvent)
                 message = WM_MBUTTONUP; break;
             case java_awt_event_MouseEvent_BUTTON2:
                 message = WM_RBUTTONUP; break;
-            default:
-                return;
           }
           break;
       }
@@ -5268,7 +5227,7 @@ void AwtComponent::SynthesizeMouseMessage(JNIEnv *env, jobject mouseEvent)
                                                "getWheelRotation",
                                                "()I").i;
           DASSERT(!safe_ExceptionOccurred(env));
-          JNU_CHECK_EXCEPTION(env);
+          //DASSERT(wheelAmt);
           DTRACE_PRINTLN1("wheelAmt = %i\n", wheelAmt);
 
           // convert Java wheel amount value to Win32
@@ -6130,7 +6089,7 @@ jboolean AwtComponent::_NativeHandlesWheelScrolling(void *param)
     c = (AwtComponent *)pData;
     if (::IsWindow(c->GetHWnd()))
     {
-        result = JNI_IS_TRUE(c->InheritsNativeMouseWheelBehavior());
+        result = (jboolean)c->InheritsNativeMouseWheelBehavior();
     }
 ret:
     env->DeleteGlobalRef(self);
@@ -6347,12 +6306,10 @@ Java_java_awt_Component_initIDs(JNIEnv *env, jclass cls)
 {
     TRY;
     jclass inputEventClazz = env->FindClass("java/awt/event/InputEvent");
-    CHECK_NULL(inputEventClazz);
     jmethodID getButtonDownMasksID = env->GetStaticMethodID(inputEventClazz, "getButtonDownMasks", "()[I");
-    CHECK_NULL(getButtonDownMasksID);
     jintArray obj = (jintArray)env->CallStaticObjectMethod(inputEventClazz, getButtonDownMasksID);
     jint * tmp = env->GetIntArrayElements(obj, JNI_FALSE);
-    CHECK_NULL(tmp);
+
     jsize len = env->GetArrayLength(obj);
     AwtComponent::masks = SAFE_SIZE_NEW_ARRAY(jint, len);
     for (int i = 0; i < len; i++) {
@@ -6365,112 +6322,68 @@ Java_java_awt_Component_initIDs(JNIEnv *env, jclass cls)
     jclass peerCls = env->FindClass("sun/awt/windows/WComponentPeer");
 
     DASSERT(peerCls);
-    CHECK_NULL(peerCls);
 
     /* field ids */
     AwtComponent::peerID =
       env->GetFieldID(cls, "peer", "Ljava/awt/peer/ComponentPeer;");
-    DASSERT(AwtComponent::peerID);
-    CHECK_NULL(AwtComponent::peerID);
-
     AwtComponent::xID = env->GetFieldID(cls, "x", "I");
-    DASSERT(AwtComponent::xID);
-    CHECK_NULL(AwtComponent::xID);
-
     AwtComponent::yID = env->GetFieldID(cls, "y", "I");
-    DASSERT(AwtComponent::yID);
-    CHECK_NULL(AwtComponent::yID);
-
     AwtComponent::heightID = env->GetFieldID(cls, "height", "I");
-    DASSERT(AwtComponent::heightID);
-    CHECK_NULL(AwtComponent::heightID);
-
     AwtComponent::widthID = env->GetFieldID(cls, "width", "I");
-    DASSERT(AwtComponent::widthID);
-    CHECK_NULL(AwtComponent::widthID);
-
     AwtComponent::visibleID = env->GetFieldID(cls, "visible", "Z");
-    DASSERT(AwtComponent::visibleID);
-    CHECK_NULL(AwtComponent::visibleID);
-
     AwtComponent::backgroundID =
         env->GetFieldID(cls, "background", "Ljava/awt/Color;");
-    DASSERT(AwtComponent::backgroundID);
-    CHECK_NULL(AwtComponent::backgroundID);
-
     AwtComponent::foregroundID =
         env->GetFieldID(cls, "foreground", "Ljava/awt/Color;");
-    DASSERT(AwtComponent::foregroundID);
-    CHECK_NULL(AwtComponent::foregroundID);
-
     AwtComponent::enabledID = env->GetFieldID(cls, "enabled", "Z");
-    DASSERT(AwtComponent::enabledID);
-    CHECK_NULL(AwtComponent::enabledID);
-
     AwtComponent::parentID = env->GetFieldID(cls, "parent", "Ljava/awt/Container;");
-    DASSERT(AwtComponent::parentID);
-    CHECK_NULL(AwtComponent::parentID);
-
     AwtComponent::graphicsConfigID =
      env->GetFieldID(cls, "graphicsConfig", "Ljava/awt/GraphicsConfiguration;");
-    DASSERT(AwtComponent::graphicsConfigID);
-    CHECK_NULL(AwtComponent::graphicsConfigID);
-
     AwtComponent::focusableID = env->GetFieldID(cls, "focusable", "Z");
-    DASSERT(AwtComponent::focusableID);
-    CHECK_NULL(AwtComponent::focusableID);
 
     AwtComponent::appContextID = env->GetFieldID(cls, "appContext",
                                                  "Lsun/awt/AppContext;");
-    DASSERT(AwtComponent::appContextID);
-    CHECK_NULL(AwtComponent::appContextID);
 
     AwtComponent::peerGCID = env->GetFieldID(peerCls, "winGraphicsConfig",
                                         "Lsun/awt/Win32GraphicsConfig;");
-    DASSERT(AwtComponent::peerGCID);
-    CHECK_NULL(AwtComponent::peerGCID);
 
     AwtComponent::hwndID = env->GetFieldID(peerCls, "hwnd", "J");
-    DASSERT(AwtComponent::hwndID);
-    CHECK_NULL(AwtComponent::hwndID);
 
     AwtComponent::cursorID = env->GetFieldID(cls, "cursor", "Ljava/awt/Cursor;");
-    DASSERT(AwtComponent::cursorID);
-    CHECK_NULL(AwtComponent::cursorID);
 
     /* method ids */
     AwtComponent::getFontMID =
         env->GetMethodID(cls, "getFont_NoClientCode", "()Ljava/awt/Font;");
-    DASSERT(AwtComponent::getFontMID);
-    CHECK_NULL(AwtComponent::getFontMID);
-
     AwtComponent::getToolkitMID =
         env->GetMethodID(cls, "getToolkitImpl", "()Ljava/awt/Toolkit;");
-    DASSERT(AwtComponent::getToolkitMID);
-    CHECK_NULL(AwtComponent::getToolkitMID);
-
     AwtComponent::isEnabledMID = env->GetMethodID(cls, "isEnabledImpl", "()Z");
-    DASSERT(AwtComponent::isEnabledMID);
-    CHECK_NULL(AwtComponent::isEnabledMID);
-
     AwtComponent::getLocationOnScreenMID =
         env->GetMethodID(cls, "getLocationOnScreen_NoTreeLock", "()Ljava/awt/Point;");
-    DASSERT(AwtComponent::getLocationOnScreenMID);
-    CHECK_NULL(AwtComponent::getLocationOnScreenMID);
-
     AwtComponent::replaceSurfaceDataMID =
         env->GetMethodID(peerCls, "replaceSurfaceData", "()V");
-    DASSERT(AwtComponent::replaceSurfaceDataMID);
-    CHECK_NULL(AwtComponent::replaceSurfaceDataMID);
-
     AwtComponent::replaceSurfaceDataLaterMID =
         env->GetMethodID(peerCls, "replaceSurfaceDataLater", "()V");
-    DASSERT(AwtComponent::replaceSurfaceDataLaterMID);
-    CHECK_NULL(AwtComponent::replaceSurfaceDataLaterMID);
-
     AwtComponent::disposeLaterMID = env->GetMethodID(peerCls, "disposeLater", "()V");
+
+    DASSERT(AwtComponent::xID);
+    DASSERT(AwtComponent::yID);
+    DASSERT(AwtComponent::heightID);
+    DASSERT(AwtComponent::widthID);
+    DASSERT(AwtComponent::visibleID);
+    DASSERT(AwtComponent::backgroundID);
+    DASSERT(AwtComponent::foregroundID);
+    DASSERT(AwtComponent::enabledID);
+    DASSERT(AwtComponent::parentID);
+    DASSERT(AwtComponent::hwndID);
+
+    DASSERT(AwtComponent::getFontMID);
+    DASSERT(AwtComponent::getToolkitMID);
+    DASSERT(AwtComponent::isEnabledMID);
+    DASSERT(AwtComponent::getLocationOnScreenMID);
+    DASSERT(AwtComponent::replaceSurfaceDataMID);
+    DASSERT(AwtComponent::replaceSurfaceDataLaterMID);
     DASSERT(AwtComponent::disposeLaterMID);
-    CHECK_NULL(AwtComponent::disposeLaterMID);
+
 
     CATCH_BAD_ALLOC;
 }
@@ -7194,8 +7107,8 @@ void DCList::AddDCItem(DCItem *newItem)
 }
 
 /**
- * Given a DC and window handle, remove the DC from the DC list
- * and return TRUE if it exists on the current list.  Otherwise
+ * Given a DC, remove it from the DC list and return
+ * TRUE if it exists on the current list.  Otherwise
  * return FALSE.
  * A DC may not exist on the list because it has already
  * been released elsewhere (for example, the window
@@ -7203,14 +7116,14 @@ void DCList::AddDCItem(DCItem *newItem)
  * thread may also want to release a DC when it notices that
  * its DC is obsolete for the current window).
  */
-DCItem *DCList::RemoveDC(HDC hDC, HWND hWnd)
+DCItem *DCList::RemoveDC(HDC hDC)
 {
     listLock.Enter();
     DCItem **prevPtrPtr = &head;
     DCItem *listPtr = head;
     while (listPtr) {
         DCItem *nextPtr = listPtr->next;
-        if (listPtr->hDC == hDC && listPtr->hWnd == hWnd) {
+        if (listPtr->hDC == hDC) {
             *prevPtrPtr = nextPtr;
             break;
         }
@@ -7264,9 +7177,9 @@ void DCList::RealizePalettes(int screen)
     listLock.Leave();
 }
 
-void MoveDCToPassiveList(HDC hDC, HWND hWnd) {
+void MoveDCToPassiveList(HDC hDC) {
     DCItem *removedDC;
-    if ((removedDC = activeDCList.RemoveDC(hDC, hWnd)) != NULL) {
+    if ((removedDC = activeDCList.RemoveDC(hDC)) != NULL) {
         passiveDCList.AddDCItem(removedDC);
     }
 }

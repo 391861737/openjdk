@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2001, 2014, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2001, 2013, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -28,12 +28,12 @@
 #include "gc_implementation/parNew/parOopClosures.inline.hpp"
 #include "gc_implementation/shared/adaptiveSizePolicy.hpp"
 #include "gc_implementation/shared/ageTable.hpp"
-#include "gc_implementation/shared/copyFailedInfo.hpp"
+#include "gc_implementation/shared/parGCAllocBuffer.hpp"
 #include "gc_implementation/shared/gcHeapSummary.hpp"
 #include "gc_implementation/shared/gcTimer.hpp"
 #include "gc_implementation/shared/gcTrace.hpp"
 #include "gc_implementation/shared/gcTraceTime.hpp"
-#include "gc_implementation/shared/parGCAllocBuffer.inline.hpp"
+#include "gc_implementation/shared/copyFailedInfo.hpp"
 #include "gc_implementation/shared/spaceDecorator.hpp"
 #include "memory/defNewGeneration.inline.hpp"
 #include "memory/genCollectedHeap.hpp"
@@ -50,12 +50,10 @@
 #include "runtime/handles.hpp"
 #include "runtime/handles.inline.hpp"
 #include "runtime/java.hpp"
-#include "runtime/thread.inline.hpp"
+#include "runtime/thread.hpp"
 #include "utilities/copy.hpp"
 #include "utilities/globalDefinitions.hpp"
 #include "utilities/workgroup.hpp"
-
-PRAGMA_FORMAT_MUTE_WARNINGS_FOR_GCC
 
 #ifdef _MSC_VER
 #pragma warning( push )
@@ -251,7 +249,7 @@ HeapWord* ParScanThreadState::alloc_in_to_space_slow(size_t word_sz) {
         plab->set_word_size(buf_size);
         plab->set_buf(buf_space);
         record_survivor_plab(buf_space, buf_size);
-        obj = plab->allocate_aligned(word_sz, SurvivorAlignmentInBytes);
+        obj = plab->allocate(word_sz);
         // Note that we cannot compare buf_size < word_sz below
         // because of AlignmentReserve (see ParGCAllocBuffer::allocate()).
         assert(obj != NULL || plab->words_remaining() < word_sz,
@@ -613,21 +611,20 @@ void ParNewGenTask::work(uint worker_id) {
 
   KlassScanClosure klass_scan_closure(&par_scan_state.to_space_root_closure(),
                                       gch->rem_set()->klass_rem_set());
-  CLDToKlassAndOopClosure cld_scan_closure(&klass_scan_closure,
-                                           &par_scan_state.to_space_root_closure(),
-                                           false);
+
+  int so = SharedHeap::SO_AllClasses | SharedHeap::SO_Strings | SharedHeap::SO_CodeCache;
 
   par_scan_state.start_strong_roots();
-  gch->gen_process_roots(_gen->level(),
-                         true,  // Process younger gens, if any,
-                                // as strong roots.
-                         false, // no scope; this is parallel code
-                         GenCollectedHeap::SO_ScavengeCodeCache,
-                         GenCollectedHeap::StrongAndWeakRoots,
-                         &par_scan_state.to_space_root_closure(),
-                         &par_scan_state.older_gen_closure(),
-                         &cld_scan_closure);
-
+  gch->gen_process_strong_roots(_gen->level(),
+                                true,  // Process younger gens, if any,
+                                       // as strong roots.
+                                false, // no scope; this is parallel code
+                                true,  // is scavenging
+                                SharedHeap::ScanningOption(so),
+                                &par_scan_state.to_space_root_closure(),
+                                true,   // walk *all* scavengable nmethods
+                                &par_scan_state.older_gen_closure(),
+                                &klass_scan_closure);
   par_scan_state.end_strong_roots();
 
   // "evacuate followers".
@@ -958,7 +955,7 @@ void ParNewGeneration::collect(bool   full,
     size_policy->minor_collection_begin();
   }
 
-  GCTraceTime t1(GCCauseString("GC", gch->gc_cause()), PrintGC && !PrintGCDetails, true, NULL, gc_tracer.gc_id());
+  GCTraceTime t1(GCCauseString("GC", gch->gc_cause()), PrintGC && !PrintGCDetails, true, NULL);
   // Capture heap used before collection (for printing).
   size_t gch_prev_used = gch->used();
 
@@ -1016,14 +1013,14 @@ void ParNewGeneration::collect(bool   full,
     ParNewRefProcTaskExecutor task_executor(*this, thread_state_set);
     stats = rp->process_discovered_references(&is_alive, &keep_alive,
                                               &evacuate_followers, &task_executor,
-                                              _gc_timer, gc_tracer.gc_id());
+                                              _gc_timer);
   } else {
     thread_state_set.flush();
     gch->set_par_threads(0);  // 0 ==> non-parallel.
     gch->save_marks();
     stats = rp->process_discovered_references(&is_alive, &keep_alive,
                                               &evacuate_followers, NULL,
-                                              _gc_timer, gc_tracer.gc_id());
+                                              _gc_timer);
   }
   gc_tracer.report_gc_reference_stats(stats);
   if (!promotion_failed()) {
@@ -1197,10 +1194,8 @@ oop ParNewGeneration::copy_to_survivor_space_avoiding_promotion_undo(
         return real_forwardee(old);
     }
 
-    if (!_promotion_failed) {
-      new_obj = _next_gen->par_promote(par_scan_state->thread_num(),
-                                        old, m, sz);
-    }
+    new_obj = _next_gen->par_promote(par_scan_state->thread_num(),
+                                       old, m, sz);
 
     if (new_obj == NULL) {
       // promotion failed, forward to self
@@ -1641,7 +1636,8 @@ void ParNewGeneration::ref_processor_init() {
                              refs_discovery_is_mt(),     // mt discovery
                              (int) ParallelGCThreads,    // mt discovery degree
                              refs_discovery_is_atomic(), // atomic_discovery
-                             NULL);                      // is_alive_non_header
+                             NULL,                       // is_alive_non_header
+                             false);                     // write barrier for next field updates
   }
 }
 

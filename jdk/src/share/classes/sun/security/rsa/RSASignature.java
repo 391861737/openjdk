@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2003, 2015, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2003, 2013, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -27,6 +27,7 @@ package sun.security.rsa;
 
 import java.io.IOException;
 import java.nio.ByteBuffer;
+import java.util.Arrays;
 
 import java.security.*;
 import java.security.interfaces.*;
@@ -172,7 +173,7 @@ public abstract class RSASignature extends SignatureSpi {
         try {
             byte[] encoded = encodeSignature(digestOID, digest);
             byte[] padded = padding.pad(encoded);
-            byte[] encrypted = RSACore.rsa(padded, privateKey, true);
+            byte[] encrypted = RSACore.rsa(padded, privateKey);
             return encrypted;
         } catch (GeneralSecurityException e) {
             throw new SignatureException("Could not sign data", e);
@@ -193,7 +194,7 @@ public abstract class RSASignature extends SignatureSpi {
             byte[] decrypted = RSACore.rsa(sigBytes, publicKey);
             byte[] unpadded = padding.unpad(decrypted);
             byte[] decodedDigest = decodeSignature(digestOID, unpadded);
-            return MessageDigest.isEqual(digest, decodedDigest);
+            return Arrays.equals(digest, decodedDigest);
         } catch (javax.crypto.BadPaddingException e) {
             // occurs if the app has used the wrong RSA public key
             // or if sigBytes is invalid
@@ -223,10 +224,9 @@ public abstract class RSASignature extends SignatureSpi {
      * Decode the signature data. Verify that the object identifier matches
      * and return the message digest.
      */
-    public static byte[] decodeSignature(ObjectIdentifier oid, byte[] sig)
+    public static byte[] decodeSignature(ObjectIdentifier oid, byte[] signature)
             throws IOException {
-        // Enforce strict DER checking for signatures
-        DerInputStream in = new DerInputStream(sig, 0, sig.length, false);
+        DerInputStream in = new DerInputStream(signature);
         DerValue[] values = in.getSequence(2);
         if ((values.length != 2) || (in.available() != 0)) {
             throw new IOException("SEQUENCE length error");

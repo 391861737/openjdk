@@ -45,8 +45,8 @@ import sun.reflect.generics.tree.FieldTypeSignature;
  * core reflection (java.lang.reflect).
  */
 public class CoreReflectionFactory implements GenericsFactory {
-    private final GenericDeclaration decl;
-    private final Scope scope;
+    private GenericDeclaration decl;
+    private Scope scope;
 
     private CoreReflectionFactory(GenericDeclaration d, Scope s) {
         decl = d;

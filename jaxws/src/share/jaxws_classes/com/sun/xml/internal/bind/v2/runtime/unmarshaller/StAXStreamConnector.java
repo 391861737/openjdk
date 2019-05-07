@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 1997, 2014, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 1997, 2011, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -70,7 +70,7 @@ class StAXStreamConnector extends StAXConnector {
         // Quick hack until SJSXP fixes 6270116
         boolean isZephyr = readerClass.getName().equals("com.sun.xml.internal.stream.XMLReaderImpl");
         if (getBoolProp(reader,"org.codehaus.stax2.internNames") &&
-                getBoolProp(reader,"org.codehaus.stax2.internNsUris"))
+            getBoolProp(reader,"org.codehaus.stax2.internNsUris"))
             ; // no need for interning
         else
         if (isZephyr)
@@ -219,8 +219,8 @@ class StAXStreamConnector extends StAXConnector {
         int nsCount = staxStreamReader.getNamespaceCount();
         for (int i = 0; i < nsCount; i++) {
             visitor.startPrefixMapping(
-                    fixNull(staxStreamReader.getNamespacePrefix(i)),
-                    fixNull(staxStreamReader.getNamespaceURI(i)));
+                fixNull(staxStreamReader.getNamespacePrefix(i)),
+                fixNull(staxStreamReader.getNamespaceURI(i)));
         }
 
         // fire startElement
@@ -310,13 +310,13 @@ class StAXStreamConnector extends StAXConnector {
     protected void handleCharacters() throws XMLStreamException, SAXException {
         if( predictor.expectText() )
             buffer.append(
-                    staxStreamReader.getTextCharacters(),
-                    staxStreamReader.getTextStart(),
-                    staxStreamReader.getTextLength() );
+                staxStreamReader.getTextCharacters(),
+                staxStreamReader.getTextStart(),
+                staxStreamReader.getTextLength() );
     }
 
     private void processText( boolean ignorable ) throws SAXException {
-        if( predictor.expectText() && (!ignorable || !WhiteSpaceProcessor.isWhiteSpace(buffer) || context.getCurrentState().isMixed())) {
+        if( predictor.expectText() && (!ignorable || !WhiteSpaceProcessor.isWhiteSpace(buffer))) {
             if(textReported) {
                 textReported = false;
             } else {
@@ -336,8 +336,9 @@ class StAXStreamConnector extends StAXConnector {
 
     private static Class initFIStAXReaderClass() {
         try {
-            Class<?> fisr = Class.forName("com.sun.xml.internal.org.jvnet.fastinfoset.stax.FastInfosetStreamReader");
-            Class<?> sdp = Class.forName("com.sun.xml.internal.fastinfoset.stax.StAXDocumentParser");
+            ClassLoader cl = getClassLoader();
+            Class fisr = cl.loadClass("com.sun.xml.internal.org.jvnet.fastinfoset.stax.FastInfosetStreamReader");
+            Class sdp = cl.loadClass("com.sun.xml.internal.fastinfoset.stax.StAXDocumentParser");
             // Check if StAXDocumentParser implements FastInfosetStreamReader
             if (fisr.isAssignableFrom(sdp))
                 return sdp;
@@ -353,7 +354,7 @@ class StAXStreamConnector extends StAXConnector {
             if (FI_STAX_READER_CLASS == null)
                 return null;
 
-            Class c = Class.forName(
+            Class c = getClassLoader().loadClass(
                     "com.sun.xml.internal.bind.v2.runtime.unmarshaller.FastInfosetConnector");
             return c.getConstructor(FI_STAX_READER_CLASS,XmlVisitor.class);
         } catch (Throwable e) {
@@ -369,7 +370,7 @@ class StAXStreamConnector extends StAXConnector {
 
     private static Class initStAXExReader() {
         try {
-            return Class.forName("com.sun.xml.internal.org.jvnet.staxex.XMLStreamReaderEx");
+            return getClassLoader().loadClass("com.sun.xml.internal.org.jvnet.staxex.XMLStreamReaderEx");
         } catch (Throwable e) {
             return null;
         }
@@ -377,11 +378,19 @@ class StAXStreamConnector extends StAXConnector {
 
     private static Constructor<? extends StAXConnector> initStAXExConnector() {
         try {
-            Class c = Class.forName("com.sun.xml.internal.bind.v2.runtime.unmarshaller.StAXExConnector");
+            Class c = getClassLoader().loadClass("com.sun.xml.internal.bind.v2.runtime.unmarshaller.StAXExConnector");
             return c.getConstructor(STAX_EX_READER_CLASS,XmlVisitor.class);
         } catch (Throwable e) {
             return null;
         }
+    }
+
+    private static ClassLoader getClassLoader() {
+        ClassLoader cl = SecureLoader.getClassClassLoader(UnmarshallerImpl.class);
+        if (cl == null) {
+            cl = SecureLoader.getContextClassLoader();
+        }
+        return cl;
     }
 
 }

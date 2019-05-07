@@ -25,8 +25,6 @@
 
 package jdk.nashorn.internal.codegen;
 
-import static jdk.nashorn.internal.runtime.linker.NashornCallSiteDescriptor.CALLSITE_OPTIMISTIC;
-
 import java.util.Arrays;
 import java.util.EnumSet;
 import jdk.nashorn.internal.codegen.types.Type;
@@ -83,7 +81,6 @@ class SharedScopeCall {
         this.valueType = valueType;
         this.returnType = returnType;
         this.paramTypes = paramTypes;
-        assert (flags & CALLSITE_OPTIMISTIC) == 0;
         this.flags = flags;
         // If paramTypes is not null this is a call, otherwise it's just a get.
         this.isCall = paramTypes != null;
@@ -153,23 +150,21 @@ class SharedScopeCall {
         method._goto(parentLoopStart);
         method.label(parentLoopDone);
 
-        assert !isCall || valueType.isObject(); // Callables are always objects
-        // If flags are optimistic, but we're doing a call, remove optimistic flags from the getter, as they obviously
-        // only apply to the call.
-        method.dynamicGet(valueType, symbol.getName(), isCall ? CodeGenerator.nonOptimisticFlags(flags) : flags, isCall, false);
+        method.dynamicGet(valueType, symbol.getName(), flags, isCall);
 
         // If this is a get we're done, otherwise call the value as function.
         if (isCall) {
             method.convert(Type.OBJECT);
             // ScriptFunction will see CALLSITE_SCOPE and will bind scope accordingly.
-            method.loadUndefined(Type.OBJECT);
+            method.loadNull();
             int slot = 2;
             for (final Type type : paramTypes) {
-                method.load(type, slot);
-                slot += type.getSlots();
+                method.load(type, slot++);
+                if (type == Type.NUMBER || type == Type.LONG) {
+                    slot++;
+                }
             }
-            // Shared scope calls disabled in optimistic world. TODO is this right?
-            method.dynamicCall(returnType, 2 + paramTypes.length, flags, symbol.getName());
+            method.dynamicCall(returnType, 2 + paramTypes.length, flags);
         }
 
         method._return(returnType);
@@ -184,16 +179,17 @@ class SharedScopeCall {
                 final Type[] params = new Type[paramTypes.length + 2];
                 params[0] = Type.typeFor(ScriptObject.class);
                 params[1] = Type.INT;
-                System.arraycopy(paramTypes, 0, params, 2, paramTypes.length);
+                int i = 2;
+                for (Type type : paramTypes)  {
+                    if (type.isObject()) {
+                        type = Type.OBJECT;
+                    }
+                    params[i++] = type;
+                }
                 staticSignature = Type.getMethodDescriptor(returnType, params);
             }
         }
         return staticSignature;
-    }
-
-    @Override
-    public String toString() {
-        return methodName + " " + staticSignature;
     }
 
 }

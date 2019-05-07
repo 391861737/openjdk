@@ -32,9 +32,9 @@ import jdk.nashorn.internal.objects.annotations.ScriptClass;
 import jdk.nashorn.internal.objects.annotations.Setter;
 import jdk.nashorn.internal.runtime.JSType;
 import jdk.nashorn.internal.runtime.PropertyMap;
+import jdk.nashorn.internal.runtime.regexp.RegExpResult;
 import jdk.nashorn.internal.runtime.ScriptObject;
 import jdk.nashorn.internal.runtime.arrays.ArrayData;
-import jdk.nashorn.internal.runtime.regexp.RegExpResult;
 
 /**
  * Objects of this class are used to represent return values from
@@ -53,8 +53,12 @@ public final class NativeRegExpExecResult extends ScriptObject {
     // initialized by nasgen
     private static PropertyMap $nasgenmap$;
 
+    static PropertyMap getInitialMap() {
+        return $nasgenmap$;
+    }
+
     NativeRegExpExecResult(final RegExpResult result, final Global global) {
-        super(global.getArrayPrototype(), $nasgenmap$);
+        super(global.getArrayPrototype(), global.getRegExpExecResultMap());
         setIsArray();
         this.setArray(ArrayData.allocate(result.getGroups().clone()));
         this.index = result.getIndex();
@@ -74,7 +78,7 @@ public final class NativeRegExpExecResult extends ScriptObject {
     @Getter(attributes = Attribute.NOT_ENUMERABLE | Attribute.NOT_CONFIGURABLE)
     public static Object length(final Object self) {
         if (self instanceof ScriptObject) {
-            return (double) JSType.toUint32(((ScriptObject)self).getArray().length());
+            return ((ScriptObject)self).getArray().length() & JSType.MAX_UINT;
         }
 
         return 0;
@@ -88,7 +92,7 @@ public final class NativeRegExpExecResult extends ScriptObject {
     @Setter(attributes = Attribute.NOT_ENUMERABLE | Attribute.NOT_CONFIGURABLE)
     public static void length(final Object self, final Object length) {
         if (self instanceof ScriptObject) {
-            ((ScriptObject)self).setLength(NativeArray.validLength(length));
+            ((ScriptObject)self).setLength(NativeArray.validLength(length, true));
         }
     }
 }

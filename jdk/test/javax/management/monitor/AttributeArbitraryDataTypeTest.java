@@ -58,9 +58,9 @@ import javax.management.openmbean.SimpleType;
 public class AttributeArbitraryDataTypeTest implements NotificationListener {
 
     // Flag to notify that a message has been received
-    private volatile boolean counterMessageReceived = false;
-    private volatile boolean gaugeMessageReceived = false;
-    private volatile boolean stringMessageReceived = false;
+    private boolean counterMessageReceived = false;
+    private boolean gaugeMessageReceived = false;
+    private boolean stringMessageReceived = false;
 
     // Match enum
     public enum Match { do_not_match_0,
@@ -195,33 +195,21 @@ public class AttributeArbitraryDataTypeTest implements NotificationListener {
                      " has reached or exceeded the threshold");
                 echo("\t\tDerived Gauge = " + n.getDerivedGauge());
                 echo("\t\tTrigger = " + n.getTrigger());
-
-                synchronized (this) {
-                    counterMessageReceived = true;
-                    notifyAll();
-                }
+                counterMessageReceived = true;
             } else if (type.equals(MonitorNotification.
                                    THRESHOLD_HIGH_VALUE_EXCEEDED)) {
                 echo("\t\t" + n.getObservedAttribute() +
                      " has reached or exceeded the high threshold");
                 echo("\t\tDerived Gauge = " + n.getDerivedGauge());
                 echo("\t\tTrigger = " + n.getTrigger());
-
-                synchronized (this) {
-                    gaugeMessageReceived = true;
-                    notifyAll();
-                }
+                gaugeMessageReceived = true;
             } else if (type.equals(MonitorNotification.
                                    STRING_TO_COMPARE_VALUE_MATCHED)) {
                 echo("\t\t" + n.getObservedAttribute() +
                      " matches the string-to-compare value");
                 echo("\t\tDerived Gauge = " + n.getDerivedGauge());
                 echo("\t\tTrigger = " + n.getTrigger());
-
-                synchronized (this) {
-                    stringMessageReceived = true;
-                    notifyAll();
-                }
+                stringMessageReceived = true;
             } else {
                 echo("\t\tSkipping notification of type: " + type);
             }
@@ -370,17 +358,6 @@ public class AttributeArbitraryDataTypeTest implements NotificationListener {
 
             // Check if notification was received
             //
-            synchronized (this) {
-                while (!counterMessageReceived) {
-                    try {
-                        wait();
-                    } catch (InterruptedException e) {
-                        System.err.println("Got unexpected exception: " + e);
-                        e.printStackTrace();
-                        break;
-                    }
-                }
-            }
             if (counterMessageReceived) {
                 echo("\tOK: CounterMonitor notification received");
             } else {
@@ -548,17 +525,6 @@ public class AttributeArbitraryDataTypeTest implements NotificationListener {
 
             // Check if notification was received
             //
-            synchronized (this) {
-                while (!gaugeMessageReceived) {
-                    try {
-                        wait();
-                    } catch (InterruptedException e) {
-                        System.err.println("Got unexpected exception: " + e);
-                        e.printStackTrace();
-                        break;
-                    }
-                }
-            }
             if (gaugeMessageReceived) {
                 echo("\tOK: GaugeMonitor notification received");
             } else {
@@ -714,17 +680,6 @@ public class AttributeArbitraryDataTypeTest implements NotificationListener {
 
             // Check if notification was received
             //
-            synchronized (this) {
-                while (!stringMessageReceived) {
-                    try {
-                        wait();
-                    } catch (InterruptedException e) {
-                        System.err.println("Got unexpected exception: " + e);
-                        e.printStackTrace();
-                        break;
-                    }
-                }
-            }
             if (stringMessageReceived) {
                 echo("\tOK: StringMonitor notification received");
             } else {

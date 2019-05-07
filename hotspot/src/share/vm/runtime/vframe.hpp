@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 1997, 2014, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 1997, 2013, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -186,7 +186,7 @@ class interpretedVFrame: public javaVFrame {
  private:
   static const int bcp_offset;
   intptr_t* locals_addr_at(int offset) const;
-  StackValueCollection* stack_data(bool expressions) const;
+
   // returns where the parameters starts relative to the frame pointer
   int start_of_parameters() const;
 
@@ -389,17 +389,17 @@ inline void vframeStreamCommon::fill_from_compiled_frame(int decode_offset) {
       decode_offset < 0 ||
       decode_offset >= nm()->scopes_data_size()) {
     // 6379830 AsyncGetCallTrace sometimes feeds us wild frames.
-    // If we read nmethod::scopes_data at serialized_null (== 0)
-    // or if read some at other invalid offset, invalid values will be decoded.
-    // Based on these values, invalid heap locations could be referenced
-    // that could lead to crashes in product mode.
-    // Therefore, do not use the decode offset if invalid, but fill the frame
-    // as it were a native compiled frame (no Java-level assumptions).
+    // If we attempt to read nmethod::scopes_data at serialized_null (== 0),
+    // or if we read some at other crazy offset,
+    // we will decode garbage and make wild references into the heap,
+    // leading to crashes in product mode.
+    // (This isn't airtight, of course, since there are internal
+    // offsets which are also crazy.)
 #ifdef ASSERT
     if (WizardMode) {
       tty->print_cr("Error in fill_from_frame: pc_desc for "
                     INTPTR_FORMAT " not found or invalid at %d",
-                    p2i(_frame.pc()), decode_offset);
+                    _frame.pc(), decode_offset);
       nm()->print();
       nm()->method()->print_codes();
       nm()->print_code();
@@ -514,15 +514,9 @@ inline void vframeStreamCommon::fill_from_interpreter_frame() {
   intptr_t  bcx    = _frame.interpreter_frame_bcx();
   int       bci    = method->validate_bci_from_bcx(bcx);
   // 6379830 AsyncGetCallTrace sometimes feeds us wild frames.
-  // AsyncGetCallTrace interrupts the VM asynchronously. As a result
-  // it is possible to access an interpreter frame for which
-  // no Java-level information is yet available (e.g., becasue
-  // the frame was being created when the VM interrupted it).
-  // In this scenario, pretend that the interpreter is at the point
-  // of entering the method.
   if (bci < 0) {
     found_bad_method_frame();
-    bci = 0;
+    bci = 0;  // pretend it's on the point of entering
   }
   _mode   = interpreted_mode;
   _method = method;

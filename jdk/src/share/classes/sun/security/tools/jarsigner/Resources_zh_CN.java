@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2000, 2017, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2000, 2013, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -65,7 +65,7 @@ public class Resources_zh_CN extends java.util.ListResourceBundle {
         {".keypass.password.password.for.private.key.if.different.",
                 "[-keypass <\u53E3\u4EE4>]           \u79C1\u6709\u5BC6\u94A5\u7684\u53E3\u4EE4 (\u5982\u679C\u4E0D\u540C)"},
         {".certchain.file.name.of.alternative.certchain.file",
-                "[-certchain <\u6587\u4EF6>]         \u66FF\u4EE3\u8BC1\u4E66\u94FE\u6587\u4EF6\u7684\u540D\u79F0"},
+                "[-certchain <\u6587\u4EF6>]         \u66FF\u4EE3 certchain \u6587\u4EF6\u7684\u540D\u79F0"},
         {".sigfile.file.name.of.SF.DSA.file",
                 "[-sigfile <\u6587\u4EF6>]           .SF/.DSA \u6587\u4EF6\u7684\u540D\u79F0"},
         {".signedjar.file.name.of.signed.JAR.file",
@@ -88,8 +88,6 @@ public class Resources_zh_CN extends java.util.ListResourceBundle {
                 "[-tsacert <\u522B\u540D>]           \u65F6\u95F4\u6233\u9881\u53D1\u673A\u6784\u7684\u516C\u5171\u5BC6\u94A5\u8BC1\u4E66"},
         {".tsapolicyid.tsapolicyid.for.Timestamping.Authority",
                 "[-tsapolicyid <oid>]        \u65F6\u95F4\u6233\u9881\u53D1\u673A\u6784\u7684 TSAPolicyID"},
-        {".tsadigestalg.algorithm.of.digest.data.in.timestamping.request",
-                "[-tsadigestalg <\u7B97\u6CD5>]      \u65F6\u95F4\u6233\u8BF7\u6C42\u4E2D\u7684\u6458\u8981\u6570\u636E\u7684\u7B97\u6CD5"},
         {".altsigner.class.class.name.of.an.alternative.signing.mechanism",
                 "[-altsigner <\u7C7B>]           \u66FF\u4EE3\u7684\u7B7E\u540D\u673A\u5236\u7684\u7C7B\u540D"},
         {".altsignerpath.pathlist.location.of.an.alternative.signing.mechanism",
@@ -135,29 +133,9 @@ public class Resources_zh_CN extends java.util.ListResourceBundle {
         {"no.manifest.", "\u6CA1\u6709\u6E05\u5355\u3002"},
         {".Signature.related.entries.","(\u4E0E\u7B7E\u540D\u76F8\u5173\u7684\u6761\u76EE)"},
         {".Unsigned.entries.", "(\u672A\u7B7E\u540D\u6761\u76EE)"},
-        {"jar.is.unsigned",
-                "jar \u672A\u7B7E\u540D\u3002"},
-        {"jar.treated.unsigned",
-                "\u8B66\u544A: \u7B7E\u540D\u65E0\u6CD5\u89E3\u6790\u6216\u9A8C\u8BC1, \u8BE5 jar \u5C06\u88AB\u89C6\u4E3A\u672A\u7B7E\u540D\u3002\u6709\u5173\u8BE6\u7EC6\u4FE1\u606F, \u8BF7\u5728\u542F\u7528\u8C03\u8BD5\u7684\u60C5\u51B5\u4E0B\u91CD\u65B0\u8FD0\u884C jarsigner (-J-Djava.security.debug=jar)\u3002"},
-        {"jar.treated.unsigned.see.weak",
-                "\u7531\u4E8E\u8BE5 jar \u662F\u4F7F\u7528\u76EE\u524D\u5DF2\u7981\u7528\u7684\u5F31\u7B97\u6CD5\u7B7E\u540D\u7684, \u56E0\u6B64\u8BE5 jar \u5C06\u88AB\u89C6\u4E3A\u672A\u7B7E\u540D\u3002\n\n\u6709\u5173\u8BE6\u7EC6\u4FE1\u606F, \u8BF7\u4F7F\u7528 -verbose \u9009\u9879\u91CD\u65B0\u8FD0\u884C jarsigner\u3002"},
-        {"jar.treated.unsigned.see.weak.verbose",
-                "\u8B66\u544A: \u8BE5 jar \u5C06\u88AB\u89C6\u4E3A\u672A\u7B7E\u540D, \u56E0\u4E3A\u5B83\u662F\u7531\u76EE\u524D\u5B89\u5168\u5C5E\u6027\u7981\u7528\u7684\u5F31\u7B97\u6CD5\u7B7E\u540D\u7684:"},
-        {"jar.signed.", "jar \u5DF2\u7B7E\u540D\u3002"},
-        {"jar.signed.with.signer.errors.", "jar \u5DF2\u7B7E\u540D, \u4F46\u51FA\u73B0\u7B7E\u540D\u8005\u9519\u8BEF\u3002"},
+        {"jar.is.unsigned.signatures.missing.or.not.parsable.",
+                "jar \u672A\u7B7E\u540D\u3002(\u7F3A\u5C11\u7B7E\u540D\u6216\u65E0\u6CD5\u89E3\u6790\u7B7E\u540D)"},
         {"jar.verified.", "jar \u5DF2\u9A8C\u8BC1\u3002"},
-        {"jar.verified.with.signer.errors.", "jar \u5DF2\u9A8C\u8BC1, \u4F46\u51FA\u73B0\u7B7E\u540D\u8005\u9519\u8BEF\u3002"},
-
-        {"history.with.ts", "- \u7531 \"%1$s\" \u7B7E\u540D\n    \u6458\u8981\u7B97\u6CD5: %2$s\n    \u7B7E\u540D\u7B97\u6CD5: %3$s, %4$s\n  \u7531 \"%6$s\" \u4E8E %5$tc \u52A0\u65F6\u95F4\u6233\n    \u65F6\u95F4\u6233\u6458\u8981\u7B97\u6CD5: %7$s\n    \u65F6\u95F4\u6233\u7B7E\u540D\u7B97\u6CD5: %8$s, %9$s"},
-        {"history.without.ts", "- \u7531 \"%1$s\" \u7B7E\u540D\n    \u6458\u8981\u7B97\u6CD5: %2$s\n    \u7B7E\u540D\u7B97\u6CD5: %3$s, %4$s"},
-        {"history.unparsable", "- \u65E0\u6CD5\u89E3\u6790\u7684\u4E0E\u7B7E\u540D\u76F8\u5173\u7684\u6587\u4EF6 %s"},
-        {"history.nosf", "- \u7F3A\u5C11\u4E0E\u7B7E\u540D\u76F8\u5173\u7684\u6587\u4EF6 META-INF/%s.SF"},
-        {"history.nobk", "- \u4E0E\u7B7E\u540D\u76F8\u5173\u7684\u6587\u4EF6 META-INF/%s.SF \u7F3A\u5C11\u5757\u6587\u4EF6"},
-
-        {"with.weak", "%s (\u5F31)"},
-        {"key.bit", "%d \u4F4D\u5BC6\u94A5"},
-        {"key.bit.weak", "%d \u4F4D\u5BC6\u94A5 (\u5F31)"},
-
         {"jarsigner.", "jarsigner: "},
         {"signature.filename.must.consist.of.the.following.characters.A.Z.0.9.or.",
                 "\u7B7E\u540D\u6587\u4EF6\u540D\u5FC5\u987B\u5305\u542B\u4EE5\u4E0B\u5B57\u7B26: A-Z, 0-9, _ \u6216 -"},
@@ -213,7 +191,6 @@ public class Resources_zh_CN extends java.util.ListResourceBundle {
                 "\u6B63\u5728\u4F7F\u7528\u66FF\u4EE3\u7684\u7B7E\u540D\u673A\u5236"},
         {"entry.was.signed.on", "\u6761\u76EE\u7684\u7B7E\u540D\u65E5\u671F\u4E3A {0}"},
         {"Warning.", "\u8B66\u544A: "},
-        {"Error.", "\u9519\u8BEF: "},
         {"This.jar.contains.unsigned.entries.which.have.not.been.integrity.checked.",
                 "\u6B64 jar \u5305\u542B\u5C1A\u672A\u8FDB\u884C\u5B8C\u6574\u6027\u68C0\u67E5\u7684\u672A\u7B7E\u540D\u6761\u76EE\u3002 "},
         {"This.jar.contains.entries.whose.signer.certificate.has.expired.",
@@ -250,10 +227,6 @@ public class Resources_zh_CN extends java.util.ListResourceBundle {
                 "\u7B7E\u540D\u8005\u7684\u8BC1\u4E66\u94FE\u672A\u9A8C\u8BC1\u3002"},
         {"This.jar.contains.entries.whose.certificate.chain.is.not.validated.",
                  "\u6B64 jar \u5305\u542B\u8BC1\u4E66\u94FE\u672A\u9A8C\u8BC1\u7684\u6761\u76EE\u3002"},
-        {"no.timestamp.signing",
-                "\u672A\u63D0\u4F9B -tsa \u6216 -tsacert, \u6B64 jar \u6CA1\u6709\u65F6\u95F4\u6233\u3002\u5982\u679C\u6CA1\u6709\u65F6\u95F4\u6233, \u5219\u5728\u7B7E\u540D\u8005\u8BC1\u4E66\u7684\u5230\u671F\u65E5\u671F (%1$tY-%1$tm-%1$td) \u6216\u4EE5\u540E\u7684\u4EFB\u4F55\u64A4\u9500\u65E5\u671F\u4E4B\u540E, \u7528\u6237\u53EF\u80FD\u65E0\u6CD5\u9A8C\u8BC1\u6B64 jar\u3002"},
-        {"no.timestamp.verifying",
-                "\u6B64 jar \u5305\u542B\u7684\u7B7E\u540D\u6CA1\u6709\u65F6\u95F4\u6233\u3002\u5982\u679C\u6CA1\u6709\u65F6\u95F4\u6233, \u5219\u5728\u7B7E\u540D\u8005\u8BC1\u4E66\u7684\u5230\u671F\u65E5\u671F (%1$tY-%1$tm-%1$td) \u6216\u4EE5\u540E\u7684\u4EFB\u4F55\u64A4\u9500\u65E5\u671F\u4E4B\u540E, \u7528\u6237\u53EF\u80FD\u65E0\u6CD5\u9A8C\u8BC1\u6B64 jar\u3002"},
         {"Unknown.password.type.", "\u672A\u77E5\u53E3\u4EE4\u7C7B\u578B: "},
         {"Cannot.find.environment.variable.",
                 "\u627E\u4E0D\u5230\u73AF\u5883\u53D8\u91CF: "},

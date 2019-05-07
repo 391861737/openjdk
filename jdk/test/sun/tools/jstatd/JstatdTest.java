@@ -27,7 +27,6 @@ import java.rmi.RemoteException;
 import java.rmi.registry.LocateRegistry;
 import java.rmi.registry.Registry;
 import java.util.Arrays;
-import java.util.regex.Pattern;
 
 import static jdk.testlibrary.Asserts.*;
 import jdk.testlibrary.JDKToolLauncher;
@@ -35,7 +34,6 @@ import jdk.testlibrary.OutputAnalyzer;
 import jdk.testlibrary.ProcessThread;
 import jdk.testlibrary.TestThread;
 import jdk.testlibrary.Utils;
-import jdk.testlibrary.ProcessTools;
 
 /**
  * The base class for tests of jstatd.
@@ -95,11 +93,8 @@ public final class JstatdTest {
         if (tool == "rmiregistry") {
             processName = "registryimpl";
         }
-
-        Pattern toolInJpsPattern =
-                Pattern.compile("^\\d+\\s{1}" + processName + "\\s{1}.*-dparent\\.pid\\." + ProcessTools.getProcessId() + ".*");
         for (String line : lines) {
-            if (toolInJpsPattern.matcher(line.toLowerCase()).matches()) {
+            if (line.toLowerCase().matches("^\\d+\\s{1}" + processName + "$")) {
                 pid = line.split(" ")[0];
                 count++;
             }
@@ -172,8 +167,6 @@ public final class JstatdTest {
     private OutputAnalyzer runJps() throws Exception {
         JDKToolLauncher launcher = JDKToolLauncher.createUsingTestJDK("jps");
         launcher.addVMArg("-XX:+UsePerfData");
-        // Run jps with -v flag to obtain -Dparent.pid.<pid>
-        launcher.addToolArg("-v");
         launcher.addToolArg(getDestination());
 
         String[] cmd = launcher.getCommand();
@@ -293,7 +286,7 @@ public final class JstatdTest {
      * jstatd -J-XX:+UsePerfData -J-Djava.security.policy=all.policy -n serverName
      * jstatd -J-XX:+UsePerfData -J-Djava.security.policy=all.policy -p port -n serverName
      */
-    private String[] getJstatdCmd() throws Exception {
+    private String[] getJstatdCmd() throws UnknownHostException {
         JDKToolLauncher launcher = JDKToolLauncher.createUsingTestJDK("jstatd");
         launcher.addVMArg("-XX:+UsePerfData");
         String testSrc = System.getProperty("test.src");
@@ -301,8 +294,6 @@ public final class JstatdTest {
         assertTrue(policy.exists() && policy.isFile(),
                 "Security policy " + policy.getAbsolutePath() + " does not exist or not a file");
         launcher.addVMArg("-Djava.security.policy=" + policy.getAbsolutePath());
-        // -Dparent.pid.<pid> will help to identify jstad process started by this test
-        launcher.addVMArg("-Dparent.pid." + ProcessTools.getProcessId());
         if (port != null) {
             launcher.addToolArg("-p");
             launcher.addToolArg(port);

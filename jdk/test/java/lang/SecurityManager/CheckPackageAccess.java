@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2012, 2017, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2012, 2013, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -23,7 +23,7 @@
 
 /*
  *  @test
- *  @bug 6741606 7146431 8000450 8019830 8022945 8027144 8041633
+ *  @bug 6741606 7146431 8000450 8019830 8022945
  *  @summary Make sure all restricted packages listed in the package.access
  *           property in the java.security file are blocked
  *  @run main/othervm CheckPackageAccess
@@ -74,8 +74,6 @@ public class CheckPackageAccess {
         "com.sun.org.apache.xalan.internal.xsltc.trax.",
         "com.sun.org.apache.xalan.internal.xsltc.util.",
         "com.sun.org.apache.xml.internal.res.",
-        "com.sun.org.apache.xml.internal.resolver.helpers.",
-        "com.sun.org.apache.xml.internal.resolver.readers.",
         "com.sun.org.apache.xml.internal.security.",
         "com.sun.org.apache.xml.internal.serializer.utils.",
         "com.sun.org.apache.xml.internal.utils.",
@@ -86,8 +84,7 @@ public class CheckPackageAccess {
         "org.jcp.xml.dsig.internal.",
         "jdk.internal.",
         "jdk.nashorn.internal.",
-        "jdk.nashorn.tools.",
-        "com.sun.activation.registries."
+        "jdk.nashorn.tools."
     };
 
     public static void main(String[] args) throws Exception {

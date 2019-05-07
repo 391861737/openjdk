@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2003, 2014, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2003, 2013, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -45,7 +45,6 @@ import java.net.URISyntaxException;
 
 import java.util.ArrayList;
 import java.util.Iterator;
-import java.util.LinkedHashSet;
 import java.util.List;
 
 import javax.imageio.ImageIO;
@@ -78,9 +77,11 @@ public class XDataTransferer extends DataTransferer {
 
     private static XDataTransferer transferer;
 
-    static synchronized XDataTransferer getInstanceImpl() {
-        if (transferer == null) {
-            transferer = new XDataTransferer();
+    static XDataTransferer getInstanceImpl() {
+        synchronized (XDataTransferer.class) {
+            if (transferer == null) {
+                transferer = new XDataTransferer();
+            }
         }
         return transferer;
     }
@@ -329,9 +330,8 @@ public class XDataTransferer extends DataTransferer {
      * a valid MIME and return a list of flavors to which the data in this MIME
      * type can be translated by the Data Transfer subsystem.
      */
-    public LinkedHashSet<DataFlavor> getPlatformMappingsForNative(String nat) {
-        LinkedHashSet<DataFlavor> flavors = new LinkedHashSet<>();
-
+    public List <DataFlavor> getPlatformMappingsForNative(String nat) {
+        List <DataFlavor> flavors = new ArrayList();
 
         if (nat == null) {
             return flavors;
@@ -391,8 +391,8 @@ public class XDataTransferer extends DataTransferer {
      * MIME types to which the data in this flavor can be translated by the Data
      * Transfer subsystem.
      */
-    public LinkedHashSet<String> getPlatformMappingsForFlavor(DataFlavor df) {
-        LinkedHashSet<String> natives = new LinkedHashSet<>(1);
+    public List getPlatformMappingsForFlavor(DataFlavor df) {
+        List natives = new ArrayList(1);
 
         if (df == null) {
             return natives;
@@ -411,7 +411,7 @@ public class XDataTransferer extends DataTransferer {
         if (df.getRepresentationClass() != null &&
             (df.isRepresentationClassInputStream() ||
              df.isRepresentationClassByteBuffer() ||
-             byte[].class.equals(df.getRepresentationClass()))) {
+             byteArrayClass.equals(df.getRepresentationClass()))) {
             natives.add(mimeType);
         }
 

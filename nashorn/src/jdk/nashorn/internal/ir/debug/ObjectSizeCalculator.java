@@ -38,7 +38,6 @@ import java.util.IdentityHashMap;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
-import java.util.Objects;
 
 /**
  * Contains utility methods for calculating the memory usage of objects. It
@@ -53,7 +52,9 @@ import java.util.Objects;
  * this fact and will report incorrect sizes, as it will presume the default JVM
  * behavior.
  */
-public final class ObjectSizeCalculator {
+
+@SuppressWarnings("StaticNonFinalUsedInInitialization")
+public class ObjectSizeCalculator {
 
     /**
      * Describes constant memory overheads for various constructs in a JVM implementation.
@@ -151,7 +152,7 @@ public final class ObjectSizeCalculator {
      * @param memoryLayoutSpecification a description of the JVM memory layout.
      */
     public ObjectSizeCalculator(final MemoryLayoutSpecification memoryLayoutSpecification) {
-        Objects.requireNonNull(memoryLayoutSpecification);
+        memoryLayoutSpecification.getClass();
         arrayHeaderSize = memoryLayoutSpecification.getArrayHeaderSize();
         objectHeaderSize = memoryLayoutSpecification.getObjectHeaderSize();
         objectPadding = memoryLayoutSpecification.getObjectPadding();
@@ -193,7 +194,7 @@ public final class ObjectSizeCalculator {
     }
 
     /**
-     * Get the class histogram
+     * Get the class histograpm
      * @return class histogram element list
      */
     public List<ClassHistogramElement> getClassHistogram() {
@@ -306,7 +307,7 @@ public final class ObjectSizeCalculator {
         public ClassSizeInfo(final Class<?> clazz) {
             long newFieldsSize = 0;
             final List<Field> newReferenceFields = new LinkedList<>();
-            for (final Field f : clazz.getDeclaredFields()) {
+            for (Field f : clazz.getDeclaredFields()) {
                 if (Modifier.isStatic(f.getModifiers())) {
                     continue;
                 }
@@ -337,10 +338,10 @@ public final class ObjectSizeCalculator {
         }
 
         public void enqueueReferencedObjects(final Object obj, final ObjectSizeCalculator calc) {
-            for (final Field f : referenceFields) {
+            for (Field f : referenceFields) {
                 try {
                     calc.enqueue(f.get(obj));
-                } catch (final IllegalAccessException e) {
+                } catch (IllegalAccessException e) {
                     final AssertionError ae = new AssertionError(
                             "Unexpected denial of access to " + f);
                     ae.initCause(e);

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2005, 2016, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2005, 2013, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -195,7 +195,7 @@ LIR_Address* LIRGenerator::emit_array_address(LIR_Opr array_opr, LIR_Opr index_o
 
 
 LIR_Opr LIRGenerator::load_immediate(int x, BasicType type) {
-  LIR_Opr r = NULL;
+  LIR_Opr r;
   if (type == T_LONG) {
     r = LIR_OprFact::longConst(x);
   } else if (type == T_INT) {
@@ -283,7 +283,7 @@ void LIRGenerator::do_StoreIndexed(StoreIndexed* x) {
     length.load_item();
 
   }
-  if (needs_store_check || x->check_boolean()) {
+  if (needs_store_check) {
     value.load_item();
   } else {
     value.load_for_store(x->elt_type());
@@ -331,8 +331,7 @@ void LIRGenerator::do_StoreIndexed(StoreIndexed* x) {
     // Seems to be a precise
     post_barrier(LIR_OprFact::address(array_addr), value.result());
   } else {
-    LIR_Opr result = maybe_mask_boolean(x, array.result(), value.result(), null_check_info);
-    __ move(result, array_addr, null_check_info);
+    __ move(value.result(), array_addr, null_check_info);
   }
 }
 
@@ -485,7 +484,7 @@ void LIRGenerator::do_ArithmeticOp_Long(ArithmeticOp* x) {
     __ cmp(lir_cond_equal, right.result(), LIR_OprFact::longConst(0));
     __ branch(lir_cond_equal, T_LONG, new DivByZeroStub(info));
 
-    address entry = NULL;
+    address entry;
     switch (x->op()) {
     case Bytecodes::_lrem:
       entry = CAST_FROM_FN_PTR(address, SharedRuntime::lrem);
@@ -1025,7 +1024,7 @@ LIR_Opr fixed_register_for(BasicType type) {
 
 void LIRGenerator::do_Convert(Convert* x) {
   // flags that vary for the different operations and different SSE-settings
-  bool fixed_input = false, fixed_result = false, round_result = false, needs_stub = false;
+  bool fixed_input, fixed_result, round_result, needs_stub;
 
   switch (x->op()) {
     case Bytecodes::_i2l: // fall through
@@ -1086,11 +1085,14 @@ void LIRGenerator::do_Convert(Convert* x) {
 
 
 void LIRGenerator::do_NewInstance(NewInstance* x) {
-  print_if_not_loaded(x);
-
+#ifndef PRODUCT
+  if (PrintNotLoaded && !x->klass()->is_loaded()) {
+    tty->print_cr("   ###class not loaded at new bci %d", x->printable_bci());
+  }
+#endif
   CodeEmitInfo* info = state_for(x, x->state());
   LIR_Opr reg = result_register_for(x->type());
-  new_instance(reg, x->klass(), x->is_unresolved(),
+  new_instance(reg, x->klass(),
                        FrameMap::rcx_oop_opr,
                        FrameMap::rdi_oop_opr,
                        FrameMap::rsi_oop_opr,
@@ -1228,17 +1230,12 @@ void LIRGenerator::do_CheckCast(CheckCast* x) {
   obj.load_item();
 
   // info for exceptions
-  CodeEmitInfo* info_for_exception =
-      (x->needs_exception_state() ? state_for(x) :
-                                    state_for(x, x->state_before(), true /*ignore_xhandler*/));
+  CodeEmitInfo* info_for_exception = state_for(x);
 
   CodeStub* stub;
   if (x->is_incompatible_class_change_check()) {
     assert(patching_info == NULL, "can't patch this");
     stub = new SimpleExceptionStub(Runtime1::throw_incompatible_class_change_error_id, LIR_OprFact::illegalOpr, info_for_exception);
-  } else if (x->is_invokespecial_receiver_check()) {
-    assert(patching_info == NULL, "can't patch this");
-    stub = new DeoptimizeStub(info_for_exception);
   } else {
     stub = new SimpleExceptionStub(Runtime1::throw_class_cast_exception_id, obj.result(), info_for_exception);
   }

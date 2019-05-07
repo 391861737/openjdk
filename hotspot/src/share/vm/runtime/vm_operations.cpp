@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 1997, 2014, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 1997, 2013, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -38,8 +38,6 @@
 #include "runtime/vm_operations.hpp"
 #include "services/threadService.hpp"
 #include "trace/tracing.hpp"
-
-PRAGMA_FORMAT_MUTE_WARNINGS_FOR_GCC
 
 #define VM_OP_NAME_INITIALIZE(name) #name,
 
@@ -106,8 +104,8 @@ void VM_Deoptimize::doit() {
   // Deoptimize all activations depending on marked nmethods
   Deoptimization::deoptimize_dependents();
 
-  // Make the dependent methods not entrant
-  CodeCache::make_marked_nmethods_not_entrant();
+  // Make the dependent methods zombies
+  CodeCache::make_marked_nmethods_zombies();
 }
 
 

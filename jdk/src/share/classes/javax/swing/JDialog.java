@@ -35,7 +35,7 @@ import javax.accessibility.*;
  * For information about creating dialogs, see
  * <em>The Java Tutorial</em> section
  * <a
- href="https://docs.oracle.com/javase/tutorial/uiswing/components/dialog.html">How
+ href="http://docs.oracle.com/javase/tutorial/uiswing/components/dialog.html">How
  * to Make Dialogs</a>.
  *
  * <p>
@@ -646,7 +646,6 @@ public class JDialog extends Dialog implements WindowConstants,
         enableEvents(AWTEvent.KEY_EVENT_MASK | AWTEvent.WINDOW_EVENT_MASK);
         setLocale( JComponent.getDefaultLocale() );
         setRootPane(createRootPane());
-        setBackground(UIManager.getColor("control"));
         setRootPaneCheckingEnabled(true);
         if (JDialog.isDefaultLookAndFeelDecorated()) {
             boolean supportsWindowDecorations =
@@ -788,7 +787,7 @@ public class JDialog extends Dialog implements WindowConstants,
      * are currently typed to {@code JComponent}.
      * <p>
      * Please see
-     * <a href="https://docs.oracle.com/javase/tutorial/uiswing/dnd/index.html">
+     * <a href="http://docs.oracle.com/javase/tutorial/uiswing/dnd/index.html">
      * How to Use Drag and Drop and Data Transfer</a>, a section in
      * <em>The Java Tutorial</em>, for more information.
      *

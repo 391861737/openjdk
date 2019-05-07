@@ -52,8 +52,7 @@
 
 GlyphBlitVector* setupBlitVector(JNIEnv *env, jobject glyphlist) {
 
-    int g;
-    size_t bytesNeeded;
+    int g, bytesNeeded;
     jlong *imagePtrs;
     jfloat* positions = NULL;
     GlyphInfo *ginfo;
@@ -72,9 +71,6 @@ GlyphBlitVector* setupBlitVector(JNIEnv *env, jobject glyphlist) {
 
     bytesNeeded = sizeof(GlyphBlitVector)+sizeof(ImageRef)*len;
     gbv = (GlyphBlitVector*)malloc(bytesNeeded);
-    if (gbv == NULL) {
-        return NULL;
-    }
     gbv->numGlyphs = len;
     gbv->glyphs = (ImageRef*)((unsigned char*)gbv+sizeof(GlyphBlitVector));
 
@@ -483,8 +479,7 @@ Java_sun_java2d_loops_DrawGlyphListLCD_DrawGlyphListLCD
  */
 GlyphBlitVector* setupLCDBlitVector(JNIEnv *env, jobject glyphlist) {
 
-    int g;
-    size_t bytesNeeded;
+    int g, bytesNeeded;
     jlong *imagePtrs;
     jfloat* positions = NULL;
     GlyphInfo *ginfo;
@@ -505,9 +500,6 @@ GlyphBlitVector* setupLCDBlitVector(JNIEnv *env, jobject glyphlist) {
 
     bytesNeeded = sizeof(GlyphBlitVector)+sizeof(ImageRef)*len;
     gbv = (GlyphBlitVector*)malloc(bytesNeeded);
-    if (gbv == NULL) {
-        return NULL;
-    }
     gbv->numGlyphs = len;
     gbv->glyphs = (ImageRef*)((unsigned char*)gbv+sizeof(GlyphBlitVector));
 

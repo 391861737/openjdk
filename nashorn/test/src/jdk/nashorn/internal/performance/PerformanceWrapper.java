@@ -31,12 +31,15 @@ import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
-import jdk.nashorn.internal.objects.Global;
 import jdk.nashorn.internal.runtime.Context;
 import jdk.nashorn.internal.runtime.ScriptFunction;
+import jdk.nashorn.internal.runtime.ScriptObject;
 import jdk.nashorn.internal.runtime.ScriptRuntime;
 
-@SuppressWarnings("javadoc")
+/**
+ *
+ * @author Pavel Stepanov
+ */
 public class PerformanceWrapper extends jdk.nashorn.tools.Shell {
 
     int _numberOfIterations;
@@ -69,8 +72,8 @@ public class PerformanceWrapper extends jdk.nashorn.tools.Shell {
     }
 
 
-    protected void runExecuteOnlyTest(final String name, final int numberOfIterations, final int runsPerIteration, final String testURL, final OutputStream out, final OutputStream err, final String[] newargs) throws Throwable {
-        final String[] args=new String[newargs.length+1];
+    protected void runExecuteOnlyTest(final String name, final int numberOfIterations, final int runsPerIteration, final String testURL, final OutputStream out, final OutputStream err, String[] newargs) throws Throwable {
+        String[] args=new String[newargs.length+1];
         System.arraycopy(newargs, 0, args, 1, newargs.length);
         args[0]=name;
 
@@ -86,7 +89,7 @@ public class PerformanceWrapper extends jdk.nashorn.tools.Shell {
     @Override
     protected Object apply(final ScriptFunction target, final Object self) {
         if (_runsPerIteration == 0 && _numberOfIterations == 0) {
-            final Global global = jdk.nashorn.internal.runtime.Context.getGlobal();
+            final ScriptObject global = jdk.nashorn.internal.runtime.Context.getGlobal();
             final ScriptFunction _target = target;
             final Object _self = self;
 

@@ -33,12 +33,9 @@ import java.lang.reflect.Array;
 import java.util.Collection;
 import java.util.Deque;
 import java.util.List;
-import java.util.Map;
-import java.util.Queue;
 import jdk.internal.dynalink.beans.StaticClass;
 import jdk.internal.dynalink.support.TypeUtilities;
 import jdk.nashorn.api.scripting.JSObject;
-import jdk.nashorn.api.scripting.ScriptObjectMirror;
 import jdk.nashorn.internal.objects.annotations.Attribute;
 import jdk.nashorn.internal.objects.annotations.Function;
 import jdk.nashorn.internal.objects.annotations.ScriptClass;
@@ -47,7 +44,6 @@ import jdk.nashorn.internal.runtime.Context;
 import jdk.nashorn.internal.runtime.JSType;
 import jdk.nashorn.internal.runtime.ListAdapter;
 import jdk.nashorn.internal.runtime.PropertyMap;
-import jdk.nashorn.internal.runtime.ScriptFunction;
 import jdk.nashorn.internal.runtime.ScriptObject;
 import jdk.nashorn.internal.runtime.ScriptRuntime;
 import jdk.nashorn.internal.runtime.linker.Bootstrap;
@@ -79,79 +75,8 @@ public final class NativeJava {
      * @see #type(Object, Object)
      */
     @Function(attributes = Attribute.NOT_ENUMERABLE, where = Where.CONSTRUCTOR)
-    public static boolean isType(final Object self, final Object type) {
+    public static Object isType(final Object self, final Object type) {
         return type instanceof StaticClass;
-    }
-
-    /**
-     * Returns synchronized wrapper version of the given ECMAScript function.
-     * @param self not used
-     * @param func the ECMAScript function whose synchronized version is returned.
-     * @param obj the object (i.e, lock) on which the function synchronizes.
-     * @return synchronized wrapper version of the given ECMAScript function.
-     */
-    @Function(name="synchronized", attributes = Attribute.NOT_ENUMERABLE, where = Where.CONSTRUCTOR)
-    public static Object synchronizedFunc(final Object self, final Object func, final Object obj) {
-        if (func instanceof ScriptFunction) {
-            return ((ScriptFunction)func).createSynchronized(obj);
-        }
-
-        throw typeError("not.a.function", ScriptRuntime.safeToString(func));
-    }
-
-    /**
-     * Returns true if the specified object is a Java method.
-     * @param self not used
-     * @param obj the object that is checked if it is a Java method object or not
-     * @return tells whether given object is a Java method object or not.
-     */
-    @Function(attributes = Attribute.NOT_ENUMERABLE, where = Where.CONSTRUCTOR)
-    public static boolean isJavaMethod(final Object self, final Object obj) {
-        return Bootstrap.isDynamicMethod(obj);
-    }
-
-    /**
-     * Returns true if the specified object is a java function (but not script function)
-     * @param self not used
-     * @param obj the object that is checked if it is a Java function or not
-     * @return tells whether given object is a Java function or not
-     */
-    @Function(attributes = Attribute.NOT_ENUMERABLE, where = Where.CONSTRUCTOR)
-    public static boolean isJavaFunction(final Object self, final Object obj) {
-        return Bootstrap.isCallable(obj) && !(obj instanceof ScriptFunction);
-    }
-
-    /**
-     * Returns true if the specified object is a Java object but not a script object
-     * @param self not used
-     * @param obj the object that is checked
-     * @return tells whether given object is a Java object but not a script object
-     */
-    @Function(attributes = Attribute.NOT_ENUMERABLE, where = Where.CONSTRUCTOR)
-    public static boolean isJavaObject(final Object self, final Object obj) {
-        return obj != null && !(obj instanceof ScriptObject);
-    }
-
-    /**
-     * Returns true if the specified object is a ECMAScript object, that is an instance of {@link ScriptObject}.
-     * @param self not used
-     * @param obj the object that is checked if it is a ECMAScript object or not
-     * @return tells whether given object is a ECMAScript object or not.
-     */
-    @Function(attributes = Attribute.NOT_ENUMERABLE, where = Where.CONSTRUCTOR)
-    public static boolean isScriptObject(final Object self, final Object obj) {
-        return obj instanceof ScriptObject;
-    }
-
-    /**
-     * Returns true if the specified object is a ECMAScript function, that is an instance of {@link ScriptFunction}.
-     * @param self not used
-     * @param obj the object that is checked if it is a ECMAScript function or not
-     * @return tells whether given object is a ECMAScript function or not.
-     */
-    @Function(attributes = Attribute.NOT_ENUMERABLE, where = Where.CONSTRUCTOR)
-    public static boolean isScriptFunction(final Object self, final Object obj) {
-        return obj instanceof ScriptFunction;
     }
 
     /**
@@ -341,9 +266,7 @@ public final class NativeJava {
 
     /**
      * Given a script object and a Java type, converts the script object into the desired Java type. Currently it
-     * performs shallow creation of Java arrays, as well as wrapping of objects in Lists, Dequeues, Queues,
-     * and Collections. If conversion is not possible or fails for some reason, TypeError is thrown.
-     * Example:
+     * performs shallow creation of Java arrays, as well as wrapping of objects in Lists and Dequeues. Example:
      * <pre>
      * var anArray = [1, "13", false]
      * var javaIntArray = Java.to(anArray, "int[]")
@@ -357,10 +280,9 @@ public final class NativeJava {
      * object to create. Can not be null. If undefined, a "default" conversion is presumed (allowing the argument to be
      * omitted).
      * @return a Java object whose value corresponds to the original script object's value. Specifically, for array
-     * target types, returns a Java array of the same type with contents converted to the array's component type.
-     * Converts recursively when the target type is multidimensional array. For {@link List}, {@link Deque},
-     * {@link Queue}, or {@link Collection}, returns a live wrapper around the object, see {@link ListAdapter} for
-     * details. Returns null if obj is null.
+     * target types, returns a Java array of the same type with contents converted to the array's component type. Does
+     * not recursively convert for multidimensional arrays. For {@link List} or {@link Deque}, returns a live wrapper
+     * around the object, see {@link ListAdapter} for details. Returns null if obj is null.
      * @throws ClassNotFoundException if the class described by objType is not found
      */
     @Function(attributes = Attribute.NOT_ENUMERABLE, where = Where.CONSTRUCTOR)
@@ -387,14 +309,10 @@ public final class NativeJava {
         }
 
         if(targetClass.isArray()) {
-            try {
-                return JSType.toJavaArray(obj, targetClass.getComponentType());
-            } catch (final Exception exp) {
-                throw typeError(exp, "java.array.conversion.failed", targetClass.getName());
-            }
+            return JSType.toJavaArray(obj, targetClass.getComponentType());
         }
 
-        if (targetClass == List.class || targetClass == Deque.class || targetClass == Queue.class || targetClass == Collection.class) {
+        if(targetClass == List.class || targetClass == Deque.class) {
             return ListAdapter.create(obj);
         }
 
@@ -420,7 +338,7 @@ public final class NativeJava {
      * null.
      */
     @Function(attributes = Attribute.NOT_ENUMERABLE, where = Where.CONSTRUCTOR)
-    public static NativeArray from(final Object self, final Object objArray) {
+    public static Object from(final Object self, final Object objArray) {
         if (objArray == null) {
             return null;
         } else if (objArray instanceof Collection) {
@@ -496,7 +414,7 @@ public final class NativeJava {
         final Context ctx = Global.getThisContext();
         try {
             return ctx.findClass(typeName);
-        } catch(final ClassNotFoundException e) {
+        } catch(ClassNotFoundException e) {
             // The logic below compensates for a frequent user error - when people use dot notation to separate inner
             // class names, i.e. "java.lang.Character.UnicodeBlock" vs."java.lang.Character$UnicodeBlock". The logic
             // below will try alternative class names, replacing dots at the end of the name with dollar signs.
@@ -511,7 +429,7 @@ public final class NativeJava {
                 nextName.setCharAt(lastDot, '$');
                 try {
                     return ctx.findClass(nextName.toString());
-                } catch(final ClassNotFoundException cnfe) {
+                } catch(ClassNotFoundException cnfe) {
                     // Intentionally ignored, so the loop retries with the next name
                 }
             }
@@ -662,21 +580,5 @@ public final class NativeJava {
     @Function(attributes = Attribute.NOT_ENUMERABLE, where = Where.CONSTRUCTOR, name="super")
     public static Object _super(final Object self, final Object adapter) {
         return Bootstrap.createSuperAdapter(adapter);
-    }
-
-    /**
-     * Returns an object that is compatible with Java JSON libraries expectations; namely, that if it itself, or any
-     * object transitively reachable through it is a JavaScript array, then such objects will be exposed as
-     * {@link JSObject} that also implements the {@link List} interface for exposing the array elements. An explicit
-     * API is required as otherwise Nashorn exposes all objects externally as {@link JSObject}s that also implement the
-     * {@link Map} interface instead. By using this method, arrays will be exposed as {@link List}s and all other
-     * objects as {@link Map}s.
-     * @param self not used
-     * @param obj the object to be exposed in a Java JSON library compatible manner.
-     * @return a wrapper around the object that will enforce Java JSON library compatible exposure.
-     */
-    @Function(attributes = Attribute.NOT_ENUMERABLE, where = Where.CONSTRUCTOR)
-    public static Object asJSONCompatible(final Object self, final Object obj) {
-        return ScriptObjectMirror.wrapAsJSONCompatible(obj, Context.getGlobal());
     }
 }

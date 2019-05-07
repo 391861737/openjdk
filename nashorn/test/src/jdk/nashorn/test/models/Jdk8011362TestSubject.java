@@ -26,23 +26,22 @@
 package jdk.nashorn.test.models;
 
 /**
- * Test class used by JDK-8011362.js
+ * Test class used by JDK-8011362.js.
  */
-@SuppressWarnings("javadoc")
 public class Jdk8011362TestSubject {
     // This is selected for overloaded("", null)
-    public String overloaded(final String a, final String b) {
+    public String overloaded(String a, String b) {
         return "overloaded(String, String)";
     }
 
     // This is selected for overloaded(0, null)
-    public String overloaded(final Double a, final Double b) {
+    public String overloaded(Double a, Double b) {
         return "overloaded(Double, Double)";
     }
 
     // This method is added to test that null will not match a primitive type, that is overloaded(0, null) will always
     // select the (Double, Double) over (Double, double).
-    public String overloaded(final Double a, final double b) {
+    public String overloaded(Double a, double b) {
         return "overloaded(Double, double)";
     }
 }

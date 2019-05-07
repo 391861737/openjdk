@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2003, 2017, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2003, 2013, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -457,17 +457,6 @@ class VM_RedefineClasses: public VM_Operation {
     instanceKlassHandle scratch_class, TRAPS);
   bool rewrite_cp_refs_in_element_value(
     AnnotationArray* class_annotations, int &byte_i_ref, TRAPS);
-  bool rewrite_cp_refs_in_type_annotations_typeArray(
-    AnnotationArray* type_annotations_typeArray, int &byte_i_ref,
-    const char * location_mesg, TRAPS);
-  bool rewrite_cp_refs_in_type_annotation_struct(
-    AnnotationArray* type_annotations_typeArray, int &byte_i_ref,
-    const char * location_mesg, TRAPS);
-  bool skip_type_annotation_target(
-    AnnotationArray* type_annotations_typeArray, int &byte_i_ref,
-    const char * location_mesg, TRAPS);
-  bool skip_type_annotation_type_path(
-    AnnotationArray* type_annotations_typeArray, int &byte_i_ref, TRAPS);
   bool rewrite_cp_refs_in_fields_annotations(
     instanceKlassHandle scratch_class, TRAPS);
   void rewrite_cp_refs_in_method(methodHandle method,
@@ -478,12 +467,6 @@ class VM_RedefineClasses: public VM_Operation {
   bool rewrite_cp_refs_in_methods_default_annotations(
     instanceKlassHandle scratch_class, TRAPS);
   bool rewrite_cp_refs_in_methods_parameter_annotations(
-    instanceKlassHandle scratch_class, TRAPS);
-  bool rewrite_cp_refs_in_class_type_annotations(
-    instanceKlassHandle scratch_class, TRAPS);
-  bool rewrite_cp_refs_in_fields_type_annotations(
-    instanceKlassHandle scratch_class, TRAPS);
-  bool rewrite_cp_refs_in_methods_type_annotations(
     instanceKlassHandle scratch_class, TRAPS);
   void rewrite_cp_refs_in_stack_map_table(methodHandle method, TRAPS);
   void rewrite_cp_refs_in_verification_type_info(
@@ -538,8 +521,5 @@ class VM_RedefineClasses: public VM_Operation {
   static unsigned char * get_cached_class_file_bytes(JvmtiCachedClassFileData *cache) {
     return cache == NULL ? NULL : cache->data;
   }
-
-  // Error printing
-  void print_on_error(outputStream* st) const;
 };
 #endif // SHARE_VM_PRIMS_JVMTIREDEFINECLASSES_HPP

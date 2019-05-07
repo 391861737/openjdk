@@ -161,9 +161,9 @@ public abstract class URLStreamHandler {
             (spec.charAt(start + 1) == '/')) {
             start += 2;
             i = spec.indexOf('/', start);
-            if (i < 0 || i > limit) {
+            if (i < 0) {
                 i = spec.indexOf('?', start);
-                if (i < 0 || i > limit)
+                if (i < 0)
                     i = limit;
             }
 
@@ -171,14 +171,8 @@ public abstract class URLStreamHandler {
 
             int ind = authority.indexOf('@');
             if (ind != -1) {
-                if (ind != authority.lastIndexOf('@')) {
-                    // more than one '@' in authority. This is not server based
-                    userInfo = null;
-                    host = null;
-                } else {
-                    userInfo = authority.substring(0, ind);
-                    host = authority.substring(ind+1);
-                }
+                userInfo = authority.substring(0, ind);
+                host = authority.substring(ind+1);
             } else {
                 userInfo = null;
             }

@@ -27,7 +27,10 @@ package jdk.nashorn.internal.performance;
 
 import org.testng.annotations.Test;
 
-@SuppressWarnings("javadoc")
+/**
+ *
+ * @author Pavel Stepanov
+ */
 public class SplayTest {
 
     @Test

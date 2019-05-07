@@ -46,10 +46,6 @@ class GCCause : public AllStatic {
     _gc_locker,
     _heap_inspection,
     _heap_dump,
-    _wb_young_gc,
-    _wb_conc_mark,
-    _update_allocation_context_stats_inc,
-    _update_allocation_context_stats_full,
 
     /* implementation independent, but reserved for GC use */
     _no_gc,

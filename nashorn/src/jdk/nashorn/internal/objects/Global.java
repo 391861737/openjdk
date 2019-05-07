@@ -26,43 +26,32 @@
 package jdk.nashorn.internal.objects;
 
 import static jdk.nashorn.internal.lookup.Lookup.MH;
-import static jdk.nashorn.internal.runtime.ECMAErrors.referenceError;
 import static jdk.nashorn.internal.runtime.ECMAErrors.typeError;
-import static jdk.nashorn.internal.runtime.JSType.isString;
 import static jdk.nashorn.internal.runtime.ScriptRuntime.UNDEFINED;
 
 import java.io.IOException;
 import java.io.PrintWriter;
 import java.lang.invoke.MethodHandle;
 import java.lang.invoke.MethodHandles;
-import java.lang.invoke.MethodType;
-import java.lang.invoke.SwitchPoint;
+import java.lang.ref.ReferenceQueue;
+import java.lang.ref.SoftReference;
 import java.lang.reflect.Field;
-import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.Objects;
 import java.util.concurrent.Callable;
 import java.util.concurrent.ConcurrentHashMap;
-import javax.script.ScriptContext;
-import javax.script.ScriptEngine;
-import jdk.internal.dynalink.CallSiteDescriptor;
 import jdk.internal.dynalink.linker.GuardedInvocation;
 import jdk.internal.dynalink.linker.LinkRequest;
-import jdk.nashorn.api.scripting.ClassFilter;
-import jdk.nashorn.api.scripting.ScriptObjectMirror;
 import jdk.nashorn.internal.lookup.Lookup;
 import jdk.nashorn.internal.objects.annotations.Attribute;
-import jdk.nashorn.internal.objects.annotations.Getter;
 import jdk.nashorn.internal.objects.annotations.Property;
 import jdk.nashorn.internal.objects.annotations.ScriptClass;
-import jdk.nashorn.internal.objects.annotations.Setter;
+import jdk.nashorn.internal.runtime.ConsString;
 import jdk.nashorn.internal.runtime.Context;
-import jdk.nashorn.internal.runtime.ECMAErrors;
-import jdk.nashorn.internal.runtime.FindProperty;
-import jdk.nashorn.internal.runtime.GlobalConstants;
 import jdk.nashorn.internal.runtime.GlobalFunctions;
+import jdk.nashorn.internal.runtime.GlobalObject;
 import jdk.nashorn.internal.runtime.JSType;
 import jdk.nashorn.internal.runtime.NativeJavaPackage;
 import jdk.nashorn.internal.runtime.PropertyDescriptor;
@@ -73,52 +62,20 @@ import jdk.nashorn.internal.runtime.ScriptFunction;
 import jdk.nashorn.internal.runtime.ScriptObject;
 import jdk.nashorn.internal.runtime.ScriptRuntime;
 import jdk.nashorn.internal.runtime.ScriptingFunctions;
-import jdk.nashorn.internal.runtime.Specialization;
+import jdk.nashorn.internal.runtime.Source;
 import jdk.nashorn.internal.runtime.arrays.ArrayData;
 import jdk.nashorn.internal.runtime.linker.Bootstrap;
 import jdk.nashorn.internal.runtime.linker.InvokeByName;
-import jdk.nashorn.internal.runtime.linker.NashornCallSiteDescriptor;
 import jdk.nashorn.internal.runtime.regexp.RegExpResult;
-import jdk.nashorn.internal.scripts.JD;
 import jdk.nashorn.internal.scripts.JO;
-import jdk.nashorn.tools.ShellFunctions;
 
 /**
  * Representation of global scope.
  */
 @ScriptClass("Global")
-public final class Global extends Scope {
-    // This special value is used to flag a lazily initialized global property.
-    private static final Object LAZY_SENTINEL = new Object();
-    // This serves as placeholder value used in place of a location property (__FILE__, __DIR__, __LINE__)
-    private static final Object LOCATION_PLACEHOLDER = new Object();
-
+public final class Global extends ScriptObject implements GlobalObject, Scope {
     private final InvokeByName TO_STRING = new InvokeByName("toString", ScriptObject.class);
     private final InvokeByName VALUE_OF  = new InvokeByName("valueOf",  ScriptObject.class);
-
-    /**
-     * Optimistic builtin names that require switchpoint invalidation
-     * upon assignment. Overly conservative, but works for now, to avoid
-     * any complicated scope checks and especially heavy weight guards
-     * like
-     *
-     * <pre>
-     *     public boolean setterGuard(final Object receiver) {
-     *         final Global          global = Global.instance();
-     *         final ScriptObject    sobj   = global.getFunctionPrototype();
-     *         final Object          apply  = sobj.get("apply");
-     *         return apply == receiver;
-     *     }
-     * </pre>
-     *
-     * Naturally, checking for builtin classes like NativeFunction is cheaper,
-     * it's when you start adding property checks for said builtins you have
-     * problems with guard speed.
-     */
-
-    /** Nashorn extension: arguments array */
-    @Property(attributes = Attribute.NOT_ENUMERABLE | Attribute.NOT_CONFIGURABLE)
-    public Object arguments;
 
     /** ECMA 15.1.2.2 parseInt (string , radix) */
     @Property(attributes = Attribute.NOT_ENUMERABLE)
@@ -182,15 +139,15 @@ public final class Global extends Scope {
 
     /** Value property NaN of the Global Object - ECMA 15.1.1.1 NaN */
     @Property(attributes = Attribute.NON_ENUMERABLE_CONSTANT)
-    public static final double NaN = Double.NaN;
+    public final Object NaN = Double.NaN;
 
     /** Value property Infinity of the Global Object - ECMA 15.1.1.2 Infinity */
     @Property(attributes = Attribute.NON_ENUMERABLE_CONSTANT)
-    public static final double Infinity = Double.POSITIVE_INFINITY;
+    public final Object Infinity = Double.POSITIVE_INFINITY;
 
     /** Value property Undefined of the Global Object - ECMA 15.1.1.3 Undefined */
     @Property(attributes = Attribute.NON_ENUMERABLE_CONSTANT)
-    public static final Object undefined = UNDEFINED;
+    public final Object undefined = UNDEFINED;
 
     /** ECMA 15.1.2.1 eval(x) */
     @Property(attributes = Attribute.NOT_ENUMERABLE)
@@ -220,117 +177,21 @@ public final class Global extends Scope {
     @Property(name = "Number", attributes = Attribute.NOT_ENUMERABLE)
     public volatile Object number;
 
-    /**
-     * Getter for ECMA 15.1.4.7 Date property
-     *
-     * @param self self reference
-     * @return Date property value
-     */
-    @Getter(name = "Date", attributes = Attribute.NOT_ENUMERABLE)
-    public static Object getDate(final Object self) {
-        final Global global = Global.instanceFrom(self);
-        if (global.date == LAZY_SENTINEL) {
-            global.date = global.getBuiltinDate();
-        }
-        return global.date;
-    }
+    /** ECMA 15.1.4.7 Date constructor */
+    @Property(name = "Date", attributes = Attribute.NOT_ENUMERABLE)
+    public volatile Object date;
 
-    /**
-     * Setter for ECMA 15.1.4.7 Date property
-     *
-     * @param self self reference
-     * @param value value for the Date property
-     */
-    @Setter(name = "Date", attributes = Attribute.NOT_ENUMERABLE)
-    public static void setDate(final Object self, final Object value) {
-        final Global global = Global.instanceFrom(self);
-        global.date = value;
-    }
+    /** ECMA 15.1.4.8 RegExp constructor */
+    @Property(name = "RegExp", attributes = Attribute.NOT_ENUMERABLE)
+    public volatile Object regexp;
 
-    private volatile Object date = LAZY_SENTINEL;
+    /** ECMA 15.12 - The JSON object */
+    @Property(name = "JSON", attributes = Attribute.NOT_ENUMERABLE)
+    public volatile Object json;
 
-    /**
-     * Getter for ECMA 15.1.4.8 RegExp property
-     *
-     * @param self self reference
-     * @return RegExp property value
-     */
-    @Getter(name = "RegExp", attributes = Attribute.NOT_ENUMERABLE)
-    public static Object getRegExp(final Object self) {
-        final Global global = Global.instanceFrom(self);
-        if (global.regexp == LAZY_SENTINEL) {
-            global.regexp = global.getBuiltinRegExp();
-        }
-        return global.regexp;
-    }
-
-    /**
-     * Setter for ECMA 15.1.4.8 RegExp property
-     *
-     * @param self self reference
-     * @param value value for the RegExp property
-     */
-    @Setter(name = "RegExp", attributes = Attribute.NOT_ENUMERABLE)
-    public static void setRegExp(final Object self, final Object value) {
-        final Global global = Global.instanceFrom(self);
-        global.regexp = value;
-    }
-
-    private volatile Object regexp = LAZY_SENTINEL;
-
-    /**
-     * Getter for ECMA 15.12 - The JSON property
-     * @param self self reference
-     * @return the value of JSON property
-     */
-    @Getter(name = "JSON", attributes = Attribute.NOT_ENUMERABLE)
-    public static Object getJSON(final Object self) {
-        final Global global = Global.instanceFrom(self);
-        if (global.json == LAZY_SENTINEL) {
-            global.json = global.getBuiltinJSON();
-        }
-        return global.json;
-    }
-
-    /**
-     * Setter for ECMA 15.12 - The JSON property
-     * @param self self reference
-     * @param value value for the JSON property
-     */
-    @Setter(name = "JSON", attributes = Attribute.NOT_ENUMERABLE)
-    public static void setJSON(final Object self, final Object value) {
-        final Global global = Global.instanceFrom(self);
-        global.json = value;
-    }
-
-    private volatile Object json = LAZY_SENTINEL;
-
-    /**
-     * Getter for Nashorn extension: global.JSAdapter
-     * @param self self reference
-     * @return value of the JSAdapter property
-     */
-    @Getter(name = "JSAdapter", attributes = Attribute.NOT_ENUMERABLE)
-    public static Object getJSAdapter(final Object self) {
-        final Global global = Global.instanceFrom(self);
-        if (global.jsadapter == LAZY_SENTINEL) {
-            global.jsadapter = global.getBuiltinJSAdapter();
-        }
-        return global.jsadapter;
-    }
-
-    /**
-     * Setter for Nashorn extension: global.JSAdapter
-     * @param self self reference
-     * @param value value for the JSAdapter property
-     */
-    @Setter(name = "JSAdapter", attributes = Attribute.NOT_ENUMERABLE)
-    public static void setJSAdapter(final Object self, final Object value) {
-        final Global global = Global.instanceFrom(self);
-        global.jsadapter = value;
-    }
-
-    private volatile Object jsadapter = LAZY_SENTINEL;
+    /** Nashorn extension: global.JSAdapter */
+    @Property(name = "JSAdapter", attributes = Attribute.NOT_ENUMERABLE)
+    public volatile Object jsadapter;
 
     /** ECMA 15.8 - The Math object */
     @Property(name = "Math", attributes = Attribute.NOT_ENUMERABLE)
@@ -340,60 +201,13 @@ public final class Global extends Scope {
     @Property(name = "Error", attributes = Attribute.NOT_ENUMERABLE)
     public volatile Object error;
 
-    /**
-     * Getter for the EvalError property
-     * @param self self reference
-     * @return the value of EvalError property
-     */
-    @Getter(name = "EvalError", attributes = Attribute.NOT_ENUMERABLE)
-    public static Object getEvalError(final Object self) {
-        final Global global = Global.instanceFrom(self);
-        if (global.evalError == LAZY_SENTINEL) {
-            global.evalError = global.getBuiltinEvalError();
-        }
-        return global.evalError;
-    }
+    /** EvalError object */
+    @Property(name = "EvalError", attributes = Attribute.NOT_ENUMERABLE)
+    public volatile Object evalError;
 
-    /**
-     * Setter for the EvalError property
-     * @param self self reference
-     * @param value value of the EvalError property
-     */
-    @Setter(name = "EvalError", attributes = Attribute.NOT_ENUMERABLE)
-    public static void setEvalError(final Object self, final Object value) {
-        final Global global = Global.instanceFrom(self);
-        global.evalError = value;
-    }
-
-    private volatile Object evalError = LAZY_SENTINEL;
-
-    /**
-     * Getter for the RangeError property.
-     * @param self self reference
-     * @return the value of RangeError property
-     */
-    @Getter(name = "RangeError", attributes = Attribute.NOT_ENUMERABLE)
-    public static Object getRangeError(final Object self) {
-        final Global global = Global.instanceFrom(self);
-        if (global.rangeError == LAZY_SENTINEL) {
-            global.rangeError = global.getBuiltinRangeError();
-        }
-        return global.rangeError;
-    }
-
-
-    /**
-     * Setter for the RangeError property.
-     * @param self self reference
-     * @param value value for the RangeError property
-     */
-    @Setter(name = "RangeError", attributes = Attribute.NOT_ENUMERABLE)
-    public static void setRangeError(final Object self, final Object value) {
-        final Global global = Global.instanceFrom(self);
-        global.rangeError = value;
-    }
-
-    private volatile Object rangeError = LAZY_SENTINEL;
+    /** RangeError object */
+    @Property(name = "RangeError", attributes = Attribute.NOT_ENUMERABLE)
+    public volatile Object rangeError;
 
     /** ReferenceError object */
     @Property(name = "ReferenceError", attributes = Attribute.NOT_ENUMERABLE)
@@ -407,340 +221,49 @@ public final class Global extends Scope {
     @Property(name = "TypeError", attributes = Attribute.NOT_ENUMERABLE)
     public volatile Object typeError;
 
-    /**
-     * Getter for the URIError property.
-     * @param self self reference
-     * @return the value of URIError property
-     */
-    @Getter(name = "URIError", attributes = Attribute.NOT_ENUMERABLE)
-    public static Object getURIError(final Object self) {
-        final Global global = Global.instanceFrom(self);
-        if (global.uriError == LAZY_SENTINEL) {
-            global.uriError = global.getBuiltinURIError();
-        }
-        return global.uriError;
-    }
+    /** URIError object */
+    @Property(name = "URIError", attributes = Attribute.NOT_ENUMERABLE)
+    public volatile Object uriError;
 
-    /**
-     * Setter for the URIError property.
-     * @param self self reference
-     * @param value value for the URIError property
-     */
-    @Setter(name = "URIError", attributes = Attribute.NOT_ENUMERABLE)
-    public static void setURIError(final Object self, final Object value) {
-        final Global global = Global.instanceFrom(self);
-        global.uriError = value;
-    }
+    /** ArrayBuffer object */
+    @Property(name = "ArrayBuffer", attributes = Attribute.NOT_ENUMERABLE)
+    public volatile Object arrayBuffer;
 
-    private volatile Object uriError = LAZY_SENTINEL;
+    /** TypedArray (int8) */
+    @Property(name = "Int8Array", attributes = Attribute.NOT_ENUMERABLE)
+    public volatile Object int8Array;
 
-    /**
-     * Getter for the ArrayBuffer property.
-     * @param self self reference
-     * @return the value of the ArrayBuffer property
-     */
-    @Getter(name = "ArrayBuffer", attributes = Attribute.NOT_ENUMERABLE)
-    public static Object getArrayBuffer(final Object self) {
-        final Global global = Global.instanceFrom(self);
-        if (global.arrayBuffer == LAZY_SENTINEL) {
-            global.arrayBuffer = global.getBuiltinArrayBuffer();
-        }
-        return global.arrayBuffer;
-    }
+    /** TypedArray (uint8) */
+    @Property(name = "Uint8Array", attributes = Attribute.NOT_ENUMERABLE)
+    public volatile Object uint8Array;
 
-    /**
-     * Setter for the ArrayBuffer property.
-     * @param self self reference
-     * @param value value of the ArrayBuffer property
-     */
-    @Setter(name = "ArrayBuffer", attributes = Attribute.NOT_ENUMERABLE)
-    public static void setArrayBuffer(final Object self, final Object value) {
-        final Global global = Global.instanceFrom(self);
-        global.arrayBuffer = value;
-    }
+    /** TypedArray (uint8) - Clamped */
+    @Property(name = "Uint8ClampedArray", attributes = Attribute.NOT_ENUMERABLE)
+    public volatile Object uint8ClampedArray;
 
-    private volatile Object arrayBuffer;
+    /** TypedArray (int16) */
+    @Property(name = "Int16Array", attributes = Attribute.NOT_ENUMERABLE)
+    public volatile Object int16Array;
 
-    /**
-     * Getter for the DataView property.
-     * @param self self reference
-     * @return the value of the DataView property
-     */
-    @Getter(name = "DataView", attributes = Attribute.NOT_ENUMERABLE)
-    public static Object getDataView(final Object self) {
-        final Global global = Global.instanceFrom(self);
-        if (global.dataView == LAZY_SENTINEL) {
-            global.dataView = global.getBuiltinDataView();
-        }
-        return global.dataView;
-    }
+    /** TypedArray (uint16) */
+    @Property(name = "Uint16Array", attributes = Attribute.NOT_ENUMERABLE)
+    public volatile Object uint16Array;
 
+    /** TypedArray (int32) */
+    @Property(name = "Int32Array", attributes = Attribute.NOT_ENUMERABLE)
+    public volatile Object int32Array;
 
-    /**
-     * Setter for the DataView property.
-     * @param self self reference
-     * @param value value of the DataView property
-     */
-    @Setter(name = "DataView", attributes = Attribute.NOT_ENUMERABLE)
-    public static void setDataView(final Object self, final Object value) {
-        final Global global = Global.instanceFrom(self);
-        global.dataView = value;
-    }
+    /** TypedArray (uint32) */
+    @Property(name = "Uint32Array", attributes = Attribute.NOT_ENUMERABLE)
+    public volatile Object uint32Array;
 
-    private volatile Object dataView;
+    /** TypedArray (float32) */
+    @Property(name = "Float32Array", attributes = Attribute.NOT_ENUMERABLE)
+    public volatile Object float32Array;
 
-    /**
-     * Getter for the Int8Array property.
-     * @param self self reference
-     * @return the value of the Int8Array property.
-     */
-    @Getter(name = "Int8Array", attributes = Attribute.NOT_ENUMERABLE)
-    public static Object getInt8Array(final Object self) {
-        final Global global = Global.instanceFrom(self);
-        if (global.int8Array == LAZY_SENTINEL) {
-            global.int8Array = global.getBuiltinInt8Array();
-        }
-        return global.int8Array;
-    }
-
-    /**
-     * Setter for the Int8Array property.
-     * @param self self reference
-     * @param value value of the Int8Array property
-     */
-    @Setter(name = "Int8Array", attributes = Attribute.NOT_ENUMERABLE)
-    public static void setInt8Array(final Object self, final Object value) {
-        final Global global = Global.instanceFrom(self);
-        global.int8Array = value;
-    }
-
-    private volatile Object int8Array;
-
-    /**
-     * Getter for the Uin8Array property.
-     * @param self self reference
-     * @return the value of the Uint8Array property
-     */
-    @Getter(name = "Uint8Array", attributes = Attribute.NOT_ENUMERABLE)
-    public static Object getUint8Array(final Object self) {
-        final Global global = Global.instanceFrom(self);
-        if (global.uint8Array == LAZY_SENTINEL) {
-            global.uint8Array = global.getBuiltinUint8Array();
-        }
-        return global.uint8Array;
-    }
-
-    /**
-     * Setter for the Uin8Array property.
-     * @param self self reference
-     * @param value value of the Uin8Array property
-     */
-    @Setter(name = "Uint8Array", attributes = Attribute.NOT_ENUMERABLE)
-    public static void setUint8Array(final Object self, final Object value) {
-        final Global global = Global.instanceFrom(self);
-        global.uint8Array = value;
-    }
-
-    private volatile Object uint8Array;
-
-    /**
-     * Getter for the Uint8ClampedArray property.
-     * @param self self reference
-     * @return the value of the Uint8ClampedArray property
-     */
-    @Getter(name = "Uint8ClampedArray", attributes = Attribute.NOT_ENUMERABLE)
-    public static Object getUint8ClampedArray(final Object self) {
-        final Global global = Global.instanceFrom(self);
-        if (global.uint8ClampedArray == LAZY_SENTINEL) {
-            global.uint8ClampedArray = global.getBuiltinUint8ClampedArray();
-        }
-        return global.uint8ClampedArray;
-    }
-
-    /**
-     * Setter for the Uint8ClampedArray property.
-     * @param self self reference
-     * @param value value of the Uint8ClampedArray property
-     */
-    @Setter(name = "Uint8ClampedArray", attributes = Attribute.NOT_ENUMERABLE)
-    public static void setUint8ClampedArray(final Object self, final Object value) {
-        final Global global = Global.instanceFrom(self);
-        global.uint8ClampedArray = value;
-    }
-
-    private volatile Object uint8ClampedArray;
-
-    /**
-     * Getter for the Int16Array property.
-     * @param self self reference
-     * @return the value of the Int16Array property
-     */
-    @Getter(name = "Int16Array", attributes = Attribute.NOT_ENUMERABLE)
-    public static Object getInt16Array(final Object self) {
-        final Global global = Global.instanceFrom(self);
-        if (global.int16Array == LAZY_SENTINEL) {
-            global.int16Array = global.getBuiltinInt16Array();
-        }
-        return global.int16Array;
-    }
-
-    /**
-     * Setter for the Int16Array property.
-     * @param self self reference
-     * @param value value of the Int16Array property
-     */
-    @Setter(name = "Int16Array", attributes = Attribute.NOT_ENUMERABLE)
-    public static void setInt16Array(final Object self, final Object value) {
-        final Global global = Global.instanceFrom(self);
-        global.int16Array = value;
-    }
-
-    private volatile Object int16Array;
-
-    /**
-     * Getter for the Uint16Array property.
-     * @param self self reference
-     * @return the value of the Uint16Array property
-     */
-    @Getter(name = "Uint16Array", attributes = Attribute.NOT_ENUMERABLE)
-    public static Object getUint16Array(final Object self) {
-        final Global global = Global.instanceFrom(self);
-        if (global.uint16Array == LAZY_SENTINEL) {
-            global.uint16Array = global.getBuiltinUint16Array();
-        }
-        return global.uint16Array;
-    }
-
-    /**
-     * Setter for the Uint16Array property.
-     * @param self self reference
-     * @param value value of the Uint16Array property
-     */
-    @Setter(name = "Uint16Array", attributes = Attribute.NOT_ENUMERABLE)
-    public static void setUint16Array(final Object self, final Object value) {
-        final Global global = Global.instanceFrom(self);
-        global.uint16Array = value;
-    }
-
-    private volatile Object uint16Array;
-
-    /**
-     * Getter for the Int32Array property.
-     *
-     * @param self self reference
-     * @return the value of the Int32Array property
-     */
-    @Getter(name = "Int32Array", attributes = Attribute.NOT_ENUMERABLE)
-    public static Object getInt32Array(final Object self) {
-        final Global global = Global.instanceFrom(self);
-        if (global.int32Array == LAZY_SENTINEL) {
-            global.int32Array = global.getBuiltinInt32Array();
-        }
-        return global.int32Array;
-    }
-
-
-    /**
-     * Setter for the Int32Array property.
-     *
-     * @param self self reference
-     * @param value value of the Int32Array property
-     */
-    @Setter(name = "Int32Array", attributes = Attribute.NOT_ENUMERABLE)
-    public static void setInt32Array(final Object self, final Object value) {
-        final Global global = Global.instanceFrom(self);
-        global.int32Array = value;
-    }
-
-    private volatile Object int32Array;
-
-    /**
-     * Getter of the Uint32Array property.
-     *
-     * @param self self reference
-     * @return the value of the Uint32Array property
-     */
-    @Getter(name = "Uint32Array", attributes = Attribute.NOT_ENUMERABLE)
-    public static Object getUint32Array(final Object self) {
-        final Global global = Global.instanceFrom(self);
-        if (global.uint32Array == LAZY_SENTINEL) {
-            global.uint32Array = global.getBuiltinUint32Array();
-        }
-        return global.uint32Array;
-    }
-
-
-    /**
-     * Setter of the Uint32Array property.
-     *
-     * @param self self reference
-     * @param value value of the Uint32Array property
-     */
-    @Setter(name = "Uint32Array", attributes = Attribute.NOT_ENUMERABLE)
-    public static void setUint32Array(final Object self, final Object value) {
-        final Global global = Global.instanceFrom(self);
-        global.uint32Array = value;
-    }
-
-    private volatile Object uint32Array;
-
-    /**
-     * Getter for the Float32Array property.
-     *
-     * @param self self reference
-     * @return the value of the Float32Array property
-     */
-    @Getter(name = "Float32Array", attributes = Attribute.NOT_ENUMERABLE)
-    public static Object getFloat32Array(final Object self) {
-        final Global global = Global.instanceFrom(self);
-        if (global.float32Array == LAZY_SENTINEL) {
-            global.float32Array = global.getBuiltinFloat32Array();
-        }
-        return global.float32Array;
-    }
-
-    /**
-     * Setter for the Float32Array property.
-     *
-     * @param self self reference
-     * @param value value of the Float32Array property
-     */
-    @Setter(name = "Float32Array", attributes = Attribute.NOT_ENUMERABLE)
-    public static void setFloat32Array(final Object self, final Object value) {
-        final Global global = Global.instanceFrom(self);
-        global.float32Array = value;
-    }
-
-    private volatile Object float32Array;
-
-    /**
-     * Getter for the Float64Array property.
-     *
-     * @param self self reference
-     * @return the value of the Float64Array property
-     */
-    @Getter(name = "Float64Array", attributes = Attribute.NOT_ENUMERABLE)
-    public static Object getFloat64Array(final Object self) {
-        final Global global = Global.instanceFrom(self);
-        if (global.float64Array == LAZY_SENTINEL) {
-            global.float64Array = global.getBuiltinFloat64Array();
-        }
-        return global.float64Array;
-    }
-
-    /**
-     * Setter for the Float64Array property.
-     *
-     * @param self self reference
-     * @param value value of the Float64Array property
-     */
-    @Setter(name = "Float64Array", attributes = Attribute.NOT_ENUMERABLE)
-    public static void setFloat64Array(final Object self, final Object value) {
-        final Global global = Global.instanceFrom(self);
-        global.float64Array = value;
-    }
-
-    private volatile Object float64Array;
+    /** TypedArray (float64) */
+    @Property(name = "Float64Array", attributes = Attribute.NOT_ENUMERABLE)
+    public volatile Object float64Array;
 
     /** Nashorn extension: Java access - global.Packages */
     @Property(name = "Packages", attributes = Attribute.NOT_ENUMERABLE)
@@ -770,89 +293,31 @@ public final class Global extends Scope {
     @Property(attributes = Attribute.NOT_ENUMERABLE)
     public volatile Object org;
 
-    /**
-     * Getter for the Nashorn extension: Java access - global.JavaImporter.
-     *
-     * @param self self reference
-     * @return the value of the JavaImporter property
-     */
-    @Getter(name = "JavaImporter", attributes = Attribute.NOT_ENUMERABLE)
-    public static Object getJavaImporter(final Object self) {
-        final Global global = Global.instanceFrom(self);
-        if (global.javaImporter == LAZY_SENTINEL) {
-            global.javaImporter = global.getBuiltinJavaImporter();
-        }
-        return global.javaImporter;
-    }
+    /** Nashorn extension: Java access - global.javaImporter */
+    @Property(name = "JavaImporter", attributes = Attribute.NOT_ENUMERABLE)
+    public volatile Object javaImporter;
 
-    /**
-     * Setter for the Nashorn extension: Java access - global.JavaImporter.
-     *
-     * @param self self reference
-     * @param value value of the JavaImporter property
-     */
-    @Setter(name = "JavaImporter", attributes = Attribute.NOT_ENUMERABLE)
-    public static void setJavaImporter(final Object self, final Object value) {
-        final Global global = Global.instanceFrom(self);
-        global.javaImporter = value;
-    }
-
-    private volatile Object javaImporter;
-
-    /**
-     * Getter for the Nashorn extension: global.Java property.
-     *
-     * @param self self reference
-     * @return the value of the Java property
-     */
-    @Getter(name = "Java", attributes = Attribute.NOT_ENUMERABLE)
-    public static Object getJavaApi(final Object self) {
-        final Global global = Global.instanceFrom(self);
-        if (global.javaApi == LAZY_SENTINEL) {
-            global.javaApi = global.getBuiltinJavaApi();
-        }
-        return global.javaApi;
-    }
-
-    /**
-     * Setter for the Nashorn extension: global.Java property.
-     *
-     * @param self self reference
-     * @param value value of the Java property
-     */
-    @Setter(name = "Java", attributes = Attribute.NOT_ENUMERABLE)
-    public static void setJavaApi(final Object self, final Object value) {
-        final Global global = Global.instanceFrom(self);
-        global.javaApi = value;
-    }
-
-    private volatile Object javaApi;
+    /** Nashorn extension: global.Java Object constructor. */
+    @Property(name = "Java", attributes = Attribute.NOT_ENUMERABLE)
+    public volatile Object javaApi;
 
     /** Nashorn extension: current script's file name */
     @Property(name = "__FILE__", attributes = Attribute.NON_ENUMERABLE_CONSTANT)
-    public static final Object __FILE__ = LOCATION_PLACEHOLDER;
+    public Object __FILE__;
 
     /** Nashorn extension: current script's directory */
     @Property(name = "__DIR__", attributes = Attribute.NON_ENUMERABLE_CONSTANT)
-    public static final Object __DIR__ = LOCATION_PLACEHOLDER;
+    public Object __DIR__;
 
     /** Nashorn extension: current source line number being executed */
     @Property(name = "__LINE__", attributes = Attribute.NON_ENUMERABLE_CONSTANT)
-    public static final Object __LINE__ = LOCATION_PLACEHOLDER;
-
-    private volatile NativeDate DEFAULT_DATE;
+    public Object __LINE__;
 
     /** Used as Date.prototype's default value */
-    NativeDate getDefaultDate() {
-        return DEFAULT_DATE;
-    }
-
-    private volatile NativeRegExp DEFAULT_REGEXP;
+    public NativeDate   DEFAULT_DATE;
 
     /** Used as RegExp.prototype's default value */
-    NativeRegExp getDefaultRegExp() {
-        return DEFAULT_REGEXP;
-    }
+    public NativeRegExp DEFAULT_REGEXP;
 
     /*
      * Built-in constructor objects: Even if user changes dynamic values of
@@ -887,36 +352,69 @@ public final class Global extends Scope {
     private ScriptObject   builtinJavafx;
     private ScriptObject   builtinJavax;
     private ScriptObject   builtinOrg;
-    private ScriptFunction builtinJavaImporter;
+    private ScriptObject   builtinJavaImporter;
     private ScriptObject   builtinJavaApi;
-    private ScriptFunction builtinArrayBuffer;
-    private ScriptFunction builtinDataView;
-    private ScriptFunction builtinInt8Array;
-    private ScriptFunction builtinUint8Array;
-    private ScriptFunction builtinUint8ClampedArray;
-    private ScriptFunction builtinInt16Array;
-    private ScriptFunction builtinUint16Array;
-    private ScriptFunction builtinInt32Array;
-    private ScriptFunction builtinUint32Array;
-    private ScriptFunction builtinFloat32Array;
-    private ScriptFunction builtinFloat64Array;
+    private ScriptObject   builtinArrayBuffer;
+    private ScriptObject   builtinInt8Array;
+    private ScriptObject   builtinUint8Array;
+    private ScriptObject   builtinUint8ClampedArray;
+    private ScriptObject   builtinInt16Array;
+    private ScriptObject   builtinUint16Array;
+    private ScriptObject   builtinInt32Array;
+    private ScriptObject   builtinUint32Array;
+    private ScriptObject   builtinFloat32Array;
+    private ScriptObject   builtinFloat64Array;
 
     /*
      * ECMA section 13.2.3 The [[ThrowTypeError]] Function Object
      */
     private ScriptFunction typeErrorThrower;
 
+    private PropertyMap    accessorPropertyDescriptorMap;
+    private PropertyMap    arrayBufferViewMap;
+    private PropertyMap    dataPropertyDescriptorMap;
+    private PropertyMap    genericPropertyDescriptorMap;
+    private PropertyMap    nativeArgumentsMap;
+    private PropertyMap    nativeArrayMap;
+    private PropertyMap    nativeArrayBufferMap;
+    private PropertyMap    nativeBooleanMap;
+    private PropertyMap    nativeDateMap;
+    private PropertyMap    nativeErrorMap;
+    private PropertyMap    nativeEvalErrorMap;
+    private PropertyMap    nativeJSAdapterMap;
+    private PropertyMap    nativeJavaImporterMap;
+    private PropertyMap    nativeNumberMap;
+    private PropertyMap    nativeRangeErrorMap;
+    private PropertyMap    nativeReferenceErrorMap;
+    private PropertyMap    nativeRegExpMap;
+    private PropertyMap    nativeRegExpExecResultMap;
+    private PropertyMap    nativeStrictArgumentsMap;
+    private PropertyMap    nativeStringMap;
+    private PropertyMap    nativeSyntaxErrorMap;
+    private PropertyMap    nativeTypeErrorMap;
+    private PropertyMap    nativeURIErrorMap;
+    private PropertyMap    prototypeObjectMap;
+    private PropertyMap    objectMap;
+    private PropertyMap    functionMap;
+    private PropertyMap    anonymousFunctionMap;
+    private PropertyMap    strictFunctionMap;
+    private PropertyMap    boundFunctionMap;
+
+    // Flag to indicate that a split method issued a return statement
+    private int splitState = -1;
+
+    // class cache
+    private ClassCache classCache;
+
     // Used to store the last RegExp result to support deprecated RegExp constructor properties
     private RegExpResult lastRegExpResult;
 
-    private static final MethodHandle EVAL                 = findOwnMH_S("eval",                Object.class, Object.class, Object.class);
-    private static final MethodHandle NO_SUCH_PROPERTY     = findOwnMH_S(NO_SUCH_PROPERTY_NAME, Object.class, Object.class, Object.class);
-    private static final MethodHandle PRINT                = findOwnMH_S("print",               Object.class, Object.class, Object[].class);
-    private static final MethodHandle PRINTLN              = findOwnMH_S("println",             Object.class, Object.class, Object[].class);
-    private static final MethodHandle LOAD                 = findOwnMH_S("load",                Object.class, Object.class, Object.class);
-    private static final MethodHandle LOAD_WITH_NEW_GLOBAL = findOwnMH_S("loadWithNewGlobal",   Object.class, Object.class, Object[].class);
-    private static final MethodHandle EXIT                 = findOwnMH_S("exit",                Object.class, Object.class, Object.class);
-    private static final MethodHandle LEXICAL_SCOPE_FILTER = findOwnMH_S("lexicalScopeFilter",  Object.class, Object.class);
+    private static final MethodHandle EVAL              = findOwnMH("eval",              Object.class, Object.class, Object.class);
+    private static final MethodHandle PRINT             = findOwnMH("print",             Object.class, Object.class, Object[].class);
+    private static final MethodHandle PRINTLN           = findOwnMH("println",           Object.class, Object.class, Object[].class);
+    private static final MethodHandle LOAD              = findOwnMH("load",              Object.class, Object.class, Object.class);
+    private static final MethodHandle LOADWITHNEWGLOBAL = findOwnMH("loadWithNewGlobal", Object.class, Object.class, Object[].class);
+    private static final MethodHandle EXIT              = findOwnMH("exit",              Object.class, Object.class, Object.class);
 
     // initialized by nasgen
     private static PropertyMap $nasgenmap$;
@@ -924,63 +422,9 @@ public final class Global extends Scope {
     // context to which this global belongs to
     private final Context context;
 
-    // current ScriptContext to use - can be null.
-    private ThreadLocal<ScriptContext> scontext;
-    // current ScriptEngine associated - can be null.
-    private ScriptEngine engine;
-    // initial ScriptContext - usually null and only used for special case
-    private volatile ScriptContext initscontext;
-
-    // ES6 global lexical scope.
-    private final LexicalScope lexicalScope;
-
-    // Switchpoint for non-constant global callsites in the presence of ES6 lexical scope.
-    private SwitchPoint lexicalScopeSwitchPoint;
-
-    /**
-     * Set the current script context
-     * @param ctxt script context
-     */
-    public void setScriptContext(final ScriptContext ctxt) {
-        assert scontext != null;
-        scontext.set(ctxt);
-    }
-
-    /**
-     * Get the current script context
-     * @return current script context
-     */
-    public ScriptContext getScriptContext() {
-        assert scontext != null;
-        return scontext.get();
-    }
-
-    /**
-     * Set the initial script context
-     * @param ctxt initial script context
-     */
-    public void setInitScriptContext(final ScriptContext ctxt) {
-        this.initscontext = ctxt;
-    }
-
-    private ScriptContext currentContext() {
-        final ScriptContext sc = scontext != null? scontext.get() : null;
-        if (sc != null) {
-            return sc;
-        } else if (initscontext != null) {
-            return initscontext;
-        }
-        return engine != null? engine.getContext() : null;
-    }
-
     @Override
     protected Context getContext() {
         return context;
-    }
-
-    @Override
-    protected boolean useDualFields() {
-        return context.useDualFields();
     }
 
     // performs initialization checks for Global constructor and returns the
@@ -992,9 +436,15 @@ public final class Global extends Scope {
             sm.checkPermission(new RuntimePermission(Context.NASHORN_CREATE_GLOBAL));
         }
 
-        Objects.requireNonNull(context);
+        // null check on context
+        context.getClass();
 
-        return $nasgenmap$;
+        /*
+         * Duplicate global's map and use it. This way the initial Map filled
+         * by nasgen (referenced from static field in this class) is retained
+         * 'as is' (as that one is process wide singleton.
+         */
+        return $nasgenmap$.duplicate();
     }
 
     /**
@@ -1005,7 +455,12 @@ public final class Global extends Scope {
     public Global(final Context context) {
         super(checkAndGetMap(context));
         this.context = context;
-        this.lexicalScope = context.getEnv()._es6 ? new LexicalScope(this) : null;
+        this.setIsScope();
+
+        final int cacheSize = context.getEnv()._class_cache_size;
+        if (cacheSize > 0) {
+            classCache = new ClassCache(cacheSize);
+        }
     }
 
     /**
@@ -1014,19 +469,11 @@ public final class Global extends Scope {
      * @return the global singleton
      */
     public static Global instance() {
-        return Objects.requireNonNull(Context.getGlobal());
-    }
-
-    private static Global instanceFrom(final Object self) {
-        return self instanceof Global? (Global)self : instance();
-    }
-
-    /**
-     * Check if we have a Global instance
-     * @return true if one exists
-     */
-    public static boolean hasInstance() {
-        return Context.getGlobal() != null;
+        ScriptObject global = Context.getGlobal();
+        if (! (global instanceof Global)) {
+            throw new IllegalStateException("no current global instance");
+        }
+        return (Global)global;
     }
 
     /**
@@ -1047,90 +494,58 @@ public final class Global extends Scope {
         return instance().getContext();
     }
 
-    // Runtime interface to Global
+    // GlobalObject interface implementation
 
-    /**
-     * Is there a class filter in the current Context?
-     * @return class filter
-     */
-    public ClassFilter getClassFilter() {
-        return context.getClassFilter();
-    }
-
-    /**
-     * Is this global of the given Context?
-     * @param ctxt the context
-     * @return true if this global belongs to the given Context
-     */
+    @Override
     public boolean isOfContext(final Context ctxt) {
         return this.context == ctxt;
     }
 
-    /**
-     * Does this global belong to a strict Context?
-     * @return true if this global belongs to a strict Context
-     */
+    @Override
     public boolean isStrictContext() {
         return context.getEnv()._strict;
     }
 
-    /**
-     * Initialize standard builtin objects like "Object", "Array", "Function" etc.
-     * as well as our extension builtin objects like "Java", "JSAdapter" as properties
-     * of the global scope object.
-     *
-     * @param eng ScriptEngine to initialize
-     */
-    public void initBuiltinObjects(final ScriptEngine eng) {
+    @Override
+    public void initBuiltinObjects() {
         if (this.builtinObject != null) {
             // already initialized, just return
             return;
         }
 
-        this.engine = eng;
-        if (this.engine != null) {
-            this.scontext = new ThreadLocal<>();
-        }
-        init(eng);
+        init();
     }
 
-    /**
-     * Wrap a Java object as corresponding script object
-     *
-     * @param obj object to wrap
-     * @return    wrapped object
-     */
+    @Override
+    public ScriptFunction newScriptFunction(final String name, final MethodHandle handle, final ScriptObject scope, final boolean strict) {
+        return new ScriptFunctionImpl(name, handle, scope, null, strict, false, true);
+    }
+
+    @Override
     public Object wrapAsObject(final Object obj) {
         if (obj instanceof Boolean) {
             return new NativeBoolean((Boolean)obj, this);
         } else if (obj instanceof Number) {
             return new NativeNumber(((Number)obj).doubleValue(), this);
-        } else if (isString(obj)) {
+        } else if (obj instanceof String || obj instanceof ConsString) {
             return new NativeString((CharSequence)obj, this);
         } else if (obj instanceof Object[]) { // extension
-            return new NativeArray(ArrayData.allocate((Object[])obj), this);
+            return new NativeArray((Object[])obj);
         } else if (obj instanceof double[]) { // extension
-            return new NativeArray(ArrayData.allocate((double[])obj), this);
+            return new NativeArray((double[])obj);
+        } else if (obj instanceof long[]) {
+            return new NativeArray((long[])obj);
         } else if (obj instanceof int[]) {
-            return new NativeArray(ArrayData.allocate((int[]) obj), this);
-        } else if (obj instanceof ArrayData) {
-            return new NativeArray((ArrayData) obj, this);
+            return new NativeArray((int[])obj);
         } else {
             // FIXME: more special cases? Map? List?
             return obj;
         }
     }
 
-    /**
-     * Lookup helper for JS primitive types
-     *
-     * @param request the link request for the dynamic call site.
-     * @param self     self reference
-     *
-     * @return guarded invocation
-     */
-    public static GuardedInvocation primitiveLookup(final LinkRequest request, final Object self) {
-        if (isString(self)) {
+    @Override
+    public GuardedInvocation primitiveLookup(final LinkRequest request, final Object self) {
+        if (self instanceof String || self instanceof ConsString) {
             return NativeString.lookupPrimitive(request, self);
         } else if (self instanceof Number) {
             return NativeNumber.lookupPrimitive(request, self);
@@ -1140,41 +555,12 @@ public final class Global extends Scope {
         throw new IllegalArgumentException("Unsupported primitive: " + self);
     }
 
-    /**
-     * Returns a method handle that creates a wrapper object for a JS primitive value.
-     *
-     * @param self receiver object
-     * @return method handle to create wrapper objects for primitive receiver
-     */
-    public static MethodHandle getPrimitiveWrapFilter(final Object self) {
-        if (isString(self)) {
-            return NativeString.WRAPFILTER;
-        } else if (self instanceof Number) {
-            return NativeNumber.WRAPFILTER;
-        } else if (self instanceof Boolean) {
-            return NativeBoolean.WRAPFILTER;
-        }
-        throw new IllegalArgumentException("Unsupported primitive: " + self);
-    }
-
-
-    /**
-     * Create a new empty script object
-     *
-     * @return the new ScriptObject
-     */
+    @Override
     public ScriptObject newObject() {
-        return useDualFields() ? new JD(getObjectPrototype()) : new JO(getObjectPrototype());
+        return new JO(getObjectPrototype(), getObjectMap());
     }
 
-    /**
-     * Default value of given type
-     *
-     * @param sobj     script object
-     * @param typeHint type hint
-     *
-     * @return default value
-     */
+    @Override
     public Object getDefaultValue(final ScriptObject sobj, final Class<?> typeHint) {
         // When the [[DefaultValue]] internal method of O is called with no hint,
         // then it behaves as if the hint were Number, unless O is a Date object
@@ -1234,12 +620,7 @@ public final class Global extends Scope {
         return UNDEFINED;
     }
 
-    /**
-     * Is the given ScriptObject an ECMAScript Error object?
-     *
-     * @param sobj the object being checked
-     * @return true if sobj is an Error object
-     */
+    @Override
     public boolean isError(final ScriptObject sobj) {
         final ScriptObject errorProto = getErrorPrototype();
         ScriptObject proto = sobj.getProto();
@@ -1252,109 +633,52 @@ public final class Global extends Scope {
         return false;
     }
 
-    /**
-     * Create a new ECMAScript Error object.
-     *
-     * @param msg error message
-     * @return newly created Error object
-     */
+    @Override
     public ScriptObject newError(final String msg) {
         return new NativeError(msg, this);
     }
 
-    /**
-     * Create a new ECMAScript EvalError object.
-     *
-     * @param msg error message
-     * @return newly created EvalError object
-     */
+    @Override
     public ScriptObject newEvalError(final String msg) {
         return new NativeEvalError(msg, this);
     }
 
-    /**
-     * Create a new ECMAScript RangeError object.
-     *
-     * @param msg error message
-     * @return newly created RangeError object
-     */
+    @Override
     public ScriptObject newRangeError(final String msg) {
         return new NativeRangeError(msg, this);
     }
 
-    /**
-     * Create a new ECMAScript ReferenceError object.
-     *
-     * @param msg error message
-     * @return newly created ReferenceError object
-     */
+    @Override
     public ScriptObject newReferenceError(final String msg) {
         return new NativeReferenceError(msg, this);
     }
 
-    /**
-     * Create a new ECMAScript SyntaxError object.
-     *
-     * @param msg error message
-     * @return newly created SyntaxError object
-     */
+    @Override
     public ScriptObject newSyntaxError(final String msg) {
         return new NativeSyntaxError(msg, this);
     }
 
-    /**
-     * Create a new ECMAScript TypeError object.
-     *
-     * @param msg error message
-     * @return newly created TypeError object
-     */
+    @Override
     public ScriptObject newTypeError(final String msg) {
         return new NativeTypeError(msg, this);
     }
 
-    /**
-     * Create a new ECMAScript URIError object.
-     *
-     * @param msg error message
-     * @return newly created URIError object
-     */
+    @Override
     public ScriptObject newURIError(final String msg) {
         return new NativeURIError(msg, this);
     }
 
-    /**
-     * Create a new ECMAScript GenericDescriptor object.
-     *
-     * @param configurable is the property configurable?
-     * @param enumerable is the property enumerable?
-     * @return newly created GenericDescriptor object
-     */
+    @Override
     public PropertyDescriptor newGenericDescriptor(final boolean configurable, final boolean enumerable) {
         return new GenericPropertyDescriptor(configurable, enumerable, this);
     }
 
-    /**
-     * Create a new ECMAScript DatePropertyDescriptor object.
-     *
-     * @param value of the data property
-     * @param configurable is the property configurable?
-     * @param enumerable is the property enumerable?
-     * @param writable is the property writable?
-     * @return newly created DataPropertyDescriptor object
-     */
+    @Override
     public PropertyDescriptor newDataDescriptor(final Object value, final boolean configurable, final boolean enumerable, final boolean writable) {
         return new DataPropertyDescriptor(configurable, enumerable, writable, value, this);
     }
 
-    /**
-     * Create a new ECMAScript AccessorPropertyDescriptor object.
-     *
-     * @param get getter function of the user accessor property
-     * @param set setter function of the user accessor property
-     * @param configurable is the property configurable?
-     * @param enumerable is the property enumerable?
-     * @return newly created AccessorPropertyDescriptor object
-     */
+    @Override
     public PropertyDescriptor newAccessorDescriptor(final Object get, final Object set, final boolean configurable, final boolean enumerable) {
         final AccessorPropertyDescriptor desc = new AccessorPropertyDescriptor(configurable, enumerable, get == null ? UNDEFINED : get, set == null ? UNDEFINED : set, this);
 
@@ -1367,6 +691,63 @@ public final class Global extends Scope {
         }
 
         return desc;
+    }
+
+
+    /**
+     * Cache for compiled script classes.
+     */
+    @SuppressWarnings("serial")
+    private static class ClassCache extends LinkedHashMap<Source, ClassReference> {
+        private final int size;
+        private final ReferenceQueue<Class<?>> queue;
+
+        ClassCache(int size) {
+            super(size, 0.75f, true);
+            this.size = size;
+            this.queue = new ReferenceQueue<>();
+        }
+
+        void cache(final Source source, final Class<?> clazz) {
+            put(source, new ClassReference(clazz, queue, source));
+        }
+
+        @Override
+        protected boolean removeEldestEntry(final Map.Entry<Source, ClassReference> eldest) {
+            return size() > size;
+        }
+
+        @Override
+        public ClassReference get(Object key) {
+            for (ClassReference ref; (ref = (ClassReference)queue.poll()) != null; ) {
+                remove(ref.source);
+            }
+            return super.get(key);
+        }
+
+    }
+
+    private static class ClassReference extends SoftReference<Class<?>> {
+        private final Source source;
+
+        ClassReference(final Class<?> clazz, final ReferenceQueue<Class<?>> queue, final Source source) {
+            super(clazz, queue);
+            this.source = source;
+        }
+    }
+
+    // Class cache management
+    @Override
+    public Class<?> findCachedClass(final Source source) {
+        assert classCache != null : "Class cache used without being initialized";
+        ClassReference ref = classCache.get(source);
+        return ref != null ? ref.get() : null;
+    }
+
+    @Override
+    public void cacheClass(final Source source, final Class<?> clazz) {
+        assert classCache != null : "Class cache used without being initialized";
+        classCache.cache(source, clazz);
     }
 
     private static <T> T getLazilyCreatedValue(final Object key, final Callable<T> creator, final Map<Object, T> map) {
@@ -1386,62 +767,16 @@ public final class Global extends Scope {
 
     private final Map<Object, InvokeByName> namedInvokers = new ConcurrentHashMap<>();
 
-
-    /**
-     * Get cached InvokeByName object for the given key
-     * @param key key to be associated with InvokeByName object
-     * @param creator if InvokeByName is absent 'creator' is called to make one (lazy init)
-     * @return InvokeByName object associated with the key.
-     */
+    @Override
     public InvokeByName getInvokeByName(final Object key, final Callable<InvokeByName> creator) {
         return getLazilyCreatedValue(key, creator, namedInvokers);
     }
 
     private final Map<Object, MethodHandle> dynamicInvokers = new ConcurrentHashMap<>();
 
-    /**
-     * Get cached dynamic method handle for the given key
-     * @param key key to be associated with dynamic method handle
-     * @param creator if method handle is absent 'creator' is called to make one (lazy init)
-     * @return dynamic method handle associated with the key.
-     */
+    @Override
     public MethodHandle getDynamicInvoker(final Object key, final Callable<MethodHandle> creator) {
         return getLazilyCreatedValue(key, creator, dynamicInvokers);
-    }
-
-    /**
-     * Hook to search missing variables in ScriptContext if available
-     * @param self used to detect if scope call or not (this function is 'strict')
-     * @param name name of the variable missing
-     * @return value of the missing variable or undefined (or TypeError for scope search)
-     */
-    public static Object __noSuchProperty__(final Object self, final Object name) {
-        final Global global = Global.instance();
-        final ScriptContext sctxt = global.currentContext();
-        final String nameStr = name.toString();
-
-        if (sctxt != null) {
-            final int scope = sctxt.getAttributesScope(nameStr);
-            if (scope != -1) {
-                return ScriptObjectMirror.unwrap(sctxt.getAttribute(nameStr, scope), global);
-            }
-        }
-
-        switch (nameStr) {
-        case "context":
-            return sctxt;
-        case "engine":
-            return global.engine;
-        default:
-            break;
-        }
-
-        if (self == UNDEFINED) {
-            // scope access and so throw ReferenceError
-            throw referenceError(global, "not.defined", nameStr);
-        }
-
-        return UNDEFINED;
     }
 
     /**
@@ -1456,7 +791,7 @@ public final class Global extends Scope {
      * @return the result of eval
      */
     public static Object eval(final Object self, final Object str) {
-        return directEval(self, str, Global.instanceFrom(self), UNDEFINED, false);
+        return directEval(self, str, UNDEFINED, UNDEFINED, UNDEFINED);
     }
 
     /**
@@ -1466,20 +801,20 @@ public final class Global extends Scope {
      * @param str      Evaluated code
      * @param callThis "this" to be passed to the evaluated code
      * @param location location of the eval call
-     * @param strict   is eval called from a strict mode code?
+     * @param strict   is eval called a strict mode code?
      *
      * @return the return value of the eval
      *
      * This is directly invoked from generated when eval(code) is called in user code
      */
-    public static Object directEval(final Object self, final Object str, final Object callThis, final Object location, final boolean strict) {
-        if (!isString(str)) {
+    public static Object directEval(final Object self, final Object str, final Object callThis, final Object location, final Object strict) {
+        if (!(str instanceof String || str instanceof ConsString)) {
             return str;
         }
-        final Global global = Global.instanceFrom(self);
-        final ScriptObject scope = self instanceof ScriptObject && ((ScriptObject)self).isScope() ? (ScriptObject)self : global;
+        final Global global = Global.instance();
+        final ScriptObject scope = (self instanceof ScriptObject) ? (ScriptObject)self : global;
 
-        return global.getContext().eval(scope, str.toString(), callThis, location, strict, true);
+        return global.getContext().eval(scope, str.toString(), callThis, location, Boolean.TRUE.equals(strict));
     }
 
     /**
@@ -1491,7 +826,7 @@ public final class Global extends Scope {
      * @return result of print (undefined)
      */
     public static Object print(final Object self, final Object... objects) {
-        return Global.instanceFrom(self).printImpl(false, objects);
+        return printImpl(false, objects);
     }
 
     /**
@@ -1503,64 +838,37 @@ public final class Global extends Scope {
      * @return result of println (undefined)
      */
     public static Object println(final Object self, final Object... objects) {
-        return Global.instanceFrom(self).printImpl(true, objects);
+        return printImpl(true, objects);
     }
 
     /**
-     * Global load implementation - Nashorn extension.
+     * Global load implementation - Nashorn extension
      *
-     * <p>
-     * load builtin loads the given script. Script source can be a URL or a File
-     * or a script object with name and script properties. Evaluated code gets
-     * global object "this" and uses global object as scope for evaluation.
-     * </p>
-     * <p>
-     * If self is undefined or null or global, then global object is used
-     * as scope as well as "this" for the evaluated code. If self is any other
-     * object, then it is indirect load call. With indirect load call, the
-     * properties of scope are available to evaluated script as variables. Also,
-     * global scope properties are accessible. Any var, function definition in
-     * evaluated script goes into an object that is not accessible to user scripts.
-     * </p>
-     * Thus the indirect load call is equivalent to the following:
-     * <pre>
-     * <code>
-     * (function (scope, source) {
-     *    with(scope) {
-     *        eval(&lt;script_from_source&gt;);
-     *    }
-     * })(self, source);
-     * </code>
-     * </pre>
+     * @param self    scope
+     * @param source  source to load
      *
-     * @param self    scope to use for the script evaluation
-     * @param source  script source
-     *
-     * @return result of load (may be undefined)
+     * @return result of load (undefined)
      *
      * @throws IOException if source could not be read
      */
     public static Object load(final Object self, final Object source) throws IOException {
-        final Global global = Global.instanceFrom(self);
-        return global.getContext().load(self, source);
+        final Global global = Global.instance();
+        final ScriptObject scope = (self instanceof ScriptObject) ? (ScriptObject)self : global;
+        return global.getContext().load(scope, source);
     }
 
     /**
-     * Global loadWithNewGlobal implementation - Nashorn extension.
+     * Global loadWithNewGlobal implementation - Nashorn extension
      *
-     * loadWithNewGlobal builtin loads the given script from a URL or a File
-     * or a script object with name and script properties. Evaluated code gets
-     * new global object "this" and uses that new global object as scope for evaluation.
-     *
-     * @param self self This value is ignored by this function
-     * @param args optional arguments to be passed to the loaded script
+     * @param self scope
+     * @param args from plus (optional) arguments to be passed to the loaded script
      *
      * @return result of load (may be undefined)
      *
      * @throws IOException if source could not be read
      */
     public static Object loadWithNewGlobal(final Object self, final Object...args) throws IOException {
-        final Global global = Global.instanceFrom(self);
+        final Global global = Global.instance();
         final int length = args.length;
         final boolean hasArgs = 0 < length;
         final Object from = hasArgs ? args[0] : UNDEFINED;
@@ -1575,7 +883,7 @@ public final class Global extends Scope {
      * @param self  self reference
      * @param code  exit code
      *
-     * @return undefined (will never be reached)
+     * @return undefined (will never be reacheD)
      */
     public static Object exit(final Object self, final Object code) {
         System.exit(JSType.toInt32(code));
@@ -1583,21 +891,12 @@ public final class Global extends Scope {
     }
 
     // builtin prototype accessors
-
-    /**
-     * Get the builtin Object prototype.
-     * @return the object prototype.
-     */
-    public ScriptObject getObjectPrototype() {
-        return ScriptFunction.getPrototype(builtinObject);
+    ScriptObject getFunctionPrototype() {
+        return ScriptFunction.getPrototype(builtinFunction);
     }
 
-    /**
-     * Get the builtin Function prototype.
-     * @return the Function.prototype.
-     */
-    public ScriptObject getFunctionPrototype() {
-        return ScriptFunction.getPrototype(builtinFunction);
+    ScriptObject getObjectPrototype() {
+        return ScriptFunction.getPrototype(builtinObject);
     }
 
     ScriptObject getArrayPrototype() {
@@ -1613,11 +912,11 @@ public final class Global extends Scope {
     }
 
     ScriptObject getDatePrototype() {
-        return ScriptFunction.getPrototype(getBuiltinDate());
+        return ScriptFunction.getPrototype(builtinDate);
     }
 
     ScriptObject getRegExpPrototype() {
-        return ScriptFunction.getPrototype(getBuiltinRegExp());
+        return ScriptFunction.getPrototype(builtinRegExp);
     }
 
     ScriptObject getStringPrototype() {
@@ -1629,11 +928,11 @@ public final class Global extends Scope {
     }
 
     ScriptObject getEvalErrorPrototype() {
-        return ScriptFunction.getPrototype(getBuiltinEvalError());
+        return ScriptFunction.getPrototype(builtinEvalError);
     }
 
     ScriptObject getRangeErrorPrototype() {
-        return ScriptFunction.getPrototype(getBuiltinRangeError());
+        return ScriptFunction.getPrototype(builtinRangeError);
     }
 
     ScriptObject getReferenceErrorPrototype() {
@@ -1649,162 +948,246 @@ public final class Global extends Scope {
     }
 
     ScriptObject getURIErrorPrototype() {
-        return ScriptFunction.getPrototype(getBuiltinURIError());
+        return ScriptFunction.getPrototype(builtinURIError);
     }
 
     ScriptObject getJavaImporterPrototype() {
-        return ScriptFunction.getPrototype(getBuiltinJavaImporter());
+        return ScriptFunction.getPrototype(builtinJavaImporter);
     }
 
     ScriptObject getJSAdapterPrototype() {
-        return ScriptFunction.getPrototype(getBuiltinJSAdapter());
-    }
-
-    private synchronized ScriptFunction getBuiltinArrayBuffer() {
-        if (this.builtinArrayBuffer == null) {
-            this.builtinArrayBuffer = initConstructorAndSwitchPoint("ArrayBuffer", ScriptFunction.class);
-        }
-        return this.builtinArrayBuffer;
+        return ScriptFunction.getPrototype(builtinJSAdapter);
     }
 
     ScriptObject getArrayBufferPrototype() {
-        return ScriptFunction.getPrototype(getBuiltinArrayBuffer());
-    }
-
-    private synchronized ScriptFunction getBuiltinDataView() {
-        if (this.builtinDataView == null) {
-            this.builtinDataView = initConstructorAndSwitchPoint("DataView", ScriptFunction.class);
-        }
-        return this.builtinDataView;
-    }
-
-    ScriptObject getDataViewPrototype() {
-        return ScriptFunction.getPrototype(getBuiltinDataView());
-    }
-
-    private synchronized ScriptFunction getBuiltinInt8Array() {
-        if (this.builtinInt8Array == null) {
-            this.builtinInt8Array = initConstructorAndSwitchPoint("Int8Array", ScriptFunction.class);
-        }
-        return this.builtinInt8Array;
+        return ScriptFunction.getPrototype(builtinArrayBuffer);
     }
 
     ScriptObject getInt8ArrayPrototype() {
-        return ScriptFunction.getPrototype(getBuiltinInt8Array());
-    }
-
-    private synchronized ScriptFunction getBuiltinUint8Array() {
-        if (this.builtinUint8Array == null) {
-            this.builtinUint8Array = initConstructorAndSwitchPoint("Uint8Array", ScriptFunction.class);
-        }
-        return this.builtinUint8Array;
+        return ScriptFunction.getPrototype(builtinInt8Array);
     }
 
     ScriptObject getUint8ArrayPrototype() {
-        return ScriptFunction.getPrototype(getBuiltinUint8Array());
-    }
-
-    private synchronized ScriptFunction getBuiltinUint8ClampedArray() {
-        if (this.builtinUint8ClampedArray == null) {
-            this.builtinUint8ClampedArray = initConstructorAndSwitchPoint("Uint8ClampedArray", ScriptFunction.class);
-        }
-        return this.builtinUint8ClampedArray;
+        return ScriptFunction.getPrototype(builtinUint8Array);
     }
 
     ScriptObject getUint8ClampedArrayPrototype() {
-        return ScriptFunction.getPrototype(getBuiltinUint8ClampedArray());
-    }
-
-    private synchronized ScriptFunction getBuiltinInt16Array() {
-        if (this.builtinInt16Array == null) {
-            this.builtinInt16Array = initConstructorAndSwitchPoint("Int16Array", ScriptFunction.class);
-        }
-        return this.builtinInt16Array;
+        return ScriptFunction.getPrototype(builtinUint8ClampedArray);
     }
 
     ScriptObject getInt16ArrayPrototype() {
-        return ScriptFunction.getPrototype(getBuiltinInt16Array());
-    }
-
-    private synchronized ScriptFunction getBuiltinUint16Array() {
-        if (this.builtinUint16Array == null) {
-            this.builtinUint16Array = initConstructorAndSwitchPoint("Uint16Array", ScriptFunction.class);
-        }
-        return this.builtinUint16Array;
+        return ScriptFunction.getPrototype(builtinInt16Array);
     }
 
     ScriptObject getUint16ArrayPrototype() {
-        return ScriptFunction.getPrototype(getBuiltinUint16Array());
-    }
-
-    private synchronized ScriptFunction getBuiltinInt32Array() {
-        if (this.builtinInt32Array == null) {
-            this.builtinInt32Array = initConstructorAndSwitchPoint("Int32Array", ScriptFunction.class);
-        }
-        return this.builtinInt32Array;
+        return ScriptFunction.getPrototype(builtinUint16Array);
     }
 
     ScriptObject getInt32ArrayPrototype() {
-        return ScriptFunction.getPrototype(getBuiltinInt32Array());
-    }
-
-    private synchronized ScriptFunction getBuiltinUint32Array() {
-        if (this.builtinUint32Array == null) {
-            this.builtinUint32Array = initConstructorAndSwitchPoint("Uint32Array", ScriptFunction.class);
-        }
-        return this.builtinUint32Array;
+        return ScriptFunction.getPrototype(builtinInt32Array);
     }
 
     ScriptObject getUint32ArrayPrototype() {
-        return ScriptFunction.getPrototype(getBuiltinUint32Array());
-    }
-
-    private synchronized ScriptFunction getBuiltinFloat32Array() {
-        if (this.builtinFloat32Array == null) {
-            this.builtinFloat32Array = initConstructorAndSwitchPoint("Float32Array", ScriptFunction.class);
-        }
-        return this.builtinFloat32Array;
+        return ScriptFunction.getPrototype(builtinUint32Array);
     }
 
     ScriptObject getFloat32ArrayPrototype() {
-        return ScriptFunction.getPrototype(getBuiltinFloat32Array());
-    }
-
-    private synchronized ScriptFunction getBuiltinFloat64Array() {
-        if (this.builtinFloat64Array == null) {
-            this.builtinFloat64Array = initConstructorAndSwitchPoint("Float64Array", ScriptFunction.class);
-        }
-        return this.builtinFloat64Array;
+        return ScriptFunction.getPrototype(builtinFloat32Array);
     }
 
     ScriptObject getFloat64ArrayPrototype() {
-        return ScriptFunction.getPrototype(getBuiltinFloat64Array());
+        return ScriptFunction.getPrototype(builtinFloat64Array);
     }
 
-    /**
-     * Return the function that throws TypeError unconditionally. Used as "poison" methods for certain Function properties.
-     *
-     * @return the TypeError throwing function
-     */
-    public ScriptFunction getTypeErrorThrower() {
+    // Builtin PropertyMap accessors
+    PropertyMap getAccessorPropertyDescriptorMap() {
+        return accessorPropertyDescriptorMap;
+    }
+
+    PropertyMap getArrayBufferViewMap() {
+        return arrayBufferViewMap;
+    }
+
+    PropertyMap getDataPropertyDescriptorMap() {
+        return dataPropertyDescriptorMap;
+    }
+
+    PropertyMap getGenericPropertyDescriptorMap() {
+        return genericPropertyDescriptorMap;
+    }
+
+    PropertyMap getArgumentsMap() {
+        return nativeArgumentsMap;
+    }
+
+    PropertyMap getArrayMap() {
+        return nativeArrayMap;
+    }
+
+    PropertyMap getArrayBufferMap() {
+        return nativeArrayBufferMap;
+    }
+
+    PropertyMap getBooleanMap() {
+        return nativeBooleanMap;
+    }
+
+    PropertyMap getDateMap() {
+        return nativeDateMap;
+    }
+
+    PropertyMap getErrorMap() {
+        return nativeErrorMap;
+    }
+
+    PropertyMap getEvalErrorMap() {
+        return nativeEvalErrorMap;
+    }
+
+    PropertyMap getJSAdapterMap() {
+        return nativeJSAdapterMap;
+    }
+
+    PropertyMap getJavaImporterMap() {
+        return nativeJavaImporterMap;
+    }
+
+    PropertyMap getNumberMap() {
+        return nativeNumberMap;
+    }
+
+    PropertyMap getRangeErrorMap() {
+        return nativeRangeErrorMap;
+    }
+
+    PropertyMap getReferenceErrorMap() {
+        return nativeReferenceErrorMap;
+    }
+
+    PropertyMap getRegExpMap() {
+        return nativeRegExpMap;
+    }
+
+    PropertyMap getRegExpExecResultMap() {
+        return nativeRegExpExecResultMap;
+    }
+
+    PropertyMap getStrictArgumentsMap() {
+        return nativeStrictArgumentsMap;
+    }
+
+    PropertyMap getStringMap() {
+        return nativeStringMap;
+    }
+
+    PropertyMap getSyntaxErrorMap() {
+        return nativeSyntaxErrorMap;
+    }
+
+    PropertyMap getTypeErrorMap() {
+        return nativeTypeErrorMap;
+    }
+
+    PropertyMap getURIErrorMap() {
+        return nativeURIErrorMap;
+    }
+
+    PropertyMap getPrototypeObjectMap() {
+        return prototypeObjectMap;
+    }
+
+    PropertyMap getObjectMap() {
+        return objectMap;
+    }
+
+    PropertyMap getFunctionMap() {
+        return functionMap;
+    }
+
+    PropertyMap getAnonymousFunctionMap() {
+        return anonymousFunctionMap;
+    }
+
+    PropertyMap getStrictFunctionMap() {
+        return strictFunctionMap;
+    }
+
+    PropertyMap getBoundFunctionMap() {
+        return boundFunctionMap;
+    }
+
+    private ScriptFunction getBuiltinArray() {
+        return builtinArray;
+    }
+
+    ScriptFunction getTypeErrorThrower() {
         return typeErrorThrower;
     }
 
-    private synchronized ScriptFunction getBuiltinDate() {
-        if (this.builtinDate == null) {
-            this.builtinDate = initConstructorAndSwitchPoint("Date", ScriptFunction.class);
-            final ScriptObject dateProto = ScriptFunction.getPrototype(builtinDate);
-            // initialize default date
-            this.DEFAULT_DATE = new NativeDate(NaN, dateProto);
-        }
-        return this.builtinDate;
+    /**
+     * Called from compiled script code to test if builtin has been overridden
+     *
+     * @return true if builtin array has not been overridden
+     */
+    public static boolean isBuiltinArray() {
+        final Global instance = Global.instance();
+        return instance.array == instance.getBuiltinArray();
     }
 
-    private synchronized ScriptFunction getBuiltinEvalError() {
-        if (this.builtinEvalError == null) {
-            this.builtinEvalError = initErrorSubtype("EvalError", getErrorPrototype());
-        }
-        return this.builtinEvalError;
+    private ScriptFunction getBuiltinBoolean() {
+        return builtinBoolean;
+    }
+
+    /**
+     * Called from compiled script code to test if builtin has been overridden
+     *
+     * @return true if builtin boolean has not been overridden
+     */
+    public static boolean isBuiltinBoolean() {
+        final Global instance = Global.instance();
+        return instance._boolean == instance.getBuiltinBoolean();
+    }
+
+    private ScriptFunction getBuiltinDate() {
+        return builtinDate;
+    }
+
+    /**
+     * Called from compiled script code to test if builtin has been overridden
+     *
+     * @return true if builtin date has not been overridden
+     */
+    public static boolean isBuiltinDate() {
+        final Global instance = Global.instance();
+        return instance.date == instance.getBuiltinDate();
+    }
+
+    private ScriptFunction getBuiltinError() {
+        return builtinError;
+    }
+
+    /**
+     * Called from compiled script code to test if builtin has been overridden
+     *
+     * @return true if builtin error has not been overridden
+     */
+    public static boolean isBuiltinError() {
+        final Global instance = Global.instance();
+        return instance.error == instance.getBuiltinError();
+    }
+
+    private ScriptFunction getBuiltinEvalError() {
+        return builtinEvalError;
+    }
+
+    /**
+     * Called from compiled script code to test if builtin has been overridden
+     *
+     * @return true if builtin eval error has not been overridden
+     */
+    public static boolean isBuiltinEvalError() {
+        final Global instance = Global.instance();
+        return instance.evalError == instance.getBuiltinEvalError();
     }
 
     private ScriptFunction getBuiltinFunction() {
@@ -1812,98 +1195,237 @@ public final class Global extends Scope {
     }
 
     /**
-     * Get the switchpoint used to check property changes for Function.prototype.apply
-     * @return the switchpoint guarding apply (same as guarding call, and everything else in function)
+     * Called from compiled script code to test if builtin has been overridden
+     *
+     * @return true if builtin function has not been overridden
      */
-    public static SwitchPoint getBuiltinFunctionApplySwitchPoint() {
-        return ScriptFunction.getPrototype(Global.instance().getBuiltinFunction()).getProperty("apply").getBuiltinSwitchPoint();
-    }
-
-    private static boolean isBuiltinFunctionProperty(final String name) {
+    public static boolean isBuiltinFunction() {
         final Global instance = Global.instance();
-        final ScriptFunction builtinFunction = instance.getBuiltinFunction();
-        if (builtinFunction == null) {
-            return false; //conservative for compile-only mode
-        }
-        final boolean isBuiltinFunction = instance.function == builtinFunction;
-        return isBuiltinFunction && ScriptFunction.getPrototype(builtinFunction).getProperty(name).isBuiltin();
+        return instance.function == instance.getBuiltinFunction();
     }
 
-    /**
-     * Check if the Function.prototype.apply has not been replaced
-     * @return true if Function.prototype.apply has been replaced
-     */
-    public static boolean isBuiltinFunctionPrototypeApply() {
-        return isBuiltinFunctionProperty("apply");
-    }
-
-    /**
-     * Check if the Function.prototype.apply has not been replaced
-     * @return true if Function.prototype.call has been replaced
-     */
-    public static boolean isBuiltinFunctionPrototypeCall() {
-        return isBuiltinFunctionProperty("call");
-    }
-
-    private synchronized ScriptFunction getBuiltinJSAdapter() {
-        if (this.builtinJSAdapter == null) {
-            this.builtinJSAdapter = initConstructorAndSwitchPoint("JSAdapter", ScriptFunction.class);
-        }
+    private ScriptFunction getBuiltinJSAdapter() {
         return builtinJSAdapter;
     }
 
-    private synchronized ScriptObject getBuiltinJSON() {
-        if (this.builtinJSON == null) {
-            this.builtinJSON = initConstructorAndSwitchPoint("JSON", ScriptObject.class);
-        }
-        return this.builtinJSON;
+    /**
+     * Called from compiled script code to test if builtin has been overridden
+     *
+     * @return true if builtin JSAdapter has not been overridden
+     */
+    public static boolean isBuiltinJSAdapter() {
+        final Global instance = Global.instance();
+        return instance.jsadapter == instance.getBuiltinJSAdapter();
     }
 
-    private synchronized ScriptFunction getBuiltinJavaImporter() {
-        if (getContext().getEnv()._no_java) {
-            throw new IllegalStateException();
-        }
-        if (this.builtinJavaImporter == null) {
-            this.builtinJavaImporter = initConstructor("JavaImporter", ScriptFunction.class);
-        }
-        return this.builtinJavaImporter;
+    private ScriptObject getBuiltinJSON() {
+        return builtinJSON;
     }
 
-    private synchronized ScriptObject getBuiltinJavaApi() {
-        if (getContext().getEnv()._no_java) {
-            throw new IllegalStateException();
-        }
-        if (this.builtinJavaApi == null) {
-            this.builtinJavaApi = initConstructor("Java", ScriptObject.class);
-        }
-        return this.builtinJavaApi;
+    /**
+     * Called from compiled script code to test if builtin has been overridden
+     *
+     * @return true if builtin JSON has has not been overridden
+     */
+    public static boolean isBuiltinJSON() {
+        final Global instance = Global.instance();
+        return instance.json == instance.getBuiltinJSON();
     }
 
-    private synchronized ScriptFunction getBuiltinRangeError() {
-        if (this.builtinRangeError == null) {
-            this.builtinRangeError = initErrorSubtype("RangeError", getErrorPrototype());
-        }
+    private ScriptObject getBuiltinJava() {
+        return builtinJava;
+    }
+
+    /**
+     * Called from compiled script code to test if builtin has been overridden
+     *
+     * @return true if builtin Java has not been overridden
+     */
+    public static boolean isBuiltinJava() {
+        final Global instance = Global.instance();
+        return instance.java == instance.getBuiltinJava();
+    }
+
+    private ScriptObject getBuiltinJavax() {
+        return builtinJavax;
+    }
+
+    /**
+     * Called from compiled script code to test if builtin has been overridden
+     *
+     * @return true if builtin Javax has not been overridden
+     */
+    public static boolean isBuiltinJavax() {
+        final Global instance = Global.instance();
+        return instance.javax == instance.getBuiltinJavax();
+    }
+
+    private ScriptObject getBuiltinJavaImporter() {
+        return builtinJavaImporter;
+    }
+
+    /**
+     * Called from compiled script code to test if builtin has been overridden
+     *
+     * @return true if builtin Java importer has not been overridden
+     */
+    public static boolean isBuiltinJavaImporter() {
+        final Global instance = Global.instance();
+        return instance.javaImporter == instance.getBuiltinJavaImporter();
+    }
+
+    private ScriptObject getBuiltinMath() {
+        return builtinMath;
+    }
+
+    /**
+     * Called from compiled script code to test if builtin has been overridden
+     *
+     * @return true if builtin math has not been overridden
+     */
+    public static boolean isBuiltinMath() {
+        final Global instance = Global.instance();
+        return instance.math == instance.getBuiltinMath();
+    }
+
+    private ScriptFunction getBuiltinNumber() {
+        return builtinNumber;
+    }
+
+    /**
+     * Called from compiled script code to test if builtin has been overridden
+     *
+     * @return true if builtin number has not been overridden
+     */
+    public static boolean isBuiltinNumber() {
+        final Global instance = Global.instance();
+        return instance.number == instance.getBuiltinNumber();
+    }
+
+    private ScriptFunction getBuiltinObject() {
+        return builtinObject;
+    }
+
+    /**
+     * Called from compiled script code to test if builtin has been overridden
+     *
+     * @return true if builtin object has not been overridden
+     */
+    public static boolean isBuiltinObject() {
+        final Global instance = Global.instance();
+        return instance.object == instance.getBuiltinObject();
+    }
+
+    private ScriptObject getBuiltinPackages() {
+        return builtinPackages;
+    }
+
+    /**
+     * Called from compiled script code to test if builtin has been overridden
+     *
+     * @return true if builtin package has not been overridden
+     */
+    public static boolean isBuiltinPackages() {
+        final Global instance = Global.instance();
+        return instance.packages == instance.getBuiltinPackages();
+    }
+
+    private ScriptFunction getBuiltinRangeError() {
         return builtinRangeError;
     }
 
-    private synchronized ScriptFunction getBuiltinRegExp() {
-        if (this.builtinRegExp == null) {
-            this.builtinRegExp = initConstructorAndSwitchPoint("RegExp", ScriptFunction.class);
-            final ScriptObject regExpProto = ScriptFunction.getPrototype(builtinRegExp);
-            // initialize default regexp object
-            this.DEFAULT_REGEXP = new NativeRegExp("(?:)", "", this, regExpProto);
-            // RegExp.prototype should behave like a RegExp object. So copy the
-            // properties.
-            regExpProto.addBoundProperties(DEFAULT_REGEXP);
-        }
+    /**
+     * Called from compiled script code to test if builtin has been overridden
+     *
+     * @return true if builtin range error has not been overridden
+     */
+    public static boolean isBuiltinRangeError() {
+        final Global instance = Global.instance();
+        return instance.rangeError == instance.getBuiltinRangeError();
+    }
+
+    private ScriptFunction getBuiltinReferenceError() {
+        return builtinReferenceError;
+    }
+
+    /**
+     * Called from compiled script code to test if builtin has been overridden
+     *
+     * @return true if builtin reference error has not been overridden
+     */
+    public static boolean isBuiltinReferenceError() {
+        final Global instance = Global.instance();
+        return instance.referenceError == instance.getBuiltinReferenceError();
+    }
+
+    private ScriptFunction getBuiltinRegExp() {
         return builtinRegExp;
     }
 
-    private synchronized ScriptFunction getBuiltinURIError() {
-        if (this.builtinURIError == null) {
-            this.builtinURIError = initErrorSubtype("URIError", getErrorPrototype());
-        }
-        return this.builtinURIError;
+    /**
+     * Called from compiled script code to test if builtin has been overridden
+     *
+     * @return true if builtin regexp has not been overridden
+     */
+    public static boolean isBuiltinRegExp() {
+        final Global instance = Global.instance();
+        return instance.regexp == instance.getBuiltinRegExp();
+    }
+
+    private ScriptFunction getBuiltinString() {
+        return builtinString;
+    }
+
+    /**
+     * Called from compiled script code to test if builtin has been overridden
+     *
+     * @return true if builtin Java has not been overridden
+     */
+    public static boolean isBuiltinString() {
+        final Global instance = Global.instance();
+        return instance.string == instance.getBuiltinString();
+    }
+
+    private ScriptFunction getBuiltinSyntaxError() {
+        return builtinSyntaxError;
+    }
+
+    /**
+     * Called from compiled script code to test if builtin has been overridden
+     *
+     * @return true if builtin syntax error has not been overridden
+     */
+    public static boolean isBuiltinSyntaxError() {
+        final Global instance = Global.instance();
+        return instance.syntaxError == instance.getBuiltinSyntaxError();
+    }
+
+    private ScriptFunction getBuiltinTypeError() {
+        return builtinTypeError;
+    }
+
+    /**
+     * Called from compiled script code to test if builtin has been overridden
+     *
+     * @return true if builtin type error has not been overridden
+     */
+    public static boolean isBuiltinTypeError() {
+        final Global instance = Global.instance();
+        return instance.typeError == instance.getBuiltinTypeError();
+    }
+
+    private ScriptFunction getBuiltinURIError() {
+        return builtinURIError;
+    }
+
+    /**
+     * Called from compiled script code to test if builtin has been overridden
+     *
+     * @return true if builtin URI error has not been overridden
+     */
+    public static boolean isBuiltinURIError() {
+        final Global instance = Global.instance();
+        return instance.uriError == instance.getBuiltinURIError();
     }
 
     @Override
@@ -1984,6 +1506,16 @@ public final class Global extends Scope {
     }
 
     /**
+     * Allocate a new long array.
+     *
+     * @param initial number values.
+     * @return the new array
+     */
+    public static NativeArray allocate(final long[] initial) {
+        return new NativeArray(ArrayData.allocate(initial));
+    }
+
+    /**
      * Allocate a new integer array.
      *
      * @param initial number values.
@@ -2015,26 +1547,6 @@ public final class Global extends Scope {
      */
     public static boolean isEval(final Object fn) {
         return fn == Global.instance().builtinEval;
-    }
-
-    /**
-     * Called from generated to replace a location property placeholder with the actual location property value.
-     *
-     * @param  placeholder the value tested for being a placeholder for a location property
-     * @param  locationProperty the actual value for the location property
-     * @return locationProperty if placeholder is indeed a placeholder for a location property, the placeholder otherwise
-     */
-    public static Object replaceLocationPropertyPlaceholder(final Object placeholder, final Object locationProperty) {
-        return isLocationPropertyPlaceholder(placeholder) ? locationProperty : placeholder;
-    }
-
-    /**
-     * Called from runtime internals to check if the passed value is a location property placeholder.
-     * @param  placeholder the value tested for being a placeholder for a location property
-     * @return true if the value is a placeholder, false otherwise.
-     */
-    public static boolean isLocationPropertyPlaceholder(final Object placeholder) {
-        return placeholder == LOCATION_PLACEHOLDER;
     }
 
     /**
@@ -2075,13 +1587,11 @@ public final class Global extends Scope {
      * not the case
      *
      * @param obj and object to check
-     * @return the script object
      */
-    public static ScriptObject checkObject(final Object obj) {
+    public static void checkObject(final Object obj) {
         if (!(obj instanceof ScriptObject)) {
             throw typeError("not.an.object", ScriptRuntime.safeToString(obj));
         }
-        return (ScriptObject)obj;
     }
 
     /**
@@ -2097,210 +1607,68 @@ public final class Global extends Scope {
     }
 
     /**
-     * Return the ES6 global scope for lexically declared bindings.
-     * @return the ES6 lexical global scope.
+     * Get the current split state.
+     *
+     * @return current split state
      */
-    public final ScriptObject getLexicalScope() {
-        assert context.getEnv()._es6;
-        return lexicalScope;
-    }
-
     @Override
-    public void addBoundProperties(final ScriptObject source, final jdk.nashorn.internal.runtime.Property[] properties) {
-        PropertyMap ownMap = getMap();
-        LexicalScope lexScope = null;
-        PropertyMap lexicalMap = null;
-        boolean hasLexicalDefinitions = false;
-
-        if (context.getEnv()._es6) {
-            lexScope = (LexicalScope) getLexicalScope();
-            lexicalMap = lexScope.getMap();
-
-            for (final jdk.nashorn.internal.runtime.Property property : properties) {
-                if (property.isLexicalBinding()) {
-                    hasLexicalDefinitions = true;
-                }
-                // ES6 15.1.8 steps 6. and 7.
-                final jdk.nashorn.internal.runtime.Property globalProperty = ownMap.findProperty(property.getKey());
-                if (globalProperty != null && !globalProperty.isConfigurable() && property.isLexicalBinding()) {
-                    throw ECMAErrors.syntaxError("redeclare.variable", property.getKey());
-                }
-                final jdk.nashorn.internal.runtime.Property lexicalProperty = lexicalMap.findProperty(property.getKey());
-                if (lexicalProperty != null && !property.isConfigurable()) {
-                    throw ECMAErrors.syntaxError("redeclare.variable", property.getKey());
-                }
-            }
-        }
-
-        final boolean extensible = isExtensible();
-        for (final jdk.nashorn.internal.runtime.Property property : properties) {
-            if (property.isLexicalBinding()) {
-                assert lexScope != null;
-                lexicalMap = lexScope.addBoundProperty(lexicalMap, source, property, true);
-
-                if (ownMap.findProperty(property.getKey()) != null) {
-                    // If property exists in the global object invalidate any global constant call sites.
-                    invalidateGlobalConstant(property.getKey());
-                }
-            } else {
-                ownMap = addBoundProperty(ownMap, source, property, extensible);
-            }
-        }
-
-        setMap(ownMap);
-
-        if (hasLexicalDefinitions) {
-            assert lexScope != null;
-            lexScope.setMap(lexicalMap);
-            invalidateLexicalSwitchPoint();
-        }
-    }
-
-    @Override
-    public GuardedInvocation findGetMethod(final CallSiteDescriptor desc, final LinkRequest request, final String operator) {
-        final String name = desc.getNameToken(CallSiteDescriptor.NAME_OPERAND);
-        final boolean isScope = NashornCallSiteDescriptor.isScope(desc);
-
-        if (lexicalScope != null && isScope && !NashornCallSiteDescriptor.isApplyToCall(desc)) {
-            if (lexicalScope.hasOwnProperty(name)) {
-                return lexicalScope.findGetMethod(desc, request, operator);
-            }
-        }
-
-        final GuardedInvocation invocation =  super.findGetMethod(desc, request, operator);
-
-        // We want to avoid adding our generic lexical scope switchpoint to global constant invocations,
-        // because those are invalidated per-key in the addBoundProperties method above.
-        // We therefore check if the invocation does already have a switchpoint and the property is non-inherited,
-        // assuming this only applies to global constants. If other non-inherited properties will
-        // start using switchpoints some time in the future we'll have to revisit this.
-        if (isScope && context.getEnv()._es6 && (invocation.getSwitchPoints() == null || !hasOwnProperty(name))) {
-            return invocation.addSwitchPoint(getLexicalScopeSwitchPoint());
-        }
-
-        return invocation;
-    }
-
-    @Override
-    protected FindProperty findProperty(final String key, final boolean deep, final ScriptObject start) {
-        if (lexicalScope != null && start != this && start.isScope()) {
-            final FindProperty find = lexicalScope.findProperty(key, false);
-            if (find != null) {
-                return find;
-            }
-        }
-        return super.findProperty(key, deep, start);
-    }
-
-    @Override
-    public GuardedInvocation findSetMethod(final CallSiteDescriptor desc, final LinkRequest request) {
-        final boolean isScope = NashornCallSiteDescriptor.isScope(desc);
-
-        if (lexicalScope != null && isScope) {
-            final String name = desc.getNameToken(CallSiteDescriptor.NAME_OPERAND);
-            if (lexicalScope.hasOwnProperty(name)) {
-                return lexicalScope.findSetMethod(desc, request);
-            }
-        }
-
-        final GuardedInvocation invocation = super.findSetMethod(desc, request);
-
-        if (isScope && context.getEnv()._es6) {
-            return invocation.addSwitchPoint(getLexicalScopeSwitchPoint());
-        }
-
-        return invocation;
+    public int getSplitState() {
+        return splitState;
     }
 
     /**
-     * Adds jjs shell interactive mode builtin functions to global scope.
+     * Set the current split state.
+     *
+     * @param state current split state
      */
-    public void addShellBuiltins() {
-        Object value = ScriptFunction.createBuiltin("input", ShellFunctions.INPUT);
-        addOwnProperty("input", Attribute.NOT_ENUMERABLE, value);
-
-        value = ScriptFunction.createBuiltin("evalinput", ShellFunctions.EVALINPUT);
-        addOwnProperty("evalinput", Attribute.NOT_ENUMERABLE, value);
+    @Override
+    public void setSplitState(final int state) {
+        splitState = state;
     }
 
-    private synchronized SwitchPoint getLexicalScopeSwitchPoint() {
-        SwitchPoint switchPoint = lexicalScopeSwitchPoint;
-        if (switchPoint == null || switchPoint.hasBeenInvalidated()) {
-            switchPoint = lexicalScopeSwitchPoint = new SwitchPoint();
-        }
-        return switchPoint;
-    }
-
-    private synchronized void invalidateLexicalSwitchPoint() {
-        if (lexicalScopeSwitchPoint != null) {
-            context.getLogger(GlobalConstants.class).info("Invalidating non-constant globals on lexical scope update");
-            SwitchPoint.invalidateAll(new SwitchPoint[]{ lexicalScopeSwitchPoint });
-        }
-    }
-
-
-    @SuppressWarnings("unused")
-    private static Object lexicalScopeFilter(final Object self) {
-        if (self instanceof Global) {
-            return ((Global) self).getLexicalScope();
-        }
-        return self;
-    }
-
-    private <T extends ScriptObject> T initConstructorAndSwitchPoint(final String name, final Class<T> clazz) {
-        final T func = initConstructor(name, clazz);
-        tagBuiltinProperties(name, func);
-        return func;
-    }
-
-    @SuppressWarnings("hiding")
-    private void init(final ScriptEngine eng) {
+    private void init() {
         assert Context.getGlobal() == this : "this global is not set as current";
 
         final ScriptEnvironment env = getContext().getEnv();
+
+        // duplicate PropertyMaps of Native* classes
+        copyInitialMaps(env);
 
         // initialize Function and Object constructor
         initFunctionAndObject();
 
         // Now fix Global's own proto.
-        this.setInitialProto(getObjectPrototype());
+        this.setProto(getObjectPrototype());
 
         // initialize global function properties
-        this.eval = this.builtinEval = ScriptFunction.createBuiltin("eval", EVAL);
+        this.eval = this.builtinEval = ScriptFunctionImpl.makeFunction("eval", EVAL);
 
-        this.parseInt = ScriptFunction.createBuiltin("parseInt",   GlobalFunctions.PARSEINT,
-                    new Specialization[] {
-                    new Specialization(GlobalFunctions.PARSEINT_Z),
-                    new Specialization(GlobalFunctions.PARSEINT_I),
-                    new Specialization(GlobalFunctions.PARSEINT_OI),
-                    new Specialization(GlobalFunctions.PARSEINT_O) });
-        this.parseFloat = ScriptFunction.createBuiltin("parseFloat", GlobalFunctions.PARSEFLOAT);
-        this.isNaN = ScriptFunction.createBuiltin("isNaN",   GlobalFunctions.IS_NAN,
-                   new Specialization[] {
-                        new Specialization(GlobalFunctions.IS_NAN_I),
-                        new Specialization(GlobalFunctions.IS_NAN_J),
-                        new Specialization(GlobalFunctions.IS_NAN_D) });
-        this.parseFloat         = ScriptFunction.createBuiltin("parseFloat", GlobalFunctions.PARSEFLOAT);
-        this.isNaN              = ScriptFunction.createBuiltin("isNaN",      GlobalFunctions.IS_NAN);
-        this.isFinite           = ScriptFunction.createBuiltin("isFinite",   GlobalFunctions.IS_FINITE);
-        this.encodeURI          = ScriptFunction.createBuiltin("encodeURI",  GlobalFunctions.ENCODE_URI);
-        this.encodeURIComponent = ScriptFunction.createBuiltin("encodeURIComponent", GlobalFunctions.ENCODE_URICOMPONENT);
-        this.decodeURI          = ScriptFunction.createBuiltin("decodeURI",  GlobalFunctions.DECODE_URI);
-        this.decodeURIComponent = ScriptFunction.createBuiltin("decodeURIComponent", GlobalFunctions.DECODE_URICOMPONENT);
-        this.escape             = ScriptFunction.createBuiltin("escape",     GlobalFunctions.ESCAPE);
-        this.unescape           = ScriptFunction.createBuiltin("unescape",   GlobalFunctions.UNESCAPE);
-        this.print              = ScriptFunction.createBuiltin("print",      env._print_no_newline ? PRINT : PRINTLN);
-        this.load               = ScriptFunction.createBuiltin("load",       LOAD);
-        this.loadWithNewGlobal  = ScriptFunction.createBuiltin("loadWithNewGlobal", LOAD_WITH_NEW_GLOBAL);
-        this.exit               = ScriptFunction.createBuiltin("exit",       EXIT);
-        this.quit               = ScriptFunction.createBuiltin("quit",       EXIT);
+        this.parseInt           = ScriptFunctionImpl.makeFunction("parseInt",   GlobalFunctions.PARSEINT);
+        this.parseFloat         = ScriptFunctionImpl.makeFunction("parseFloat", GlobalFunctions.PARSEFLOAT);
+        this.isNaN              = ScriptFunctionImpl.makeFunction("isNaN",      GlobalFunctions.IS_NAN);
+        this.isFinite           = ScriptFunctionImpl.makeFunction("isFinite",   GlobalFunctions.IS_FINITE);
+        this.encodeURI          = ScriptFunctionImpl.makeFunction("encodeURI",  GlobalFunctions.ENCODE_URI);
+        this.encodeURIComponent = ScriptFunctionImpl.makeFunction("encodeURIComponent", GlobalFunctions.ENCODE_URICOMPONENT);
+        this.decodeURI          = ScriptFunctionImpl.makeFunction("decodeURI",  GlobalFunctions.DECODE_URI);
+        this.decodeURIComponent = ScriptFunctionImpl.makeFunction("decodeURIComponent", GlobalFunctions.DECODE_URICOMPONENT);
+        this.escape             = ScriptFunctionImpl.makeFunction("escape",     GlobalFunctions.ESCAPE);
+        this.unescape           = ScriptFunctionImpl.makeFunction("unescape",   GlobalFunctions.UNESCAPE);
+        this.print              = ScriptFunctionImpl.makeFunction("print",      env._print_no_newline ? PRINT : PRINTLN);
+        this.load               = ScriptFunctionImpl.makeFunction("load",       LOAD);
+        this.loadWithNewGlobal  = ScriptFunctionImpl.makeFunction("loadWithNewGlobal", LOADWITHNEWGLOBAL);
+        this.exit               = ScriptFunctionImpl.makeFunction("exit",       EXIT);
+        this.quit               = ScriptFunctionImpl.makeFunction("quit",       EXIT);
 
         // built-in constructors
-        this.builtinArray     = initConstructorAndSwitchPoint("Array", ScriptFunction.class);
-        this.builtinBoolean   = initConstructorAndSwitchPoint("Boolean", ScriptFunction.class);
-        this.builtinNumber    = initConstructorAndSwitchPoint("Number", ScriptFunction.class);
-        this.builtinString    = initConstructorAndSwitchPoint("String", ScriptFunction.class);
-        this.builtinMath      = initConstructorAndSwitchPoint("Math", ScriptObject.class);
+        this.builtinArray     = (ScriptFunction)initConstructor("Array");
+        this.builtinBoolean   = (ScriptFunction)initConstructor("Boolean");
+        this.builtinDate      = (ScriptFunction)initConstructor("Date");
+        this.builtinJSON      = initConstructor("JSON");
+        this.builtinJSAdapter = (ScriptFunction)initConstructor("JSAdapter");
+        this.builtinMath      = initConstructor("Math");
+        this.builtinNumber    = (ScriptFunction)initConstructor("Number");
+        this.builtinRegExp    = (ScriptFunction)initConstructor("RegExp");
+        this.builtinString    = (ScriptFunction)initConstructor("String");
 
         // initialize String.prototype.length to 0
         // add String.prototype.length
@@ -2311,125 +1679,95 @@ public final class Global extends Scope {
         final ScriptObject arrayPrototype = getArrayPrototype();
         arrayPrototype.setIsArray();
 
+        this.DEFAULT_DATE = new NativeDate(Double.NaN, this);
+
+        // initialize default regexp object
+        this.DEFAULT_REGEXP = new NativeRegExp("(?:)", this);
+
+        // RegExp.prototype should behave like a RegExp object. So copy the
+        // properties.
+        final ScriptObject regExpProto = getRegExpPrototype();
+        regExpProto.addBoundProperties(DEFAULT_REGEXP);
+
         // Error stuff
         initErrorObjects();
 
         // java access
         if (! env._no_java) {
-            this.javaApi = LAZY_SENTINEL;
-            this.javaImporter = LAZY_SENTINEL;
             initJavaAccess();
-        } else {
-            // delete nasgen-created global properties related to java access
-            this.delete("Java", false);
-            this.delete("JavaImporter", false);
-            this.delete("Packages", false);
-            this.delete("com", false);
-            this.delete("edu", false);
-            this.delete("java", false);
-            this.delete("javafx", false);
-            this.delete("javax", false);
-            this.delete("org", false);
         }
 
         if (! env._no_typed_arrays) {
-            this.arrayBuffer       = LAZY_SENTINEL;
-            this.dataView          = LAZY_SENTINEL;
-            this.int8Array         = LAZY_SENTINEL;
-            this.uint8Array        = LAZY_SENTINEL;
-            this.uint8ClampedArray = LAZY_SENTINEL;
-            this.int16Array        = LAZY_SENTINEL;
-            this.uint16Array       = LAZY_SENTINEL;
-            this.int32Array        = LAZY_SENTINEL;
-            this.uint32Array       = LAZY_SENTINEL;
-            this.float32Array      = LAZY_SENTINEL;
-            this.float64Array      = LAZY_SENTINEL;
+            initTypedArray();
         }
 
         if (env._scripting) {
             initScripting(env);
         }
 
-        if (Context.DEBUG) {
-            boolean debugOkay;
-            final SecurityManager sm = System.getSecurityManager();
-            if (sm != null) {
-                try {
-                    sm.checkPermission(new RuntimePermission(Context.NASHORN_DEBUG_MODE));
-                    debugOkay = true;
-                } catch (final SecurityException ignored) {
-                    // if no permission, don't initialize Debug object
-                    debugOkay = false;
-                }
-
-            } else {
-                debugOkay = true;
-            }
-
-            if (debugOkay) {
-                initDebug();
-            }
+        if (Context.DEBUG && System.getSecurityManager() == null) {
+            initDebug();
         }
 
         copyBuiltins();
 
+        // initialized with strings so that typeof will work as expected.
+        this.__FILE__ = "";
+        this.__DIR__  = "";
+        this.__LINE__ = 0.0;
+
         // expose script (command line) arguments as "arguments" property of global
-        arguments = wrapAsObject(env.getArguments().toArray());
+        final List<String> arguments = env.getArguments();
+        final Object argsObj = wrapAsObject(arguments.toArray());
+
+        addOwnProperty("arguments", Attribute.NOT_ENUMERABLE, argsObj);
         if (env._scripting) {
             // synonym for "arguments" in scripting mode
-            addOwnProperty("$ARG", Attribute.NOT_ENUMERABLE, arguments);
-        }
-
-        if (eng != null) {
-            // default file name
-            addOwnProperty(ScriptEngine.FILENAME, Attribute.NOT_ENUMERABLE, null);
-            // __noSuchProperty__ hook for ScriptContext search of missing variables
-            final ScriptFunction noSuchProp = ScriptFunction.createStrictBuiltin(NO_SUCH_PROPERTY_NAME, NO_SUCH_PROPERTY);
-            addOwnProperty(NO_SUCH_PROPERTY_NAME, Attribute.NOT_ENUMERABLE, noSuchProp);
+            addOwnProperty("$ARG", Attribute.NOT_ENUMERABLE, argsObj);
         }
     }
 
     private void initErrorObjects() {
         // Error objects
-        this.builtinError = initConstructor("Error", ScriptFunction.class);
+        this.builtinError = (ScriptFunction)initConstructor("Error");
         final ScriptObject errorProto = getErrorPrototype();
 
         // Nashorn specific accessors on Error.prototype - stack, lineNumber, columnNumber and fileName
-        final ScriptFunction getStack = ScriptFunction.createBuiltin("getStack", NativeError.GET_STACK);
-        final ScriptFunction setStack = ScriptFunction.createBuiltin("setStack", NativeError.SET_STACK);
+        final ScriptFunction getStack = ScriptFunctionImpl.makeFunction("getStack", NativeError.GET_STACK);
+        final ScriptFunction setStack = ScriptFunctionImpl.makeFunction("setStack", NativeError.SET_STACK);
         errorProto.addOwnProperty("stack", Attribute.NOT_ENUMERABLE, getStack, setStack);
-        final ScriptFunction getLineNumber = ScriptFunction.createBuiltin("getLineNumber", NativeError.GET_LINENUMBER);
-        final ScriptFunction setLineNumber = ScriptFunction.createBuiltin("setLineNumber", NativeError.SET_LINENUMBER);
+        final ScriptFunction getLineNumber = ScriptFunctionImpl.makeFunction("getLineNumber", NativeError.GET_LINENUMBER);
+        final ScriptFunction setLineNumber = ScriptFunctionImpl.makeFunction("setLineNumber", NativeError.SET_LINENUMBER);
         errorProto.addOwnProperty("lineNumber", Attribute.NOT_ENUMERABLE, getLineNumber, setLineNumber);
-        final ScriptFunction getColumnNumber = ScriptFunction.createBuiltin("getColumnNumber", NativeError.GET_COLUMNNUMBER);
-        final ScriptFunction setColumnNumber = ScriptFunction.createBuiltin("setColumnNumber", NativeError.SET_COLUMNNUMBER);
+        final ScriptFunction getColumnNumber = ScriptFunctionImpl.makeFunction("getColumnNumber", NativeError.GET_COLUMNNUMBER);
+        final ScriptFunction setColumnNumber = ScriptFunctionImpl.makeFunction("setColumnNumber", NativeError.SET_COLUMNNUMBER);
         errorProto.addOwnProperty("columnNumber", Attribute.NOT_ENUMERABLE, getColumnNumber, setColumnNumber);
-        final ScriptFunction getFileName = ScriptFunction.createBuiltin("getFileName", NativeError.GET_FILENAME);
-        final ScriptFunction setFileName = ScriptFunction.createBuiltin("setFileName", NativeError.SET_FILENAME);
+        final ScriptFunction getFileName = ScriptFunctionImpl.makeFunction("getFileName", NativeError.GET_FILENAME);
+        final ScriptFunction setFileName = ScriptFunctionImpl.makeFunction("setFileName", NativeError.SET_FILENAME);
         errorProto.addOwnProperty("fileName", Attribute.NOT_ENUMERABLE, getFileName, setFileName);
 
         // ECMA 15.11.4.2 Error.prototype.name
         // Error.prototype.name = "Error";
-        errorProto.set(NativeError.NAME, "Error", 0);
+        errorProto.set(NativeError.NAME, "Error", false);
         // ECMA 15.11.4.3 Error.prototype.message
         // Error.prototype.message = "";
-        errorProto.set(NativeError.MESSAGE, "", 0);
+        errorProto.set(NativeError.MESSAGE, "", false);
 
-        tagBuiltinProperties("Error", builtinError);
-
+        this.builtinEvalError = initErrorSubtype("EvalError", errorProto);
+        this.builtinRangeError = initErrorSubtype("RangeError", errorProto);
         this.builtinReferenceError = initErrorSubtype("ReferenceError", errorProto);
         this.builtinSyntaxError = initErrorSubtype("SyntaxError", errorProto);
         this.builtinTypeError = initErrorSubtype("TypeError", errorProto);
+        this.builtinURIError = initErrorSubtype("URIError", errorProto);
     }
 
     private ScriptFunction initErrorSubtype(final String name, final ScriptObject errorProto) {
-        final ScriptFunction cons = initConstructor(name, ScriptFunction.class);
+        final ScriptObject cons = initConstructor(name);
         final ScriptObject prototype = ScriptFunction.getPrototype(cons);
-        prototype.set(NativeError.NAME, name, 0);
-        prototype.set(NativeError.MESSAGE, "", 0);
-        prototype.setInitialProto(errorProto);
-        tagBuiltinProperties(name, cons);
-        return cons;
+        prototype.set(NativeError.NAME, name, false);
+        prototype.set(NativeError.MESSAGE, "", false);
+        prototype.setProto(errorProto);
+        return (ScriptFunction)cons;
     }
 
     private void initJavaAccess() {
@@ -2441,25 +1779,25 @@ public final class Global extends Scope {
         this.builtinJavafx = new NativeJavaPackage("javafx", objectProto);
         this.builtinJavax = new NativeJavaPackage("javax", objectProto);
         this.builtinOrg = new NativeJavaPackage("org", objectProto);
+        this.builtinJavaImporter = initConstructor("JavaImporter");
+        this.builtinJavaApi = initConstructor("Java");
     }
 
     private void initScripting(final ScriptEnvironment scriptEnv) {
-        ScriptObject value;
-        value = ScriptFunction.createBuiltin("readLine", ScriptingFunctions.READLINE);
+        Object value;
+        value = ScriptFunctionImpl.makeFunction("readLine", ScriptingFunctions.READLINE);
         addOwnProperty("readLine", Attribute.NOT_ENUMERABLE, value);
 
-        value = ScriptFunction.createBuiltin("readFully", ScriptingFunctions.READFULLY);
+        value = ScriptFunctionImpl.makeFunction("readFully", ScriptingFunctions.READFULLY);
         addOwnProperty("readFully", Attribute.NOT_ENUMERABLE, value);
 
         final String execName = ScriptingFunctions.EXEC_NAME;
-        value = ScriptFunction.createBuiltin(execName, ScriptingFunctions.EXEC);
-        value.addOwnProperty(ScriptingFunctions.THROW_ON_ERROR_NAME, Attribute.NOT_ENUMERABLE, false);
-
+        value = ScriptFunctionImpl.makeFunction(execName, ScriptingFunctions.EXEC);
         addOwnProperty(execName, Attribute.NOT_ENUMERABLE, value);
 
         // Nashorn extension: global.echo (scripting-mode-only)
         // alias for "print"
-        value = (ScriptObject)get("print");
+        value = get("print");
         addOwnProperty("echo", Attribute.NOT_ENUMERABLE, value);
 
         // Nashorn extension: global.$OPTIONS (scripting-mode-only)
@@ -2473,14 +1811,6 @@ public final class Global extends Scope {
             // Retrieve current state of ENV variables.
             final ScriptObject env = newObject();
             env.putAll(System.getenv(), scriptEnv._strict);
-
-            // Some platforms, e.g., Windows, do not define the PWD environment
-            // variable, so that the $ENV.PWD property needs to be explicitly
-            // set.
-            if (!env.containsKey(ScriptingFunctions.PWD_NAME)) {
-                env.put(ScriptingFunctions.PWD_NAME, System.getProperty("user.dir"), scriptEnv._strict);
-            }
-
             addOwnProperty(ScriptingFunctions.ENV_NAME, Attribute.NOT_ENUMERABLE, env);
         } else {
             addOwnProperty(ScriptingFunctions.ENV_NAME, Attribute.NOT_ENUMERABLE, UNDEFINED);
@@ -2493,52 +1823,83 @@ public final class Global extends Scope {
     }
 
     private static void copyOptions(final ScriptObject options, final ScriptEnvironment scriptEnv) {
-        for (final Field f : scriptEnv.getClass().getFields()) {
+        for (Field f : scriptEnv.getClass().getFields()) {
             try {
-                options.set(f.getName(), f.get(scriptEnv), 0);
+                options.set(f.getName(), f.get(scriptEnv), false);
             } catch (final IllegalArgumentException | IllegalAccessException exp) {
                 throw new RuntimeException(exp);
             }
         }
     }
 
+    private void initTypedArray() {
+        this.builtinArrayBuffer       = initConstructor("ArrayBuffer");
+        this.builtinInt8Array         = initConstructor("Int8Array");
+        this.builtinUint8Array        = initConstructor("Uint8Array");
+        this.builtinUint8ClampedArray = initConstructor("Uint8ClampedArray");
+        this.builtinInt16Array        = initConstructor("Int16Array");
+        this.builtinUint16Array       = initConstructor("Uint16Array");
+        this.builtinInt32Array        = initConstructor("Int32Array");
+        this.builtinUint32Array       = initConstructor("Uint32Array");
+        this.builtinFloat32Array      = initConstructor("Float32Array");
+        this.builtinFloat64Array      = initConstructor("Float64Array");
+    }
+
     private void copyBuiltins() {
         this.array             = this.builtinArray;
         this._boolean          = this.builtinBoolean;
+        this.date              = this.builtinDate;
         this.error             = this.builtinError;
+        this.evalError         = this.builtinEvalError;
         this.function          = this.builtinFunction;
+        this.jsadapter         = this.builtinJSAdapter;
+        this.json              = this.builtinJSON;
         this.com               = this.builtinCom;
         this.edu               = this.builtinEdu;
         this.java              = this.builtinJava;
         this.javafx            = this.builtinJavafx;
         this.javax             = this.builtinJavax;
         this.org               = this.builtinOrg;
+        this.javaImporter      = this.builtinJavaImporter;
+        this.javaApi           = this.builtinJavaApi;
         this.math              = this.builtinMath;
         this.number            = this.builtinNumber;
         this.object            = this.builtinObject;
         this.packages          = this.builtinPackages;
+        this.rangeError        = this.builtinRangeError;
         this.referenceError    = this.builtinReferenceError;
+        this.regexp            = this.builtinRegExp;
         this.string            = this.builtinString;
         this.syntaxError       = this.builtinSyntaxError;
         this.typeError         = this.builtinTypeError;
+        this.uriError          = this.builtinURIError;
+        this.arrayBuffer       = this.builtinArrayBuffer;
+        this.int8Array         = this.builtinInt8Array;
+        this.uint8Array        = this.builtinUint8Array;
+        this.uint8ClampedArray = this.builtinUint8ClampedArray;
+        this.int16Array        = this.builtinInt16Array;
+        this.uint16Array       = this.builtinUint16Array;
+        this.int32Array        = this.builtinInt32Array;
+        this.uint32Array       = this.builtinUint32Array;
+        this.float32Array      = this.builtinFloat32Array;
+        this.float64Array      = this.builtinFloat64Array;
     }
 
     private void initDebug() {
-        this.addOwnProperty("Debug", Attribute.NOT_ENUMERABLE, initConstructor("Debug", ScriptObject.class));
+        this.addOwnProperty("Debug", Attribute.NOT_ENUMERABLE, initConstructor("Debug"));
     }
 
-    private Object printImpl(final boolean newLine, final Object... objects) {
-        final ScriptContext sc = currentContext();
-        @SuppressWarnings("resource")
-        final PrintWriter out = sc != null? new PrintWriter(sc.getWriter()) : getContext().getEnv().getOut();
+    @SuppressWarnings("resource")
+    private static Object printImpl(final boolean newLine, final Object... objects) {
+        final PrintWriter out = Global.getEnv().getOut();
         final StringBuilder sb = new StringBuilder();
 
-        for (final Object obj : objects) {
+        for (final Object object : objects) {
             if (sb.length() != 0) {
                 sb.append(' ');
             }
 
-            sb.append(JSType.toString(obj));
+            sb.append(JSType.toString(object));
         }
 
         // Print all at once to ensure thread friendly result.
@@ -2553,7 +1914,11 @@ public final class Global extends Scope {
         return UNDEFINED;
     }
 
-    private <T extends ScriptObject> T initConstructor(final String name, final Class<T> clazz) {
+    /**
+     * These classes are generated by nasgen tool and so we have to use
+     * reflection to load and create new instance of these classes.
+     */
+    private ScriptObject initConstructor(final String name) {
         try {
             // Assuming class name pattern for built-in JS constructors.
             final StringBuilder sb = new StringBuilder("jdk.nashorn.internal.objects.");
@@ -2562,8 +1927,8 @@ public final class Global extends Scope {
             sb.append(name);
             sb.append("$Constructor");
 
-            final Class<?> funcClass = Class.forName(sb.toString());
-            final T res = clazz.cast(funcClass.newInstance());
+            final Class<?>     funcClass = Class.forName(sb.toString());
+            final ScriptObject res       = (ScriptObject)funcClass.newInstance();
 
             if (res instanceof ScriptFunction) {
                 // All global constructor prototypes are not-writable,
@@ -2573,53 +1938,53 @@ public final class Global extends Scope {
             }
 
             if (res.getProto() == null) {
-                res.setInitialProto(getObjectPrototype());
+                res.setProto(getObjectPrototype());
             }
 
-            res.setIsBuiltin();
-
             return res;
+
         } catch (final ClassNotFoundException | InstantiationException | IllegalAccessException e) {
             throw new RuntimeException(e);
         }
     }
 
-    private List<jdk.nashorn.internal.runtime.Property> extractBuiltinProperties(final String name, final ScriptObject func) {
-        final List<jdk.nashorn.internal.runtime.Property> list = new ArrayList<>();
+    private void copyInitialMaps(final ScriptEnvironment env) {
+        this.accessorPropertyDescriptorMap = AccessorPropertyDescriptor.getInitialMap().duplicate();
+        this.dataPropertyDescriptorMap = DataPropertyDescriptor.getInitialMap().duplicate();
+        this.genericPropertyDescriptorMap = GenericPropertyDescriptor.getInitialMap().duplicate();
+        this.nativeArgumentsMap = NativeArguments.getInitialMap().duplicate();
+        this.nativeArrayMap = NativeArray.getInitialMap().duplicate();
+        this.nativeBooleanMap = NativeBoolean.getInitialMap().duplicate();
+        this.nativeDateMap = NativeDate.getInitialMap().duplicate();
+        this.nativeErrorMap = NativeError.getInitialMap().duplicate();
+        this.nativeEvalErrorMap = NativeEvalError.getInitialMap().duplicate();
+        this.nativeJSAdapterMap = NativeJSAdapter.getInitialMap().duplicate();
+        this.nativeNumberMap = NativeNumber.getInitialMap().duplicate();
+        this.nativeRangeErrorMap = NativeRangeError.getInitialMap().duplicate();
+        this.nativeReferenceErrorMap = NativeReferenceError.getInitialMap().duplicate();
+        this.nativeRegExpMap = NativeRegExp.getInitialMap().duplicate();
+        this.nativeRegExpExecResultMap = NativeRegExpExecResult.getInitialMap().duplicate();
+        this.nativeStrictArgumentsMap = NativeStrictArguments.getInitialMap().duplicate();
+        this.nativeStringMap = NativeString.getInitialMap().duplicate();
+        this.nativeSyntaxErrorMap = NativeSyntaxError.getInitialMap().duplicate();
+        this.nativeTypeErrorMap = NativeTypeError.getInitialMap().duplicate();
+        this.nativeURIErrorMap = NativeURIError.getInitialMap().duplicate();
+        this.prototypeObjectMap = PrototypeObject.getInitialMap().duplicate();
+        this.objectMap = JO.getInitialMap().duplicate();
+        this.functionMap = ScriptFunctionImpl.getInitialMap().duplicate();
+        this.anonymousFunctionMap = ScriptFunctionImpl.getInitialAnonymousMap().duplicate();
+        this.strictFunctionMap = ScriptFunctionImpl.getInitialStrictMap().duplicate();
+        this.boundFunctionMap = ScriptFunctionImpl.getInitialBoundMap().duplicate();
 
-        list.addAll(Arrays.asList(func.getMap().getProperties()));
-
-        if (func instanceof ScriptFunction) {
-            final ScriptObject proto = ScriptFunction.getPrototype((ScriptFunction)func);
-            if (proto != null) {
-                list.addAll(Arrays.asList(proto.getMap().getProperties()));
-            }
+        // java
+        if (! env._no_java) {
+            this.nativeJavaImporterMap = NativeJavaImporter.getInitialMap().duplicate();
         }
 
-        final jdk.nashorn.internal.runtime.Property prop = getProperty(name);
-        if (prop != null) {
-            list.add(prop);
-        }
-
-        return list;
-    }
-
-    /**
-     * Given a builtin object, traverse its properties recursively and associate them with a name that
-     * will be a key to their invalidation switchpoint.
-     * @param name name for key
-     * @param func builtin script object
-     */
-    private void tagBuiltinProperties(final String name, final ScriptObject func) {
-        SwitchPoint sp = context.getBuiltinSwitchPoint(name);
-        if (sp == null) {
-            sp = context.newBuiltinSwitchPoint(name);
-        }
-
-        //get all builtin properties in this builtin object and register switchpoints keyed on the propery name,
-        //one overwrite destroys all for now, e.g. Function.prototype.apply = 17; also destroys Function.prototype.call etc
-        for (final jdk.nashorn.internal.runtime.Property prop : extractBuiltinProperties(name, func)) {
-            prop.setBuiltinSwitchPoint(sp);
+        // typed arrays
+        if (! env._no_typed_arrays) {
+            this.arrayBufferViewMap = ArrayBufferView.getInitialMap().duplicate();
+            this.nativeArrayBufferMap = NativeArrayBuffer.getInitialMap().duplicate();
         }
     }
 
@@ -2631,36 +1996,32 @@ public final class Global extends Scope {
     // to play with object references carefully!!
     private void initFunctionAndObject() {
         // First-n-foremost is Function
-
-        this.builtinFunction = initConstructor("Function", ScriptFunction.class);
+        this.builtinFunction = (ScriptFunction)initConstructor("Function");
 
         // create global anonymous function
-        final ScriptFunction anon = ScriptFunction.createAnonymous();
+        final ScriptFunction anon = ScriptFunctionImpl.newAnonymousFunction(this);
         // need to copy over members of Function.prototype to anon function
         anon.addBoundProperties(getFunctionPrototype());
 
         // Function.prototype === Object.getPrototypeOf(Function) ===
         // <anon-function>
-        builtinFunction.setInitialProto(anon);
+        builtinFunction.setProto(anon);
         builtinFunction.setPrototype(anon);
-        anon.set("constructor", builtinFunction, 0);
+        anon.set("constructor", builtinFunction, false);
         anon.deleteOwnProperty(anon.getMap().findProperty("prototype"));
 
         // use "getter" so that [[ThrowTypeError]] function's arity is 0 - as specified in step 10 of section 13.2.3
-        this.typeErrorThrower = ScriptFunction.createBuiltin("TypeErrorThrower", Lookup.TYPE_ERROR_THROWER_GETTER);
+        this.typeErrorThrower = new ScriptFunctionImpl("TypeErrorThrower", Lookup.TYPE_ERROR_THROWER_GETTER, null, null, false, false, false);
+        typeErrorThrower.setPrototype(UNDEFINED);
+        // Non-constructor built-in functions do not have "prototype" property
+        typeErrorThrower.deleteOwnProperty(typeErrorThrower.getMap().findProperty("prototype"));
         typeErrorThrower.preventExtensions();
 
         // now initialize Object
-        this.builtinObject = initConstructor("Object", ScriptFunction.class);
+        this.builtinObject = (ScriptFunction)initConstructor("Object");
         final ScriptObject ObjectPrototype = getObjectPrototype();
         // Object.getPrototypeOf(Function.prototype) === Object.prototype
-        anon.setInitialProto(ObjectPrototype);
-
-        // ES6 draft compliant __proto__ property of Object.prototype
-        // accessors on Object.prototype for "__proto__"
-        final ScriptFunction getProto = ScriptFunction.createBuiltin("getProto", NativeObject.GET__PROTO__);
-        final ScriptFunction setProto = ScriptFunction.createBuiltin("setProto", NativeObject.SET__PROTO__);
-        ObjectPrototype.addOwnProperty("__proto__", Attribute.NOT_ENUMERABLE, getProto, setProto);
+        anon.setProto(ObjectPrototype);
 
         // Function valued properties of Function.prototype were not properly
         // initialized. Because, these were created before global.function and
@@ -2672,10 +2033,10 @@ public final class Global extends Scope {
 
             if (value instanceof ScriptFunction && value != anon) {
                 final ScriptFunction func = (ScriptFunction)value;
-                func.setInitialProto(getFunctionPrototype());
+                func.setProto(getFunctionPrototype());
                 final ScriptObject prototype = ScriptFunction.getPrototype(func);
                 if (prototype != null) {
-                    prototype.setInitialProto(ObjectPrototype);
+                    prototype.setProto(ObjectPrototype);
                 }
             }
         }
@@ -2690,35 +2051,31 @@ public final class Global extends Scope {
                 final ScriptFunction func = (ScriptFunction)value;
                 final ScriptObject prototype = ScriptFunction.getPrototype(func);
                 if (prototype != null) {
-                    prototype.setInitialProto(ObjectPrototype);
+                    prototype.setProto(ObjectPrototype);
                 }
             }
         }
 
         properties = getObjectPrototype().getMap().getProperties();
-
         for (final jdk.nashorn.internal.runtime.Property property : properties) {
             final Object key   = property.getKey();
+            final Object value = ObjectPrototype.get(key);
+
             if (key.equals("constructor")) {
                 continue;
             }
 
-            final Object value = ObjectPrototype.get(key);
             if (value instanceof ScriptFunction) {
                 final ScriptFunction func = (ScriptFunction)value;
                 final ScriptObject prototype = ScriptFunction.getPrototype(func);
                 if (prototype != null) {
-                    prototype.setInitialProto(ObjectPrototype);
+                    prototype.setProto(ObjectPrototype);
                 }
             }
         }
-
-        tagBuiltinProperties("Object", builtinObject);
-        tagBuiltinProperties("Function", builtinFunction);
-        tagBuiltinProperties("Function", anon);
     }
 
-    private static MethodHandle findOwnMH_S(final String name, final Class<?> rtype, final Class<?>... types) {
+    private static MethodHandle findOwnMH(final String name, final Class<?> rtype, final Class<?>... types) {
         return MH.findStatic(MethodHandles.lookup(), Global.class, name, MH.type(rtype, types));
     }
 
@@ -2728,42 +2085,6 @@ public final class Global extends Scope {
 
     void setLastRegExpResult(final RegExpResult regExpResult) {
         this.lastRegExpResult = regExpResult;
-    }
-
-    @Override
-    protected boolean isGlobal() {
-        return true;
-    }
-
-    /**
-     * A class representing the ES6 global lexical scope.
-     */
-    private static class LexicalScope extends ScriptObject {
-
-        LexicalScope(final Global global) {
-            super(global, PropertyMap.newMap());
-        }
-
-        @Override
-        protected GuardedInvocation findGetMethod(final CallSiteDescriptor desc, final LinkRequest request, final String operator) {
-            return filterInvocation(super.findGetMethod(desc, request, operator));
-        }
-
-        @Override
-        protected GuardedInvocation findSetMethod(final CallSiteDescriptor desc, final LinkRequest request) {
-            return filterInvocation(super.findSetMethod(desc, request));
-        }
-
-        @Override
-        protected PropertyMap addBoundProperty(final PropertyMap propMap, final ScriptObject source, final jdk.nashorn.internal.runtime.Property property, final boolean extensible) {
-            // We override this method just to make it callable by Global
-            return super.addBoundProperty(propMap, source, property, extensible);
-        }
-
-        private static GuardedInvocation filterInvocation(final GuardedInvocation invocation) {
-            final MethodType type = invocation.getInvocation().type();
-            return invocation.asType(type.changeParameterType(0, Object.class)).filterArguments(0, LEXICAL_SCOPE_FILTER);
-        }
     }
 
 }

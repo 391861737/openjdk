@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 1997, 2015, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 1997, 2013, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -38,18 +38,23 @@
 #include "opto/vectornode.hpp"
 #include "runtime/atomic.hpp"
 #include "runtime/os.hpp"
-#if defined AD_MD_HPP
-# include AD_MD_HPP
-#elif defined TARGET_ARCH_MODEL_x86_32
+#ifdef TARGET_ARCH_MODEL_x86_32
 # include "adfiles/ad_x86_32.hpp"
-#elif defined TARGET_ARCH_MODEL_x86_64
+#endif
+#ifdef TARGET_ARCH_MODEL_x86_64
 # include "adfiles/ad_x86_64.hpp"
-#elif defined TARGET_ARCH_MODEL_sparc
+#endif
+#ifdef TARGET_ARCH_MODEL_sparc
 # include "adfiles/ad_sparc.hpp"
-#elif defined TARGET_ARCH_MODEL_zero
+#endif
+#ifdef TARGET_ARCH_MODEL_zero
 # include "adfiles/ad_zero.hpp"
-#elif defined TARGET_ARCH_MODEL_ppc_64
-# include "adfiles/ad_ppc_64.hpp"
+#endif
+#ifdef TARGET_ARCH_MODEL_arm
+# include "adfiles/ad_arm.hpp"
+#endif
+#ifdef TARGET_ARCH_MODEL_ppc
+# include "adfiles/ad_ppc.hpp"
 #endif
 
 OptoReg::Name OptoReg::c_frame_pointer;
@@ -335,14 +340,14 @@ void Matcher::match( ) {
   grow_new_node_array(C->unique());
 
   // Reset node counter so MachNodes start with _idx at 0
-  int live_nodes = C->live_nodes();
+  int nodes = C->unique(); // save value
   C->set_unique(0);
   C->reset_dead_node_list();
 
   // Recursively match trees from old space into new space.
   // Correct leaves of new-space Nodes; they point to old-space.
   _visited.Clear();             // Clear visit bits for xform call
-  C->set_cached_top_node(xform( C->top(), live_nodes));
+  C->set_cached_top_node(xform( C->top(), nodes ));
   if (!C->failing()) {
     Node* xroot =        xform( C->root(), 1 );
     if (xroot == NULL) {
@@ -837,15 +842,16 @@ void Matcher::init_spill_mask( Node *ret ) {
 
   // Compute generic short-offset Loads
 #ifdef _LP64
-  MachNode *spillCP = match_tree(new (C) LoadNNode(NULL,mem,fp,atp,TypeInstPtr::BOTTOM,MemNode::unordered));
+  MachNode *spillCP = match_tree(new (C) LoadNNode(NULL,mem,fp,atp,TypeInstPtr::BOTTOM));
 #endif
-  MachNode *spillI  = match_tree(new (C) LoadINode(NULL,mem,fp,atp,TypeInt::INT,MemNode::unordered));
-  MachNode *spillL  = match_tree(new (C) LoadLNode(NULL,mem,fp,atp,TypeLong::LONG,MemNode::unordered, LoadNode::DependsOnlyOnTest,false));
-  MachNode *spillF  = match_tree(new (C) LoadFNode(NULL,mem,fp,atp,Type::FLOAT,MemNode::unordered));
-  MachNode *spillD  = match_tree(new (C) LoadDNode(NULL,mem,fp,atp,Type::DOUBLE,MemNode::unordered));
-  MachNode *spillP  = match_tree(new (C) LoadPNode(NULL,mem,fp,atp,TypeInstPtr::BOTTOM,MemNode::unordered));
+  MachNode *spillI  = match_tree(new (C) LoadINode(NULL,mem,fp,atp));
+  MachNode *spillL  = match_tree(new (C) LoadLNode(NULL,mem,fp,atp));
+  MachNode *spillF  = match_tree(new (C) LoadFNode(NULL,mem,fp,atp));
+  MachNode *spillD  = match_tree(new (C) LoadDNode(NULL,mem,fp,atp));
+  MachNode *spillP  = match_tree(new (C) LoadPNode(NULL,mem,fp,atp,TypeInstPtr::BOTTOM));
   assert(spillI != NULL && spillL != NULL && spillF != NULL &&
          spillD != NULL && spillP != NULL, "");
+
   // Get the ADLC notion of the right regmask, for each basic type.
 #ifdef _LP64
   idealreg2regmask[Op_RegN] = &spillCP->out_RegMask();
@@ -995,7 +1001,7 @@ class MStack: public Node_Stack {
 Node *Matcher::transform( Node *n ) { ShouldNotCallThis(); return n; }
 Node *Matcher::xform( Node *n, int max_stack ) {
   // Use one stack to keep both: child's node/state and parent's node/index
-  MStack mstack(max_stack * 2 * 2); // usually: C->live_nodes() * 2 * 2
+  MStack mstack(max_stack * 2 * 2); // C->unique() * 2 * 2
   mstack.push(n, Visit, NULL, -1);  // set NULL as parent to indicate root
 
   while (mstack.is_nonempty()) {
@@ -1020,7 +1026,7 @@ Node *Matcher::xform( Node *n, int max_stack ) {
             if (C->failing())  return NULL;
             if (m == NULL) { Matcher::soft_match_failure(); return NULL; }
           } else {                  // Nothing the matcher cares about
-            if (n->is_Proj() && n->in(0) != NULL && n->in(0)->is_Multi()) {       // Projections?
+            if( n->is_Proj() && n->in(0)->is_Multi()) {       // Projections?
               // Convert to machine-dependent projection
               m = n->in(0)->as_Multi()->match( n->as_Proj(), this );
 #ifdef ASSERT
@@ -1330,23 +1336,11 @@ MachNode *Matcher::match_sfpt( SafePointNode *sfpt ) {
   }
 
   // Debug inputs begin just after the last incoming parameter
-  assert((mcall == NULL) || (mcall->jvms() == NULL) ||
-         (mcall->jvms()->debug_start() + mcall->_jvmadj == mcall->tf()->domain()->cnt()), "");
+  assert( (mcall == NULL) || (mcall->jvms() == NULL) ||
+          (mcall->jvms()->debug_start() + mcall->_jvmadj == mcall->tf()->domain()->cnt()), "" );
 
   // Move the OopMap
   msfpt->_oop_map = sfpt->_oop_map;
-
-  // Add additional edges.
-  if (msfpt->mach_constant_base_node_input() != (uint)-1 && !msfpt->is_MachCallLeaf()) {
-    // For these calls we can not add MachConstantBase in expand(), as the
-    // ins are not complete then.
-    msfpt->ins_req(msfpt->mach_constant_base_node_input(), C->mach_constant_base_node());
-    if (msfpt->jvms() &&
-        msfpt->mach_constant_base_node_input() <= msfpt->jvms()->debug_start() + msfpt->_jvmadj) {
-      // We added an edge before jvms, so we must adapt the position of the ins.
-      msfpt->jvms()->adapt_position(+1);
-    }
-  }
 
   // Registers killed by the call are set in the local scheduling pass
   // of Global Code Motion.
@@ -1657,7 +1651,6 @@ MachNode *Matcher::ReduceInst( State *s, int rule, Node *&mem ) {
 
   // Build the object to represent this state & prepare for recursive calls
   MachNode *mach = s->MachNodeGenerator( rule, C );
-  guarantee(mach != NULL, "Missing MachNode");
   mach->_opnds[0] = s->MachOperGenerator( _reduceOp[rule], C );
   assert( mach->_opnds[0] != NULL, "Missing result operand" );
   Node *leaf = s->_leaf;
@@ -1915,105 +1908,6 @@ OptoReg::Name Matcher::find_receiver( bool is_outgoing ) {
   return OptoReg::as_OptoReg(regs.first());
 }
 
-// This function identifies sub-graphs in which a 'load' node is
-// input to two different nodes, and such that it can be matched
-// with BMI instructions like blsi, blsr, etc.
-// Example : for b = -a[i] & a[i] can be matched to blsi r32, m32.
-// The graph is (AndL (SubL Con0 LoadL*) LoadL*), where LoadL*
-// refers to the same node.
-#ifdef X86
-// Match the generic fused operations pattern (op1 (op2 Con{ConType} mop) mop)
-// This is a temporary solution until we make DAGs expressible in ADL.
-template<typename ConType>
-class FusedPatternMatcher {
-  Node* _op1_node;
-  Node* _mop_node;
-  int _con_op;
-
-  static int match_next(Node* n, int next_op, int next_op_idx) {
-    if (n->in(1) == NULL || n->in(2) == NULL) {
-      return -1;
-    }
-
-    if (next_op_idx == -1) { // n is commutative, try rotations
-      if (n->in(1)->Opcode() == next_op) {
-        return 1;
-      } else if (n->in(2)->Opcode() == next_op) {
-        return 2;
-      }
-    } else {
-      assert(next_op_idx > 0 && next_op_idx <= 2, "Bad argument index");
-      if (n->in(next_op_idx)->Opcode() == next_op) {
-        return next_op_idx;
-      }
-    }
-    return -1;
-  }
-public:
-  FusedPatternMatcher(Node* op1_node, Node *mop_node, int con_op) :
-    _op1_node(op1_node), _mop_node(mop_node), _con_op(con_op) { }
-
-  bool match(int op1, int op1_op2_idx,  // op1 and the index of the op1->op2 edge, -1 if op1 is commutative
-             int op2, int op2_con_idx,  // op2 and the index of the op2->con edge, -1 if op2 is commutative
-             typename ConType::NativeType con_value) {
-    if (_op1_node->Opcode() != op1) {
-      return false;
-    }
-    if (_mop_node->outcnt() > 2) {
-      return false;
-    }
-    op1_op2_idx = match_next(_op1_node, op2, op1_op2_idx);
-    if (op1_op2_idx == -1) {
-      return false;
-    }
-    // Memory operation must be the other edge
-    int op1_mop_idx = (op1_op2_idx & 1) + 1;
-
-    // Check that the mop node is really what we want
-    if (_op1_node->in(op1_mop_idx) == _mop_node) {
-      Node *op2_node = _op1_node->in(op1_op2_idx);
-      if (op2_node->outcnt() > 1) {
-        return false;
-      }
-      assert(op2_node->Opcode() == op2, "Should be");
-      op2_con_idx = match_next(op2_node, _con_op, op2_con_idx);
-      if (op2_con_idx == -1) {
-        return false;
-      }
-      // Memory operation must be the other edge
-      int op2_mop_idx = (op2_con_idx & 1) + 1;
-      // Check that the memory operation is the same node
-      if (op2_node->in(op2_mop_idx) == _mop_node) {
-        // Now check the constant
-        const Type* con_type = op2_node->in(op2_con_idx)->bottom_type();
-        if (con_type != Type::TOP && ConType::as_self(con_type)->get_con() == con_value) {
-          return true;
-        }
-      }
-    }
-    return false;
-  }
-};
-
-
-bool Matcher::is_bmi_pattern(Node *n, Node *m) {
-  if (n != NULL && m != NULL) {
-    if (m->Opcode() == Op_LoadI) {
-      FusedPatternMatcher<TypeInt> bmii(n, m, Op_ConI);
-      return bmii.match(Op_AndI, -1, Op_SubI,  1,  0)  ||
-             bmii.match(Op_AndI, -1, Op_AddI, -1, -1)  ||
-             bmii.match(Op_XorI, -1, Op_AddI, -1, -1);
-    } else if (m->Opcode() == Op_LoadL) {
-      FusedPatternMatcher<TypeLong> bmil(n, m, Op_ConL);
-      return bmil.match(Op_AndL, -1, Op_SubL,  1,  0) ||
-             bmil.match(Op_AndL, -1, Op_AddL, -1, -1) ||
-             bmil.match(Op_XorL, -1, Op_AddL, -1, -1);
-    }
-  }
-  return false;
-}
-#endif // X86
-
 // A method-klass-holder may be passed in the inline_cache_reg
 // and then expanded into the inline_cache_reg and a method_oop register
 //   defined in ad_<arch>.cpp
@@ -2022,8 +1916,8 @@ bool Matcher::is_bmi_pattern(Node *n, Node *m) {
 //------------------------------find_shared------------------------------------
 // Set bits if Node is shared or otherwise a root
 void Matcher::find_shared( Node *n ) {
-  // Allocate stack of size C->live_nodes() * 2 to avoid frequent realloc
-  MStack mstack(C->live_nodes() * 2);
+  // Allocate stack of size C->unique() * 2 to avoid frequent realloc
+  MStack mstack(C->unique() * 2);
   // Mark nodes as address_visited if they are inputs to an address expression
   VectorSet address_visited(Thread::current()->resource_area());
   mstack.push(n, Visit);     // Don't need to pre-visit root node
@@ -2090,6 +1984,7 @@ void Matcher::find_shared( Node *n ) {
       case Op_Catch:
       case Op_CatchProj:
       case Op_CProj:
+      case Op_FlagsProj:
       case Op_JumpProj:
       case Op_JProj:
       case Op_NeverBranch:
@@ -2168,14 +2063,6 @@ void Matcher::find_shared( Node *n ) {
           // to have a single use so force sharing here.
           set_shared(m->in(AddPNode::Base)->in(1));
         }
-
-        // if 'n' and 'm' are part of a graph for BMI instruction, clone this node.
-#ifdef X86
-        if (UseBMI1Instructions && is_bmi_pattern(n, m)) {
-          mstack.push(m, Visit);
-          continue;
-        }
-#endif
 
         // Clone addressing expressions as they are "free" in memory access instructions
         if( mem_op && i == MemNode::Address && mop == Op_AddP ) {
@@ -2444,7 +2331,7 @@ void Matcher::validate_null_checks( ) {
 bool Matcher::post_store_load_barrier(const Node* vmb) {
   Compile* C = Compile::current();
   assert(vmb->is_MemBar(), "");
-  assert(vmb->Opcode() != Op_MemBarAcquire && vmb->Opcode() != Op_LoadFence, "");
+  assert(vmb->Opcode() != Op_MemBarAcquire, "");
   const MemBarNode* membar = vmb->as_MemBar();
 
   // Get the Ideal Proj node, ctrl, that can be used to iterate forward
@@ -2489,7 +2376,7 @@ bool Matcher::post_store_load_barrier(const Node* vmb) {
     if (x->is_MemBar()) {
       // We must retain this membar if there is an upcoming volatile
       // load, which will be followed by acquire membar.
-      if (xop == Op_MemBarAcquire || xop == Op_LoadFence) {
+      if (xop == Op_MemBarAcquire) {
         return false;
       } else {
         // For other kinds of barriers, check by pretending we
@@ -2503,69 +2390,6 @@ bool Matcher::post_store_load_barrier(const Node* vmb) {
       return false;
     }
   }
-  return false;
-}
-
-// Check whether node n is a branch to an uncommon trap that we could
-// optimize as test with very high branch costs in case of going to
-// the uncommon trap. The code must be able to be recompiled to use
-// a cheaper test.
-bool Matcher::branches_to_uncommon_trap(const Node *n) {
-  // Don't do it for natives, adapters, or runtime stubs
-  Compile *C = Compile::current();
-  if (!C->is_method_compilation()) return false;
-
-  assert(n->is_If(), "You should only call this on if nodes.");
-  IfNode *ifn = n->as_If();
-
-  Node *ifFalse = NULL;
-  for (DUIterator_Fast imax, i = ifn->fast_outs(imax); i < imax; i++) {
-    if (ifn->fast_out(i)->is_IfFalse()) {
-      ifFalse = ifn->fast_out(i);
-      break;
-    }
-  }
-  assert(ifFalse, "An If should have an ifFalse. Graph is broken.");
-
-  Node *reg = ifFalse;
-  int cnt = 4; // We must protect against cycles.  Limit to 4 iterations.
-               // Alternatively use visited set?  Seems too expensive.
-  while (reg != NULL && cnt > 0) {
-    CallNode *call = NULL;
-    RegionNode *nxt_reg = NULL;
-    for (DUIterator_Fast imax, i = reg->fast_outs(imax); i < imax; i++) {
-      Node *o = reg->fast_out(i);
-      if (o->is_Call()) {
-        call = o->as_Call();
-      }
-      if (o->is_Region()) {
-        nxt_reg = o->as_Region();
-      }
-    }
-
-    if (call &&
-        call->entry_point() == SharedRuntime::uncommon_trap_blob()->entry_point()) {
-      const Type* trtype = call->in(TypeFunc::Parms)->bottom_type();
-      if (trtype->isa_int() && trtype->is_int()->is_con()) {
-        jint tr_con = trtype->is_int()->get_con();
-        Deoptimization::DeoptReason reason = Deoptimization::trap_request_reason(tr_con);
-        Deoptimization::DeoptAction action = Deoptimization::trap_request_action(tr_con);
-        assert((int)reason < (int)BitsPerInt, "recode bit map");
-
-        if (is_set_nth_bit(C->allowed_deopt_reasons(), (int)reason)
-            && action != Deoptimization::Action_none) {
-          // This uncommon trap is sure to recompile, eventually.
-          // When that happens, C->too_many_traps will prevent
-          // this transformation from happening again.
-          return true;
-        }
-      }
-    }
-
-    reg = nxt_reg;
-    cnt--;
-  }
-
   return false;
 }
 
@@ -2615,7 +2439,7 @@ void State::dump(int depth) {
         tty->print_cr("%s  %d  %s",
                       ruleName[i], _cost[i], ruleName[_rule[i]] );
       }
-  tty->cr();
+  tty->print_cr("");
 
   for( i=0; i<2; i++ )
     if( _kids[i] )

@@ -33,26 +33,22 @@ import java.util.List;
 import java.util.Map;
 import jdk.nashorn.internal.ir.Block;
 import jdk.nashorn.internal.ir.FunctionNode;
+import jdk.nashorn.internal.ir.FunctionNode.CompilationState;
+import jdk.nashorn.internal.ir.LexicalContext;
 import jdk.nashorn.internal.ir.LiteralNode;
 import jdk.nashorn.internal.ir.LiteralNode.ArrayLiteralNode;
+import jdk.nashorn.internal.ir.LiteralNode.ArrayLiteralNode.ArrayUnit;
 import jdk.nashorn.internal.ir.Node;
-import jdk.nashorn.internal.ir.ObjectNode;
-import jdk.nashorn.internal.ir.PropertyNode;
 import jdk.nashorn.internal.ir.SplitNode;
-import jdk.nashorn.internal.ir.Splittable;
 import jdk.nashorn.internal.ir.Statement;
-import jdk.nashorn.internal.ir.visitor.SimpleNodeVisitor;
-import jdk.nashorn.internal.runtime.Context;
-import jdk.nashorn.internal.runtime.logging.DebugLogger;
-import jdk.nashorn.internal.runtime.logging.Loggable;
-import jdk.nashorn.internal.runtime.logging.Logger;
+import jdk.nashorn.internal.ir.visitor.NodeVisitor;
+import jdk.nashorn.internal.runtime.DebugLogger;
 import jdk.nashorn.internal.runtime.options.Options;
 
 /**
  * Split the IR into smaller compile units.
  */
-@Logger(name="splitter")
-final class Splitter extends SimpleNodeVisitor implements Loggable {
+final class Splitter extends NodeVisitor<LexicalContext> {
     /** Current compiler. */
     private final Compiler compiler;
 
@@ -68,7 +64,7 @@ final class Splitter extends SimpleNodeVisitor implements Loggable {
     /** Weight threshold for when to start a split. */
     public static final long SPLIT_THRESHOLD = Options.getIntProperty("nashorn.compiler.splitter.threshold", 32 * 1024);
 
-    private final DebugLogger log;
+    private static final DebugLogger LOG = Compiler.LOG;
 
     /**
      * Constructor.
@@ -78,40 +74,34 @@ final class Splitter extends SimpleNodeVisitor implements Loggable {
      * @param outermostCompileUnit  compile unit for outermost function, if non-lazy this is the script's compile unit
      */
     public Splitter(final Compiler compiler, final FunctionNode functionNode, final CompileUnit outermostCompileUnit) {
+        super(new LexicalContext());
         this.compiler             = compiler;
         this.outermost            = functionNode;
         this.outermostCompileUnit = outermostCompileUnit;
-        this.log                  = initLogger(compiler.getContext());
-    }
-
-    @Override
-    public DebugLogger initLogger(final Context context) {
-        return context.getLogger(this.getClass());
-    }
-
-    @Override
-    public DebugLogger getLogger() {
-        return log;
     }
 
     /**
-     * Execute the split.
-     * @param fn the function to split
-     * @param top whether this is the topmost compiled function (it's either a program, or we're doing a recompilation).
+     * Execute the split
      */
-    FunctionNode split(final FunctionNode fn, final boolean top) {
+    FunctionNode split(final FunctionNode fn) {
         FunctionNode functionNode = fn;
 
-        log.fine("Initiating split of '", functionNode.getName(), "'");
+        if (functionNode.isLazy()) {
+            LOG.finest("Postponing split of '", functionNode.getName(), "' as it's lazy");
+            return functionNode;
+        }
+
+        LOG.finest("Initiating split of '", functionNode.getName(), "'");
 
         long weight = WeighNodes.weigh(functionNode);
+        final boolean top = fn.isProgram(); //compiler.getFunctionNode() == outermost;
 
         // We know that our LexicalContext is empty outside the call to functionNode.accept(this) below,
         // so we can pass null to all methods expecting a LexicalContext parameter.
         assert lc.isEmpty() : "LexicalContext not empty";
 
         if (weight >= SPLIT_THRESHOLD) {
-            log.info("Splitting '", functionNode.getName(), "' as its weight ", weight, " exceeds split threshold ", SPLIT_THRESHOLD);
+            LOG.finest("Splitting '", functionNode.getName(), "' as its weight ", weight, " exceeds split threshold ", SPLIT_THRESHOLD);
             functionNode = (FunctionNode)functionNode.accept(this);
 
             if (functionNode.isSplit()) {
@@ -140,7 +130,7 @@ final class Splitter extends SimpleNodeVisitor implements Loggable {
         final Block body = functionNode.getBody();
         final List<FunctionNode> dc = directChildren(functionNode);
 
-        final Block newBody = (Block)body.accept(new SimpleNodeVisitor() {
+        final Block newBody = (Block)body.accept(new NodeVisitor<LexicalContext>(new LexicalContext()) {
             @Override
             public boolean enterFunctionNode(final FunctionNode nestedFunction) {
                 return dc.contains(nestedFunction);
@@ -148,7 +138,7 @@ final class Splitter extends SimpleNodeVisitor implements Loggable {
 
             @Override
             public Node leaveFunctionNode(final FunctionNode nestedFunction) {
-                final FunctionNode split = new Splitter(compiler, nestedFunction, outermostCompileUnit).split(nestedFunction, false);
+                FunctionNode split = new Splitter(compiler, nestedFunction, outermostCompileUnit).split(nestedFunction);
                 lc.replace(nestedFunction, split);
                 return split;
             }
@@ -157,12 +147,12 @@ final class Splitter extends SimpleNodeVisitor implements Loggable {
 
         assert functionNode.getCompileUnit() != null;
 
-        return functionNode;
+        return functionNode.setState(null, CompilationState.SPLIT);
     }
 
     private static List<FunctionNode> directChildren(final FunctionNode functionNode) {
         final List<FunctionNode> dc = new ArrayList<>();
-        functionNode.accept(new SimpleNodeVisitor() {
+        functionNode.accept(new NodeVisitor<LexicalContext>(new LexicalContext()) {
             @Override
             public boolean enterFunctionNode(final FunctionNode child) {
                 if (child == functionNode) {
@@ -295,7 +285,7 @@ final class Splitter extends SimpleNodeVisitor implements Loggable {
             final ArrayLiteralNode arrayLiteralNode = (ArrayLiteralNode) literal;
             final Node[]           value            = arrayLiteralNode.getValue();
             final int[]            postsets         = arrayLiteralNode.getPostsets();
-            final List<Splittable.SplitRange> ranges = new ArrayList<>();
+            final List<ArrayUnit>  units            = new ArrayList<>();
 
             long totalWeight = 0;
             int  lo          = 0;
@@ -309,7 +299,7 @@ final class Splitter extends SimpleNodeVisitor implements Loggable {
 
                 if (totalWeight >= SPLIT_THRESHOLD) {
                     final CompileUnit unit = compiler.findUnit(totalWeight - weight);
-                    ranges.add(new Splittable.SplitRange(unit, lo, i));
+                    units.add(new ArrayUnit(unit, lo, i));
                     lo = i;
                     totalWeight = weight;
                 }
@@ -317,62 +307,22 @@ final class Splitter extends SimpleNodeVisitor implements Loggable {
 
             if (lo != postsets.length) {
                 final CompileUnit unit = compiler.findUnit(totalWeight);
-                ranges.add(new Splittable.SplitRange(unit, lo, postsets.length));
+                units.add(new ArrayUnit(unit, lo, postsets.length));
             }
 
-            return arrayLiteralNode.setSplitRanges(lc, ranges);
+            arrayLiteralNode.setUnits(units);
         }
 
         return literal;
     }
 
     @Override
-    public Node leaveObjectNode(final ObjectNode objectNode) {
-        long weight = WeighNodes.weigh(objectNode);
-
-        if (weight < SPLIT_THRESHOLD) {
-            return objectNode;
-        }
-
-        final FunctionNode functionNode = lc.getCurrentFunction();
-        lc.setFlag(functionNode, FunctionNode.IS_SPLIT);
-
-        final List<Splittable.SplitRange> ranges        = new ArrayList<>();
-        final List<PropertyNode>          properties    = objectNode.getElements();
-        final boolean                     isSpillObject = properties.size() > CodeGenerator.OBJECT_SPILL_THRESHOLD;
-        long totalWeight = 0;
-        int  lo          = 0;
-
-        for (int i = 0; i < properties.size(); i++) {
-
-            final PropertyNode property = properties.get(i);
-            final boolean isConstant = LiteralNode.isConstant(property.getValue());
-
-            if (!isConstant || !isSpillObject) {
-                weight = isConstant ? 0 : WeighNodes.weigh(property.getValue());
-                totalWeight += WeighNodes.AASTORE_WEIGHT + weight;
-
-                if (totalWeight >= SPLIT_THRESHOLD) {
-                    final CompileUnit unit = compiler.findUnit(totalWeight - weight);
-                    ranges.add(new Splittable.SplitRange(unit, lo, i));
-                    lo = i;
-                    totalWeight = weight;
-                }
-            }
-        }
-
-        if (lo != properties.size()) {
-            final CompileUnit unit = compiler.findUnit(totalWeight);
-            ranges.add(new Splittable.SplitRange(unit, lo, properties.size()));
-        }
-
-        return objectNode.setSplitRanges(lc, ranges);
-    }
-
-    @Override
     public boolean enterFunctionNode(final FunctionNode node) {
         //only go into the function node for this splitter. any subfunctions are rejected
-        return node == outermost;
+        if (node == outermost && !node.isLazy()) {
+            return true;
+        }
+        return false;
     }
 }
 

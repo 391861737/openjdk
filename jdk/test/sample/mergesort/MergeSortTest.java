@@ -25,15 +25,13 @@
 /* @test
  * @summary Test MergeSort
  *
- * @library /src/share/sample/forkjoin/mergesort
+ * @library ../../../src/share/sample/forkjoin/mergesort
  * @build MergeSortTest MergeDemo MergeSort
- * @run testng MergeSortTest
+ * @run main MergeSortTest
  */
 
 import java.util.Arrays;
 import java.util.Random;
-
-import org.testng.annotations.Test;
 
 public class MergeSortTest {
     private Random random;
@@ -44,8 +42,7 @@ public class MergeSortTest {
         this.target = target;
     }
 
-    @Test
-    public static void doTest() {
+    public static void main(String[] args) {
         MergeSortTest test = new MergeSortTest(new Random(), new MergeSort(Runtime.getRuntime().availableProcessors() * 4));
         test.run();
     }

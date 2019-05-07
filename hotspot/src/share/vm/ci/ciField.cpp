@@ -138,17 +138,6 @@ ciField::ciField(ciInstanceKlass* klass, int index): _known_to_link_with_put(NUL
     return;
   }
 
-  // Access check based on declared_holder. canonical_holder should not be used
-  // to check access because it can erroneously succeed. If this check fails,
-  // propagate the declared holder to will_link() which in turn will bail out
-  // compilation for this field access.
-  if (!Reflection::verify_field_access(klass->get_Klass(), declared_holder->get_Klass(), canonical_holder, field_desc.access_flags(), true)) {
-    _holder = declared_holder;
-    _offset = -1;
-    _is_constant = false;
-    return;
-  }
-
   assert(canonical_holder == field_desc.field_holder(), "just checking");
   initialize_from(&field_desc);
 }
@@ -187,14 +176,6 @@ static bool trust_final_non_static_fields(ciInstanceKlass* holder) {
   // Even if general trusting is disabled, trust system-built closures in these packages.
   if (holder->is_in_package("java/lang/invoke") || holder->is_in_package("sun/invoke"))
     return true;
-  // Trust Atomic*FieldUpdaters: they are very important for performance, and make up one
-  // more reason not to use Unsafe, if their final fields are trusted. See more in JDK-8140483.
-  if (holder->name() == ciSymbol::java_util_concurrent_atomic_AtomicIntegerFieldUpdater_Impl() ||
-      holder->name() == ciSymbol::java_util_concurrent_atomic_AtomicLongFieldUpdater_CASUpdater() ||
-      holder->name() == ciSymbol::java_util_concurrent_atomic_AtomicLongFieldUpdater_LockedUpdater() ||
-      holder->name() == ciSymbol::java_util_concurrent_atomic_AtomicReferenceFieldUpdater_Impl()) {
-    return true;
-  }
   return TrustFinalNonStaticFields;
 }
 
@@ -207,7 +188,7 @@ void ciField::initialize_from(fieldDescriptor* fd) {
   // Check to see if the field is constant.
   bool is_final = this->is_final();
   bool is_stable = FoldStableValues && this->is_stable();
-  if (_holder->is_initialized() && ((is_final && !has_initialized_final_update()) || is_stable)) {
+  if (_holder->is_initialized() && (is_final || is_stable)) {
     if (!this->is_static()) {
       // A field can be constant if it's a final static field or if
       // it's a final non-static field of a trusted class (classes in

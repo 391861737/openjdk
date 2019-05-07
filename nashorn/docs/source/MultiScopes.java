@@ -29,17 +29,12 @@
  * SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-import javax.script.Bindings;
-import javax.script.ScriptContext;
-import javax.script.ScriptEngine;
-import javax.script.ScriptEngineManager;
-import javax.script.SimpleScriptContext;
+import javax.script.*;
 
-@SuppressWarnings("javadoc")
 public class MultiScopes {
-    public static void main(final String[] args) throws Exception {
-        final ScriptEngineManager manager = new ScriptEngineManager();
-        final ScriptEngine engine = manager.getEngineByName("nashorn");
+    public static void main(String[] args) throws Exception {
+        ScriptEngineManager manager = new ScriptEngineManager();
+        ScriptEngine engine = manager.getEngineByName("nashorn");
 
         engine.put("x", "hello");
         // print global variable "x"
@@ -47,9 +42,9 @@ public class MultiScopes {
         // the above line prints "hello"
 
         // Now, pass a different script context
-        final ScriptContext newContext = new SimpleScriptContext();
+        ScriptContext newContext = new SimpleScriptContext();
         newContext.setBindings(engine.createBindings(), ScriptContext.ENGINE_SCOPE);
-        final Bindings engineScope = newContext.getBindings(ScriptContext.ENGINE_SCOPE);
+        Bindings engineScope = newContext.getBindings(ScriptContext.ENGINE_SCOPE);
 
         // add new variable "x" to the new engineScope
         engineScope.put("x", "world");

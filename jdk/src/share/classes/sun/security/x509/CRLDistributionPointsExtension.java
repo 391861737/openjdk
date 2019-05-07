@@ -29,7 +29,6 @@ import java.io.IOException;
 import java.io.OutputStream;
 
 import java.util.*;
-import java.util.Collections;
 
 import sun.security.util.DerOutputStream;
 import sun.security.util.DerValue;
@@ -256,12 +255,11 @@ public class CRLDistributionPointsExtension extends Extension
      */
     public void delete(String name) throws IOException {
         if (name.equalsIgnoreCase(POINTS)) {
-            distributionPoints =
-                    Collections.<DistributionPoint>emptyList();
+            distributionPoints = new ArrayList<DistributionPoint>();
         } else {
             throw new IOException("Attribute name [" + name +
-                                  "] not recognized by " +
-                                  "CertAttrSet:" + extensionName + '.');
+                                "] not recognized by " +
+                                "CertAttrSet:" + extensionName + ".");
         }
         encodeThis();
     }

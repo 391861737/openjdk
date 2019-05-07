@@ -42,8 +42,7 @@ import sun.reflect.generics.visitor.Reifier;
 public abstract class GenericDeclRepository<S extends Signature>
     extends AbstractRepository<S> {
 
-    /** The formal type parameters.  Lazily initialized. */
-    private volatile TypeVariable<?>[] typeParams;
+    private TypeVariable<?>[] typeParams; // caches the formal type parameters
 
     protected GenericDeclRepository(String rawSig, GenericsFactory f) {
         super(rawSig, f);
@@ -56,7 +55,8 @@ public abstract class GenericDeclRepository<S extends Signature>
  * If the corresponding field is non-null, it is returned.
  * If not, it is created lazily. This is done by selecting the appropriate
  * part of the tree and transforming it into a reflective object
- * using a visitor, which is created by feeding it the factory
+ * using a visitor.
+ * a visitor, which is created by feeding it the factory
  * with which the repository was created.
  */
 
@@ -64,21 +64,20 @@ public abstract class GenericDeclRepository<S extends Signature>
      * Return the formal type parameters of this generic declaration.
      * @return the formal type parameters of this generic declaration
      */
-    public TypeVariable<?>[] getTypeParameters() {
-        TypeVariable<?>[] typeParams = this.typeParams;
+    public TypeVariable<?>[] getTypeParameters(){
         if (typeParams == null) { // lazily initialize type parameters
             // first, extract type parameter subtree(s) from AST
             FormalTypeParameter[] ftps = getTree().getFormalTypeParameters();
             // create array to store reified subtree(s)
-            typeParams = new TypeVariable<?>[ftps.length];
+            TypeVariable<?>[] tps = new TypeVariable<?>[ftps.length];
             // reify all subtrees
             for (int i = 0; i < ftps.length; i++) {
                 Reifier r = getReifier(); // obtain visitor
                 ftps[i].accept(r); // reify subtree
                 // extract result from visitor and store it
-                typeParams[i] = (TypeVariable<?>) r.getResult();
+                tps[i] = (TypeVariable<?>) r.getResult();
             }
-            this.typeParams = typeParams; // cache overall result
+            typeParams = tps; // cache overall result
         }
         return typeParams.clone(); // return cached result
     }

@@ -23,7 +23,7 @@
 
 /*
  * @test
- * @bug 8025998 8026749 8054220 8058227
+ * @bug 8025998 8026749
  * @summary Missing LV table in lambda bodies
  * @compile -g LocalVariableTable.java
  * @run main LocalVariableTable
@@ -183,7 +183,7 @@ public class LocalVariableTable {
         Run1 r = (a) -> { int x = a; };
     }
 
-    @Expect({ "a", "x", "v" })
+    @Expect({ "a", "x" })
     static class Lambda_Args1_Local1_Captured1 {
         void m() {
             int v = 0;
@@ -191,7 +191,7 @@ public class LocalVariableTable {
         }
     }
 
-    @Expect({ "a1", "a2", "x1", "x2", "this", "v1", "v2" })
+    @Expect({ "a1", "a2", "x1", "x2", "this" })
     static class Lambda_Args2_Local2_Captured2_this {
         int v;
         void m() {
@@ -204,7 +204,7 @@ public class LocalVariableTable {
         }
     }
 
-    @Expect({ "e", "c" })
+    @Expect({ "e" })
     static class Lambda_Try_Catch {
         private static Runnable asUncheckedRunnable(Closeable c) {
             return () -> {

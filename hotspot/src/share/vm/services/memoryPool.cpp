@@ -29,7 +29,6 @@
 #include "oops/oop.inline.hpp"
 #include "runtime/handles.inline.hpp"
 #include "runtime/javaCalls.hpp"
-#include "runtime/orderAccess.inline.hpp"
 #include "services/lowMemoryDetector.hpp"
 #include "services/management.hpp"
 #include "services/memoryManager.hpp"
@@ -269,7 +268,7 @@ MemoryUsage MetaspacePool::get_memory_usage() {
 }
 
 size_t MetaspacePool::used_in_bytes() {
-  return MetaspaceAux::used_bytes();
+  return MetaspaceAux::allocated_used_bytes();
 }
 
 size_t MetaspacePool::calculate_max_size() const {
@@ -281,7 +280,7 @@ CompressedKlassSpacePool::CompressedKlassSpacePool() :
   MemoryPool("Compressed Class Space", NonHeap, 0, CompressedClassSpaceSize, true, false) { }
 
 size_t CompressedKlassSpacePool::used_in_bytes() {
-  return MetaspaceAux::used_bytes(Metaspace::ClassType);
+  return MetaspaceAux::allocated_used_bytes(Metaspace::ClassType);
 }
 
 MemoryUsage CompressedKlassSpacePool::get_memory_usage() {

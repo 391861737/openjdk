@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 1996, 2016, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 1996, 2012, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -29,12 +29,12 @@ import java.awt.peer.*;
 
 import sun.awt.AWTAccessor;
 
-final class WPopupMenuPeer extends WMenuPeer implements PopupMenuPeer {
+public class WPopupMenuPeer extends WMenuPeer implements PopupMenuPeer {
     // We can't use target.getParent() for TrayIcon popup
     // because this method should return null for the TrayIcon
     // popup regardless of that whether it has parent or not.
 
-    WPopupMenuPeer(PopupMenu target) {
+    public WPopupMenuPeer(PopupMenu target) {
         this.target = target;
         MenuContainer parent = null;
 
@@ -58,7 +58,6 @@ final class WPopupMenuPeer extends WMenuPeer implements PopupMenuPeer {
                 parent = WToolkit.getNativeContainer((Component)parent);
                 parentPeer = (WComponentPeer) WToolkit.targetToPeer(parent);
             }
-            parentPeer.addChildPeer(this);
             createMenu(parentPeer);
             // fix for 5088782: check if menu object is created successfully
             checkMenuCreation();
@@ -68,7 +67,7 @@ final class WPopupMenuPeer extends WMenuPeer implements PopupMenuPeer {
         }
     }
 
-    private native void createMenu(WComponentPeer parent);
+    native void createMenu(WComponentPeer parent);
 
     public void show(Event e) {
         Component origin = (Component)e.target;
@@ -107,5 +106,5 @@ final class WPopupMenuPeer extends WMenuPeer implements PopupMenuPeer {
         _show(e);
     }
 
-    private native void _show(Event e);
+    public native void _show(Event e);
 }

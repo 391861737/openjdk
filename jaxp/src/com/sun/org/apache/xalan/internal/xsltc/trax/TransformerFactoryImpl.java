@@ -1,13 +1,13 @@
 /*
- * Copyright (c) 2007, 2016, Oracle and/or its affiliates. All rights reserved.
+ * reserved comment block
+ * DO NOT REMOVE OR ALTER!
  */
 /*
- * Licensed to the Apache Software Foundation (ASF) under one or more
- * contributor license agreements.  See the NOTICE file distributed with
- * this work for additional information regarding copyright ownership.
- * The ASF licenses this file to You under the Apache License, Version 2.0
- * (the "License"); you may not use this file except in compliance with
- * the License.  You may obtain a copy of the License at
+ * Copyright 2001-2004 The Apache Software Foundation.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
@@ -17,6 +17,9 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+/*
+ * $Id: TransformerFactoryImpl.java,v 1.8 2007/04/09 21:30:41 joehw Exp $
+ */
 
 package com.sun.org.apache.xalan.internal.xsltc.trax;
 
@@ -24,12 +27,12 @@ import com.sun.org.apache.xalan.internal.XalanConstants;
 import com.sun.org.apache.xalan.internal.utils.FactoryImpl;
 import com.sun.org.apache.xalan.internal.utils.FeatureManager;
 import com.sun.org.apache.xalan.internal.utils.FeaturePropertyBase;
-import com.sun.org.apache.xalan.internal.utils.FeaturePropertyBase.State;
 import com.sun.org.apache.xalan.internal.utils.ObjectFactory;
 import com.sun.org.apache.xalan.internal.utils.SecuritySupport;
 import com.sun.org.apache.xalan.internal.utils.XMLSecurityManager;
 import com.sun.org.apache.xalan.internal.utils.XMLSecurityPropertyManager;
 import com.sun.org.apache.xalan.internal.utils.XMLSecurityPropertyManager.Property;
+import com.sun.org.apache.xalan.internal.utils.FeaturePropertyBase.State;
 import com.sun.org.apache.xalan.internal.xsltc.compiler.Constants;
 import com.sun.org.apache.xalan.internal.xsltc.compiler.SourceLoader;
 import com.sun.org.apache.xalan.internal.xsltc.compiler.XSLTC;
@@ -45,9 +48,8 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.net.MalformedURLException;
 import java.net.URL;
-import java.util.ArrayList;
 import java.util.Enumeration;
-import java.util.Map;
+import java.util.Hashtable;
 import java.util.Properties;
 import java.util.Vector;
 import java.util.zip.ZipEntry;
@@ -55,6 +57,7 @@ import java.util.zip.ZipFile;
 import javax.xml.XMLConstants;
 import javax.xml.parsers.SAXParser;
 import javax.xml.parsers.SAXParserFactory;
+
 import javax.xml.transform.ErrorListener;
 import javax.xml.transform.Source;
 import javax.xml.transform.Templates;
@@ -70,8 +73,7 @@ import javax.xml.transform.sax.SAXSource;
 import javax.xml.transform.sax.SAXTransformerFactory;
 import javax.xml.transform.sax.TemplatesHandler;
 import javax.xml.transform.sax.TransformerHandler;
-import javax.xml.transform.stax.StAXResult;
-import javax.xml.transform.stax.StAXSource;
+import javax.xml.transform.stax.*;
 import javax.xml.transform.stream.StreamResult;
 import javax.xml.transform.stream.StreamSource;
 import org.xml.sax.InputSource;
@@ -144,13 +146,13 @@ public class TransformerFactoryImpl
     private String _jarFileName = null;
 
     /**
-     * This Map is used to store parameters for locating
+     * This Hashtable is used to store parameters for locating
      * <?xml-stylesheet ...?> processing instructions in XML docs.
      */
-    private Map<Source, PIParamWrapper> _piParams = null;
+    private Hashtable _piParams = null;
 
     /**
-     * The above Map stores objects of this class.
+     * The above hashtable stores objects of this class.
      */
     private static class PIParamWrapper {
         public String _media = null;
@@ -229,13 +231,6 @@ public class TransformerFactoryImpl
 
     private final FeatureManager _featureManager;
 
-    private ClassLoader _extensionClassLoader = null;
-
-    // Unmodifiable view of external extension function from xslt compiler
-    // It will be populated by user-specified extension functions during the
-    // type checking
-    private Map<String, Class> _xsltcExtensionFunctions;
-
     /**
      * javax.xml.transform.sax.TransformerFactory implementation.
      */
@@ -266,12 +261,6 @@ public class TransformerFactoryImpl
 
         //Parser's security manager
         _xmlSecurityManager = new XMLSecurityManager(true);
-        //Unmodifiable hash map with loaded external extension functions
-        _xsltcExtensionFunctions = null;
-    }
-
-    public Map<String,Class> getExternalExtensionsMap() {
-        return _xsltcExtensionFunctions;
     }
 
     /**
@@ -335,8 +324,6 @@ public class TransformerFactoryImpl
               return Boolean.FALSE;
         } else if (name.equals(XalanConstants.SECURITY_MANAGER)) {
             return _xmlSecurityManager;
-        } else if (name.equals(XalanConstants.JDK_EXTENSION_CLASSLOADER)) {
-           return _extensionClassLoader;
         }
 
         /** Check to see if the property is managed by the security manager **/
@@ -450,16 +437,6 @@ public class TransformerFactoryImpl
             else if (value instanceof Integer) {
                 _indentNumber = ((Integer) value).intValue();
                 return;
-            }
-        }
-        else if ( name.equals(XalanConstants.JDK_EXTENSION_CLASSLOADER)) {
-            if (value instanceof ClassLoader) {
-                _extensionClassLoader = (ClassLoader) value;
-                return;
-            } else {
-                final ErrorMsg err
-                    = new ErrorMsg(ErrorMsg.JAXP_INVALID_ATTR_VALUE_ERR, "Extension Functions ClassLoader");
-                throw new IllegalArgumentException(err.toString());
             }
         }
 
@@ -590,7 +567,7 @@ public class TransformerFactoryImpl
         }
 
         // Inefficient, but array is small
-        for (int i = 0; i < features.length; i++) {
+        for (int i =0; i < features.length; i++) {
             if (name.equals(features[i])) {
                 return true;
             }
@@ -797,7 +774,7 @@ public class TransformerFactoryImpl
     /**
      * Pass warning messages from the compiler to the error listener
      */
-    private void passWarningsToListener(ArrayList<ErrorMsg> messages)
+    private void passWarningsToListener(Vector messages)
         throws TransformerException
     {
         if (_errorListener == null || messages == null) {
@@ -806,7 +783,7 @@ public class TransformerFactoryImpl
         // Pass messages to listener, one by one
         final int count = messages.size();
         for (int pos = 0; pos < count; pos++) {
-            ErrorMsg msg = messages.get(pos);
+            ErrorMsg msg = (ErrorMsg)messages.elementAt(pos);
             // Workaround for the TCK failure ErrorListener.errorTests.error001.
             if (msg.isWarningError())
                 _errorListener.error(
@@ -820,7 +797,7 @@ public class TransformerFactoryImpl
     /**
      * Pass error messages from the compiler to the error listener
      */
-    private void passErrorsToListener(ArrayList<ErrorMsg> messages) {
+    private void passErrorsToListener(Vector messages) {
         try {
             if (_errorListener == null || messages == null) {
                 return;
@@ -828,7 +805,7 @@ public class TransformerFactoryImpl
             // Pass messages to listener, one by one
             final int count = messages.size();
             for (int pos = 0; pos < count; pos++) {
-                String message = messages.get(pos).toString();
+                String message = messages.elementAt(pos).toString();
                 _errorListener.error(new TransformerException(message));
             }
         }
@@ -904,6 +881,7 @@ public class TransformerFactoryImpl
                 // Reset the per-session attributes to their default values
                 // after each newTemplates() call.
                 resetTransientAttributes();
+
                 return new TemplatesImpl(bytecodes, transletClassName, null, _indentNumber, this);
             }
         }
@@ -920,10 +898,8 @@ public class TransformerFactoryImpl
         xsltc.setProperty(XMLConstants.ACCESS_EXTERNAL_STYLESHEET, _accessExternalStylesheet);
         xsltc.setProperty(XMLConstants.ACCESS_EXTERNAL_DTD, _accessExternalDTD);
         xsltc.setProperty(XalanConstants.SECURITY_MANAGER, _xmlSecurityManager);
-        xsltc.setProperty(XalanConstants.JDK_EXTENSION_CLASSLOADER, _extensionClassLoader);
         xsltc.init();
-        if (!_isNotSecureProcessing)
-            _xsltcExtensionFunctions = xsltc.getExternalExtensionFunctions();
+
         // Set a document loader (for xsl:include/import) if defined
         if (_uriResolver != null) {
             xsltc.setSourceLoader(this);
@@ -933,7 +909,7 @@ public class TransformerFactoryImpl
         // <?xml-stylesheet ...?> PI in an XML input document
         if ((_piParams != null) && (_piParams.get(source) != null)) {
             // Get the parameters for this Source object
-            PIParamWrapper p = _piParams.get(source);
+            PIParamWrapper p = (PIParamWrapper)_piParams.get(source);
             // Pass them on to the compiler (which will pass then to the parser)
             if (p != null) {
                 xsltc.setPIParameters(p._media, p._title, p._charset);
@@ -1002,39 +978,40 @@ public class TransformerFactoryImpl
         }
 
         // Check that the transformation went well before returning
-        if (bytecodes == null) {
-            ArrayList<ErrorMsg> errs = xsltc.getErrors();
-            ErrorMsg err;
-            if (errs != null) {
-                err = errs.get(errs.size() - 1);
-            } else {
-                err = new ErrorMsg(ErrorMsg.JAXP_COMPILE_ERR);
-            }
-            Throwable cause = err.getCause();
-            TransformerConfigurationException exc;
-            if (cause != null) {
-                exc =  new TransformerConfigurationException(cause.getMessage(), cause);
-            } else {
-                exc =  new TransformerConfigurationException(err.toString());
-            }
-
-            // Pass compiler errors to the error listener
-            if (_errorListener != null) {
-                passErrorsToListener(xsltc.getErrors());
-
-                // As required by TCK 1.2, send a fatalError to the
-                // error listener because compilation of the stylesheet
-                // failed and no further processing will be possible.
-                try {
-                    _errorListener.fatalError(exc);
-                } catch (TransformerException te) {
-                    // well, we tried.
-                }
-            } else {
-                xsltc.printErrors();
-            }
-            throw exc;
+    if (bytecodes == null) {
+        Vector errs = xsltc.getErrors();
+        ErrorMsg err;
+        if (errs != null) {
+            err = (ErrorMsg)errs.elementAt(errs.size()-1);
+        } else {
+            err = new ErrorMsg(ErrorMsg.JAXP_COMPILE_ERR);
         }
+        Throwable cause = err.getCause();
+        TransformerConfigurationException exc;
+        if (cause != null) {
+            exc =  new TransformerConfigurationException(cause.getMessage(), cause);
+        } else {
+            exc =  new TransformerConfigurationException(err.toString());
+        }
+
+        // Pass compiler errors to the error listener
+        if (_errorListener != null) {
+            passErrorsToListener(xsltc.getErrors());
+
+            // As required by TCK 1.2, send a fatalError to the
+            // error listener because compilation of the stylesheet
+            // failed and no further processing will be possible.
+            try {
+                _errorListener.fatalError(exc);
+            } catch (TransformerException te) {
+                // well, we tried.
+            }
+        }
+        else {
+            xsltc.printErrors();
+        }
+        throw exc;
+    }
 
         return new TemplatesImpl(bytecodes, transletName,
             xsltc.getOutputProperties(), _indentNumber, this);

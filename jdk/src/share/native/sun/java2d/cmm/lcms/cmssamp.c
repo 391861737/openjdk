@@ -30,7 +30,7 @@
 //---------------------------------------------------------------------------------
 //
 //  Little Color Management System
-//  Copyright (c) 1998-2016 Marti Maria Saguer
+//  Copyright (c) 1998-2010 Marti Maria Saguer
 //
 // Permission is hereby granted, free of charge, to any person obtaining
 // a copy of this software and associated documentation files (the "Software"),
@@ -56,8 +56,6 @@
 #include "lcms2_internal.h"
 
 
-#define cmsmin(a, b) (((a) < (b)) ? (a) : (b))
-#define cmsmax(a, b) (((a) > (b)) ? (a) : (b))
 
 // This file contains routines for resampling and LUT optimization, black point detection
 // and black preservation.
@@ -69,13 +67,13 @@
 static
 cmsHTRANSFORM CreateRoundtripXForm(cmsHPROFILE hProfile, cmsUInt32Number nIntent)
 {
-    cmsContext ContextID = cmsGetProfileContextID(hProfile);
-    cmsHPROFILE hLab = cmsCreateLab4ProfileTHR(ContextID, NULL);
+    cmsHPROFILE hLab = cmsCreateLab4Profile(NULL);
     cmsHTRANSFORM xform;
     cmsBool BPC[4] = { FALSE, FALSE, FALSE, FALSE };
     cmsFloat64Number States[4] = { 1.0, 1.0, 1.0, 1.0 };
     cmsHPROFILE hProfiles[4];
     cmsUInt32Number Intents[4];
+    cmsContext ContextID = cmsGetProfileContextID(hProfile);
 
     hProfiles[0] = hLab; hProfiles[1] = hProfile; hProfiles[2] = hProfile; hProfiles[3] = hLab;
     Intents[0]   = INTENT_RELATIVE_COLORIMETRIC; Intents[1] = nIntent; Intents[2] = INTENT_RELATIVE_COLORIMETRIC; Intents[3] = INTENT_RELATIVE_COLORIMETRIC;
@@ -143,8 +141,8 @@ cmsBool  BlackPointAsDarkerColorant(cmsHPROFILE    hInput,
     cmsCloseProfile(hLab);
 
     if (xform == NULL) {
-
         // Something went wrong. Get rid of open resources and return zero as black
+
         BlackPoint -> X = BlackPoint ->Y = BlackPoint -> Z = 0.0;
         return FALSE;
     }
@@ -175,6 +173,7 @@ cmsBool  BlackPointAsDarkerColorant(cmsHPROFILE    hInput,
 // Lab (0, 0, 0) -> [Perceptual] Profile -> CMYK -> [Rel. colorimetric] Profile -> Lab
 static
 cmsBool BlackPointUsingPerceptualBlack(cmsCIEXYZ* BlackPoint, cmsHPROFILE hProfile)
+
 {
     cmsHTRANSFORM hRoundTrip;
     cmsCIELab LabIn, LabOut;
@@ -219,27 +218,17 @@ cmsBool BlackPointUsingPerceptualBlack(cmsCIEXYZ* BlackPoint, cmsHPROFILE hProfi
 // involves to turn BP to neutral and to use only L component.
 cmsBool CMSEXPORT cmsDetectBlackPoint(cmsCIEXYZ* BlackPoint, cmsHPROFILE hProfile, cmsUInt32Number Intent, cmsUInt32Number dwFlags)
 {
-    cmsProfileClassSignature devClass;
 
-    // Make sure the device class is adequate
-    devClass = cmsGetDeviceClass(hProfile);
-    if (devClass == cmsSigLinkClass ||
-        devClass == cmsSigAbstractClass ||
-        devClass == cmsSigNamedColorClass) {
-            BlackPoint -> X = BlackPoint ->Y = BlackPoint -> Z = 0.0;
-            return FALSE;
-    }
+    // Zero for black point
+    if (cmsGetDeviceClass(hProfile) == cmsSigLinkClass) {
 
-    // Make sure intent is adequate
-    if (Intent != INTENT_PERCEPTUAL &&
-        Intent != INTENT_RELATIVE_COLORIMETRIC &&
-        Intent != INTENT_SATURATION) {
-            BlackPoint -> X = BlackPoint ->Y = BlackPoint -> Z = 0.0;
-            return FALSE;
+        BlackPoint -> X = BlackPoint ->Y = BlackPoint -> Z = 0.0;
+        return FALSE;
     }
 
     // v4 + perceptual & saturation intents does have its own black point, and it is
     // well specified enough to use it. Black point tag is deprecated in V4.
+
     if ((cmsGetEncodedICCversion(hProfile) >= 0x4000000) &&
         (Intent == INTENT_PERCEPTUAL || Intent == INTENT_SATURATION)) {
 
@@ -314,7 +303,7 @@ cmsFloat64Number RootOfLeastSquaresFitQuadraticCurve(int n, cmsFloat64Number x[]
 {
     double sum_x = 0, sum_x2 = 0, sum_x3 = 0, sum_x4 = 0;
     double sum_y = 0, sum_yx = 0, sum_yx2 = 0;
-    double d, a, b, c;
+    double disc;
     int i;
     cmsMAT3 m;
     cmsVEC3 v, res;
@@ -344,32 +333,34 @@ cmsFloat64Number RootOfLeastSquaresFitQuadraticCurve(int n, cmsFloat64Number x[]
 
     if (!_cmsMAT3solve(&res, &m, &v)) return 0;
 
+    // y = t x2 + u x + c
+    // x = ( - u + Sqrt( u^2 - 4 t c ) ) / ( 2 t )
+    disc = res.n[1]*res.n[1] - 4.0 * res.n[0] * res.n[2];
+    if (disc < 0) return -1;
 
-    a = res.n[2];
-    b = res.n[1];
-    c = res.n[0];
-
-    if (fabs(a) < 1.0E-10) {
-
-        return cmsmin(0, cmsmax(50, -c/b ));
-    }
-    else {
-
-         d = b*b - 4.0 * a * c;
-         if (d <= 0) {
-             return 0;
-         }
-         else {
-
-             double rt = (-b + sqrt(d)) / (2.0 * a);
-
-             return cmsmax(0, cmsmin(50, rt));
-         }
-   }
-
+    return ( -1.0 * res.n[1] + sqrt( disc )) / (2.0 * res.n[0]);
 }
 
+static
+cmsBool IsMonotonic(int n, const cmsFloat64Number Table[])
+{
+    int i;
+    cmsFloat64Number last;
 
+    last = Table[n-1];
+
+    for (i = n-2; i >= 0; --i) {
+
+        if (Table[i] > last)
+
+            return FALSE;
+        else
+            last = Table[i];
+
+    }
+
+    return TRUE;
+}
 
 // Calculates the black point of a destination profile.
 // This algorithm comes from the Adobe paper disclosing its black point compensation method.
@@ -378,30 +369,21 @@ cmsBool CMSEXPORT cmsDetectDestinationBlackPoint(cmsCIEXYZ* BlackPoint, cmsHPROF
     cmsColorSpaceSignature ColorSpace;
     cmsHTRANSFORM hRoundTrip = NULL;
     cmsCIELab InitialLab, destLab, Lab;
-    cmsFloat64Number inRamp[256], outRamp[256];
-    cmsFloat64Number MinL, MaxL;
-    cmsBool NearlyStraightMidrange = TRUE;
-    cmsFloat64Number yRamp[256];
-    cmsFloat64Number x[256], y[256];
-    cmsFloat64Number lo, hi;
-    int n, l;
-    cmsProfileClassSignature devClass;
 
-    // Make sure the device class is adequate
-    devClass = cmsGetDeviceClass(hProfile);
-    if (devClass == cmsSigLinkClass ||
-        devClass == cmsSigAbstractClass ||
-        devClass == cmsSigNamedColorClass) {
-            BlackPoint -> X = BlackPoint ->Y = BlackPoint -> Z = 0.0;
-            return FALSE;
-    }
+    cmsFloat64Number MinL, MaxL;
+    cmsBool NearlyStraightMidRange = FALSE;
+    cmsFloat64Number L;
+    cmsFloat64Number x[101], y[101];
+    cmsFloat64Number lo, hi, NonMonoMin;
+    int n, l, i, NonMonoIndx;
+
 
     // Make sure intent is adequate
     if (Intent != INTENT_PERCEPTUAL &&
         Intent != INTENT_RELATIVE_COLORIMETRIC &&
         Intent != INTENT_SATURATION) {
-            BlackPoint -> X = BlackPoint ->Y = BlackPoint -> Z = 0.0;
-            return FALSE;
+        BlackPoint -> X = BlackPoint ->Y = BlackPoint -> Z = 0.0;
+        return FALSE;
     }
 
 
@@ -433,8 +415,10 @@ cmsBool CMSEXPORT cmsDetectDestinationBlackPoint(cmsCIEXYZ* BlackPoint, cmsHPROF
         return cmsDetectBlackPoint(BlackPoint, hProfile, Intent, dwFlags);
     }
 
-    // It is one of the valid cases!, use Adobe algorithm
+    // It is one of the valid cases!, presto chargo hocus pocus, go for the Adobe magic
 
+    // Step 1
+    // ======
 
     // Set a first guess, that should work on good profiles.
     if (Intent == INTENT_RELATIVE_COLORIMETRIC) {
@@ -465,67 +449,74 @@ cmsBool CMSEXPORT cmsDetectDestinationBlackPoint(cmsCIEXYZ* BlackPoint, cmsHPROF
     hRoundTrip = CreateRoundtripXForm(hProfile, Intent);
     if (hRoundTrip == NULL)  return FALSE;
 
-    // Compute ramps
+    // Calculate Min L*
+    Lab = InitialLab;
+    Lab.L = 0;
+    cmsDoTransform(hRoundTrip, &Lab, &destLab, 1);
+    MinL = destLab.L;
 
-    for (l=0; l < 256; l++) {
+    // Calculate Max L*
+    Lab = InitialLab;
+    Lab.L = 100;
+    cmsDoTransform(hRoundTrip, &Lab, &destLab, 1);
+    MaxL = destLab.L;
 
-        Lab.L = (cmsFloat64Number) (l * 100.0) / 255.0;
-        Lab.a = cmsmin(50, cmsmax(-50, InitialLab.a));
-        Lab.b = cmsmin(50, cmsmax(-50, InitialLab.b));
+    // Step 3
+    // ======
 
-        cmsDoTransform(hRoundTrip, &Lab, &destLab, 1);
-
-        inRamp[l]  = Lab.L;
-        outRamp[l] = destLab.L;
-    }
-
-    // Make monotonic
-    for (l = 254; l > 0; --l) {
-        outRamp[l] = cmsmin(outRamp[l], outRamp[l+1]);
-    }
-
-    // Check
-    if (! (outRamp[0] < outRamp[255])) {
-
-        cmsDeleteTransform(hRoundTrip);
-        BlackPoint -> X = BlackPoint ->Y = BlackPoint -> Z = 0.0;
-        return FALSE;
-    }
-
-
-    // Test for mid range straight (only on relative colorimetric)
-    NearlyStraightMidrange = TRUE;
-    MinL = outRamp[0]; MaxL = outRamp[255];
+    // check if quadratic estimation needs to be done.
     if (Intent == INTENT_RELATIVE_COLORIMETRIC) {
 
-        for (l=0; l < 256; l++) {
+        // Conceptually, this code tests how close the source l and converted L are to one another in the mid-range
+        // of the values. If the converted ramp of L values is close enough to a straight line y=x, then InitialLab
+        // is good enough to be the DestinationBlackPoint,
+        NearlyStraightMidRange = TRUE;
 
-            if (! ((inRamp[l] <= MinL + 0.2 * (MaxL - MinL) ) ||
-                (fabs(inRamp[l] - outRamp[l]) < 4.0 )))
-                NearlyStraightMidrange = FALSE;
+        for (l=0; l <= 100; l++) {
+
+            Lab.L = l;
+            Lab.a = InitialLab.a;
+            Lab.b = InitialLab.b;
+
+            cmsDoTransform(hRoundTrip, &Lab, &destLab, 1);
+
+            L = destLab.L;
+
+            // Check the mid range in 20% after MinL
+            if (L > (MinL + 0.2 * (MaxL - MinL))) {
+
+                // Is close enough?
+                if (fabs(L - l) > 4.0) {
+
+                    // Too far away, profile is buggy!
+                    NearlyStraightMidRange = FALSE;
+                    break;
+                }
+            }
         }
-
-        // If the mid range is straight (as determined above) then the
-        // DestinationBlackPoint shall be the same as initialLab.
-        // Otherwise, the DestinationBlackPoint shall be determined
-        // using curve fitting.
-        if (NearlyStraightMidrange) {
-
-            cmsLab2XYZ(NULL, BlackPoint, &InitialLab);
-            cmsDeleteTransform(hRoundTrip);
-            return TRUE;
-        }
+    }
+    else {
+        // Check is always performed for perceptual and saturation intents
+        NearlyStraightMidRange = FALSE;
     }
 
 
-    // curve fitting: The round-trip curve normally looks like a nearly constant section at the black point,
+    // If no furter checking is needed, we are done
+    if (NearlyStraightMidRange) {
+
+        cmsLab2XYZ(NULL, BlackPoint, &InitialLab);
+        cmsDeleteTransform(hRoundTrip);
+        return TRUE;
+    }
+
+    // The round-trip curve normally looks like a nearly constant section at the black point,
     // with a corner and a nearly straight line to the white point.
-    for (l=0; l < 256; l++) {
 
-        yRamp[l] = (outRamp[l] - MinL) / (MaxL - MinL);
-    }
+    // STEP 4
+    // =======
 
     // find the black point using the least squares error quadratic curve fitting
+
     if (Intent == INTENT_RELATIVE_COLORIMETRIC) {
         lo = 0.1;
         hi = 0.5;
@@ -537,32 +528,62 @@ cmsBool CMSEXPORT cmsDetectDestinationBlackPoint(cmsCIEXYZ* BlackPoint, cmsHPROF
         hi = 0.25;
     }
 
-    // Capture shadow points for the fitting.
+    // Capture points for the fitting.
     n = 0;
-    for (l=0; l < 256; l++) {
+    for (l=0; l <= 100; l++) {
 
-        cmsFloat64Number ff = yRamp[l];
+        cmsFloat64Number ff;
+
+        Lab.L = (cmsFloat64Number) l;
+        Lab.a = InitialLab.a;
+        Lab.b = InitialLab.b;
+
+        cmsDoTransform(hRoundTrip, &Lab, &destLab, 1);
+
+        ff = (destLab.L - MinL)/(MaxL - MinL);
 
         if (ff >= lo && ff < hi) {
-            x[n] = inRamp[l];
-            y[n] = yRamp[l];
+
+            x[n] = Lab.L;
+            y[n] = ff;
             n++;
+        }
+
+    }
+
+    // This part is not on the Adobe paper, but I found is necessary for getting any result.
+
+    if (IsMonotonic(n, y)) {
+
+        // Monotonic means lower point is stil valid
+        cmsLab2XYZ(NULL, BlackPoint, &InitialLab);
+        cmsDeleteTransform(hRoundTrip);
+        return TRUE;
+    }
+
+    // No suitable points, regret and use safer algorithm
+    if (n == 0) {
+        cmsDeleteTransform(hRoundTrip);
+        return cmsDetectBlackPoint(BlackPoint, hProfile, Intent, dwFlags);
+    }
+
+
+    NonMonoMin = 100;
+    NonMonoIndx = 0;
+    for (i=0; i < n; i++) {
+
+        if (y[i] < NonMonoMin) {
+            NonMonoIndx = i;
+            NonMonoMin = y[i];
         }
     }
 
-
-    // No suitable points
-    if (n < 3 ) {
-        cmsDeleteTransform(hRoundTrip);
-        BlackPoint -> X = BlackPoint ->Y = BlackPoint -> Z = 0.0;
-        return FALSE;
-    }
-
+    Lab.L = x[NonMonoIndx];
 
     // fit and get the vertex of quadratic curve
     Lab.L = RootOfLeastSquaresFitQuadraticCurve(n, x, y);
 
-    if (Lab.L < 0.0) { // clip to zero L* if the vertex is negative
+    if (Lab.L < 0.0 || Lab.L > 50.0) { // clip to zero L* if the vertex is negative
         Lab.L = 0;
     }
 

@@ -98,7 +98,7 @@ int StubAssembler::call_RT(Register oop_result1, Register metadata_result, addre
   }
   pop(rax);
 #endif
-  reset_last_Java_frame(thread, true);
+  reset_last_Java_frame(thread, true, align_stack);
 
   // discard thread and arguments
   NOT_LP64(addptr(rsp, num_rt_args()*BytesPerWord));
@@ -675,7 +675,7 @@ OopMapSet* Runtime1::generate_handle_exception(StubID id, StubAssembler *sasm) {
   case handle_exception_nofpu_id:
   case handle_exception_id:
     // At this point all registers MAY be live.
-    oop_map = save_live_registers(sasm, 1 /*thread*/, id != handle_exception_nofpu_id);
+    oop_map = save_live_registers(sasm, 1 /*thread*/, id == handle_exception_nofpu_id);
     break;
   case handle_exception_from_callee_id: {
     // At this point all registers except exception oop (RAX) and
@@ -748,15 +748,20 @@ OopMapSet* Runtime1::generate_handle_exception(StubID id, StubAssembler *sasm) {
   case handle_exception_nofpu_id:
   case handle_exception_id:
     // Restore the registers that were saved at the beginning.
-    restore_live_registers(sasm, id != handle_exception_nofpu_id);
+    restore_live_registers(sasm, id == handle_exception_nofpu_id);
     break;
   case handle_exception_from_callee_id:
     // WIN64_ONLY: No need to add frame::arg_reg_save_area_bytes to SP
     // since we do a leave anyway.
 
-    // Pop the return address.
+    // Pop the return address since we are possibly changing SP (restoring from BP).
     __ leave();
     __ pop(rcx);
+
+    // Restore SP from BP if the exception PC is a method handle call site.
+    NOT_LP64(__ get_thread(thread);)
+    __ cmpl(Address(thread, JavaThread::is_method_handle_return_offset()), 0);
+    __ cmovptr(Assembler::notEqual, rsp, rbp_mh_SP_save);
     __ jmp(rcx);  // jump to exception handler
     break;
   default:  ShouldNotReachHere();
@@ -827,6 +832,11 @@ void Runtime1::generate_unwind_exception(StubAssembler *sasm) {
   // the pop is also necessary to simulate the effect of a ret(0)
   __ pop(exception_pc);
 
+  // Restore SP from BP if the exception PC is a method handle call site.
+  NOT_LP64(__ get_thread(thread);)
+  __ cmpl(Address(thread, JavaThread::is_method_handle_return_offset()), 0);
+  __ cmovptr(Assembler::notEqual, rsp, rbp_mh_SP_save);
+
   // continue at exception handler (return address removed)
   // note: do *not* remove arguments when unwinding the
   //       activation since the caller assumes having
@@ -882,7 +892,7 @@ OopMapSet* Runtime1::generate_patching(StubAssembler* sasm, address target) {
   }
   __ pop(rax);
 #endif
-  __ reset_last_Java_frame(thread, true);
+  __ reset_last_Java_frame(thread, true, false);
 #ifndef _LP64
   __ pop(rcx); // discard thread arg
   __ pop(rcx); // discard dummy

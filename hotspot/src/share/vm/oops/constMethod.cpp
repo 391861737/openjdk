@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2003, 2016, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2003, 2013, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -65,7 +65,6 @@ ConstMethod::ConstMethod(int byte_code_size,
   set_max_locals(0);
   set_method_idnum(0);
   set_size_of_parameters(0);
-  set_result_type(T_VOID);
 }
 
 // Accessor that copies to metadata.
@@ -389,13 +388,9 @@ void ConstMethod::copy_annotations_from(ConstMethod* cm) {
 void ConstMethod::print_on(outputStream* st) const {
   ResourceMark rm;
   assert(is_constMethod(), "must be constMethod");
-  st->print_cr("%s", internal_name());
-  Method* m = method();
-  st->print(" - method:       " INTPTR_FORMAT " ", p2i((address)m));
-  if (m != NULL) {
-    m->print_value_on(st);
-  }
-  st->cr();
+  st->print_cr(internal_name());
+  st->print(" - method:       " INTPTR_FORMAT " ", (address)method());
+  method()->print_value_on(st); st->cr();
   if (has_stackmap_table()) {
     st->print(" - stackmap data:       ");
     stackmap_data()->print_value_on(st);
@@ -408,12 +403,7 @@ void ConstMethod::print_on(outputStream* st) const {
 void ConstMethod::print_value_on(outputStream* st) const {
   assert(is_constMethod(), "must be constMethod");
   st->print(" const part of method " );
-  Method* m = method();
-  if (m != NULL) {
-    m->print_value_on(st);
-  } else {
-    st->print("NULL");
-  }
+  method()->print_value_on(st);
 }
 
 #if INCLUDE_SERVICES
@@ -453,7 +443,7 @@ void ConstMethod::verify_on(outputStream* st) {
 
   // Verification can occur during oop construction before the method or
   // other fields have been initialized.
-  guarantee(method() != NULL && method()->is_method(), "should be method");
+  guarantee(method()->is_method(), "should be method");
 
   address m_end = (address)((intptr_t) this + size());
   address compressed_table_start = code_end();

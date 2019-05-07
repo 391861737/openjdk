@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 1998, 2016, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 1998, 2011, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -28,8 +28,11 @@ package sun.misc;
 import java.io.File;
 import java.io.IOException;
 import java.io.FilePermission;
-import java.net.*;
-import java.nio.file.Paths;
+import java.net.URL;
+import java.net.URLClassLoader;
+import java.net.MalformedURLException;
+import java.net.URLStreamHandler;
+import java.net.URLStreamHandlerFactory;
 import java.util.HashSet;
 import java.util.StringTokenizer;
 import java.util.Set;
@@ -159,8 +162,6 @@ public class Launcher {
          */
         public ExtClassLoader(File[] dirs) throws IOException {
             super(getExtURLs(dirs), null, factory);
-            SharedSecrets.getJavaNetAccess().
-                getURLClassPath(this).initLookupCache(this);
         }
 
         private static File[] getExtDirs() {
@@ -210,18 +211,8 @@ public class Launcher {
             URL[] urls = super.getURLs();
             File prevDir = null;
             for (int i = 0; i < urls.length; i++) {
-                // Get the ext directory from the URL; convert to
-                // URI first, so the URL will be decoded.
-                URI uri;
-                try {
-                    uri = urls[i].toURI();
-                } catch (URISyntaxException ue) {
-                    // skip this URL if cannot convert it to URI
-                    continue;
-                }
-                // Use the Paths.get(uri) call in order to handle
-                // UNC based file name conversion correctly.
-                File dir = Paths.get(uri).toFile().getParentFile();
+                // Get the ext directory from the URL
+                File dir = new File(urls[i].getPath()).getParentFile();
                 if (dir != null && !dir.equals(prevDir)) {
                     // Look in architecture-specific subdirectory first
                     // Read from the saved system properties to avoid deadlock
@@ -294,15 +285,11 @@ public class Launcher {
             });
         }
 
-        final URLClassPath ucp;
-
         /*
          * Creates a new AppClassLoader
          */
         AppClassLoader(URL[] urls, ClassLoader parent) {
             super(urls, parent, factory);
-            ucp = SharedSecrets.getJavaNetAccess().getURLClassPath(this);
-            ucp.initLookupCache(this);
         }
 
         /**
@@ -318,23 +305,6 @@ public class Launcher {
                     sm.checkPackageAccess(name.substring(0, i));
                 }
             }
-
-            if (ucp.knownToNotExist(name)) {
-                // The class of the given name is not found in the parent
-                // class loader as well as its local URLClassPath.
-                // Check if this class has already been defined dynamically;
-                // if so, return the loaded class; otherwise, skip the parent
-                // delegation and findClass.
-                Class<?> c = findLoadedClass(name);
-                if (c != null) {
-                    if (resolve) {
-                        resolveClass(c);
-                    }
-                    return c;
-                }
-                throw new ClassNotFoundException(name);
-            }
-
             return (super.loadClass(name, resolve));
         }
 
@@ -415,8 +385,7 @@ public class Launcher {
             } else {
                 urls = new URL[0];
             }
-            bcp = new URLClassPath(urls, factory, null);
-            bcp.initLookupCache(null);
+            bcp = new URLClassPath(urls, factory);
         }
     }
 

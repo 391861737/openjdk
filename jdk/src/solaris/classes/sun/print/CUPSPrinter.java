@@ -51,7 +51,6 @@ public class CUPSPrinter  {
     private boolean initialized;
     private static native String getCupsServer();
     private static native int getCupsPort();
-    private static native String getCupsDefaultPrinter();
     private static native boolean canConnect(String server, int port);
     private static native boolean initIDs();
     // These functions need to be synchronized as
@@ -127,7 +126,7 @@ public class CUPSPrinter  {
     /**
      * Returns array of MediaSizeNames derived from PPD.
      */
-    MediaSizeName[] getMediaSizeNames() {
+    public MediaSizeName[] getMediaSizeNames() {
         initMedia();
         return cupsMediaSNames;
     }
@@ -136,19 +135,16 @@ public class CUPSPrinter  {
     /**
      * Returns array of Custom MediaSizeNames derived from PPD.
      */
-    CustomMediaSizeName[] getCustomMediaSizeNames() {
+    public CustomMediaSizeName[] getCustomMediaSizeNames() {
         initMedia();
         return cupsCustomMediaSNames;
     }
 
-    public int getDefaultMediaIndex() {
-        return ((pageSizes.length >1) ? (int)(pageSizes[pageSizes.length -1]) : 0);
-    }
 
     /**
      * Returns array of MediaPrintableArea derived from PPD.
      */
-    MediaPrintableArea[] getMediaPrintableArea() {
+    public MediaPrintableArea[] getMediaPrintableArea() {
         initMedia();
         return cupsMediaPrintables;
     }
@@ -156,7 +152,7 @@ public class CUPSPrinter  {
     /**
      * Returns array of MediaTrays derived from PPD.
      */
-    MediaTray[] getMediaTrays() {
+    public MediaTray[] getMediaTrays() {
         initMedia();
         return cupsMediaTrays;
     }
@@ -205,15 +201,8 @@ public class CUPSPrinter  {
 
                 // add this new custom msn to MediaSize array
                 if ((width > 0.0) && (length > 0.0)) {
-                    try {
                     new MediaSize(width, length,
                                   Size2DSyntax.INCH, msn);
-                    } catch (IllegalArgumentException e) {
-                        /* PDF printer in Linux for Ledger paper causes
-                        "IllegalArgumentException: X dimension > Y dimension".
-                        We rotate based on IPP spec. */
-                        new MediaSize(length, width, Size2DSyntax.INCH, msn);
-                    }
                 }
             }
 
@@ -251,15 +240,6 @@ public class CUPSPrinter  {
      * Returns 2 values - index 0 is printer name, index 1 is the uri.
      */
     static String[] getDefaultPrinter() {
-        // Try to get user/lpoptions-defined printer name from CUPS
-        // if not user-set, then go for server default destination
-        String printerInfo[] = new String[2];
-        printerInfo[0] = getCupsDefaultPrinter();
-
-        if (printerInfo[0] != null) {
-            printerInfo[1] = null;
-            return printerInfo.clone();
-        }
         try {
             URL url = new URL("http", getServer(), getPort(), "");
             final HttpURLConnection urlConnection =
@@ -272,7 +252,6 @@ public class CUPSPrinter  {
                             try {
                                 return urlConnection.getOutputStream();
                             } catch (Exception e) {
-                               IPPPrintService.debug_println(debugPrefix+e);
                             }
                             return null;
                         }
@@ -295,7 +274,7 @@ public class CUPSPrinter  {
                                         attCl)) {
 
                     HashMap defaultMap = null;
-
+                    String[] printerInfo = new String[2];
                     InputStream is = urlConnection.getInputStream();
                     HashMap[] responseMap = IPPPrintService.readIPPResponse(
                                          is);
@@ -303,9 +282,6 @@ public class CUPSPrinter  {
 
                     if (responseMap != null && responseMap.length > 0) {
                         defaultMap = responseMap[0];
-                    } else {
-                       IPPPrintService.debug_println(debugPrefix+
-                           " empty response map for GET_DEFAULT.");
                     }
 
                     if (defaultMap == null) {
@@ -334,10 +310,7 @@ public class CUPSPrinter  {
 
                     if (attribClass != null) {
                         printerInfo[0] = attribClass.getStringValue();
-                        attribClass = (AttributeClass)
-                            defaultMap.get("printer-uri-supported");
-                        IPPPrintService.debug_println(debugPrefix+
-                          "printer-uri-supported="+attribClass);
+                        attribClass = (AttributeClass)defaultMap.get("device-uri");
                         if (attribClass != null) {
                             printerInfo[1] = attribClass.getStringValue();
                         } else {

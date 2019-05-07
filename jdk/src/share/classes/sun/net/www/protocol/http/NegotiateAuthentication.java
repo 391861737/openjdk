@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2005, 2017, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2005, 2013, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -31,10 +31,8 @@ import java.net.Authenticator.RequestorType;
 import java.util.Base64;
 import java.util.HashMap;
 import sun.net.www.HeaderParser;
-import sun.util.logging.PlatformLogger;
 import static sun.net.www.protocol.http.AuthScheme.NEGOTIATE;
 import static sun.net.www.protocol.http.AuthScheme.KERBEROS;
-import sun.security.action.GetPropertyAction;
 
 /**
  * NegotiateAuthentication:
@@ -46,25 +44,16 @@ import sun.security.action.GetPropertyAction;
 class NegotiateAuthentication extends AuthenticationInfo {
 
     private static final long serialVersionUID = 100L;
-    private static final PlatformLogger logger = HttpURLConnection.getHttpLogger();
 
     final private HttpCallerInfo hci;
 
     // These maps are used to manage the GSS availability for diffrent
     // hosts. The key for both maps is the host name.
     // <code>supported</code> is set when isSupported is checked,
-
     // if it's true, a cached Negotiator is put into <code>cache</code>.
     // the cache can be used only once, so after the first use, it's cleaned.
     static HashMap <String, Boolean> supported = null;
-    static ThreadLocal <HashMap <String, Negotiator>> cache = null;
-    /* Whether cache is enabled for Negotiate/Kerberos */
-    private static final boolean cacheSPNEGO;
-    static {
-        String spnegoCacheProp = java.security.AccessController.doPrivileged(
-            new sun.security.action.GetPropertyAction("jdk.spnego.cache", "true"));
-        cacheSPNEGO = Boolean.parseBoolean(spnegoCacheProp);
-    }
+    static HashMap <String, Negotiator> cache = null;
 
     // The HTTP Negotiate Helper
     private Negotiator negotiator = null;
@@ -90,31 +79,6 @@ class NegotiateAuthentication extends AuthenticationInfo {
     }
 
     /**
-     * Find out if the HttpCallerInfo supports Negotiate protocol.
-     * @return true if supported
-     */
-    public static boolean isSupported(HttpCallerInfo hci) {
-        ClassLoader loader = null;
-        try {
-            loader = Thread.currentThread().getContextClassLoader();
-        } catch (SecurityException se) {
-            if (logger.isLoggable(PlatformLogger.Level.FINER)) {
-                logger.finer("NegotiateAuthentication: " +
-                    "Attempt to get the context class loader failed - " + se);
-            }
-        }
-
-        if (loader != null) {
-            // Lock on the class loader instance to avoid the deadlock engaging
-            // the lock in "ClassLoader.loadClass(String, boolean)" method.
-            synchronized (loader) {
-                return isSupportedImpl(hci);
-            }
-        }
-        return isSupportedImpl(hci);
-    }
-
-    /**
      * Find out if the HttpCallerInfo supports Negotiate protocol. In order to
      * find out yes or no, an initialization of a Negotiator object against it
      * is tried. The generated object will be cached under the name of ths
@@ -125,9 +89,10 @@ class NegotiateAuthentication extends AuthenticationInfo {
      *
      * @return true if supported
      */
-    private static synchronized boolean isSupportedImpl(HttpCallerInfo hci) {
+    synchronized public static boolean isSupported(HttpCallerInfo hci) {
         if (supported == null) {
-            supported = new HashMap<>();
+            supported = new HashMap <String, Boolean>();
+            cache = new HashMap <String, Negotiator>();
         }
         String hostname = hci.host;
         hostname = hostname.toLowerCase();
@@ -140,30 +105,12 @@ class NegotiateAuthentication extends AuthenticationInfo {
             supported.put(hostname, true);
             // the only place cache.put is called. here we can make sure
             // the object is valid and the oneToken inside is not null
-            if (cache == null) {
-                cache = new ThreadLocal<HashMap<String, Negotiator>>() {
-                    @Override
-                    protected HashMap<String, Negotiator> initialValue() {
-                        return new HashMap<>();
-                    }
-                };
-            }
-            cache.get().put(hostname, neg);
+            cache.put(hostname, neg);
             return true;
         } else {
             supported.put(hostname, false);
             return false;
         }
-    }
-
-    private static synchronized HashMap<String, Negotiator> getCache() {
-        if (cache == null) return null;
-        return cache.get();
-    }
-
-    @Override
-    protected boolean useAuthCache() {
-        return super.useAuthCache() && cacheSPNEGO;
     }
 
     /**
@@ -223,11 +170,12 @@ class NegotiateAuthentication extends AuthenticationInfo {
      */
     private byte[] firstToken() throws IOException {
         negotiator = null;
-        HashMap <String, Negotiator> cachedMap = getCache();
-        if (cachedMap != null) {
-            negotiator = cachedMap.get(getHost());
-            if (negotiator != null) {
-                cachedMap.remove(getHost()); // so that it is only used once
+        if (cache != null) {
+            synchronized(cache) {
+                negotiator = cache.get(getHost());
+                if (negotiator != null) {
+                    cache.remove(getHost()); // so that it is only used once
+                }
             }
         }
         if (negotiator == null) {

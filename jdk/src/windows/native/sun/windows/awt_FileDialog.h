@@ -60,6 +60,9 @@ public:
     static void Initialize(JNIEnv *env, jstring filterDescription);
     static void Show(void *peer);
 
+    static BOOL GetOpenFileName(LPOPENFILENAME);
+    static BOOL GetSaveFileName(LPOPENFILENAME);
+
     virtual BOOL InheritsNativeMouseWheelBehavior();
 
     // some methods called on Toolkit thread

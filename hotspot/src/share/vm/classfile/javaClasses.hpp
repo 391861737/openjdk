@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 1997, 2017, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 1997, 2013, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -61,6 +61,10 @@ class java_lang_String : AllStatic {
 
   static Handle basic_create(int length, TRAPS);
 
+  static void set_value( oop string, typeArrayOop buffer) {
+    assert(initialized, "Must be initialized");
+    string->obj_field_put(value_offset,  (oop)buffer);
+  }
   static void set_offset(oop string, int offset) {
     assert(initialized, "Must be initialized");
     if (offset_offset > 0) {
@@ -118,25 +122,11 @@ class java_lang_String : AllStatic {
     return hash_offset;
   }
 
-  static void set_value(oop string, typeArrayOop buffer) {
-    assert(initialized && (value_offset > 0), "Must be initialized");
-    string->obj_field_put(value_offset, (oop)buffer);
-  }
-  static void set_hash(oop string, unsigned int hash) {
-    assert(initialized && (hash_offset > 0), "Must be initialized");
-    string->int_field_put(hash_offset, hash);
-  }
-
   // Accessors
   static typeArrayOop value(oop java_string) {
     assert(initialized && (value_offset > 0), "Must be initialized");
     assert(is_instance(java_string), "must be java_string");
     return (typeArrayOop) java_string->obj_field(value_offset);
-  }
-  static unsigned int hash(oop java_string) {
-    assert(initialized && (hash_offset > 0), "Must be initialized");
-    assert(is_instance(java_string), "must be java_string");
-    return java_string->int_field(hash_offset);
   }
   static int offset(oop java_string) {
     assert(initialized, "Must be initialized");
@@ -208,7 +198,7 @@ class java_lang_String : AllStatic {
   }
 
   // Debugging
-  static void print(oop java_string, outputStream* st);
+  static void print(Handle java_string, outputStream* st);
   friend class JavaClasses;
 };
 
@@ -239,23 +229,18 @@ class java_lang_Class : AllStatic {
   static int _protection_domain_offset;
   static int _init_lock_offset;
   static int _signers_offset;
-  static int _class_loader_offset;
 
   static bool offsets_computed;
   static int classRedefinedCount_offset;
-
   static GrowableArray<Klass*>* _fixup_mirror_list;
 
   static void set_init_lock(oop java_class, oop init_lock);
   static void set_protection_domain(oop java_class, oop protection_domain);
-  static void set_class_loader(oop java_class, oop class_loader);
-  static void initialize_mirror_fields(KlassHandle k, Handle mirror, Handle protection_domain, TRAPS);
  public:
   static void compute_offsets();
 
   // Instance creation
-  static void create_mirror(KlassHandle k, Handle class_loader,
-                            Handle protection_domain, TRAPS);
+  static oop  create_mirror(KlassHandle k, Handle protection_domain, TRAPS);
   static void fixup_mirror(KlassHandle k, TRAPS);
   static oop  create_basic_type_mirror(const char* basic_type_name, BasicType type, TRAPS);
   // Conversion
@@ -270,7 +255,6 @@ class java_lang_Class : AllStatic {
   }
   static Symbol* as_signature(oop java_class, bool intern_if_not_found, TRAPS);
   static void print_signature(oop java_class, outputStream *st);
-  static const char* as_external_name(oop java_class);
   // Testing
   static bool is_instance(oop obj) {
     return obj != NULL && obj->klass() == SystemDictionary::Class_klass();
@@ -293,8 +277,6 @@ class java_lang_Class : AllStatic {
   static oop  init_lock(oop java_class);
   static objArrayOop  signers(oop java_class);
   static void set_signers(oop java_class, objArrayOop signers);
-
-  static oop class_loader(oop java_class);
 
   static int oop_size(oop java_class);
   static void set_oop_size(oop java_class, int size);
@@ -343,8 +325,8 @@ class java_lang_Thread : AllStatic {
   // Set JavaThread for instance
   static void set_thread(oop java_thread, JavaThread* thread);
   // Name
-  static oop name(oop java_thread);
-  static void set_name(oop java_thread, oop name);
+  static typeArrayOop name(oop java_thread);
+  static void set_name(oop java_thread, typeArrayOop name);
   // Priority
   static ThreadPriority priority(oop java_thread);
   static void set_priority(oop java_thread, ThreadPriority priority);
@@ -485,9 +467,8 @@ class java_lang_Throwable: AllStatic {
     trace_methods_offset = 0,
     trace_bcis_offset    = 1,
     trace_mirrors_offset = 2,
-    trace_cprefs_offset  = 3,
-    trace_next_offset    = 4,
-    trace_size           = 5,
+    trace_next_offset    = 3,
+    trace_size           = 4,
     trace_chunk_size     = 32
   };
 
@@ -498,7 +479,7 @@ class java_lang_Throwable: AllStatic {
   static int static_unassigned_stacktrace_offset;
 
   // Printing
-  static char* print_stack_element_to_buffer(Handle mirror, int method, int version, int bci, int cpref);
+  static char* print_stack_element_to_buffer(Handle mirror, int method, int version, int bci);
   // StackTrace (programmatic access, new since 1.4)
   static void clear_stacktrace(oop throwable);
   // No stack trace available
@@ -519,7 +500,7 @@ class java_lang_Throwable: AllStatic {
   static oop message(Handle throwable);
   static void set_message(oop throwable, oop value);
   static void print_stack_element(outputStream *st, Handle mirror, int method,
-                                  int version, int bci, int cpref);
+                                  int version, int bci);
   static void print_stack_element(outputStream *st, methodHandle method, int bci);
   static void print_stack_usage(Handle stream);
 
@@ -1097,6 +1078,9 @@ class java_lang_invoke_MemberName: AllStatic {
 
   static Metadata*      vmtarget(oop mname);
   static void       set_vmtarget(oop mname, Metadata* target);
+#if INCLUDE_JVMTI
+  static void       adjust_vmtarget(oop mname, Metadata* target);
+#endif // INCLUDE_JVMTI
 
   static intptr_t       vmindex(oop mname);
   static void       set_vmindex(oop mname, intptr_t index);
@@ -1108,8 +1092,6 @@ class java_lang_invoke_MemberName: AllStatic {
   static bool is_instance(oop obj) {
     return obj != NULL && is_subclass(obj->klass());
   }
-
-  static bool is_method(oop obj);
 
   // Relevant integer codes (keep these in synch. with MethodHandleNatives.Constants):
   enum {
@@ -1132,8 +1114,6 @@ class java_lang_invoke_MemberName: AllStatic {
   static int flags_offset_in_bytes()            { return _flags_offset; }
   static int vmtarget_offset_in_bytes()         { return _vmtarget_offset; }
   static int vmindex_offset_in_bytes()          { return _vmindex_offset; }
-
-  static bool equals(oop mt1, oop mt2);
 };
 
 
@@ -1326,7 +1306,7 @@ class java_lang_StackTraceElement: AllStatic {
   static void set_lineNumber(oop element, int value);
 
   // Create an instance of StackTraceElement
-  static oop create(Handle mirror, int method, int version, int bci, int cpref, TRAPS);
+  static oop create(Handle mirror, int method, int version, int bci, TRAPS);
   static oop create(methodHandle method, int bci, TRAPS);
 
   // Debugging

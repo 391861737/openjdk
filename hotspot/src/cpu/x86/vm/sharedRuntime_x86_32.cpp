@@ -977,9 +977,7 @@ AdapterHandlerEntry* SharedRuntime::generate_i2c2i_adapters(MacroAssembler *masm
 
 int SharedRuntime::c_calling_convention(const BasicType *sig_bt,
                                          VMRegPair *regs,
-                                         VMRegPair *regs2,
                                          int total_args_passed) {
-  assert(regs2 == NULL, "not needed on x86");
 // We return the amount of VMRegImpl stack slots we need to reserve for all
 // the arguments NOT counting out_preserve_stack_slots.
 
@@ -1333,7 +1331,7 @@ static void check_needs_gc_for_critical_native(MacroAssembler* masm,
   __ increment(rsp, wordSize);
 
   __ get_thread(thread);
-  __ reset_last_Java_frame(thread, false);
+  __ reset_last_Java_frame(thread, false, true);
 
   save_or_restore_arguments(masm, stack_slots, total_in_args,
                             arg_save_area, NULL, in_regs, in_sig_bt);
@@ -1626,7 +1624,7 @@ nmethod* SharedRuntime::generate_native_wrapper(MacroAssembler* masm,
   // Now figure out where the args must be stored and how much stack space
   // they require.
   int out_arg_slots;
-  out_arg_slots = c_calling_convention(out_sig_bt, out_regs, NULL, total_c_args);
+  out_arg_slots = c_calling_convention(out_sig_bt, out_regs, total_c_args);
 
   // Compute framesize for the wrapper.  We need to handlize all oops in
   // registers a max of 2 on x86.
@@ -1816,13 +1814,6 @@ nmethod* SharedRuntime::generate_native_wrapper(MacroAssembler* masm,
 
   // Frame is now completed as far as size and linkage.
   int frame_complete = ((intptr_t)__ pc()) - start;
-
-  if (UseRTMLocking) {
-    // Abort RTM transaction before calling JNI
-    // because critical section will be large and will be
-    // aborted anyway. Also nmethod could be deoptimized.
-    __ xabort(0);
-  }
 
   // Calculate the difference between rsp and rbp,. We need to know it
   // after the native call because on windows Java Natives will pop
@@ -2251,7 +2242,7 @@ nmethod* SharedRuntime::generate_native_wrapper(MacroAssembler* masm,
 
   // We can finally stop using that last_Java_frame we setup ages ago
 
-  __ reset_last_Java_frame(thread, false);
+  __ reset_last_Java_frame(thread, false, true);
 
   // Unpack oop result
   if (ret_type == T_OBJECT || ret_type == T_ARRAY) {
@@ -2266,7 +2257,7 @@ nmethod* SharedRuntime::generate_native_wrapper(MacroAssembler* masm,
   if (!is_critical_native) {
     // reset handle block
     __ movptr(rcx, Address(thread, JavaThread::active_handles_offset()));
-    __ movl(Address(rcx, JNIHandleBlock::top_offset_in_bytes()), NULL_WORD);
+    __ movptr(Address(rcx, JNIHandleBlock::top_offset_in_bytes()), NULL_WORD);
 
     // Any exception pending?
     __ cmpptr(Address(thread, in_bytes(Thread::pending_exception_offset())), (int32_t)NULL_WORD);
@@ -2504,7 +2495,7 @@ nmethod *SharedRuntime::generate_dtrace_nmethod(
   // they require (neglecting out_preserve_stack_slots).
 
   int out_arg_slots;
-  out_arg_slots = c_calling_convention(out_sig_bt, out_regs, NULL, total_c_args);
+  out_arg_slots = c_calling_convention(out_sig_bt, out_regs, total_c_args);
 
   // Calculate the total number of stack slots we will need.
 
@@ -2951,7 +2942,7 @@ void SharedRuntime::generate_deopt_blob() {
   __ pop(rcx);
 
   __ get_thread(rcx);
-  __ reset_last_Java_frame(rcx, false);
+  __ reset_last_Java_frame(rcx, false, false);
 
   // Load UnrollBlock into EDI
   __ mov(rdi, rax);
@@ -3014,15 +3005,11 @@ void SharedRuntime::generate_deopt_blob() {
   // restore rbp before stack bang because if stack overflow is thrown it needs to be pushed (and preserved)
   __ movptr(rbp, Address(rdi, Deoptimization::UnrollBlock::initial_info_offset_in_bytes()));
 
-#ifdef ASSERT
-  // Compilers generate code that bang the stack by as much as the
-  // interpreter would need. So this stack banging should never
-  // trigger a fault. Verify that it does not on non product builds.
+  // Stack bang to make sure there's enough room for these interpreter frames.
   if (UseStackBanging) {
     __ movl(rbx, Address(rdi ,Deoptimization::UnrollBlock::total_frame_sizes_offset_in_bytes()));
     __ bang_stack_size(rbx, rcx);
   }
-#endif
 
   // Load array of frame pcs into ECX
   __ movptr(rcx,Address(rdi,Deoptimization::UnrollBlock::frame_pcs_offset_in_bytes()));
@@ -3117,7 +3104,7 @@ void SharedRuntime::generate_deopt_blob() {
   __ push(rax);
 
   __ get_thread(rcx);
-  __ reset_last_Java_frame(rcx, false);
+  __ reset_last_Java_frame(rcx, false, false);
 
   // Collect return values
   __ movptr(rax,Address(rsp, (RegisterSaver::raxOffset() + additional_words + 1)*wordSize));
@@ -3181,12 +3168,6 @@ void SharedRuntime::generate_uncommon_trap_blob() {
   };
 
   address start = __ pc();
-
-  if (UseRTMLocking) {
-    // Abort RTM transaction before possible nmethod deoptimization.
-    __ xabort(0);
-  }
-
   // Push self-frame.
   __ subptr(rsp, return_off*wordSize);     // Epilog!
 
@@ -3219,7 +3200,7 @@ void SharedRuntime::generate_uncommon_trap_blob() {
 
   __ get_thread(rcx);
 
-  __ reset_last_Java_frame(rcx, false);
+  __ reset_last_Java_frame(rcx, false, false);
 
   // Load UnrollBlock into EDI
   __ movptr(rdi, rax);
@@ -3244,15 +3225,12 @@ void SharedRuntime::generate_uncommon_trap_blob() {
   // restore rbp before stack bang because if stack overflow is thrown it needs to be pushed (and preserved)
   __ movptr(rbp, Address(rdi, Deoptimization::UnrollBlock::initial_info_offset_in_bytes()));
 
-#ifdef ASSERT
-  // Compilers generate code that bang the stack by as much as the
-  // interpreter would need. So this stack banging should never
-  // trigger a fault. Verify that it does not on non product builds.
+  // Stack bang to make sure there's enough room for these interpreter frames.
   if (UseStackBanging) {
     __ movl(rbx, Address(rdi ,Deoptimization::UnrollBlock::total_frame_sizes_offset_in_bytes()));
     __ bang_stack_size(rbx, rcx);
   }
-#endif
+
 
   // Load array of frame pcs into ECX
   __ movl(rcx,Address(rdi,Deoptimization::UnrollBlock::frame_pcs_offset_in_bytes()));
@@ -3331,7 +3309,7 @@ void SharedRuntime::generate_uncommon_trap_blob() {
   oop_maps->add_gc_map( __ pc()-start, new OopMap( framesize, 0 ) );
 
   __ get_thread(rdi);
-  __ reset_last_Java_frame(rdi, true);
+  __ reset_last_Java_frame(rdi, true, false);
 
   // Pop self-frame.
   __ leave();     // Epilog!
@@ -3375,14 +3353,6 @@ SafepointBlob* SharedRuntime::generate_handler_blob(address call_ptr, int poll_t
   address call_pc = NULL;
   bool cause_return = (poll_type == POLL_AT_RETURN);
   bool save_vectors = (poll_type == POLL_AT_VECTOR_LOOP);
-
-  if (UseRTMLocking) {
-    // Abort RTM transaction before calling runtime
-    // because critical section will be large and will be
-    // aborted anyway. Also nmethod could be deoptimized.
-    __ xabort(0);
-  }
-
   // If cause_return is true we are at a poll_return and there is
   // the return address on the stack to the caller on the nmethod
   // that is safepoint. We can leave this return on the stack and
@@ -3426,7 +3396,7 @@ SafepointBlob* SharedRuntime::generate_handler_blob(address call_ptr, int poll_t
 
   // Clear last_Java_sp again
   __ get_thread(java_thread);
-  __ reset_last_Java_frame(java_thread, false);
+  __ reset_last_Java_frame(java_thread, false, false);
 
   __ cmpptr(Address(java_thread, Thread::pending_exception_offset()), (int32_t)NULL_WORD);
   __ jcc(Assembler::equal, noException);
@@ -3501,7 +3471,7 @@ RuntimeStub* SharedRuntime::generate_resolve_blob(address destination, const cha
   __ addptr(rsp, wordSize);
 
   // clear last_Java_sp
-  __ reset_last_Java_frame(thread, true);
+  __ reset_last_Java_frame(thread, true, false);
   // check for pending exceptions
   Label pending;
   __ cmpptr(Address(thread, Thread::pending_exception_offset()), (int32_t)NULL_WORD);

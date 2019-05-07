@@ -26,23 +26,21 @@
 package jdk.nashorn.api.scripting;
 
 import java.util.Collection;
+import java.util.Collections;
 import java.util.Set;
 
 /**
  * This interface can be implemented by an arbitrary Java class. Nashorn will
  * treat objects of such classes just like nashorn script objects. Usual nashorn
- * operations like obj[i], obj.foo, obj.func(), delete obj.foo will be delegated
+ * operations like obj[i], obj.foo, obj.func(), delete obj.foo will be glued
  * to appropriate method call of this interface.
- *
- * @since 1.8u40
  */
-@jdk.Exported
 public interface JSObject {
     /**
      * Call this object as a JavaScript function. This is equivalent to
      * 'func.apply(thiz, args)' in JavaScript.
      *
-     * @param thiz 'this' object to be passed to the function. This may be null.
+     * @param thiz 'this' object to be passed to the function
      * @param args arguments to method
      * @return result of call
      */
@@ -70,7 +68,6 @@ public interface JSObject {
      *
      * @param name of member
      * @return member
-     * @throws NullPointerException if name is null
      */
     public Object getMember(final String name);
 
@@ -102,7 +99,6 @@ public interface JSObject {
      * Remove a named member from this JavaScript object
      *
      * @param name name of the member
-     * @throws NullPointerException if name is null
      */
     public void removeMember(final String name);
 
@@ -111,7 +107,6 @@ public interface JSObject {
      *
      * @param name  name of the member
      * @param value value of the member
-     * @throws NullPointerException if name is null
      */
     public void setMember(final String name, final Object value);
 
@@ -144,7 +139,7 @@ public interface JSObject {
     /**
      * Checking whether the given object is an instance of 'this' object.
      *
-     * @param instance instance to check
+     * @param instance instace to check
      * @return true if the given 'instance' is an instance of this 'function' object
      */
     public boolean isInstance(final Object instance);
@@ -189,8 +184,6 @@ public interface JSObject {
      * Returns this object's numeric value.
      *
      * @return this object's numeric value.
-     * @deprecated use {@link AbstractJSObject#getDefaultValue(JSObject, Class)} with {@link Number} hint instead.
      */
-    @Deprecated
     public double toNumber();
 }

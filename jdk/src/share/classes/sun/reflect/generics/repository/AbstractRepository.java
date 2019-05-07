@@ -40,9 +40,9 @@ public abstract class AbstractRepository<T extends Tree> {
 
     // A factory used to produce reflective objects. Provided when the
     //repository is created. Will vary across implementations.
-    private final GenericsFactory factory;
+    private GenericsFactory factory;
 
-    private final T tree; // the AST for the generic type info
+    private T tree; // the AST for the generic type info
 
     //accessors
     private GenericsFactory getFactory() { return factory;}

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 1997, 2015, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 1997, 2013, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -48,7 +48,6 @@
 #include "runtime/javaCalls.hpp"
 #include "runtime/mutexLocker.hpp"
 #include "runtime/objectMonitor.hpp"
-#include "runtime/orderAccess.inline.hpp"
 #include "runtime/osThread.hpp"
 #include "runtime/perfMemory.hpp"
 #include "runtime/sharedRuntime.hpp"
@@ -177,6 +176,75 @@ extern "C" {
 }
 
 static void unpackTime(timespec* absTime, bool isAbsolute, jlong time);
+
+// Thread Local Storage
+// This is common to all Solaris platforms so it is defined here,
+// in this common file.
+// The declarations are in the os_cpu threadLS*.hpp files.
+//
+// Static member initialization for TLS
+Thread* ThreadLocalStorage::_get_thread_cache[ThreadLocalStorage::_pd_cache_size] = {NULL};
+
+#ifndef PRODUCT
+#define _PCT(n,d)       ((100.0*(double)(n))/(double)(d))
+
+int ThreadLocalStorage::_tcacheHit = 0;
+int ThreadLocalStorage::_tcacheMiss = 0;
+
+void ThreadLocalStorage::print_statistics() {
+  int total = _tcacheMiss+_tcacheHit;
+  tty->print_cr("Thread cache hits %d misses %d total %d percent %f\n",
+                _tcacheHit, _tcacheMiss, total, _PCT(_tcacheHit, total));
+}
+#undef _PCT
+#endif // PRODUCT
+
+Thread* ThreadLocalStorage::get_thread_via_cache_slowly(uintptr_t raw_id,
+                                                        int index) {
+  Thread *thread = get_thread_slow();
+  if (thread != NULL) {
+    address sp = os::current_stack_pointer();
+    guarantee(thread->_stack_base == NULL ||
+              (sp <= thread->_stack_base &&
+                 sp >= thread->_stack_base - thread->_stack_size) ||
+               is_error_reported(),
+              "sp must be inside of selected thread stack");
+
+    thread->set_self_raw_id(raw_id);  // mark for quick retrieval
+    _get_thread_cache[ index ] = thread;
+  }
+  return thread;
+}
+
+
+static const double all_zero[ sizeof(Thread) / sizeof(double) + 1 ] = {0};
+#define NO_CACHED_THREAD ((Thread*)all_zero)
+
+void ThreadLocalStorage::pd_set_thread(Thread* thread) {
+
+  // Store the new value before updating the cache to prevent a race
+  // between get_thread_via_cache_slowly() and this store operation.
+  os::thread_local_storage_at_put(ThreadLocalStorage::thread_index(), thread);
+
+  // Update thread cache with new thread if setting on thread create,
+  // or NO_CACHED_THREAD (zeroed) thread if resetting thread on exit.
+  uintptr_t raw = pd_raw_thread_id();
+  int ix = pd_cache_index(raw);
+  _get_thread_cache[ix] = thread == NULL ? NO_CACHED_THREAD : thread;
+}
+
+void ThreadLocalStorage::pd_init() {
+  for (int i = 0; i < _pd_cache_size; i++) {
+    _get_thread_cache[i] = NO_CACHED_THREAD;
+  }
+}
+
+// Invalidate all the caches (happens to be the same as pd_init).
+void ThreadLocalStorage::pd_invalidate_all() { pd_init(); }
+
+#undef NO_CACHED_THREAD
+
+// END Thread Local Storage
 
 static inline size_t adjust_stack_size(address base, size_t size) {
   if ((ssize_t)size < 0) {
@@ -347,7 +415,11 @@ julong os::physical_memory() {
 
 static hrtime_t first_hrtime = 0;
 static const hrtime_t hrtime_hz = 1000*1000*1000;
+const int LOCK_BUSY = 1;
+const int LOCK_FREE = 0;
+const int LOCK_INVALID = -1;
 static volatile hrtime_t max_hrtime = 0;
+static volatile int max_hrtime_lock = LOCK_FREE;     // Update counter with LSB as lock-in-progress
 
 
 void os::Solaris::initialize_system_info() {
@@ -576,6 +648,9 @@ bool os::have_special_privileges() {
 
 
 void os::init_system_properties_values() {
+  char arch[12];
+  sysinfo(SI_ARCHITECTURE, arch, sizeof(arch));
+
   // The next steps are taken in the product version:
   //
   // Obtain the JAVA_HOME value from the location of libjvm.so.
@@ -602,174 +677,218 @@ void os::init_system_properties_values() {
   // Important note: if the location of libjvm.so changes this
   // code needs to be changed accordingly.
 
-// Base path of extensions installed on the system.
-#define SYS_EXT_DIR     "/usr/jdk/packages"
+  // The next few definitions allow the code to be verbatim:
+#define malloc(n) (char*)NEW_C_HEAP_ARRAY(char, (n), mtInternal)
+#define free(p) FREE_C_HEAP_ARRAY(char, p, mtInternal)
+#define getenv(n) ::getenv(n)
+
 #define EXTENSIONS_DIR  "/lib/ext"
 #define ENDORSED_DIR    "/lib/endorsed"
+#define COMMON_DIR      "/usr/jdk/packages"
 
-  char cpu_arch[12];
-  // Buffer that fits several sprintfs.
-  // Note that the space for the colon and the trailing null are provided
-  // by the nulls included by the sizeof operator.
-  const size_t bufsize =
-    MAX4((size_t)MAXPATHLEN,  // For dll_dir & friends.
-         sizeof(SYS_EXT_DIR) + sizeof("/lib/") + strlen(cpu_arch), // invariant ld_library_path
-         (size_t)MAXPATHLEN + sizeof(EXTENSIONS_DIR) + sizeof(SYS_EXT_DIR) + sizeof(EXTENSIONS_DIR), // extensions dir
-         (size_t)MAXPATHLEN + sizeof(ENDORSED_DIR)); // endorsed dir
-  char *buf = (char *)NEW_C_HEAP_ARRAY(char, bufsize, mtInternal);
-
-  // sysclasspath, java_home, dll_dir
   {
-    char *pslash;
-    os::jvm_path(buf, bufsize);
+    /* sysclasspath, java_home, dll_dir */
+    {
+        char *home_path;
+        char *dll_path;
+        char *pslash;
+        char buf[MAXPATHLEN];
+        os::jvm_path(buf, sizeof(buf));
 
-    // Found the full path to libjvm.so.
-    // Now cut the path to <java_home>/jre if we can.
-    *(strrchr(buf, '/')) = '\0'; // Get rid of /libjvm.so.
-    pslash = strrchr(buf, '/');
-    if (pslash != NULL) {
-      *pslash = '\0';            // Get rid of /{client|server|hotspot}.
-    }
-    Arguments::set_dll_dir(buf);
-
-    if (pslash != NULL) {
-      pslash = strrchr(buf, '/');
-      if (pslash != NULL) {
-        *pslash = '\0';          // Get rid of /<arch>.
+        // Found the full path to libjvm.so.
+        // Now cut the path to <java_home>/jre if we can.
+        *(strrchr(buf, '/')) = '\0';  /* get rid of /libjvm.so */
         pslash = strrchr(buf, '/');
+        if (pslash != NULL)
+            *pslash = '\0';           /* get rid of /{client|server|hotspot} */
+        dll_path = malloc(strlen(buf) + 1);
+        if (dll_path == NULL)
+            return;
+        strcpy(dll_path, buf);
+        Arguments::set_dll_dir(dll_path);
+
         if (pslash != NULL) {
-          *pslash = '\0';        // Get rid of /lib.
+            pslash = strrchr(buf, '/');
+            if (pslash != NULL) {
+                *pslash = '\0';       /* get rid of /<arch> */
+                pslash = strrchr(buf, '/');
+                if (pslash != NULL)
+                    *pslash = '\0';   /* get rid of /lib */
+            }
         }
+
+        home_path = malloc(strlen(buf) + 1);
+        if (home_path == NULL)
+            return;
+        strcpy(home_path, buf);
+        Arguments::set_java_home(home_path);
+
+        if (!set_boot_path('/', ':'))
+            return;
+    }
+
+    /*
+     * Where to look for native libraries
+     */
+    {
+      // Use dlinfo() to determine the correct java.library.path.
+      //
+      // If we're launched by the Java launcher, and the user
+      // does not set java.library.path explicitly on the commandline,
+      // the Java launcher sets LD_LIBRARY_PATH for us and unsets
+      // LD_LIBRARY_PATH_32 and LD_LIBRARY_PATH_64.  In this case
+      // dlinfo returns LD_LIBRARY_PATH + crle settings (including
+      // /usr/lib), which is exactly what we want.
+      //
+      // If the user does set java.library.path, it completely
+      // overwrites this setting, and always has.
+      //
+      // If we're not launched by the Java launcher, we may
+      // get here with any/all of the LD_LIBRARY_PATH[_32|64]
+      // settings.  Again, dlinfo does exactly what we want.
+
+      Dl_serinfo     _info, *info = &_info;
+      Dl_serpath     *path;
+      char*          library_path;
+      char           *common_path;
+      int            i;
+
+      // determine search path count and required buffer size
+      if (dlinfo(RTLD_SELF, RTLD_DI_SERINFOSIZE, (void *)info) == -1) {
+        vm_exit_during_initialization("dlinfo SERINFOSIZE request", dlerror());
       }
-    }
-    Arguments::set_java_home(buf);
-    set_boot_path('/', ':');
-  }
 
-  // Where to look for native libraries.
-  {
-    // Use dlinfo() to determine the correct java.library.path.
-    //
-    // If we're launched by the Java launcher, and the user
-    // does not set java.library.path explicitly on the commandline,
-    // the Java launcher sets LD_LIBRARY_PATH for us and unsets
-    // LD_LIBRARY_PATH_32 and LD_LIBRARY_PATH_64.  In this case
-    // dlinfo returns LD_LIBRARY_PATH + crle settings (including
-    // /usr/lib), which is exactly what we want.
-    //
-    // If the user does set java.library.path, it completely
-    // overwrites this setting, and always has.
-    //
-    // If we're not launched by the Java launcher, we may
-    // get here with any/all of the LD_LIBRARY_PATH[_32|64]
-    // settings.  Again, dlinfo does exactly what we want.
+      // allocate new buffer and initialize
+      info = (Dl_serinfo*)malloc(_info.dls_size);
+      if (info == NULL) {
+        vm_exit_out_of_memory(_info.dls_size, OOM_MALLOC_ERROR,
+                              "init_system_properties_values info");
+      }
+      info->dls_size = _info.dls_size;
+      info->dls_cnt = _info.dls_cnt;
 
-    Dl_serinfo     info_sz, *info = &info_sz;
-    Dl_serpath     *path;
-    char           *library_path;
-    char           *common_path = buf;
+      // obtain search path information
+      if (dlinfo(RTLD_SELF, RTLD_DI_SERINFO, (void *)info) == -1) {
+        free(info);
+        vm_exit_during_initialization("dlinfo SERINFO request", dlerror());
+      }
 
-    // Determine search path count and required buffer size.
-    if (dlinfo(RTLD_SELF, RTLD_DI_SERINFOSIZE, (void *)info) == -1) {
-      FREE_C_HEAP_ARRAY(char, buf,  mtInternal);
-      vm_exit_during_initialization("dlinfo SERINFOSIZE request", dlerror());
-    }
+      path = &info->dls_serpath[0];
 
-    // Allocate new buffer and initialize.
-    info = (Dl_serinfo*)NEW_C_HEAP_ARRAY(char, info_sz.dls_size, mtInternal);
-    info->dls_size = info_sz.dls_size;
-    info->dls_cnt = info_sz.dls_cnt;
+      // Note: Due to a legacy implementation, most of the library path
+      // is set in the launcher.  This was to accomodate linking restrictions
+      // on legacy Solaris implementations (which are no longer supported).
+      // Eventually, all the library path setting will be done here.
+      //
+      // However, to prevent the proliferation of improperly built native
+      // libraries, the new path component /usr/jdk/packages is added here.
 
-    // Obtain search path information.
-    if (dlinfo(RTLD_SELF, RTLD_DI_SERINFO, (void *)info) == -1) {
-      FREE_C_HEAP_ARRAY(char, buf,  mtInternal);
-      FREE_C_HEAP_ARRAY(char, info, mtInternal);
-      vm_exit_during_initialization("dlinfo SERINFO request", dlerror());
-    }
-
-    path = &info->dls_serpath[0];
-
-    // Note: Due to a legacy implementation, most of the library path
-    // is set in the launcher. This was to accomodate linking restrictions
-    // on legacy Solaris implementations (which are no longer supported).
-    // Eventually, all the library path setting will be done here.
-    //
-    // However, to prevent the proliferation of improperly built native
-    // libraries, the new path component /usr/jdk/packages is added here.
-
-    // Determine the actual CPU architecture.
-    sysinfo(SI_ARCHITECTURE, cpu_arch, sizeof(cpu_arch));
+      // Determine the actual CPU architecture.
+      char cpu_arch[12];
+      sysinfo(SI_ARCHITECTURE, cpu_arch, sizeof(cpu_arch));
 #ifdef _LP64
-    // If we are a 64-bit vm, perform the following translations:
-    //   sparc   -> sparcv9
-    //   i386    -> amd64
-    if (strcmp(cpu_arch, "sparc") == 0) {
-      strcat(cpu_arch, "v9");
-    } else if (strcmp(cpu_arch, "i386") == 0) {
-      strcpy(cpu_arch, "amd64");
-    }
+      // If we are a 64-bit vm, perform the following translations:
+      //   sparc   -> sparcv9
+      //   i386    -> amd64
+      if (strcmp(cpu_arch, "sparc") == 0)
+        strcat(cpu_arch, "v9");
+      else if (strcmp(cpu_arch, "i386") == 0)
+        strcpy(cpu_arch, "amd64");
 #endif
 
-    // Construct the invariant part of ld_library_path.
-    sprintf(common_path, SYS_EXT_DIR "/lib/%s", cpu_arch);
-
-    // Struct size is more than sufficient for the path components obtained
-    // through the dlinfo() call, so only add additional space for the path
-    // components explicitly added here.
-    size_t library_path_size = info->dls_size + strlen(common_path);
-    library_path = (char *)NEW_C_HEAP_ARRAY(char, library_path_size, mtInternal);
-    library_path[0] = '\0';
-
-    // Construct the desired Java library path from the linker's library
-    // search path.
-    //
-    // For compatibility, it is optimal that we insert the additional path
-    // components specific to the Java VM after those components specified
-    // in LD_LIBRARY_PATH (if any) but before those added by the ld.so
-    // infrastructure.
-    if (info->dls_cnt == 0) { // Not sure this can happen, but allow for it.
-      strcpy(library_path, common_path);
-    } else {
-      int inserted = 0;
-      int i;
-      for (i = 0; i < info->dls_cnt; i++, path++) {
-        uint_t flags = path->dls_flags & LA_SER_MASK;
-        if (((flags & LA_SER_LIBPATH) == 0) && !inserted) {
-          strcat(library_path, common_path);
-          strcat(library_path, os::path_separator());
-          inserted = 1;
-        }
-        strcat(library_path, path->dls_name);
-        strcat(library_path, os::path_separator());
+      // Construct the invariant part of ld_library_path. Note that the
+      // space for the colon and the trailing null are provided by the
+      // nulls included by the sizeof operator.
+      size_t bufsize = sizeof(COMMON_DIR) + sizeof("/lib/") + strlen(cpu_arch);
+      common_path = malloc(bufsize);
+      if (common_path == NULL) {
+        free(info);
+        vm_exit_out_of_memory(bufsize, OOM_MALLOC_ERROR,
+                              "init_system_properties_values common_path");
       }
-      // Eliminate trailing path separator.
-      library_path[strlen(library_path)-1] = '\0';
+      sprintf(common_path, COMMON_DIR "/lib/%s", cpu_arch);
+
+      // struct size is more than sufficient for the path components obtained
+      // through the dlinfo() call, so only add additional space for the path
+      // components explicitly added here.
+      bufsize = info->dls_size + strlen(common_path);
+      library_path = malloc(bufsize);
+      if (library_path == NULL) {
+        free(info);
+        free(common_path);
+        vm_exit_out_of_memory(bufsize, OOM_MALLOC_ERROR,
+                              "init_system_properties_values library_path");
+      }
+      library_path[0] = '\0';
+
+      // Construct the desired Java library path from the linker's library
+      // search path.
+      //
+      // For compatibility, it is optimal that we insert the additional path
+      // components specific to the Java VM after those components specified
+      // in LD_LIBRARY_PATH (if any) but before those added by the ld.so
+      // infrastructure.
+      if (info->dls_cnt == 0) { // Not sure this can happen, but allow for it
+        strcpy(library_path, common_path);
+      } else {
+        int inserted = 0;
+        for (i = 0; i < info->dls_cnt; i++, path++) {
+          uint_t flags = path->dls_flags & LA_SER_MASK;
+          if (((flags & LA_SER_LIBPATH) == 0) && !inserted) {
+            strcat(library_path, common_path);
+            strcat(library_path, os::path_separator());
+            inserted = 1;
+          }
+          strcat(library_path, path->dls_name);
+          strcat(library_path, os::path_separator());
+        }
+        // eliminate trailing path separator
+        library_path[strlen(library_path)-1] = '\0';
+      }
+
+      // happens before argument parsing - can't use a trace flag
+      // tty->print_raw("init_system_properties_values: native lib path: ");
+      // tty->print_raw_cr(library_path);
+
+      // callee copies into its own buffer
+      Arguments::set_library_path(library_path);
+
+      free(common_path);
+      free(library_path);
+      free(info);
     }
 
-    // happens before argument parsing - can't use a trace flag
-    // tty->print_raw("init_system_properties_values: native lib path: ");
-    // tty->print_raw_cr(library_path);
+    /*
+     * Extensions directories.
+     *
+     * Note that the space for the colon and the trailing null are provided
+     * by the nulls included by the sizeof operator (so actually one byte more
+     * than necessary is allocated).
+     */
+    {
+        char *buf = (char *) malloc(strlen(Arguments::get_java_home()) +
+            sizeof(EXTENSIONS_DIR) + sizeof(COMMON_DIR) +
+            sizeof(EXTENSIONS_DIR));
+        sprintf(buf, "%s" EXTENSIONS_DIR ":" COMMON_DIR EXTENSIONS_DIR,
+            Arguments::get_java_home());
+        Arguments::set_ext_dirs(buf);
+    }
 
-    // Callee copies into its own buffer.
-    Arguments::set_library_path(library_path);
-
-    FREE_C_HEAP_ARRAY(char, library_path, mtInternal);
-    FREE_C_HEAP_ARRAY(char, info, mtInternal);
+    /* Endorsed standards default directory. */
+    {
+        char * buf = malloc(strlen(Arguments::get_java_home()) + sizeof(ENDORSED_DIR));
+        sprintf(buf, "%s" ENDORSED_DIR, Arguments::get_java_home());
+        Arguments::set_endorsed_dirs(buf);
+    }
   }
 
-  // Extensions directories.
-  sprintf(buf, "%s" EXTENSIONS_DIR ":" SYS_EXT_DIR EXTENSIONS_DIR, Arguments::get_java_home());
-  Arguments::set_ext_dirs(buf);
-
-  // Endorsed standards default directory.
-  sprintf(buf, "%s" ENDORSED_DIR, Arguments::get_java_home());
-  Arguments::set_endorsed_dirs(buf);
-
-  FREE_C_HEAP_ARRAY(char, buf, mtInternal);
-
-#undef SYS_EXT_DIR
+#undef malloc
+#undef free
+#undef getenv
 #undef EXTENSIONS_DIR
 #undef ENDORSED_DIR
+#undef COMMON_DIR
+
 }
 
 void os::breakpoint() {
@@ -1404,31 +1523,116 @@ int os::current_process_id() {
   return (int)(_initial_pid ? _initial_pid : getpid());
 }
 
-// gethrtime() should be monotonic according to the documentation,
-// but some virtualized platforms are known to break this guarantee.
-// getTimeNanos() must be guaranteed not to move backwards, so we
-// are forced to add a check here.
-inline hrtime_t getTimeNanos() {
-  const hrtime_t now = gethrtime();
-  const hrtime_t prev = max_hrtime;
-  if (now <= prev) {
-    return prev;   // same or retrograde time;
+int os::allocate_thread_local_storage() {
+  // %%%       in Win32 this allocates a memory segment pointed to by a
+  //           register.  Dan Stein can implement a similar feature in
+  //           Solaris.  Alternatively, the VM can do the same thing
+  //           explicitly: malloc some storage and keep the pointer in a
+  //           register (which is part of the thread's context) (or keep it
+  //           in TLS).
+  // %%%       In current versions of Solaris, thr_self and TSD can
+  //           be accessed via short sequences of displaced indirections.
+  //           The value of thr_self is available as %g7(36).
+  //           The value of thr_getspecific(k) is stored in %g7(12)(4)(k*4-4),
+  //           assuming that the current thread already has a value bound to k.
+  //           It may be worth experimenting with such access patterns,
+  //           and later having the parameters formally exported from a Solaris
+  //           interface.  I think, however, that it will be faster to
+  //           maintain the invariant that %g2 always contains the
+  //           JavaThread in Java code, and have stubs simply
+  //           treat %g2 as a caller-save register, preserving it in a %lN.
+  thread_key_t tk;
+  if (thr_keycreate( &tk, NULL ) )
+    fatal(err_msg("os::allocate_thread_local_storage: thr_keycreate failed "
+                  "(%s)", strerror(errno)));
+  return int(tk);
+}
+
+void os::free_thread_local_storage(int index) {
+  // %%% don't think we need anything here
+  // if ( pthread_key_delete((pthread_key_t) tk) )
+  //   fatal("os::free_thread_local_storage: pthread_key_delete failed");
+}
+
+#define SMALLINT 32   // libthread allocate for tsd_common is a version specific
+                      // small number - point is NO swap space available
+void os::thread_local_storage_at_put(int index, void* value) {
+  // %%% this is used only in threadLocalStorage.cpp
+  if (thr_setspecific((thread_key_t)index, value)) {
+    if (errno == ENOMEM) {
+       vm_exit_out_of_memory(SMALLINT, OOM_MALLOC_ERROR,
+                             "thr_setspecific: out of swap space");
+    } else {
+      fatal(err_msg("os::thread_local_storage_at_put: thr_setspecific failed "
+                    "(%s)", strerror(errno)));
+    }
+  } else {
+      ThreadLocalStorage::set_thread_in_slot ((Thread *) value) ;
   }
-  const hrtime_t obsv = Atomic::cmpxchg(now, (volatile jlong*)&max_hrtime, prev);
-  assert(obsv >= prev, "invariant");   // Monotonicity
-  // If the CAS succeeded then we're done and return "now".
-  // If the CAS failed and the observed value "obsv" is >= now then
-  // we should return "obsv".  If the CAS failed and now > obsv > prv then
-  // some other thread raced this thread and installed a new value, in which case
-  // we could either (a) retry the entire operation, (b) retry trying to install now
-  // or (c) just return obsv.  We use (c).   No loop is required although in some cases
-  // we might discard a higher "now" value in deference to a slightly lower but freshly
-  // installed obsv value.   That's entirely benign -- it admits no new orderings compared
-  // to (a) or (b) -- and greatly reduces coherence traffic.
-  // We might also condition (c) on the magnitude of the delta between obsv and now.
-  // Avoiding excessive CAS operations to hot RW locations is critical.
-  // See https://blogs.oracle.com/dave/entry/cas_and_cache_trivia_invalidate
-  return (prev == obsv) ? now : obsv;
+}
+
+// This function could be called before TLS is initialized, for example, when
+// VM receives an async signal or when VM causes a fatal error during
+// initialization. Return NULL if thr_getspecific() fails.
+void* os::thread_local_storage_at(int index) {
+  // %%% this is used only in threadLocalStorage.cpp
+  void* r = NULL;
+  return thr_getspecific((thread_key_t)index, &r) != 0 ? NULL : r;
+}
+
+
+// gethrtime can move backwards if read from one cpu and then a different cpu
+// getTimeNanos is guaranteed to not move backward on Solaris
+// local spinloop created as faster for a CAS on an int than
+// a CAS on a 64bit jlong. Also Atomic::cmpxchg for jlong is not
+// supported on sparc v8 or pre supports_cx8 intel boxes.
+// oldgetTimeNanos for systems which do not support CAS on 64bit jlong
+// i.e. sparc v8 and pre supports_cx8 (i486) intel boxes
+inline hrtime_t oldgetTimeNanos() {
+  int gotlock = LOCK_INVALID;
+  hrtime_t newtime = gethrtime();
+
+  for (;;) {
+// grab lock for max_hrtime
+    int curlock = max_hrtime_lock;
+    if (curlock & LOCK_BUSY)  continue;
+    if (gotlock = Atomic::cmpxchg(LOCK_BUSY, &max_hrtime_lock, LOCK_FREE) != LOCK_FREE) continue;
+    if (newtime > max_hrtime) {
+      max_hrtime = newtime;
+    } else {
+      newtime = max_hrtime;
+    }
+    // release lock
+    max_hrtime_lock = LOCK_FREE;
+    return newtime;
+  }
+}
+// gethrtime can move backwards if read from one cpu and then a different cpu
+// getTimeNanos is guaranteed to not move backward on Solaris
+inline hrtime_t getTimeNanos() {
+  if (VM_Version::supports_cx8()) {
+    const hrtime_t now = gethrtime();
+    // Use atomic long load since 32-bit x86 uses 2 registers to keep long.
+    const hrtime_t prev = Atomic::load((volatile jlong*)&max_hrtime);
+    if (now <= prev)  return prev;   // same or retrograde time;
+    const hrtime_t obsv = Atomic::cmpxchg(now, (volatile jlong*)&max_hrtime, prev);
+    assert(obsv >= prev, "invariant");   // Monotonicity
+    // If the CAS succeeded then we're done and return "now".
+    // If the CAS failed and the observed value "obs" is >= now then
+    // we should return "obs".  If the CAS failed and now > obs > prv then
+    // some other thread raced this thread and installed a new value, in which case
+    // we could either (a) retry the entire operation, (b) retry trying to install now
+    // or (c) just return obs.  We use (c).   No loop is required although in some cases
+    // we might discard a higher "now" value in deference to a slightly lower but freshly
+    // installed obs value.   That's entirely benign -- it admits no new orderings compared
+    // to (a) or (b) -- and greatly reduces coherence traffic.
+    // We might also condition (c) on the magnitude of the delta between obs and now.
+    // Avoiding excessive CAS operations to hot RW locations is critical.
+    // See http://blogs.sun.com/dave/entry/cas_and_cache_trivia_invalidate
+    return (prev == obsv) ? now : obsv ;
+  } else {
+    return oldgetTimeNanos();
+  }
 }
 
 // Time since start-up in seconds to a fine granularity.
@@ -1583,6 +1787,9 @@ void os::abort(bool dump_core) {
 void os::die() {
   ::abort(); // dump core (for debugging)
 }
+
+// unused
+void os::set_error_file(const char *logfile) {}
 
 // DLL functions
 
@@ -1939,10 +2146,6 @@ void* os::dll_lookup(void* handle, const char* name) {
   return dlsym(handle, name);
 }
 
-void* os::get_default_process_handle() {
-  return (void*)::dlopen(NULL, RTLD_LAZY);
-}
-
 int os::stat(const char *path, struct stat *sbuf) {
   char pathbuf[MAX_PATH];
   if (strlen(path) > MAX_PATH - 1) {
@@ -2025,8 +2228,8 @@ static bool check_addr0(outputStream* st) {
         st->cr();
         status = true;
       }
+      ::close(fd);
     }
-    ::close(fd);
   }
   return status;
 }
@@ -2041,17 +2244,61 @@ void os::print_memory_info(outputStream* st) {
   st->print(", physical " UINT64_FORMAT "k", os::physical_memory()>>10);
   st->print("(" UINT64_FORMAT "k free)", os::available_memory() >> 10);
   st->cr();
-  if (VMError::fatal_error_in_progress()) {
-     (void) check_addr0(st);
-  }
+  (void) check_addr0(st);
 }
 
+// Taken from /usr/include/sys/machsig.h  Supposed to be architecture specific
+// but they're the same for all the solaris architectures that we support.
+const char *ill_names[] = { "ILL0", "ILL_ILLOPC", "ILL_ILLOPN", "ILL_ILLADR",
+                          "ILL_ILLTRP", "ILL_PRVOPC", "ILL_PRVREG",
+                          "ILL_COPROC", "ILL_BADSTK" };
+
+const char *fpe_names[] = { "FPE0", "FPE_INTDIV", "FPE_INTOVF", "FPE_FLTDIV",
+                          "FPE_FLTOVF", "FPE_FLTUND", "FPE_FLTRES",
+                          "FPE_FLTINV", "FPE_FLTSUB" };
+
+const char *segv_names[] = { "SEGV0", "SEGV_MAPERR", "SEGV_ACCERR" };
+
+const char *bus_names[] = { "BUS0", "BUS_ADRALN", "BUS_ADRERR", "BUS_OBJERR" };
+
 void os::print_siginfo(outputStream* st, void* siginfo) {
-  const siginfo_t* si = (const siginfo_t*)siginfo;
+  st->print("siginfo:");
 
-  os::Posix::print_siginfo_brief(st, si);
+  const int buflen = 100;
+  char buf[buflen];
+  siginfo_t *si = (siginfo_t*)siginfo;
+  st->print("si_signo=%s: ", os::exception_name(si->si_signo, buf, buflen));
+  char *err = strerror(si->si_errno);
+  if (si->si_errno != 0 && err != NULL) {
+    st->print("si_errno=%s", err);
+  } else {
+    st->print("si_errno=%d", si->si_errno);
+  }
+  const int c = si->si_code;
+  assert(c > 0, "unexpected si_code");
+  switch (si->si_signo) {
+  case SIGILL:
+    st->print(", si_code=%d (%s)", c, c > 8 ? "" : ill_names[c]);
+    st->print(", si_addr=" PTR_FORMAT, si->si_addr);
+    break;
+  case SIGFPE:
+    st->print(", si_code=%d (%s)", c, c > 9 ? "" : fpe_names[c]);
+    st->print(", si_addr=" PTR_FORMAT, si->si_addr);
+    break;
+  case SIGSEGV:
+    st->print(", si_code=%d (%s)", c, c > 2 ? "" : segv_names[c]);
+    st->print(", si_addr=" PTR_FORMAT, si->si_addr);
+    break;
+  case SIGBUS:
+    st->print(", si_code=%d (%s)", c, c > 3 ? "" : bus_names[c]);
+    st->print(", si_addr=" PTR_FORMAT, si->si_addr);
+    break;
+  default:
+    st->print(", si_code=%d", si->si_code);
+    // no si_addr
+  }
 
-  if (si && (si->si_signo == SIGBUS || si->si_signo == SIGSEGV) &&
+  if ((si->si_signo == SIGBUS || si->si_signo == SIGSEGV) &&
       UseSharedSpaces) {
     FileMapInfo* mapinfo = FileMapInfo::current_info();
     if (mapinfo->is_in_shared_space(si->si_addr)) {
@@ -2121,8 +2368,7 @@ static void print_signal_handler(outputStream* st, int sig,
     st->print("[%s]", get_signal_handler_name(handler, buf, buflen));
   }
 
-  st->print(", sa_mask[0]=");
-  os::Posix::print_signal_set_short(st, &sa.sa_mask);
+  st->print(", sa_mask[0]=" PTR32_FORMAT, *(uint32_t*)&sa.sa_mask);
 
   address rh = VMError::get_resetted_sighandler(sig);
   // May be, handler was resetted by VMError?
@@ -2131,8 +2377,7 @@ static void print_signal_handler(outputStream* st, int sig,
     sa.sa_flags = VMError::get_resetted_sigflags(sig);
   }
 
-  st->print(", sa_flags=");
-  os::Posix::print_sa_flags(st, sa.sa_flags);
+  st->print(", sa_flags="   PTR32_FORMAT, sa.sa_flags);
 
   // Check: is it our handler?
   if(handler == CAST_FROM_FN_PTR(address, signalHandler) ||
@@ -2229,7 +2474,6 @@ void os::jvm_path(char *buf, jint buflen) {
         // determine if this is a legacy image or modules image
         // modules image doesn't have "jre" subdirectory
         len = strlen(buf);
-        assert(len < buflen, "Ran out of buffer space");
         jrelib_p = buf + len;
         snprintf(jrelib_p, buflen-len, "/jre/lib/%s", cpu_arch);
         if (0 != access(buf, F_OK)) {
@@ -2248,7 +2492,7 @@ void os::jvm_path(char *buf, jint buflen) {
     }
   }
 
-  strncpy(saved_jvm_path, buf, MAXPATHLEN);
+  strcpy(saved_jvm_path, buf);
 }
 
 
@@ -2571,30 +2815,29 @@ void os::pd_commit_memory_or_exit(char* addr, size_t bytes, bool exec,
   }
 }
 
-size_t os::Solaris::page_size_for_alignment(size_t alignment) {
-  assert(is_size_aligned(alignment, (size_t) vm_page_size()),
-         err_msg(SIZE_FORMAT " is not aligned to " SIZE_FORMAT,
-                 alignment, (size_t) vm_page_size()));
-
-  for (int i = 0; _page_sizes[i] != 0; i++) {
-    if (is_size_aligned(alignment, _page_sizes[i])) {
-      return _page_sizes[i];
-    }
-  }
-
-  return (size_t) vm_page_size();
-}
-
 int os::Solaris::commit_memory_impl(char* addr, size_t bytes,
                                     size_t alignment_hint, bool exec) {
   int err = Solaris::commit_memory_impl(addr, bytes, exec);
-  if (err == 0 && UseLargePages && alignment_hint > 0) {
-    assert(is_size_aligned(bytes, alignment_hint),
-           err_msg(SIZE_FORMAT " is not aligned to " SIZE_FORMAT, bytes, alignment_hint));
-
-    // The syscall memcntl requires an exact page size (see man memcntl for details).
-    size_t page_size = page_size_for_alignment(alignment_hint);
-    if (page_size > (size_t) vm_page_size()) {
+  if (err == 0) {
+    if (UseLargePages && (alignment_hint > (size_t)vm_page_size())) {
+      // If the large page size has been set and the VM
+      // is using large pages, use the large page size
+      // if it is smaller than the alignment hint. This is
+      // a case where the VM wants to use a larger alignment size
+      // for its own reasons but still want to use large pages
+      // (which is what matters to setting the mpss range.
+      size_t page_size = 0;
+      if (large_page_size() < alignment_hint) {
+        assert(UseLargePages, "Expected to be here for large page use only");
+        page_size = large_page_size();
+      } else {
+        // If the alignment hint is less than the large page
+        // size, the VM wants a particular alignment (thus the hint)
+        // for internal reasons.  Try to set the mpss range using
+        // the alignment_hint.
+        page_size = alignment_hint;
+      }
+      // Since this is a hint, ignore any failures.
       (void)Solaris::setup_large_pages(addr, bytes, page_size);
     }
   }
@@ -2764,7 +3007,7 @@ bool os::get_page_info(char *start, page_info* info) {
 char *os::scan_pages(char *start, char* end, page_info* page_expected, page_info* page_found) {
   const uint_t info_types[] = { MEMINFO_VLGRP, MEMINFO_VPAGESIZE };
   const size_t types = sizeof(info_types) / sizeof(info_types[0]);
-  uint64_t addrs[MAX_MEMINFO_CNT], outdata[types * MAX_MEMINFO_CNT + 1];
+  uint64_t addrs[MAX_MEMINFO_CNT], outdata[types * MAX_MEMINFO_CNT];
   uint_t validity[MAX_MEMINFO_CNT];
 
   size_t page_size = MAX2((size_t)os::vm_page_size(), page_expected->size);
@@ -2803,7 +3046,7 @@ char *os::scan_pages(char *start, char* end, page_info* page_expected, page_info
       }
     }
 
-    if (i < addrs_count) {
+    if (i != addrs_count) {
       if ((validity[i] & 2) != 0) {
         page_found->lgrp_id = outdata[types * i];
       } else {
@@ -3127,22 +3370,7 @@ void os::large_page_init() {
   }
 }
 
-bool os::Solaris::is_valid_page_size(size_t bytes) {
-  for (int i = 0; _page_sizes[i] != 0; i++) {
-    if (_page_sizes[i] == bytes) {
-      return true;
-    }
-  }
-  return false;
-}
-
 bool os::Solaris::setup_large_pages(caddr_t start, size_t bytes, size_t align) {
-  assert(is_valid_page_size(align), err_msg(SIZE_FORMAT " is not a valid page size", align));
-  assert(is_ptr_aligned((void*) start, align),
-         err_msg(PTR_FORMAT " is not aligned to " SIZE_FORMAT, p2i((void*) start), align));
-  assert(is_size_aligned(bytes, align),
-         err_msg(SIZE_FORMAT " is not aligned to " SIZE_FORMAT, bytes, align));
-
   // Signal to OS that we want large pages for addresses
   // from addr, addr + bytes
   struct memcntl_mha mpss_struct;
@@ -3308,14 +3536,9 @@ int os::sleep(Thread* thread, jlong millis, bool interruptible) {
   return os_sleep(millis, interruptible);
 }
 
-void os::naked_short_sleep(jlong ms) {
-  assert(ms < 1000, "Un-interruptable sleep, short time use only");
-
-  // usleep is deprecated and removed from POSIX, in favour of nanosleep, but
-  // Solaris requires -lrt for this.
-  usleep((ms * 1000));
-
-  return;
+int os::naked_sleep() {
+  // %% make the sleep time an integer flag. for now use 1 millisec.
+  return os_sleep(1, false);
 }
 
 // Sleep forever; naked call to OS-specific sleep; use with CAUTION
@@ -4468,11 +4691,6 @@ void os::Solaris::check_signal_handler(int sig) {
     tty->print_cr("  found:%s", get_signal_handler_name(thisHandler, buf, O_BUFLEN));
     // No need to check this sig any longer
     sigaddset(&check_signal_done, sig);
-    // Running under non-interactive shell, SHUTDOWN2_SIGNAL will be reassigned SIG_IGN
-    if (sig == SHUTDOWN2_SIGNAL && !isatty(fileno(stdin))) {
-      tty->print_cr("Running in non-interactive shell, %s handler is replaced by shell",
-                    exception_name(sig, buf, O_BUFLEN));
-    }
   } else if(os::Solaris::get_our_sigflags(sig) != 0 && act.sa_flags != os::Solaris::get_our_sigflags(sig)) {
     tty->print("Warning: %s handler flags ", exception_name(sig, buf, O_BUFLEN));
     tty->print("expected:" PTR32_FORMAT, os::Solaris::get_our_sigflags(sig));
@@ -5090,6 +5308,10 @@ jint os::init_2(void) {
   return JNI_OK;
 }
 
+void os::init_3(void) {
+  return;
+}
+
 // Mark the polling page as unreadable
 void os::make_polling_page_unreadable(void) {
   if( mprotect((char *)_polling_page, page_size, PROT_NONE) != 0 )
@@ -5114,13 +5336,13 @@ int local_vsnprintf(char* buf, size_t count, const char* fmt, va_list argptr) {
     //search  for the named symbol in the objects that were loaded after libjvm
     void* where = RTLD_NEXT;
     if ((sol_vsnprintf = CAST_TO_FN_PTR(vsnprintf_t, dlsym(where, "__vsnprintf"))) == NULL)
-        sol_vsnprintf = CAST_TO_FN_PTR(vsnprintf_t, dlsym(where, "vsnprintf"));
+        sol_vsnprintf = CAST_TO_FN_PTR(vsnprintf_t, dlsym(where, "jvsnprintf"));
     if (!sol_vsnprintf){
       //search  for the named symbol in the objects that were loaded before libjvm
       where = RTLD_DEFAULT;
       if ((sol_vsnprintf = CAST_TO_FN_PTR(vsnprintf_t, dlsym(where, "__vsnprintf"))) == NULL)
-        sol_vsnprintf = CAST_TO_FN_PTR(vsnprintf_t, dlsym(where, "vsnprintf"));
-      assert(sol_vsnprintf != NULL, "vsnprintf not found");
+        sol_vsnprintf = CAST_TO_FN_PTR(vsnprintf_t, dlsym(where, "jvsnprintf"));
+      assert(sol_vsnprintf != NULL, "jvsnprintf not found");
     }
   }
   return (*sol_vsnprintf)(buf, count, fmt, argptr);

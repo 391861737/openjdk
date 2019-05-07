@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2013, 2015, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2013, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -24,12 +24,9 @@
 /*
  * @test
  * @bug 8019184
- * @library /lib/testlibrary /lib/testlibrary/jsr292
  * @summary MethodHandles.catchException() fails when methods have 8 args + varargs
- * @run main TestCatchExceptionWithVarargs
  */
 
-import com.oracle.testlibrary.jsr292.CodeCacheOverflowProcessor;
 import java.util.*;
 import java.lang.invoke.*;
 
@@ -71,11 +68,6 @@ public class TestCatchExceptionWithVarargs {
     }
 
     public static void main(String[] args) throws Throwable {
-        CodeCacheOverflowProcessor
-                .runMHTest(TestCatchExceptionWithVarargs::test);
-    }
-
-    public static void test() throws Throwable {
         List<Class<?>> ptypes = new LinkedList<>();
         ptypes.add(Object[].class);
 

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 1997, 2014, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 1997, 2011, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -208,8 +208,8 @@ public final class ElementBeanInfoImpl extends JaxBeanInfo<JAXBElement> {
 
         @Override
         public final void startElement(UnmarshallingContext.State state, TagName ea) throws SAXException {
-            state.setLoader(core);
-            state.setIntercepter(this);
+            state.loader = core;
+            state.intercepter = this;
 
             // TODO: make sure there aren't too many duplicate of this code
             // create the object to unmarshal
@@ -231,21 +231,21 @@ public final class ElementBeanInfoImpl extends JaxBeanInfo<JAXBElement> {
             fireBeforeUnmarshal(ElementBeanInfoImpl.this, child, state);
 
             context.recordOuterPeer(child);
-            UnmarshallingContext.State p = state.getPrev();
-            p.setBackup(p.getTarget());
-            p.setTarget(child);
+            UnmarshallingContext.State p = state.prev;
+            p.backup = p.target;
+            p.target = child;
 
             core.startElement(state,ea);
         }
 
         public Object intercept(UnmarshallingContext.State state, Object o) throws SAXException {
-            JAXBElement e = (JAXBElement)state.getTarget();
-            state.setTarget(state.getBackup());
-            state.setBackup(null);
+            JAXBElement e = (JAXBElement)state.target;
+            state.target = state.backup;
+            state.backup = null;
 
-            if (state.isNil()) {
+            if (state.nil) {
                 e.setNil(true);
-                state.setNil(false);
+                state.nil = false;
             }
 
             if(o!=null)

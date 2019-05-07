@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2013, 2015, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2013, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -653,9 +653,6 @@ public abstract class ClassLoader {
         if (!checkName(name))
             throw new NoClassDefFoundError("IllegalName: " + name);
 
-        // Note:  Checking logic in java.lang.invoke.MemberName.checkForTypeAlias
-        // relies on the fact that spoofing is impossible if a class has a name
-        // of the form "java.*"
         if ((name != null) && name.startsWith("java.")) {
             throw new SecurityException
                 ("Prohibited package name: " +
@@ -1368,10 +1365,7 @@ public abstract class ClassLoader {
             return null;
         SecurityManager sm = System.getSecurityManager();
         if (sm != null) {
-            // Check access to the parent class loader
-            // If the caller's class loader is same as this class loader,
-            // permission check is performed.
-            checkClassLoaderPermission(parent, Reflection.getCallerClass());
+            checkClassLoaderPermission(this, Reflection.getCallerClass());
         }
         return parent;
     }
@@ -1514,11 +1508,6 @@ public abstract class ClassLoader {
         return caller.getClassLoader0();
     }
 
-    /*
-     * Checks RuntimePermission("getClassLoader") permission
-     * if caller's class loader is not null and caller's class loader
-     * is not the same as or an ancestor of the given cl argument.
-     */
     static void checkClassLoaderPermission(ClassLoader cl, Class<?> caller) {
         SecurityManager sm = System.getSecurityManager();
         if (sm != null) {
@@ -1727,6 +1716,7 @@ public abstract class ClassLoader {
 
         native long find(String name);
         native void unload(String name, boolean isBuiltin);
+        static native String findBuiltinLib(String name);
 
         public NativeLibrary(Class<?> fromClass, String name, boolean isBuiltin) {
             this.name = name;
@@ -1867,11 +1857,9 @@ public abstract class ClassLoader {
         throw new UnsatisfiedLinkError("no " + name + " in java.library.path");
     }
 
-    private static native String findBuiltinLib(String name);
-
     private static boolean loadLibrary0(Class<?> fromClass, final File file) {
         // Check to see if we're attempting to access a static library
-        String name = findBuiltinLib(file.getName());
+        String name = NativeLibrary.findBuiltinLib(file.getName());
         boolean isBuiltin = (name != null);
         if (!isBuiltin) {
             boolean exists = AccessController.doPrivileged(

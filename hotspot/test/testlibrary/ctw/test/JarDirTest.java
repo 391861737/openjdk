@@ -22,10 +22,10 @@
  */
 
 /*
- * @test
+ * @test JarDirTest
  * @bug 8012447
  * @library /testlibrary /testlibrary/whitebox /testlibrary/ctw/src
- * @build ClassFileInstaller com.oracle.java.testlibrary.* sun.hotspot.tools.ctw.CompileTheWorld sun.hotspot.WhiteBox Foo Bar
+ * @build sun.hotspot.tools.ctw.CompileTheWorld sun.hotspot.WhiteBox JarDirTest Foo Bar
  * @run main ClassFileInstaller sun.hotspot.WhiteBox Foo Bar
  * @run main JarDirTest prepare
  * @run main/othervm -Xbootclasspath/a:. -XX:+UnlockDiagnosticVMOptions -XX:+WhiteBoxAPI -Dsun.hotspot.tools.ctw.logfile=ctw.log sun.hotspot.tools.ctw.CompileTheWorld jars/*

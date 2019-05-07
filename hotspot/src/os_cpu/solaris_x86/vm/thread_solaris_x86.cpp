@@ -44,8 +44,9 @@ bool JavaThread::pd_get_top_frame(frame* fr_addr,
   assert(this->is_Java_thread(), "must be JavaThread");
   JavaThread* jt = (JavaThread *)this;
 
-  // There is small window where last_Java_frame is not walkable or safe
-  if (jt->has_last_Java_frame() && jt->frame_anchor()->walkable()) {
+  // last_Java_frame is always walkable and safe use it if we have it
+
+  if (jt->has_last_Java_frame()) {
     *fr_addr = jt->pd_last_frame();
     return true;
   }

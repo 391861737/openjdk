@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2002, 2015, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2002, 2012, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -28,6 +28,7 @@
 //#define USE_VERBOSE_TRACE
 
 #include <AudioUnit/AudioUnit.h>
+#include <CoreServices/CoreServices.h>
 #include <AudioToolbox/AudioConverter.h>
 #include <pthread.h>
 #include <math.h>
@@ -616,7 +617,7 @@ struct OSX_DirectAudioDevice {
 
     ~OSX_DirectAudioDevice() {
         if (audioUnit) {
-            AudioComponentInstanceDispose(audioUnit);
+            CloseComponent(audioUnit);
         }
         if (resampler) {
             delete resampler;
@@ -628,16 +629,17 @@ static AudioUnit CreateOutputUnit(AudioDeviceID deviceID, int isSource)
 {
     OSStatus err;
     AudioUnit unit;
+    UInt32 size;
 
-    AudioComponentDescription desc;
+    ComponentDescription desc;
     desc.componentType         = kAudioUnitType_Output;
     desc.componentSubType      = (deviceID == 0 && isSource) ? kAudioUnitSubType_DefaultOutput : kAudioUnitSubType_HALOutput;
     desc.componentManufacturer = kAudioUnitManufacturer_Apple;
     desc.componentFlags        = 0;
     desc.componentFlagsMask    = 0;
 
-    AudioComponent comp = AudioComponentFindNext(NULL, &desc);
-    err = AudioComponentInstanceNew(comp, &unit);
+    Component comp = FindNextComponent(NULL, &desc);
+    err = OpenAComponent(comp, &unit);
 
     if (err) {
         OS_ERROR0(err, "CreateOutputUnit:OpenAComponent");
@@ -662,7 +664,7 @@ static AudioUnit CreateOutputUnit(AudioDeviceID deviceID, int isSource)
             // get real AudioDeviceID for default input device (macosx current input device)
             deviceID = GetDefaultDevice(isSource);
             if (!deviceID) {
-                AudioComponentInstanceDispose(unit);
+                CloseComponent(unit);
                 return NULL;
             }
         }
@@ -673,7 +675,7 @@ static AudioUnit CreateOutputUnit(AudioDeviceID deviceID, int isSource)
                                     0, &deviceID, sizeof(deviceID));
         if (err) {
             OS_ERROR0(err, "SetProperty (CurrentDevice)");
-            AudioComponentInstanceDispose(unit);
+            CloseComponent(unit);
             return NULL;
         }
     }
@@ -815,10 +817,6 @@ void* DAUDIO_Open(INT32 mixerIndex, INT32 deviceID, int isSource,
 
     if (encoding != DAUDIO_PCM) {
         ERROR1("<<DAUDIO_Open: ERROR: unsupported encoding (%d)\n", encoding);
-        return NULL;
-    }
-    if (channels <= 0) {
-        ERROR1("<<DAUDIO_Open: ERROR: Invalid number of channels=%d!\n", channels);
         return NULL;
     }
 

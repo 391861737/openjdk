@@ -21,7 +21,6 @@ package jdk.nashorn.internal.runtime.regexp.joni;
 
 import java.io.PrintStream;
 
-@SuppressWarnings("javadoc")
 public interface Config {
     final int CHAR_TABLE_SIZE = 256;
 
@@ -65,7 +64,7 @@ public interface Config {
 
     final boolean DONT_OPTIMIZE                     = false;
 
-    final boolean USE_STRING_TEMPLATES              = true; // use embedded string templates in Regex object as byte arrays instead of compiling them into int bytecode array
+    final boolean USE_STRING_TEMPLATES              = true; // use embeded string templates in Regex object as byte arrays instead of compiling them into int bytecode array
 
     final boolean NON_UNICODE_SDW                   = true;
 

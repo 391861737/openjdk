@@ -69,7 +69,7 @@ void GenMarkSweep::invoke_at_safepoint(int level, ReferenceProcessor* rp, bool c
   _ref_processor = rp;
   rp->setup_policy(clear_all_softrefs);
 
-  GCTraceTime t1(GCCauseString("Full GC", gch->gc_cause()), PrintGC && !PrintGCDetails, true, NULL, _gc_tracer->gc_id());
+  GCTraceTime t1(GCCauseString("Full GC", gch->gc_cause()), PrintGC && !PrintGCDetails, true, NULL);
 
   gch->trace_heap_before_gc(_gc_tracer);
 
@@ -193,7 +193,7 @@ void GenMarkSweep::deallocate_stacks() {
 void GenMarkSweep::mark_sweep_phase1(int level,
                                   bool clear_all_softrefs) {
   // Recursively traverse all live objects and mark them
-  GCTraceTime tm("phase 1", PrintGC && Verbose, true, _gc_timer, _gc_tracer->gc_id());
+  GCTraceTime tm("phase 1", PrintGC && Verbose, true, _gc_timer);
   trace(" 1");
 
   GenCollectedHeap* gch = GenCollectedHeap::heap();
@@ -207,21 +207,22 @@ void GenMarkSweep::mark_sweep_phase1(int level,
   // Need new claim bits before marking starts.
   ClassLoaderDataGraph::clear_claimed_marks();
 
-  gch->gen_process_roots(level,
-                         false, // Younger gens are not roots.
-                         true,  // activate StrongRootsScope
-                         GenCollectedHeap::SO_None,
-                         ClassUnloading,
-                         &follow_root_closure,
-                         &follow_root_closure,
-                         &follow_cld_closure);
+  gch->gen_process_strong_roots(level,
+                                false, // Younger gens are not roots.
+                                true,  // activate StrongRootsScope
+                                false, // not scavenging
+                                SharedHeap::SO_SystemClasses,
+                                &follow_root_closure,
+                                true,   // walk code active on stacks
+                                &follow_root_closure,
+                                &follow_klass_closure);
 
   // Process reference objects found during marking
   {
     ref_processor()->setup_policy(clear_all_softrefs);
     const ReferenceProcessorStats& stats =
       ref_processor()->process_discovered_references(
-        &is_alive, &keep_alive, &follow_stack_closure, NULL, _gc_timer, _gc_tracer->gc_id());
+        &is_alive, &keep_alive, &follow_stack_closure, NULL, _gc_timer);
     gc_tracer()->report_gc_reference_stats(stats);
   }
 
@@ -263,7 +264,7 @@ void GenMarkSweep::mark_sweep_phase2() {
 
   GenCollectedHeap* gch = GenCollectedHeap::heap();
 
-  GCTraceTime tm("phase 2", PrintGC && Verbose, true, _gc_timer, _gc_tracer->gc_id());
+  GCTraceTime tm("phase 2", PrintGC && Verbose, true, _gc_timer);
   trace("2");
 
   gch->prepare_for_compaction();
@@ -280,7 +281,7 @@ void GenMarkSweep::mark_sweep_phase3(int level) {
   GenCollectedHeap* gch = GenCollectedHeap::heap();
 
   // Adjust the pointers to reflect the new locations
-  GCTraceTime tm("phase 3", PrintGC && Verbose, true, _gc_timer, _gc_tracer->gc_id());
+  GCTraceTime tm("phase 3", PrintGC && Verbose, true, _gc_timer);
   trace("3");
 
   // Need new claim bits for the pointer adjustment tracing.
@@ -292,16 +293,22 @@ void GenMarkSweep::mark_sweep_phase3(int level) {
   // are run.
   adjust_pointer_closure.set_orig_generation(gch->get_gen(level));
 
-  gch->gen_process_roots(level,
-                         false, // Younger gens are not roots.
-                         true,  // activate StrongRootsScope
-                         GenCollectedHeap::SO_AllCodeCache,
-                         GenCollectedHeap::StrongAndWeakRoots,
-                         &adjust_pointer_closure,
-                         &adjust_pointer_closure,
-                         &adjust_cld_closure);
+  gch->gen_process_strong_roots(level,
+                                false, // Younger gens are not roots.
+                                true,  // activate StrongRootsScope
+                                false, // not scavenging
+                                SharedHeap::SO_AllClasses,
+                                &adjust_pointer_closure,
+                                false, // do not walk code
+                                &adjust_pointer_closure,
+                                &adjust_klass_closure);
 
-  gch->gen_process_weak_roots(&adjust_pointer_closure);
+  // Now adjust pointers in remaining weak roots.  (All of which should
+  // have been cleared if they pointed to non-surviving objects.)
+  CodeBlobToOopClosure adjust_code_pointer_closure(&adjust_pointer_closure,
+                                                   /*do_marking=*/ false);
+  gch->gen_process_weak_roots(&adjust_pointer_closure,
+                              &adjust_code_pointer_closure);
 
   adjust_marks();
   GenAdjustPointersClosure blk;
@@ -329,7 +336,7 @@ void GenMarkSweep::mark_sweep_phase4() {
   // to use a higher index (saved from phase2) when verifying perm_gen.
   GenCollectedHeap* gch = GenCollectedHeap::heap();
 
-  GCTraceTime tm("phase 4", PrintGC && Verbose, true, _gc_timer, _gc_tracer->gc_id());
+  GCTraceTime tm("phase 4", PrintGC && Verbose, true, _gc_timer);
   trace("4");
 
   GenCompactClosure blk;

@@ -25,7 +25,6 @@
  */
 
 import java.text.*;
-import java.time.format.TextStyle;
 import java.util.*;
 import sun.util.locale.provider.*;
 import sun.util.resources.*;
@@ -43,7 +42,6 @@ public class TimeZoneNameProviderTest extends ProviderTest {
         test2();
         test3();
         aliasTest();
-        genericFallbackTest();
     }
 
     void test1() {
@@ -171,9 +169,9 @@ public class TimeZoneNameProviderTest extends ProviderTest {
             for (int style : new int[] { TimeZone.LONG, TimeZone.SHORT }) {
                 String osakaStd = tz.getDisplayName(false, style, OSAKA);
                 if (osakaStd != null) {
-                    String generic = tz.toZoneId().getDisplayName(
-                            style == TimeZone.LONG ? TextStyle.FULL : TextStyle.SHORT,
-                            GENERIC);
+                    // No API for getting generic time zone names
+                    String generic = TimeZoneNameUtility.retrieveGenericDisplayName(tzname,
+                                                                                    style, GENERIC);
                     String expected = "Generic " + osakaStd;
                     if (!expected.equals(generic)) {
                         throw new RuntimeException("Wrong generic name: got=\"" + generic
@@ -230,22 +228,6 @@ public class TimeZoneNameProviderTest extends ProviderTest {
         String japan = TimeZone.getTimeZone(JAPAN).getDisplayName(OSAKA);
         if (!JST_IN_OSAKA.equals(japan)) {
             throw new RuntimeException("Provider's localized name is not available for an alias ID: "+JAPAN+".  result: "+japan+" expected: "+JST_IN_OSAKA);
-        }
-    }
-
-    /*
-     * Tests whether generic names can be retrieved through fallback.
-     * The test assumes the provider impl for OSAKA locale does NOT
-     * provide generic names.
-     */
-    final String PT = "PT"; // SHORT generic name for "America/Los_Angeles"
-    void genericFallbackTest() {
-        String generic =
-            TimeZone.getTimeZone(LATIME)
-                .toZoneId()
-                .getDisplayName(TextStyle.SHORT, OSAKA);
-        if (!PT.equals(generic)) {
-            throw new RuntimeException("Generic name fallback failed. got: "+generic);
         }
     }
 }

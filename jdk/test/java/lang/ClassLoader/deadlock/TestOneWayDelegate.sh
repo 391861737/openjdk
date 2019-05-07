@@ -63,9 +63,6 @@ case "$OS" in
   Darwin )
     FS="/"
     ;;
-  AIX )
-    FS="/"
-    ;;
   Windows* | CYGWIN* )
     FS="\\"
     ;;

@@ -25,40 +25,37 @@
 
 package jdk.nashorn.internal.runtime;
 
-import static jdk.nashorn.internal.codegen.ObjectClassGenerator.PRIMITIVE_FIELD_TYPE;
+import static jdk.nashorn.internal.codegen.ObjectClassGenerator.ACCESSOR_TYPES;
+import static jdk.nashorn.internal.codegen.ObjectClassGenerator.DEBUG_FIELDS;
+import static jdk.nashorn.internal.codegen.ObjectClassGenerator.LOG;
+import static jdk.nashorn.internal.codegen.ObjectClassGenerator.OBJECT_FIELDS_ONLY;
+import static jdk.nashorn.internal.codegen.ObjectClassGenerator.PRIMITIVE_TYPE;
 import static jdk.nashorn.internal.codegen.ObjectClassGenerator.createGetter;
+import static jdk.nashorn.internal.codegen.ObjectClassGenerator.createGuardBoxedPrimitiveSetter;
 import static jdk.nashorn.internal.codegen.ObjectClassGenerator.createSetter;
-import static jdk.nashorn.internal.codegen.ObjectClassGenerator.getFieldCount;
-import static jdk.nashorn.internal.codegen.ObjectClassGenerator.getFieldName;
+import static jdk.nashorn.internal.codegen.ObjectClassGenerator.getAccessorType;
+import static jdk.nashorn.internal.codegen.ObjectClassGenerator.getAccessorTypeIndex;
+import static jdk.nashorn.internal.codegen.ObjectClassGenerator.getNumberOfAccessorTypes;
 import static jdk.nashorn.internal.lookup.Lookup.MH;
 import static jdk.nashorn.internal.lookup.MethodHandleFactory.stripName;
-import static jdk.nashorn.internal.runtime.JSType.getAccessorTypeIndex;
-import static jdk.nashorn.internal.runtime.JSType.getNumberOfAccessorTypes;
-import static jdk.nashorn.internal.runtime.UnwarrantedOptimismException.INVALID_PROGRAM_POINT;
-import java.io.IOException;
-import java.io.ObjectInputStream;
+
 import java.lang.invoke.MethodHandle;
 import java.lang.invoke.MethodHandles;
-import java.lang.invoke.SwitchPoint;
-import java.util.function.Supplier;
-import java.util.logging.Level;
+import java.lang.invoke.MethodType;
 import jdk.nashorn.internal.codegen.ObjectClassGenerator;
 import jdk.nashorn.internal.codegen.types.Type;
 import jdk.nashorn.internal.lookup.Lookup;
-import jdk.nashorn.internal.objects.Global;
+import jdk.nashorn.internal.lookup.MethodHandleFactory;
 
 /**
  * An AccessorProperty is the most generic property type. An AccessorProperty is
  * represented as fields in a ScriptObject class.
  */
-public class AccessorProperty extends Property {
-    private static final MethodHandles.Lookup LOOKUP = MethodHandles.lookup();
-
-    private static final MethodHandle REPLACE_MAP   = findOwnMH_S("replaceMap", Object.class, Object.class, PropertyMap.class);
-    private static final MethodHandle INVALIDATE_SP = findOwnMH_S("invalidateSwitchPoint", Object.class, AccessorProperty.class, Object.class);
+public final class AccessorProperty extends Property {
+    private static final MethodHandles.Lookup lookup = MethodHandles.lookup();
+    private static final MethodHandle REPLACE_MAP = findOwnMH("replaceMap", Object.class, Object.class, PropertyMap.class, String.class, Class.class, Class.class);
 
     private static final int NOOF_TYPES = getNumberOfAccessorTypes();
-    private static final long serialVersionUID = 3371720170182154920L;
 
     /**
      * Properties in different maps for the same structure class will share their field getters and setters. This could
@@ -66,56 +63,49 @@ public class AccessorProperty extends Property {
      * these are the most frequently retrieved ones, and lookup of method handle natives only registers in the profiler
      * for them.
      */
-    private static ClassValue<Accessors> GETTERS_SETTERS = new ClassValue<Accessors>() {
+    private static ClassValue<GettersSetters> GETTERS_SETTERS = new ClassValue<GettersSetters>() {
         @Override
-        protected Accessors computeValue(final Class<?> structure) {
-            return new Accessors(structure);
+        protected GettersSetters computeValue(Class<?> structure) {
+            return new GettersSetters(structure);
         }
     };
 
-    private static class Accessors {
-        final MethodHandle[] objectGetters;
-        final MethodHandle[] objectSetters;
-        final MethodHandle[] primitiveGetters;
-        final MethodHandle[] primitiveSetters;
+    /** Property getter cache */
+    private MethodHandle[] getters = new MethodHandle[NOOF_TYPES];
 
-        /**
-         * Normal
-         * @param structure
-         */
-        Accessors(final Class<?> structure) {
-            final int fieldCount = getFieldCount(structure);
-            objectGetters    = new MethodHandle[fieldCount];
-            objectSetters    = new MethodHandle[fieldCount];
-            primitiveGetters = new MethodHandle[fieldCount];
-            primitiveSetters = new MethodHandle[fieldCount];
+    private static final MethodType[] ACCESSOR_GETTER_TYPES = new MethodType[NOOF_TYPES];
+    private static final MethodType[] ACCESSOR_SETTER_TYPES = new MethodType[NOOF_TYPES];
+    private static final MethodType ACCESSOR_GETTER_PRIMITIVE_TYPE;
+    private static final MethodType ACCESSOR_SETTER_PRIMITIVE_TYPE;
+    private static final MethodHandle SPILL_ELEMENT_GETTER;
+    private static final MethodHandle SPILL_ELEMENT_SETTER;
 
-            for (int i = 0; i < fieldCount; i++) {
-                final String fieldName = getFieldName(i, Type.OBJECT);
-                final Class<?> typeClass = Type.OBJECT.getTypeClass();
-                objectGetters[i] = MH.asType(MH.getter(LOOKUP, structure, fieldName, typeClass), Lookup.GET_OBJECT_TYPE);
-                objectSetters[i] = MH.asType(MH.setter(LOOKUP, structure, fieldName, typeClass), Lookup.SET_OBJECT_TYPE);
-            }
+    private static final int SPILL_CACHE_SIZE = 8;
+    private static final MethodHandle[] SPILL_ACCESSORS = new MethodHandle[SPILL_CACHE_SIZE * 2];
 
-            if (!StructureLoader.isSingleFieldStructure(structure.getName())) {
-                for (int i = 0; i < fieldCount; i++) {
-                    final String fieldNamePrimitive = getFieldName(i, PRIMITIVE_FIELD_TYPE);
-                    final Class<?> typeClass = PRIMITIVE_FIELD_TYPE.getTypeClass();
-                    primitiveGetters[i] = MH.asType(MH.getter(LOOKUP, structure, fieldNamePrimitive, typeClass), Lookup.GET_PRIMITIVE_TYPE);
-                    primitiveSetters[i] = MH.asType(MH.setter(LOOKUP, structure, fieldNamePrimitive, typeClass), Lookup.SET_PRIMITIVE_TYPE);
-                }
+    static {
+        MethodType getterPrimitiveType = null;
+        MethodType setterPrimitiveType = null;
+
+        for (int i = 0; i < NOOF_TYPES; i++) {
+            final Type type = ACCESSOR_TYPES.get(i);
+            ACCESSOR_GETTER_TYPES[i] = MH.type(type.getTypeClass(), Object.class);
+            ACCESSOR_SETTER_TYPES[i] = MH.type(void.class, Object.class, type.getTypeClass());
+
+            if (type == PRIMITIVE_TYPE) {
+                getterPrimitiveType = ACCESSOR_GETTER_TYPES[i];
+                setterPrimitiveType = ACCESSOR_SETTER_TYPES[i];
             }
         }
-    }
 
-    /**
-     * Property getter cache
-     *   Note that we can't do the same simple caching for optimistic getters,
-     *   due to the fact that they are bound to a program point, which will
-     *   produce different boun method handles wrapping the same access mechanism
-     *   depending on callsite
-     */
-    private transient MethodHandle[] GETTER_CACHE = new MethodHandle[NOOF_TYPES];
+        ACCESSOR_GETTER_PRIMITIVE_TYPE = getterPrimitiveType;
+        ACCESSOR_SETTER_PRIMITIVE_TYPE = setterPrimitiveType;
+
+        final MethodType spillGetterType = MethodType.methodType(Object[].class, Object.class);
+        final MethodHandle spillGetter = MH.asType(MH.getter(MethodHandles.lookup(), ScriptObject.class, "spill", Object[].class), spillGetterType);
+        SPILL_ELEMENT_GETTER = MH.filterArguments(MH.arrayElementGetter(Object[].class), 0, spillGetter);
+        SPILL_ELEMENT_SETTER = MH.filterArguments(MH.arrayElementSetter(Object[].class), 0, spillGetter);
+    }
 
     /**
      * Create a new accessor property. Factory method used by nasgen generated code.
@@ -132,73 +122,59 @@ public class AccessorProperty extends Property {
     }
 
     /** Seed getter for the primitive version of this field (in -Dnashorn.fields.dual=true mode) */
-    transient MethodHandle primitiveGetter;
+    private MethodHandle primitiveGetter;
 
     /** Seed setter for the primitive version of this field (in -Dnashorn.fields.dual=true mode) */
-    transient MethodHandle primitiveSetter;
+    private MethodHandle primitiveSetter;
 
     /** Seed getter for the Object version of this field */
-    transient MethodHandle objectGetter;
+    private MethodHandle objectGetter;
 
     /** Seed setter for the Object version of this field */
-    transient MethodHandle objectSetter;
+    private MethodHandle objectSetter;
 
     /**
-     * Delegate constructor for bound properties. This is used for properties created by
-     * {@link ScriptRuntime#mergeScope} and the Nashorn {@code Object.bindProperties} method.
-     * The former is used to add a script's defined globals to the current global scope while
-     * still storing them in a JO-prefixed ScriptObject class.
-     *
-     * <p>All properties created by this constructor have the {@link #IS_BOUND} flag set.</p>
+     * Current type of this object, in object only mode, this is an Object.class. In dual-fields mode
+     * null means undefined, and primitive types are allowed. The reason a special type is used for
+     * undefined, is that are no bits left to represent it in primitive types
+     */
+    private Class<?> currentType;
+
+    /**
+     * Delegate constructor. This is used when adding properties to the Global scope, which
+     * is necessary for outermost levels in a script (the ScriptObject is represented by
+     * a JO-prefixed ScriptObject class, but the properties need to be in the Global scope
+     * and are thus rebound with that as receiver
      *
      * @param property  accessor property to rebind
      * @param delegate  delegate object to rebind receiver to
      */
     AccessorProperty(final AccessorProperty property, final Object delegate) {
-        super(property, property.getFlags() | IS_BOUND);
+        super(property);
 
         this.primitiveGetter = bindTo(property.primitiveGetter, delegate);
         this.primitiveSetter = bindTo(property.primitiveSetter, delegate);
-        this.objectGetter    = bindTo(property.objectGetter, delegate);
-        this.objectSetter    = bindTo(property.objectSetter, delegate);
-        property.GETTER_CACHE = new MethodHandle[NOOF_TYPES];
-        // Properties created this way are bound to a delegate
-        setType(property.getType());
+        this.objectGetter    = bindTo(property.ensureObjectGetter(), delegate);
+        this.objectSetter    = bindTo(property.ensureObjectSetter(), delegate);
+
+        setCurrentType(property.getCurrentType());
     }
 
     /**
-     * SPILL PROPERTY or USER ACCESSOR PROPERTY abstract constructor
-     *
      * Constructor for spill properties. Array getters and setters will be created on demand.
      *
      * @param key    the property key
      * @param flags  the property flags
      * @param slot   spill slot
-     * @param primitiveGetter primitive getter
-     * @param primitiveSetter primitive setter
-     * @param objectGetter    object getter
-     * @param objectSetter    object setter
      */
-    protected AccessorProperty(
-            final String key,
-            final int flags,
-            final int slot,
-            final MethodHandle primitiveGetter,
-            final MethodHandle primitiveSetter,
-            final MethodHandle objectGetter,
-            final MethodHandle objectSetter) {
+    public AccessorProperty(final String key, final int flags, final int slot) {
         super(key, flags, slot);
-        assert getClass() != AccessorProperty.class;
-        this.primitiveGetter = primitiveGetter;
-        this.primitiveSetter = primitiveSetter;
-        this.objectGetter    = objectGetter;
-        this.objectSetter    = objectSetter;
-        initializeType();
+        assert (flags & IS_SPILL) == IS_SPILL;
+
+        setCurrentType(Object.class);
     }
 
     /**
-     * NASGEN constructor
-     *
      * Constructor. Similar to the constructor with both primitive getters and setters, the difference
      * here being that only one getter and setter (setter is optional for non writable fields) is given
      * to the constructor, and the rest are created from those. Used e.g. by Nasgen classes
@@ -209,9 +185,8 @@ public class AccessorProperty extends Property {
      * @param getter the property getter
      * @param setter the property setter or null if non writable, non configurable
      */
-    private AccessorProperty(final String key, final int flags, final int slot, final MethodHandle getter, final MethodHandle setter) {
-        super(key, flags | IS_BUILTIN | DUAL_FIELDS | (getter.type().returnType().isPrimitive() ? IS_NASGEN_PRIMITIVE : 0), slot);
-        assert !isSpill();
+    AccessorProperty(final String key, final int flags, final int slot, final MethodHandle getter, final MethodHandle setter) {
+        super(key, flags, slot);
 
         // we don't need to prep the setters these will never be invalidated as this is a nasgen
         // or known type getter/setter. No invalidations will take place
@@ -221,27 +196,39 @@ public class AccessorProperty extends Property {
 
         assert setterType == null || setterType == getterType;
 
-        if (getterType == int.class) {
-            primitiveGetter = MH.asType(getter, Lookup.GET_PRIMITIVE_TYPE);
-            primitiveSetter = setter == null ? null : MH.asType(setter, Lookup.SET_PRIMITIVE_TYPE);
-        } else if (getterType == double.class) {
-            primitiveGetter = MH.asType(MH.filterReturnValue(getter, ObjectClassGenerator.PACK_DOUBLE), Lookup.GET_PRIMITIVE_TYPE);
-            primitiveSetter = setter == null ? null : MH.asType(MH.filterArguments(setter, 1, ObjectClassGenerator.UNPACK_DOUBLE), Lookup.SET_PRIMITIVE_TYPE);
+        if (getterType.isPrimitive()) {
+            for (int i = 0; i < NOOF_TYPES; i++) {
+                getters[i] = MH.asType(
+                    Lookup.filterReturnType(
+                        getter,
+                        getAccessorType(i).getTypeClass()),
+                    ACCESSOR_GETTER_TYPES[i]);
+            }
         } else {
-            primitiveGetter = primitiveSetter = null;
+            objectGetter = getter.type() != Lookup.GET_OBJECT_TYPE ? MH.asType(getter, Lookup.GET_OBJECT_TYPE) : getter;
+            objectSetter = setter != null && setter.type() != Lookup.SET_OBJECT_TYPE ? MH.asType(setter, Lookup.SET_OBJECT_TYPE) : setter;
         }
 
-        assert primitiveGetter == null || primitiveGetter.type() == Lookup.GET_PRIMITIVE_TYPE : primitiveGetter + "!=" + Lookup.GET_PRIMITIVE_TYPE;
-        assert primitiveSetter == null || primitiveSetter.type() == Lookup.SET_PRIMITIVE_TYPE : primitiveSetter;
+        setCurrentType(getterType);
+    }
 
-        objectGetter  = getter.type() != Lookup.GET_OBJECT_TYPE ? MH.asType(getter, Lookup.GET_OBJECT_TYPE) : getter;
-        objectSetter  = setter != null && setter.type() != Lookup.SET_OBJECT_TYPE ? MH.asType(setter, Lookup.SET_OBJECT_TYPE) : setter;
+    private static class GettersSetters {
+        final MethodHandle[] getters;
+        final MethodHandle[] setters;
 
-        setType(getterType);
+        public GettersSetters(Class<?> structure) {
+            final int fieldCount = ObjectClassGenerator.getFieldCount(structure);
+            getters = new MethodHandle[fieldCount];
+            setters = new MethodHandle[fieldCount];
+            for(int i = 0; i < fieldCount; ++i) {
+                final String fieldName = ObjectClassGenerator.getFieldName(i, Type.OBJECT);
+                getters[i] = MH.asType(MH.getter(lookup, structure, fieldName, Type.OBJECT.getTypeClass()), Lookup.GET_OBJECT_TYPE);
+                setters[i] = MH.asType(MH.setter(lookup, structure, fieldName, Type.OBJECT.getTypeClass()), Lookup.SET_OBJECT_TYPE);
+            }
+        }
     }
 
     /**
-     * Normal ACCESS PROPERTY constructor given a structure class.
      * Constructor for dual field AccessorPropertys.
      *
      * @param key              property key
@@ -252,121 +239,66 @@ public class AccessorProperty extends Property {
     public AccessorProperty(final String key, final int flags, final Class<?> structure, final int slot) {
         super(key, flags, slot);
 
-        initGetterSetter(structure);
-        initializeType();
-    }
-
-    private void initGetterSetter(final Class<?> structure) {
-        final int slot = getSlot();
         /*
          * primitiveGetter and primitiveSetter are only used in dual fields mode. Setting them to null also
          * works in dual field mode, it only means that the property never has a primitive
          * representation.
          */
+        primitiveGetter = null;
+        primitiveSetter = null;
 
         if (isParameter() && hasArguments()) {
-            //parameters are always stored in an object array, which may or may not be a good idea
-            final MethodHandle arguments = MH.getter(LOOKUP, structure, "arguments", ScriptObject.class);
+            final MethodHandle arguments   = MH.getter(lookup, structure, "arguments", ScriptObject.class);
+
             objectGetter = MH.asType(MH.insertArguments(MH.filterArguments(ScriptObject.GET_ARGUMENT.methodHandle(), 0, arguments), 1, slot), Lookup.GET_OBJECT_TYPE);
             objectSetter = MH.asType(MH.insertArguments(MH.filterArguments(ScriptObject.SET_ARGUMENT.methodHandle(), 0, arguments), 1, slot), Lookup.SET_OBJECT_TYPE);
-            primitiveGetter = null;
-            primitiveSetter = null;
         } else {
-            final Accessors gs = GETTERS_SETTERS.get(structure);
-            objectGetter    = gs.objectGetters[slot];
-            primitiveGetter = gs.primitiveGetters[slot];
-            objectSetter    = gs.objectSetters[slot];
-            primitiveSetter = gs.primitiveSetters[slot];
+            final GettersSetters gs = GETTERS_SETTERS.get(structure);
+            objectGetter = gs.getters[slot];
+            objectSetter = gs.setters[slot];
+
+            if (!OBJECT_FIELDS_ONLY) {
+                final String fieldNamePrimitive = ObjectClassGenerator.getFieldName(slot, PRIMITIVE_TYPE);
+                final Class<?> typeClass = PRIMITIVE_TYPE.getTypeClass();
+                primitiveGetter = MH.asType(MH.getter(lookup, structure, fieldNamePrimitive, typeClass), ACCESSOR_GETTER_PRIMITIVE_TYPE);
+                primitiveSetter = MH.asType(MH.setter(lookup, structure, fieldNamePrimitive, typeClass), ACCESSOR_SETTER_PRIMITIVE_TYPE);
+            }
         }
 
-        // Always use dual fields except for single field structures
-        assert hasDualFields() != StructureLoader.isSingleFieldStructure(structure.getName());
+        Class<?> initialType = null;
+
+        if (OBJECT_FIELDS_ONLY || isAlwaysObject()) {
+            initialType = Object.class;
+        } else if (!canBePrimitive()) {
+            info(key + " cannot be primitive");
+            initialType = Object.class;
+        } else {
+            info(key + " CAN be primitive");
+            if (!canBeUndefined()) {
+                info(key + " is always defined");
+                initialType = int.class; //double works too for less type invalidation, but this requires experimentation, e.g. var x = 17; x += 2 will turn it into double now because of lack of range analysis
+            }
+        }
+
+        // is always object means "is never initialized to undefined, and always of object type
+        setCurrentType(initialType);
     }
 
     /**
-     * Constructor
+     * Copy constructor
      *
-     * @param key          key
-     * @param flags        flags
-     * @param slot         field slot index
-     * @param owner        owner of property
-     * @param initialValue initial value to which the property can be set
+     * @param property  source property
      */
-    protected AccessorProperty(final String key, final int flags, final int slot, final ScriptObject owner, final Object initialValue) {
-        this(key, flags, owner.getClass(), slot);
-        setInitialValue(owner, initialValue);
-    }
+    protected AccessorProperty(final AccessorProperty property) {
+        super(property);
 
-    /**
-     * Normal access property constructor that overrides the type
-     * Override the initial type. Used for Object Literals
-     *
-     * @param key          key
-     * @param flags        flags
-     * @param structure    structure to JO subclass
-     * @param slot         field slot index
-     * @param initialType  initial type of the property
-     */
-    public AccessorProperty(final String key, final int flags, final Class<?> structure, final int slot, final Class<?> initialType) {
-        this(key, flags, structure, slot);
-        setType(hasDualFields() ? initialType : Object.class);
-    }
-
-    /**
-     * Copy constructor that may change type and in that case clear the cache. Important to do that before
-     * type change or getters will be created already stale.
-     *
-     * @param property property
-     * @param newType  new type
-     */
-    protected AccessorProperty(final AccessorProperty property, final Class<?> newType) {
-        super(property, property.getFlags());
-
-        this.GETTER_CACHE    = newType != property.getLocalType() ? new MethodHandle[NOOF_TYPES] : property.GETTER_CACHE;
+        this.getters         = property.getters;
         this.primitiveGetter = property.primitiveGetter;
         this.primitiveSetter = property.primitiveSetter;
         this.objectGetter    = property.objectGetter;
         this.objectSetter    = property.objectSetter;
 
-        setType(newType);
-    }
-
-    /**
-     * COPY constructor
-     *
-     * @param property  source property
-     */
-    protected AccessorProperty(final AccessorProperty property) {
-        this(property, property.getLocalType());
-    }
-
-    /**
-     * Set initial value of a script object's property
-     * @param owner        owner
-     * @param initialValue initial value
-     */
-    protected final void setInitialValue(final ScriptObject owner, final Object initialValue) {
-        setType(hasDualFields() ? JSType.unboxedFieldType(initialValue) : Object.class);
-        if (initialValue instanceof Integer) {
-            invokeSetter(owner, ((Integer)initialValue).intValue());
-        } else if (initialValue instanceof Double) {
-            invokeSetter(owner, ((Double)initialValue).doubleValue());
-        } else {
-            invokeSetter(owner, initialValue);
-        }
-    }
-
-    /**
-     * Initialize the type of a property
-     */
-    protected final void initializeType() {
-        setType(!hasDualFields() ? Object.class : null);
-    }
-
-    private void readObject(final ObjectInputStream s) throws IOException, ClassNotFoundException {
-        s.defaultReadObject();
-        // Restore getters array
-        GETTER_CACHE = new MethodHandle[NOOF_TYPES];
+        setCurrentType(property.getCurrentType());
     }
 
     private static MethodHandle bindTo(final MethodHandle mh, final Object receiver) {
@@ -378,184 +310,73 @@ public class AccessorProperty extends Property {
     }
 
     @Override
-    public Property copy() {
+    protected Property copy() {
         return new AccessorProperty(this);
     }
 
     @Override
-    public Property copy(final Class<?> newType) {
-        return new AccessorProperty(this, newType);
+    public void setObjectValue(final ScriptObject self, final ScriptObject owner, final Object value, final boolean strict)  {
+        if (isSpill()) {
+            self.spill[getSlot()] = value;
+        } else {
+            try {
+                getSetter(Object.class, self.getMap()).invokeExact((Object)self, value);
+            } catch (final Error|RuntimeException e) {
+                throw e;
+            } catch (final Throwable e) {
+                throw new RuntimeException(e);
+            }
+        }
     }
 
     @Override
-    public int getIntValue(final ScriptObject self, final ScriptObject owner) {
-        try {
-            return (int)getGetter(int.class).invokeExact((Object)self);
-        } catch (final Error | RuntimeException e) {
-            throw e;
-        } catch (final Throwable e) {
-            throw new RuntimeException(e);
+    public Object getObjectValue(final ScriptObject self, final ScriptObject owner) {
+        if (isSpill()) {
+            return self.spill[getSlot()];
         }
-     }
 
-     @Override
-     public double getDoubleValue(final ScriptObject self, final ScriptObject owner) {
-        try {
-            return (double)getGetter(double.class).invokeExact((Object)self);
-        } catch (final Error | RuntimeException e) {
-            throw e;
-        } catch (final Throwable e) {
-            throw new RuntimeException(e);
-        }
-    }
-
-     @Override
-     public Object getObjectValue(final ScriptObject self, final ScriptObject owner) {
         try {
             return getGetter(Object.class).invokeExact((Object)self);
-        } catch (final Error | RuntimeException e) {
+        } catch (final Error|RuntimeException e) {
             throw e;
         } catch (final Throwable e) {
             throw new RuntimeException(e);
         }
     }
 
-     /**
-      * Invoke setter for this property with a value
-      * @param self  owner
-      * @param value value
-      */
-    protected final void invokeSetter(final ScriptObject self, final int value) {
-        try {
-            getSetter(int.class, self.getMap()).invokeExact((Object)self, value);
-        } catch (final Error | RuntimeException e) {
-            throw e;
-        } catch (final Throwable e) {
-            throw new RuntimeException(e);
+    // Spill getters and setters are lazily initialized, see JDK-8011630
+    private MethodHandle ensureObjectGetter() {
+        if (isSpill() && objectGetter == null) {
+            objectGetter = getSpillGetter();
         }
+        return objectGetter;
     }
 
-    /**
-     * Invoke setter for this property with a value
-     * @param self  owner
-     * @param value value
-     */
-    protected final void invokeSetter(final ScriptObject self, final double value) {
-        try {
-            getSetter(double.class, self.getMap()).invokeExact((Object)self, value);
-        } catch (final Error | RuntimeException e) {
-            throw e;
-        } catch (final Throwable e) {
-            throw new RuntimeException(e);
+    private MethodHandle ensureObjectSetter() {
+        if (isSpill() && objectSetter == null) {
+            objectSetter = getSpillSetter();
         }
-    }
-
-    /**
-     * Invoke setter for this property with a value
-     * @param self  owner
-     * @param value value
-     */
-    protected final void invokeSetter(final ScriptObject self, final Object value) {
-        try {
-            getSetter(Object.class, self.getMap()).invokeExact((Object)self, value);
-        } catch (final Error | RuntimeException e) {
-            throw e;
-        } catch (final Throwable e) {
-            throw new RuntimeException(e);
-        }
-    }
-
-    @Override
-    public void setValue(final ScriptObject self, final ScriptObject owner, final int value, final boolean strict)  {
-        assert isConfigurable() || isWritable() : getKey() + " is not writable or configurable";
-        invokeSetter(self, value);
-    }
-
-    @Override
-    public void setValue(final ScriptObject self, final ScriptObject owner, final double value, final boolean strict)  {
-        assert isConfigurable() || isWritable() : getKey() + " is not writable or configurable";
-        invokeSetter(self, value);
-    }
-
-    @Override
-    public void setValue(final ScriptObject self, final ScriptObject owner, final Object value, final boolean strict)  {
-        //this is sometimes used for bootstrapping, hence no assert. ugly.
-        invokeSetter(self, value);
-    }
-
-    @Override
-    void initMethodHandles(final Class<?> structure) {
-        // sanity check for structure class
-        if (!ScriptObject.class.isAssignableFrom(structure) || !StructureLoader.isStructureClass(structure.getName())) {
-            throw new IllegalArgumentException();
-        }
-        // this method is overridden in SpillProperty
-        assert !isSpill();
-        initGetterSetter(structure);
+        return objectSetter;
     }
 
     @Override
     public MethodHandle getGetter(final Class<?> type) {
         final int i = getAccessorTypeIndex(type);
+        ensureObjectGetter();
 
-        assert type == int.class ||
-                type == double.class ||
-                type == Object.class :
-                "invalid getter type " + type + " for " + getKey();
-
-        checkUndeclared();
-
-        //all this does is add a return value filter for object fields only
-        final MethodHandle[] getterCache = GETTER_CACHE;
-        final MethodHandle cachedGetter = getterCache[i];
-        final MethodHandle getter;
-        if (cachedGetter != null) {
-            getter = cachedGetter;
-        } else {
-            getter = debug(
-                createGetter(
-                    getLocalType(),
-                    type,
-                    primitiveGetter,
-                    objectGetter,
-                    INVALID_PROGRAM_POINT),
-                getLocalType(),
-                type,
-                "get");
-            getterCache[i] = getter;
-       }
-       assert getter.type().returnType() == type && getter.type().parameterType(0) == Object.class;
-       return getter;
-    }
-
-    @Override
-    public MethodHandle getOptimisticGetter(final Class<?> type, final int programPoint) {
-        // nasgen generated primitive fields like Math.PI have only one known unchangeable primitive type
-        if (objectGetter == null) {
-            return getOptimisticPrimitiveGetter(type, programPoint);
+        if (getters[i] == null) {
+            getters[i] = debug(
+                createGetter(currentType, type, primitiveGetter, objectGetter),
+                currentType, type, "get");
         }
 
-        checkUndeclared();
-
-        return debug(
-            createGetter(
-                getLocalType(),
-                type,
-                primitiveGetter,
-                objectGetter,
-                programPoint),
-            getLocalType(),
-            type,
-            "get");
-    }
-
-    private MethodHandle getOptimisticPrimitiveGetter(final Class<?> type, final int programPoint) {
-        final MethodHandle g = getGetter(getLocalType());
-        return MH.asType(OptimisticReturnFilters.filterOptimisticReturnValue(g, type, programPoint), g.type().changeReturnType(type));
+        return getters[i];
     }
 
     private Property getWiderProperty(final Class<?> type) {
-        return copy(type); //invalidate cache of new property
+        final AccessorProperty newProperty = new AccessorProperty(this);
+        newProperty.invalidate(type);
+        return newProperty;
     }
 
     private PropertyMap getWiderMap(final PropertyMap oldMap, final Property newProperty) {
@@ -565,161 +386,126 @@ public class AccessorProperty extends Property {
         return newMap;
     }
 
-    private void checkUndeclared() {
-        if ((getFlags() & NEEDS_DECLARATION) != 0) {
-            // a lexically defined variable that hasn't seen its declaration - throw ReferenceError
-            throw ECMAErrors.referenceError("not.defined", getKey());
-        }
-    }
-
     // the final three arguments are for debug printout purposes only
     @SuppressWarnings("unused")
-    private static Object replaceMap(final Object sobj, final PropertyMap newMap) {
+    private static Object replaceMap(final Object sobj, final PropertyMap newMap, final String key, final Class<?> oldType, final Class<?> newType) {
+        if (DEBUG_FIELDS) {
+            final PropertyMap oldMap = ((ScriptObject)sobj).getMap();
+            info("Type change for '" + key + "' " + oldType + "=>" + newType);
+            finest("setting map " + sobj + " from " + Debug.id(oldMap) + " to " + Debug.id(newMap) + " " + oldMap + " => " + newMap);
+        }
         ((ScriptObject)sobj).setMap(newMap);
         return sobj;
     }
 
-    @SuppressWarnings("unused")
-    private static Object invalidateSwitchPoint(final AccessorProperty property, final Object obj) {
-         if (!property.builtinSwitchPoint.hasBeenInvalidated()) {
-            SwitchPoint.invalidateAll(new SwitchPoint[] { property.builtinSwitchPoint });
-        }
-        return obj;
-    }
-
     private MethodHandle generateSetter(final Class<?> forType, final Class<?> type) {
-        return debug(createSetter(forType, type, primitiveSetter, objectSetter), getLocalType(), type, "set");
-    }
-
-    /**
-     * Is this property of the undefined type?
-     * @return true if undefined
-     */
-    protected final boolean isUndefined() {
-        return getLocalType() == null;
+        ensureObjectSetter();
+        MethodHandle mh = createSetter(forType, type, primitiveSetter, objectSetter);
+        mh = debug(mh, currentType, type, "set");
+        return mh;
     }
 
     @Override
     public MethodHandle getSetter(final Class<?> type, final PropertyMap currentMap) {
-        checkUndeclared();
-
-        final int typeIndex        = getAccessorTypeIndex(type);
-        final int currentTypeIndex = getAccessorTypeIndex(getLocalType());
+        final int i            = getAccessorTypeIndex(type);
+        final int ci           = currentType == null ? -1 : getAccessorTypeIndex(currentType);
+        final Class<?> forType = currentType == null ? type : currentType;
 
         //if we are asking for an object setter, but are still a primitive type, we might try to box it
         MethodHandle mh;
-        if (needsInvalidator(typeIndex, currentTypeIndex)) {
+
+        if (needsInvalidator(i, ci)) {
             final Property     newProperty = getWiderProperty(type);
             final PropertyMap  newMap      = getWiderMap(currentMap, newProperty);
-
             final MethodHandle widerSetter = newProperty.getSetter(type, newMap);
-            final Class<?>     ct = getLocalType();
-            mh = MH.filterArguments(widerSetter, 0, MH.insertArguments(debugReplace(ct, type, currentMap, newMap) , 1, newMap));
-            if (ct != null && ct.isPrimitive() && !type.isPrimitive()) {
-                 mh = ObjectClassGenerator.createGuardBoxedPrimitiveSetter(ct, generateSetter(ct, ct), mh);
+            final MethodHandle explodeTypeSetter = MH.filterArguments(widerSetter, 0, MH.insertArguments(REPLACE_MAP, 1, newMap, getKey(), currentType, type));
+            if (currentType != null && currentType.isPrimitive() && type == Object.class) {
+                //might try a box check on this to avoid widening field to object storage
+                mh = createGuardBoxedPrimitiveSetter(currentType, generateSetter(currentType, currentType), explodeTypeSetter);
+            } else {
+                mh = explodeTypeSetter;
             }
         } else {
-            final Class<?> forType = isUndefined() ? type : getLocalType();
-            mh = generateSetter(!forType.isPrimitive() ? Object.class : forType, type);
+            mh = generateSetter(forType, type);
         }
-
-        if (isBuiltin()) {
-           mh = MH.filterArguments(mh, 0, debugInvalidate(MH.insertArguments(INVALIDATE_SP, 0, this), getKey()));
-        }
-
-        assert mh.type().returnType() == void.class : mh.type();
 
         return mh;
     }
 
     @Override
-    public final boolean canChangeType() {
-        if (!hasDualFields()) {
+    public boolean canChangeType() {
+        if (OBJECT_FIELDS_ONLY) {
             return false;
         }
-        // Return true for currently undefined even if non-writable/configurable to allow initialization of ES6 CONST.
-        return getLocalType() == null || (getLocalType() != Object.class && (isConfigurable() || isWritable()));
+        return currentType != Object.class && (isConfigurable() || isWritable());
     }
 
-    private boolean needsInvalidator(final int typeIndex, final int currentTypeIndex) {
-        return canChangeType() && typeIndex > currentTypeIndex;
+    private boolean needsInvalidator(final int ti, final int fti) {
+        return canChangeType() && ti > fti;
+    }
+
+    private void invalidate(final Class<?> newType) {
+        getters = new MethodHandle[NOOF_TYPES];
+        setCurrentType(newType);
+    }
+
+    private MethodHandle getSpillGetter() {
+        final int slot = getSlot();
+        MethodHandle getter = slot < SPILL_CACHE_SIZE ? SPILL_ACCESSORS[slot * 2] : null;
+        if (getter == null) {
+            getter = MH.insertArguments(SPILL_ELEMENT_GETTER, 1, slot);
+            if (slot < SPILL_CACHE_SIZE) {
+                SPILL_ACCESSORS[slot * 2 + 0] = getter;
+            }
+        }
+        return getter;
+    }
+
+    private MethodHandle getSpillSetter() {
+        final int slot = getSlot();
+        MethodHandle setter = slot < SPILL_CACHE_SIZE ? SPILL_ACCESSORS[slot * 2 + 1] : null;
+        if (setter == null) {
+            setter = MH.insertArguments(SPILL_ELEMENT_SETTER, 1, slot);
+            if (slot < SPILL_CACHE_SIZE) {
+                SPILL_ACCESSORS[slot * 2 + 1] = setter;
+            }
+        }
+        return setter;
+    }
+
+    private static void finest(final String str) {
+        if (DEBUG_FIELDS) {
+            LOG.finest(str);
+        }
+    }
+
+    private static void info(final String str) {
+        if (DEBUG_FIELDS) {
+            LOG.info(str);
+        }
     }
 
     private MethodHandle debug(final MethodHandle mh, final Class<?> forType, final Class<?> type, final String tag) {
-        if (!Context.DEBUG || !Global.hasInstance()) {
-            return mh;
+        if (DEBUG_FIELDS) {
+           return MethodHandleFactory.addDebugPrintout(
+               LOG,
+               mh,
+               tag + " '" + getKey() + "' (property="+ Debug.id(this) + ", forType=" + stripName(forType) + ", type=" + stripName(type) + ')');
         }
-
-        final Context context = Context.getContextTrusted();
-        assert context != null;
-
-        return context.addLoggingToHandle(
-                ObjectClassGenerator.class,
-                Level.INFO,
-                mh,
-                0,
-                true,
-                new Supplier<String>() {
-                    @Override
-                    public String get() {
-                        return tag + " '" + getKey() + "' (property="+ Debug.id(this) + ", slot=" + getSlot() + " " + getClass().getSimpleName() + " forType=" + stripName(forType) + ", type=" + stripName(type) + ')';
-                    }
-                });
-    }
-
-    private MethodHandle debugReplace(final Class<?> oldType, final Class<?> newType, final PropertyMap oldMap, final PropertyMap newMap) {
-        if (!Context.DEBUG || !Global.hasInstance()) {
-            return REPLACE_MAP;
-        }
-
-        final Context context = Context.getContextTrusted();
-        assert context != null;
-
-        MethodHandle mh = context.addLoggingToHandle(
-                ObjectClassGenerator.class,
-                REPLACE_MAP,
-                new Supplier<String>() {
-                    @Override
-                    public String get() {
-                        return "Type change for '" + getKey() + "' " + oldType + "=>" + newType;
-                    }
-                });
-
-        mh = context.addLoggingToHandle(
-                ObjectClassGenerator.class,
-                Level.FINEST,
-                mh,
-                Integer.MAX_VALUE,
-                false,
-                new Supplier<String>() {
-                    @Override
-                    public String get() {
-                        return "Setting map " + Debug.id(oldMap) + " => " + Debug.id(newMap) + " " + oldMap + " => " + newMap;
-                    }
-                });
         return mh;
     }
 
-    private static MethodHandle debugInvalidate(final MethodHandle invalidator, final String key) {
-        if (!Context.DEBUG || !Global.hasInstance()) {
-            return invalidator;
-        }
-
-        final Context context = Context.getContextTrusted();
-        assert context != null;
-
-        return context.addLoggingToHandle(
-                ObjectClassGenerator.class,
-                invalidator,
-                new Supplier<String>() {
-                    @Override
-                    public String get() {
-                        return "Field change callback for " + key + " triggered ";
-                    }
-                });
+    private void setCurrentType(final Class<?> currentType) {
+        this.currentType = currentType;
     }
 
-    private static MethodHandle findOwnMH_S(final String name, final Class<?> rtype, final Class<?>... types) {
-        return MH.findStatic(LOOKUP, AccessorProperty.class, name, MH.type(rtype, types));
+    @Override
+    public Class<?> getCurrentType() {
+        return currentType;
     }
+
+    private static MethodHandle findOwnMH(final String name, final Class<?> rtype, final Class<?>... types) {
+        return MH.findStatic(lookup, AccessorProperty.class, name, MH.type(rtype, types));
+    }
+
 }

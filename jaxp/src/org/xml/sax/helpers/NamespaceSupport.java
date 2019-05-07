@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2000, 2015, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2000, 2005, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -31,13 +31,10 @@
 
 package org.xml.sax.helpers;
 
-import java.util.ArrayList;
-import java.util.Collections;
 import java.util.EmptyStackException;
 import java.util.Enumeration;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
+import java.util.Hashtable;
+import java.util.Vector;
 
 
 /**
@@ -141,7 +138,7 @@ public class NamespaceSupport
      * An empty enumeration.
      */
     private final static Enumeration EMPTY_ENUMERATION =
-            Collections.enumeration(new ArrayList<String>());
+        new Vector().elements();
 
 
     ////////////////////////////////////////////////////////////////////
@@ -465,15 +462,15 @@ public class NamespaceSupport
      */
     public Enumeration getPrefixes (String uri)
     {
-        List<String> prefixes = new ArrayList<>();
+        Vector prefixes = new Vector();
         Enumeration allPrefixes = getPrefixes();
         while (allPrefixes.hasMoreElements()) {
             String prefix = (String)allPrefixes.nextElement();
             if (uri.equals(getURI(prefix))) {
-                prefixes.add(prefix);
+                prefixes.addElement(prefix);
             }
         }
-        return Collections.enumeration(prefixes);
+        return prefixes.elements();
     }
 
 
@@ -621,7 +618,7 @@ public class NamespaceSupport
                 copyTables();
             }
             if (declarations == null) {
-                declarations = new ArrayList<>();
+                declarations = new Vector();
             }
 
             prefix = prefix.intern();
@@ -636,7 +633,7 @@ public class NamespaceSupport
                 prefixTable.put(prefix, uri);
                 uriTable.put(uri, prefix); // may wipe out another prefix
             }
-            declarations.add(prefix);
+            declarations.addElement(prefix);
         }
 
 
@@ -654,33 +651,33 @@ public class NamespaceSupport
         String [] processName (String qName, boolean isAttribute)
         {
             String name[];
-            Map<String, String[]> table;
+            Hashtable table;
 
-            // Select the appropriate table.
+                                // Select the appropriate table.
             if (isAttribute) {
                 table = attributeNameTable;
             } else {
                 table = elementNameTable;
             }
 
-            // Start by looking in the cache, and
-            // return immediately if the name
-            // is already known in this content
+                                // Start by looking in the cache, and
+                                // return immediately if the name
+                                // is already known in this content
             name = (String[])table.get(qName);
             if (name != null) {
                 return name;
             }
 
-            // We haven't seen this name in this
-            // context before.  Maybe in the parent
-            // context, but we can't assume prefix
-            // bindings are the same.
+                                // We haven't seen this name in this
+                                // context before.  Maybe in the parent
+                                // context, but we can't assume prefix
+                                // bindings are the same.
             name = new String[3];
             name[2] = qName.intern();
             int index = qName.indexOf(':');
 
 
-            // No prefix.
+                                // No prefix.
             if (index == -1) {
                 if (isAttribute) {
                     if (qName == "xmlns" && namespaceDeclUris)
@@ -695,7 +692,7 @@ public class NamespaceSupport
                 name[1] = name[2];
             }
 
-            // Prefix
+                                // Prefix
             else {
                 String prefix = qName.substring(0, index);
                 String local = qName.substring(index+1);
@@ -713,8 +710,8 @@ public class NamespaceSupport
                 name[1] = local.intern();
             }
 
-            // Save in the cache for future use.
-            // (Could be shared with parent context...)
+                                // Save in the cache for future use.
+                                // (Could be shared with parent context...)
             table.put(name[2], name);
             return name;
         }
@@ -771,9 +768,10 @@ public class NamespaceSupport
             if (declarations == null) {
                 return EMPTY_ENUMERATION;
             } else {
-                return Collections.enumeration(declarations);
+                return declarations.elements();
             }
         }
+
 
         /**
          * Return an enumeration of all prefixes currently in force.
@@ -789,7 +787,7 @@ public class NamespaceSupport
             if (prefixTable == null) {
                 return EMPTY_ENUMERATION;
             } else {
-                return Collections.enumeration(prefixTable.keySet());
+                return prefixTable.keys();
             }
         }
 
@@ -809,17 +807,17 @@ public class NamespaceSupport
         private void copyTables ()
         {
             if (prefixTable != null) {
-                prefixTable = new HashMap<>(prefixTable);
+                prefixTable = (Hashtable)prefixTable.clone();
             } else {
-                prefixTable = new HashMap<>();
+                prefixTable = new Hashtable();
             }
             if (uriTable != null) {
-                uriTable = new HashMap<>(uriTable);
+                uriTable = (Hashtable)uriTable.clone();
             } else {
-                uriTable = new HashMap<>();
+                uriTable = new Hashtable();
             }
-            elementNameTable = new HashMap<>();
-            attributeNameTable = new HashMap<>();
+            elementNameTable = new Hashtable();
+            attributeNameTable = new Hashtable();
             declSeen = true;
         }
 
@@ -829,10 +827,10 @@ public class NamespaceSupport
         // Protected state.
         ////////////////////////////////////////////////////////////////
 
-        Map<String, String> prefixTable;
-        Map<String, String> uriTable;
-        Map<String, String[]> elementNameTable;
-        Map<String, String[]> attributeNameTable;
+        Hashtable prefixTable;
+        Hashtable uriTable;
+        Hashtable elementNameTable;
+        Hashtable attributeNameTable;
         String defaultNS = null;
 
 
@@ -841,7 +839,7 @@ public class NamespaceSupport
         // Internal state.
         ////////////////////////////////////////////////////////////////
 
-        private List<String> declarations = null;
+        private Vector declarations = null;
         private boolean declSeen = false;
         private Context parent = null;
     }

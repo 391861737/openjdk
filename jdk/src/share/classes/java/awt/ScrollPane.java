@@ -496,8 +496,9 @@ public class ScrollPane extends Container implements Accessible {
         Point p = getScrollPosition();
         Dimension cs = calculateChildSize();
         Dimension vs = getViewportSize();
+        Insets i = getInsets();
 
-        c.reshape(- p.x, - p.y, cs.width, cs.height);
+        c.reshape(i.left - p.x, i.top - p.y, cs.width, cs.height);
         ScrollPanePeer peer = (ScrollPanePeer)this.peer;
         if (peer != null) {
             peer.childResized(cs.width, cs.height);

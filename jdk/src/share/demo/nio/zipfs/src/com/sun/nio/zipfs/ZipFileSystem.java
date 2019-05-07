@@ -2252,8 +2252,6 @@ public class ZipFileSystem extends FileSystem {
                     }
                     break;
                 case EXTID_NTFS:
-                    if (sz < 32)
-                        break;
                     pos += 4;    // reserved 4 bytes
                     if (SH(extra, pos) !=  0x0001)
                         break;

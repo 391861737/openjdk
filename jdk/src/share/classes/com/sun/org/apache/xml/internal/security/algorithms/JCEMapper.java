@@ -27,7 +27,6 @@ import java.util.concurrent.ConcurrentHashMap;
 
 import com.sun.org.apache.xml.internal.security.encryption.XMLCipher;
 import com.sun.org.apache.xml.internal.security.signature.XMLSignature;
-import com.sun.org.apache.xml.internal.security.utils.JavaUtils;
 import org.w3c.dom.Element;
 
 
@@ -50,11 +49,8 @@ public class JCEMapper {
      *
      * @param id
      * @param algorithm
-     * @throws SecurityException if a security manager is installed and the
-     *    caller does not have permission to register the JCE algorithm
      */
     public static void register(String id, Algorithm algorithm) {
-        JavaUtils.checkRegisterPermission();
         algorithmsMap.put(id, algorithm);
     }
 
@@ -89,10 +85,6 @@ public class JCEMapper {
         algorithmsMap.put(
             XMLSignature.ALGO_ID_SIGNATURE_DSA,
             new Algorithm("", "SHA1withDSA", "Signature")
-        );
-        algorithmsMap.put(
-            XMLSignature.ALGO_ID_SIGNATURE_DSA_SHA256,
-            new Algorithm("", "SHA256withDSA", "Signature")
         );
         algorithmsMap.put(
             XMLSignature.ALGO_ID_SIGNATURE_NOT_RECOMMENDED_RSA_MD5,
@@ -300,11 +292,8 @@ public class JCEMapper {
     /**
      * Sets the default Provider for obtaining the security algorithms
      * @param provider the default providerId.
-     * @throws SecurityException if a security manager is installed and the
-     *    caller does not have permission to set the JCE provider
      */
     public static void setProviderId(String provider) {
-        JavaUtils.checkRegisterPermission();
         providerName = provider;
     }
 

@@ -25,15 +25,11 @@
 
 package jdk.nashorn.internal.objects;
 
-import static jdk.nashorn.internal.runtime.ECMAErrors.rangeError;
 import static jdk.nashorn.internal.runtime.ECMAErrors.typeError;
 import static jdk.nashorn.internal.runtime.ScriptRuntime.UNDEFINED;
-import static jdk.nashorn.internal.runtime.Source.sourceFor;
 
-import java.lang.invoke.MethodHandle;
-import java.lang.invoke.MethodHandles;
 import java.util.List;
-import jdk.internal.dynalink.support.Lookup;
+
 import jdk.nashorn.api.scripting.JSObject;
 import jdk.nashorn.internal.objects.annotations.Attribute;
 import jdk.nashorn.internal.objects.annotations.Constructor;
@@ -44,11 +40,10 @@ import jdk.nashorn.internal.runtime.Context;
 import jdk.nashorn.internal.runtime.JSType;
 import jdk.nashorn.internal.runtime.ParserException;
 import jdk.nashorn.internal.runtime.PropertyMap;
-import jdk.nashorn.internal.runtime.ScriptEnvironment;
 import jdk.nashorn.internal.runtime.ScriptFunction;
 import jdk.nashorn.internal.runtime.ScriptObject;
 import jdk.nashorn.internal.runtime.ScriptRuntime;
-import jdk.nashorn.internal.runtime.linker.Bootstrap;
+import jdk.nashorn.internal.runtime.Source;
 
 /**
  * ECMA 15.3 Function Objects
@@ -59,9 +54,6 @@ import jdk.nashorn.internal.runtime.linker.Bootstrap;
  */
 @ScriptClass("Function")
 public final class NativeFunction {
-
-    /** apply arg converter handle */
-    public static final MethodHandle TO_APPLY_ARGS = Lookup.findOwnStatic(MethodHandles.lookup(), "toApplyArgs", Object[].class, Object.class);
 
     // initialized by nasgen
     @SuppressWarnings("unused")
@@ -79,7 +71,7 @@ public final class NativeFunction {
      * @return string representation of Function
      */
     @Function(attributes = Attribute.NOT_ENUMERABLE)
-    public static String toString(final Object self) {
+    public static Object toString(final Object self) {
         if (!(self instanceof ScriptFunction)) {
             throw typeError("not.a.function", ScriptRuntime.safeToString(self));
         }
@@ -96,75 +88,50 @@ public final class NativeFunction {
      */
     @Function(attributes = Attribute.NOT_ENUMERABLE)
     public static Object apply(final Object self, final Object thiz, final Object array) {
-        checkCallable(self);
+        if (!(self instanceof ScriptFunction) && !(self instanceof JSObject)) {
+            throw typeError("not.a.function", ScriptRuntime.safeToString(self));
+        }
 
-        final Object[] args = toApplyArgs(array);
+        Object[] args = null;
+
+        if (array instanceof ScriptObject) {
+            // look for array-like object
+            final ScriptObject sobj = (ScriptObject)array;
+            final Object       len  = sobj.getLength();
+            final int n = (int)JSType.toUint32(len);
+
+            args = new Object[n];
+            for (int i = 0; i < args.length; i++) {
+                args[i] = sobj.get(i);
+            }
+        } else if (array instanceof Object[]) {
+            args = (Object[])array;
+        } else if (array instanceof List) {
+            final List<?> list = (List<?>)array;
+            list.toArray(args = new Object[list.size()]);
+        } else if (array == null || array == UNDEFINED) {
+            args = ScriptRuntime.EMPTY_ARRAY;
+        } else if (array instanceof JSObject) {
+            // look for array-like JSObject object
+            final JSObject jsObj = (JSObject)array;
+            final Object       len  = jsObj.hasMember("length")? jsObj.getMember("length") : Integer.valueOf(0);
+            final int n = (int)JSType.toUint32(len);
+
+            args = new Object[n];
+            for (int i = 0; i < args.length; i++) {
+                args[i] = jsObj.hasSlot(i)? jsObj.getSlot(i) : UNDEFINED;
+            }
+        } else {
+            throw typeError("function.apply.expects.array");
+        }
 
         if (self instanceof ScriptFunction) {
             return ScriptRuntime.apply((ScriptFunction)self, thiz, args);
         } else if (self instanceof JSObject) {
             return ((JSObject)self).call(thiz, args);
         }
-        throw new AssertionError("Should not reach here");
-    }
 
-    /**
-     * Given an array-like object, converts it into a Java object array suitable for invocation of ScriptRuntime.apply
-     * or for direct invocation of the applied function.
-     * @param array the array-like object. Can be null in which case a zero-length array is created.
-     * @return the Java array
-     */
-    public static Object[] toApplyArgs(final Object array) {
-        if (array instanceof NativeArguments) {
-            return ((NativeArguments)array).getArray().asObjectArray();
-        } else if (array instanceof ScriptObject) {
-            // look for array-like object
-            final ScriptObject sobj = (ScriptObject)array;
-            final int n = lengthToInt(sobj.getLength());
-
-            final Object[] args = new Object[n];
-            for (int i = 0; i < args.length; i++) {
-                args[i] = sobj.get(i);
-            }
-            return args;
-        } else if (array instanceof Object[]) {
-            return (Object[])array;
-        } else if (array instanceof List) {
-            final List<?> list = (List<?>)array;
-            return list.toArray(new Object[list.size()]);
-        } else if (array == null || array == UNDEFINED) {
-            return ScriptRuntime.EMPTY_ARRAY;
-        } else if (array instanceof JSObject) {
-            // look for array-like JSObject object
-            final JSObject jsObj = (JSObject)array;
-            final Object   len  = jsObj.hasMember("length")? jsObj.getMember("length") : Integer.valueOf(0);
-            final int n = lengthToInt(len);
-
-            final Object[] args = new Object[n];
-            for (int i = 0; i < args.length; i++) {
-                args[i] = jsObj.hasSlot(i)? jsObj.getSlot(i) : UNDEFINED;
-            }
-            return args;
-        } else {
-            throw typeError("function.apply.expects.array");
-        }
-    }
-
-    private static int lengthToInt(final Object len) {
-        final long ln = JSType.toUint32(len);
-        // NOTE: ECMASCript 5.1 section 15.3.4.3 says length should be treated as Uint32, but we wouldn't be able to
-        // allocate a Java array of more than MAX_VALUE elements anyway, so at this point we have to throw an error.
-        // People applying a function to more than 2^31 arguments will unfortunately be out of luck.
-        if (ln > Integer.MAX_VALUE) {
-            throw rangeError("range.error.inappropriate.array.length", JSType.toString(len));
-        }
-        return (int)ln;
-    }
-
-    private static void checkCallable(final Object self) {
-        if (!(self instanceof ScriptFunction || (self instanceof JSObject && ((JSObject)self).isFunction()))) {
-            throw typeError("not.a.function", ScriptRuntime.safeToString(self));
-        }
+        throw new AssertionError("should not reach here");
     }
 
     /**
@@ -176,9 +143,11 @@ public final class NativeFunction {
      */
     @Function(attributes = Attribute.NOT_ENUMERABLE, arity = 1)
     public static Object call(final Object self, final Object... args) {
-        checkCallable(self);
+        if (!(self instanceof ScriptFunction) && !(self instanceof JSObject)) {
+            throw typeError("not.a.function", ScriptRuntime.safeToString(self));
+        }
 
-        final Object thiz = (args.length == 0) ? UNDEFINED : args[0];
+        Object thiz = (args.length == 0) ? UNDEFINED : args[0];
         Object[] arguments;
 
         if (args.length > 1) {
@@ -206,6 +175,10 @@ public final class NativeFunction {
      */
     @Function(attributes = Attribute.NOT_ENUMERABLE, arity = 1)
     public static Object bind(final Object self, final Object... args) {
+        if (!(self instanceof ScriptFunction)) {
+            throw typeError("not.a.function", ScriptRuntime.safeToString(self));
+        }
+
         final Object thiz = (args.length == 0) ? UNDEFINED : args[0];
 
         Object[] arguments;
@@ -216,7 +189,7 @@ public final class NativeFunction {
             arguments = ScriptRuntime.EMPTY_ARRAY;
         }
 
-        return Bootstrap.bindCallable(self, thiz, arguments);
+        return ((ScriptFunctionImpl)self).makeBoundFunction(thiz, arguments);
     }
 
     /**
@@ -226,7 +199,7 @@ public final class NativeFunction {
      * @return source for function
      */
     @Function(attributes = Attribute.NOT_ENUMERABLE)
-    public static String toSource(final Object self) {
+    public static Object toSource(final Object self) {
         if (!(self instanceof ScriptFunction)) {
             throw typeError("not.a.function", ScriptRuntime.safeToString(self));
         }
@@ -244,7 +217,7 @@ public final class NativeFunction {
      * @return new NativeFunction
      */
     @Constructor(arity = 1)
-    public static ScriptFunction function(final boolean newObj, final Object self, final Object... args) {
+    public static Object function(final boolean newObj, final Object self, final Object... args) {
         final StringBuilder sb = new StringBuilder();
 
         sb.append("(function (");
@@ -262,7 +235,7 @@ public final class NativeFunction {
             funcBody = JSType.toString(args[args.length - 1]);
 
             final String paramList = paramListBuf.toString();
-            if (!paramList.isEmpty()) {
+            if (! paramList.isEmpty()) {
                 checkFunctionParameters(paramList);
                 sb.append(paramList);
             }
@@ -279,12 +252,13 @@ public final class NativeFunction {
         sb.append("})");
 
         final Global global = Global.instance();
-        final Context context = global.getContext();
-        return (ScriptFunction)context.eval(global, sb.toString(), global, "<function>");
+
+        return Global.directEval(global, sb.toString(), global, "<function>", global.isStrictContext());
     }
 
     private static void checkFunctionParameters(final String params) {
-        final Parser parser = getParser(params);
+        final Source src = new Source("<function>", params);
+        final Parser parser = new Parser(Global.getEnv(), src, new Context.ThrowErrorManager());
         try {
             parser.parseFormalParameterList();
         } catch (final ParserException pe) {
@@ -293,16 +267,12 @@ public final class NativeFunction {
     }
 
     private static void checkFunctionBody(final String funcBody) {
-        final Parser parser = getParser(funcBody);
+        final Source src = new Source("<function>", funcBody);
+        final Parser parser = new Parser(Global.getEnv(), src, new Context.ThrowErrorManager());
         try {
             parser.parseFunctionBody();
         } catch (final ParserException pe) {
             pe.throwAsEcmaException();
         }
-    }
-
-    private static Parser getParser(final String sourceText) {
-        final ScriptEnvironment env = Global.getEnv();
-        return new Parser(env, sourceFor("<function>", sourceText), new Context.ThrowErrorManager(), env._strict, null);
     }
 }

@@ -113,7 +113,7 @@ public class Guards {
      * @return a method handle testing whether its first argument is of the specified class.
      */
     @SuppressWarnings("boxing")
-    public static MethodHandle isOfClass(final Class<?> clazz, final MethodType type) {
+    public static MethodHandle isOfClass(Class<?> clazz, MethodType type) {
         final Class<?> declaredType = type.parameterType(0);
         if(clazz == declaredType) {
             LOG.log(Level.WARNING, "isOfClassGuardAlwaysTrue", new Object[] { clazz.getName(), 0, type, DynamicLinker.getLinkedCallSiteLocation() });
@@ -135,7 +135,7 @@ public class Guards {
      * @param type the method type
      * @return a method handle testing whether its first argument is of the specified class or subclass.
      */
-    public static MethodHandle isInstance(final Class<?> clazz, final MethodType type) {
+    public static MethodHandle isInstance(Class<?> clazz, MethodType type) {
         return isInstance(clazz, 0, type);
     }
 
@@ -150,7 +150,7 @@ public class Guards {
      * @return a method handle testing whether its first argument is of the specified class or subclass.
      */
     @SuppressWarnings("boxing")
-    public static MethodHandle isInstance(final Class<?> clazz, final int pos, final MethodType type) {
+    public static MethodHandle isInstance(Class<?> clazz, int pos, MethodType type) {
         final Class<?> declaredType = type.parameterType(pos);
         if(clazz.isAssignableFrom(declaredType)) {
             LOG.log(Level.WARNING, "isInstanceGuardAlwaysTrue", new Object[] { clazz.getName(), pos, type, DynamicLinker.getLinkedCallSiteLocation() });
@@ -172,7 +172,7 @@ public class Guards {
      * the arguments are ignored.
      */
     @SuppressWarnings("boxing")
-    public static MethodHandle isArray(final int pos, final MethodType type) {
+    public static MethodHandle isArray(int pos, MethodType type) {
         final Class<?> declaredType = type.parameterType(pos);
         if(declaredType.isArray()) {
             LOG.log(Level.WARNING, "isArrayGuardAlwaysTrue", new Object[] { pos, type, DynamicLinker.getLinkedCallSiteLocation() });
@@ -193,7 +193,7 @@ public class Guards {
      * @param referredLoader the referred class loader
      * @return true if it is safe to strongly reference the class
      */
-    public static boolean canReferenceDirectly(final ClassLoader referrerLoader, final ClassLoader referredLoader) {
+    public static boolean canReferenceDirectly(ClassLoader referrerLoader, final ClassLoader referredLoader) {
         if(referredLoader == null) {
             // Can always refer directly to a system class
             return true;
@@ -215,7 +215,7 @@ public class Guards {
         return false;
     }
 
-    private static MethodHandle getClassBoundArgumentTest(final MethodHandle test, final Class<?> clazz, final int pos, final MethodType type) {
+    private static MethodHandle getClassBoundArgumentTest(MethodHandle test, Class<?> clazz, int pos, MethodType type) {
         // Bind the class to the first argument of the test
         return asType(test.bindTo(clazz), pos, type);
     }
@@ -227,7 +227,7 @@ public class Guards {
      * @param type the type to adapt the method handle to
      * @return the adapted method handle
      */
-    public static MethodHandle asType(final MethodHandle test, final MethodType type) {
+    public static MethodHandle asType(MethodHandle test, MethodType type) {
         return test.asType(getTestType(test, type));
     }
 
@@ -239,16 +239,16 @@ public class Guards {
      * @param type the type to adapt the method handle to
      * @return the adapted method handle
      */
-    public static MethodHandle asType(final LinkerServices linkerServices, final MethodHandle test, final MethodType type) {
+    public static MethodHandle asType(LinkerServices linkerServices, MethodHandle test, MethodType type) {
         return linkerServices.asType(test, getTestType(test, type));
     }
 
-    private static MethodType getTestType(final MethodHandle test, final MethodType type) {
+    private static MethodType getTestType(MethodHandle test, MethodType type) {
         return type.dropParameterTypes(test.type().parameterCount(),
                 type.parameterCount()).changeReturnType(boolean.class);
     }
 
-    private static MethodHandle asType(final MethodHandle test, final int pos, final MethodType type) {
+    private static MethodHandle asType(MethodHandle test, int pos, MethodType type) {
         assert test != null;
         assert type != null;
         assert type.parameterCount() > 0;
@@ -283,7 +283,7 @@ public class Guards {
      * @param clazz the class to test for.
      * @return the desired guard method.
      */
-    public static MethodHandle getClassGuard(final Class<?> clazz) {
+    public static MethodHandle getClassGuard(Class<?> clazz) {
         return IS_OF_CLASS.bindTo(clazz);
     }
 
@@ -292,7 +292,7 @@ public class Guards {
      * @param clazz the class to test for.
      * @return the desired guard method.
      */
-    public static MethodHandle getInstanceOfGuard(final Class<?> clazz) {
+    public static MethodHandle getInstanceOfGuard(Class<?> clazz) {
         return IS_INSTANCE.bindTo(clazz);
     }
 
@@ -301,7 +301,7 @@ public class Guards {
      * @param obj the object used as referential identity test
      * @return the desired guard method.
      */
-    public static MethodHandle getIdentityGuard(final Object obj) {
+    public static MethodHandle getIdentityGuard(Object obj) {
         return IS_IDENTICAL.bindTo(obj);
     }
 
@@ -322,39 +322,39 @@ public class Guards {
     }
 
     @SuppressWarnings("unused")
-    private static boolean isNull(final Object obj) {
+    private static boolean isNull(Object obj) {
         return obj == null;
     }
 
     @SuppressWarnings("unused")
-    private static boolean isNotNull(final Object obj) {
+    private static boolean isNotNull(Object obj) {
         return obj != null;
     }
 
     @SuppressWarnings("unused")
-    private static boolean isArray(final Object o) {
+    private static boolean isArray(Object o) {
         return o != null && o.getClass().isArray();
     }
 
     @SuppressWarnings("unused")
-    private static boolean isOfClass(final Class<?> c, final Object o) {
+    private static boolean isOfClass(Class<?> c, Object o) {
         return o != null && o.getClass() == c;
     }
 
     @SuppressWarnings("unused")
-    private static boolean isIdentical(final Object o1, final Object o2) {
+    private static boolean isIdentical(Object o1, Object o2) {
         return o1 == o2;
     }
 
-    private static MethodHandle constantTrue(final MethodType type) {
+    private static MethodHandle constantTrue(MethodType type) {
         return constantBoolean(Boolean.TRUE, type);
     }
 
-    private static MethodHandle constantFalse(final MethodType type) {
+    private static MethodHandle constantFalse(MethodType type) {
         return constantBoolean(Boolean.FALSE, type);
     }
 
-    private static MethodHandle constantBoolean(final Boolean value, final MethodType type) {
+    private static MethodHandle constantBoolean(Boolean value, MethodType type) {
         return MethodHandles.permuteArguments(MethodHandles.constant(Boolean.TYPE, value),
                 type.changeReturnType(Boolean.TYPE));
     }

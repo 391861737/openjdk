@@ -72,9 +72,9 @@ final class LdapNamingEnumeration
     }
 
     @Override
-    protected AbstractLdapNamingEnumeration<? extends NameClassPair> getReferredResults(
+    protected LdapNamingEnumeration getReferredResults(
             LdapReferralContext refCtx) throws NamingException {
         // repeat the original operation at the new context
-        return (AbstractLdapNamingEnumeration<? extends NameClassPair>)refCtx.list(listArg);
+        return (LdapNamingEnumeration)refCtx.list(listArg);
     }
 }

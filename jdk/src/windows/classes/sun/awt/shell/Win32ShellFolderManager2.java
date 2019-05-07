@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2003, 2014, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2003, 2012, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -36,11 +36,9 @@ import java.security.PrivilegedAction;
 import java.util.*;
 import java.util.List;
 import java.util.concurrent.*;
-import java.util.stream.Stream;
 
 import static sun.awt.shell.Win32ShellFolder2.*;
 import sun.awt.OSInfo;
-import sun.misc.ThreadGroupUtils;
 
 // NOTE: This class supersedes Win32ShellFolderManager, which was removed
 //       from distribution after version 1.4.2.
@@ -56,7 +54,13 @@ public class Win32ShellFolderManager2 extends ShellFolderManager {
 
     static {
         // Load library here
-        sun.awt.windows.WToolkit.loadLibraries();
+        AccessController.doPrivileged(
+            new java.security.PrivilegedAction<Void>() {
+                public Void run() {
+                    System.loadLibrary("awt");
+                    return null;
+                }
+            });
     }
 
     public ShellFolder createShellFolder(File file) throws FileNotFoundException {
@@ -137,8 +141,6 @@ public class Win32ShellFolderManager2 extends ShellFolderManager {
         if (desktop == null) {
             try {
                 desktop = new Win32ShellFolder2(DESKTOP);
-            } catch (SecurityException e) {
-                // Ignore error
             } catch (IOException e) {
                 // Ignore error
             } catch (InterruptedException e) {
@@ -152,8 +154,6 @@ public class Win32ShellFolderManager2 extends ShellFolderManager {
         if (drives == null) {
             try {
                 drives = new Win32ShellFolder2(DRIVES);
-            } catch (SecurityException e) {
-                // Ignore error
             } catch (IOException e) {
                 // Ignore error
             } catch (InterruptedException e) {
@@ -170,8 +170,6 @@ public class Win32ShellFolderManager2 extends ShellFolderManager {
                 if (path != null) {
                     recent = createShellFolder(getDesktop(), new File(path));
                 }
-            } catch (SecurityException e) {
-                // Ignore error
             } catch (InterruptedException e) {
                 // Ignore error
             } catch (IOException e) {
@@ -185,8 +183,6 @@ public class Win32ShellFolderManager2 extends ShellFolderManager {
         if (network == null) {
             try {
                 network = new Win32ShellFolder2(NETWORK);
-            } catch (SecurityException e) {
-                // Ignore error
             } catch (IOException e) {
                 // Ignore error
             } catch (InterruptedException e) {
@@ -210,8 +206,6 @@ public class Win32ShellFolderManager2 extends ShellFolderManager {
                         personal.setIsPersonal();
                     }
                 }
-            } catch (SecurityException e) {
-                // Ignore error
             } catch (InterruptedException e) {
                 // Ignore error
             } catch (IOException e) {
@@ -252,7 +246,7 @@ public class Win32ShellFolderManager2 extends ShellFolderManager {
             if (file == null) {
                 file = getDesktop();
             }
-            return checkFile(file);
+            return file;
         } else if (key.equals("roots")) {
             // Should be "History" and "Desktop" ?
             if (roots == null) {
@@ -263,11 +257,11 @@ public class Win32ShellFolderManager2 extends ShellFolderManager {
                     roots = (File[])super.get(key);
                 }
             }
-            return checkFiles(roots);
+            return roots;
         } else if (key.equals("fileChooserComboBoxFolders")) {
             Win32ShellFolder2 desktop = getDesktop();
 
-            if (desktop != null && checkFile(desktop) != null) {
+            if (desktop != null) {
                 ArrayList<File> folders = new ArrayList<File>();
                 Win32ShellFolder2 drives = getDrives();
 
@@ -278,7 +272,7 @@ public class Win32ShellFolderManager2 extends ShellFolderManager {
 
                 folders.add(desktop);
                 // Add all second level folders
-                File[] secondLevelFolders = checkFiles(desktop.listFiles());
+                File[] secondLevelFolders = desktop.listFiles();
                 Arrays.sort(secondLevelFolders);
                 for (File secondLevelFolder : secondLevelFolders) {
                     Win32ShellFolder2 folder = (Win32ShellFolder2) secondLevelFolder;
@@ -286,7 +280,7 @@ public class Win32ShellFolderManager2 extends ShellFolderManager {
                         folders.add(folder);
                         // Add third level for "My Computer"
                         if (folder.equals(drives)) {
-                            File[] thirdLevelFolders = checkFiles(folder.listFiles());
+                            File[] thirdLevelFolders = folder.listFiles();
                             if (thirdLevelFolders != null && thirdLevelFolders.length > 0) {
                                 List<File> thirdLevelFoldersList = Arrays.asList(thirdLevelFolders);
 
@@ -296,7 +290,7 @@ public class Win32ShellFolderManager2 extends ShellFolderManager {
                         }
                     }
                 }
-                return checkFiles(folders);
+                return folders.toArray(new File[folders.size()]);
             } else {
                 return super.get(key);
             }
@@ -333,7 +327,7 @@ public class Win32ShellFolderManager2 extends ShellFolderManager {
                     }
                 }
             }
-            return checkFiles(folders);
+            return folders.toArray(new File[folders.size()]);
         } else if (key.startsWith("fileChooserIcon ")) {
             String name = key.substring(key.indexOf(" ") + 1);
 
@@ -377,41 +371,6 @@ public class Win32ShellFolderManager2 extends ShellFolderManager {
             }
         }
         return null;
-    }
-
-    private File checkFile(File file) {
-        SecurityManager sm = System.getSecurityManager();
-        return (sm == null || file == null) ? file : checkFile(file, sm);
-    }
-
-    private File checkFile(File file, SecurityManager sm) {
-        try {
-            sm.checkRead(file.getPath());
-            return file;
-        } catch (SecurityException se) {
-            return null;
-        }
-    }
-
-    private File[] checkFiles(File[] files) {
-        SecurityManager sm = System.getSecurityManager();
-        if (sm == null || files == null || files.length == 0) {
-            return files;
-        }
-        return checkFiles(Arrays.stream(files), sm);
-    }
-
-    private File[] checkFiles(List<File> files) {
-        SecurityManager sm = System.getSecurityManager();
-        if (sm == null || files.isEmpty()) {
-            return files.toArray(new File[files.size()]);
-        }
-        return checkFiles(files.stream(), sm);
-    }
-
-    private File[] checkFiles(Stream<File> filesStream, SecurityManager sm) {
-        return filesStream.filter((file) -> checkFile(file, sm) != null)
-                .toArray(File[]::new);
     }
 
     /**
@@ -550,16 +509,23 @@ public class Win32ShellFolderManager2 extends ShellFolderManager {
                     }
                 }
             };
-            comThread =  AccessController.doPrivileged((PrivilegedAction<Thread>) () -> {
+            comThread =
+                AccessController.doPrivileged(
+                    new PrivilegedAction<Thread>() {
+                        public Thread run() {
                             /* The thread must be a member of a thread group
                              * which will not get GCed before VM exit.
                              * Make its parent the top-level thread group.
                              */
-                            ThreadGroup rootTG = ThreadGroupUtils.getRootThreadGroup();
-                            Thread thread = new Thread(rootTG, comRun, "Swing-Shell");
+                            ThreadGroup tg = Thread.currentThread().getThreadGroup();
+                            for (ThreadGroup tgn = tg;
+                                 tgn != null;
+                                 tg = tgn, tgn = tg.getParent());
+                            Thread thread = new Thread(tg, comRun, "Swing-Shell");
                             thread.setDaemon(true);
                             return thread;
                         }
+                    }
                 );
             return comThread;
         }

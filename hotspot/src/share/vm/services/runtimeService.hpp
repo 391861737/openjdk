@@ -40,7 +40,6 @@ private:
 
   static TimeStamp _safepoint_timer;
   static TimeStamp _app_timer;
-  static double _last_safepoint_sync_time_sec;
 
 public:
   static void init();

@@ -31,7 +31,6 @@ import java.net.HttpURLConnection;
 import java.net.URL;
 import java.net.URLConnection;
 import java.net.MalformedURLException;
-import sun.net.util.URLUtil;
 
 public class URLImageSource extends InputStreamImageSource {
     URL url;
@@ -44,7 +43,7 @@ public class URLImageSource extends InputStreamImageSource {
         if (sm != null) {
             try {
                 java.security.Permission perm =
-                      URLUtil.getConnectPermission(u);
+                    u.openConnection().getPermission();
                 if (perm != null) {
                     try {
                         sm.checkPermission(perm);

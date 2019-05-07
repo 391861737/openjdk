@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2003, 2014, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2003, 2012, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -43,10 +43,6 @@ typedef int (*fn_ippPort)(void);
 typedef http_t* (*fn_httpConnect)(const char *, int);
 typedef void (*fn_httpClose)(http_t *);
 typedef char* (*fn_cupsGetPPD)(const char *);
-typedef cups_dest_t* (*fn_cupsGetDest)(const char *name,
-    const char *instance, int num_dests, cups_dest_t *dests);
-typedef int (*fn_cupsGetDests)(cups_dest_t **dests);
-typedef void (*fn_cupsFreeDests)(int num_dests, cups_dest_t *dests);
 typedef ppd_file_t* (*fn_ppdOpenFile)(const char *);
 typedef void (*fn_ppdClose)(ppd_file_t *);
 typedef ppd_option_t* (*fn_ppdFindOption)(ppd_file_t *, const char *);
@@ -57,9 +53,6 @@ fn_ippPort j2d_ippPort;
 fn_httpConnect j2d_httpConnect;
 fn_httpClose j2d_httpClose;
 fn_cupsGetPPD j2d_cupsGetPPD;
-fn_cupsGetDest j2d_cupsGetDest;
-fn_cupsGetDests j2d_cupsGetDests;
-fn_cupsFreeDests j2d_cupsFreeDests;
 fn_ppdOpenFile j2d_ppdOpenFile;
 fn_ppdClose j2d_ppdClose;
 fn_ppdFindOption j2d_ppdFindOption;
@@ -109,24 +102,6 @@ Java_sun_print_CUPSPrinter_initIDs(JNIEnv *env,
 
   j2d_cupsGetPPD = (fn_cupsGetPPD)dlsym(handle, "cupsGetPPD");
   if (j2d_cupsGetPPD == NULL) {
-    dlclose(handle);
-    return JNI_FALSE;
-  }
-
-  j2d_cupsGetDest = (fn_cupsGetDest)dlsym(handle, "cupsGetDest");
-  if (j2d_cupsGetDest == NULL) {
-    dlclose(handle);
-    return JNI_FALSE;
-  }
-
-  j2d_cupsGetDests = (fn_cupsGetDests)dlsym(handle, "cupsGetDests");
-  if (j2d_cupsGetDests == NULL) {
-    dlclose(handle);
-    return JNI_FALSE;
-  }
-
-  j2d_cupsFreeDests = (fn_cupsFreeDests)dlsym(handle, "cupsFreeDests");
-  if (j2d_cupsFreeDests == NULL) {
     dlclose(handle);
     return JNI_FALSE;
   }
@@ -195,30 +170,6 @@ Java_sun_print_CUPSPrinter_getCupsPort(JNIEnv *env,
 
 
 /*
- * Gets CUPS default printer name.
- *
- */
-JNIEXPORT jstring JNICALL
-Java_sun_print_CUPSPrinter_getCupsDefaultPrinter(JNIEnv *env,
-                                                  jobject printObj)
-{
-    jstring cDefPrinter = NULL;
-    cups_dest_t *dests;
-    char *defaultPrinter = NULL;
-    int num_dests = j2d_cupsGetDests(&dests);
-    int i = 0;
-    cups_dest_t *dest = j2d_cupsGetDest(NULL, NULL, num_dests, dests);
-    if (dest != NULL) {
-        defaultPrinter = dest->name;
-        if (defaultPrinter != NULL) {
-            cDefPrinter = JNU_NewStringPlatform(env, defaultPrinter);
-        }
-    }
-    j2d_cupsFreeDests(num_dests, dests);
-    return cDefPrinter;
-}
-
-/*
  * Checks if connection can be made to the server.
  *
  */
@@ -262,8 +213,6 @@ Java_sun_print_CUPSPrinter_getMedia(JNIEnv *env,
 
     name = (*env)->GetStringUTFChars(env, printer, NULL);
     if (name == NULL) {
-        (*env)->ExceptionClear(env);
-        JNU_ThrowOutOfMemoryError(env, "Could not create printer name");
         return NULL;
     }
 
@@ -271,10 +220,12 @@ Java_sun_print_CUPSPrinter_getMedia(JNIEnv *env,
     // unlink() must be caled to remove the file when finished using it.
     filename = j2d_cupsGetPPD(name);
     (*env)->ReleaseStringUTFChars(env, printer, name);
-    CHECK_NULL_RETURN(filename, NULL);
 
     cls = (*env)->FindClass(env, "java/lang/String");
-    CHECK_NULL_RETURN(cls, NULL);
+
+    if (filename == NULL) {
+        return NULL;
+    }
 
     if ((ppd = j2d_ppdOpenFile(filename)) == NULL) {
         unlink(filename);
@@ -298,7 +249,6 @@ Java_sun_print_CUPSPrinter_getMedia(JNIEnv *env,
             unlink(filename);
             j2d_ppdClose(ppd);
             DPRINTF("CUPSfuncs::bad alloc new array\n", "")
-            (*env)->ExceptionClear(env);
             JNU_ThrowOutOfMemoryError(env, "OutOfMemoryError");
             return NULL;
         }
@@ -373,11 +323,6 @@ Java_sun_print_CUPSPrinter_getPageSizes(JNIEnv *env,
     ppd_size_t *size;
 
     const char *name = (*env)->GetStringUTFChars(env, printer, NULL);
-    if (name == NULL) {
-        (*env)->ExceptionClear(env);
-        JNU_ThrowOutOfMemoryError(env, "Could not create printer name");
-        return NULL;
-    }
     const char *filename;
     int i;
     jobjectArray sizeArray = NULL;
@@ -387,7 +332,9 @@ Java_sun_print_CUPSPrinter_getPageSizes(JNIEnv *env,
     // unlink() must be called to remove the file after using it.
     filename = j2d_cupsGetPPD(name);
     (*env)->ReleaseStringUTFChars(env, printer, name);
-    CHECK_NULL_RETURN(filename, NULL);
+    if (filename == NULL) {
+        return NULL;
+    }
     if ((ppd = j2d_ppdOpenFile(filename)) == NULL) {
         unlink(filename);
         DPRINTF("unable to open PPD  %s\n", filename)
@@ -398,31 +345,18 @@ Java_sun_print_CUPSPrinter_getPageSizes(JNIEnv *env,
         // create array of dimensions - (num_choices * 6)
         //to cover length & height
         DPRINTF( "CUPSfuncs::option->num_choices %d\n", option->num_choices)
-        // +1 is for storing the default media index
-        sizeArray = (*env)->NewFloatArray(env, option->num_choices*6+1);
+        sizeArray = (*env)->NewFloatArray(env, option->num_choices*6);
         if (sizeArray == NULL) {
             unlink(filename);
             j2d_ppdClose(ppd);
             DPRINTF("CUPSfuncs::bad alloc new float array\n", "")
-            (*env)->ExceptionClear(env);
             JNU_ThrowOutOfMemoryError(env, "OutOfMemoryError");
             return NULL;
         }
 
         dims = (*env)->GetFloatArrayElements(env, sizeArray, NULL);
-        if (dims == NULL) {
-            unlink(filename);
-            j2d_ppdClose(ppd);
-            (*env)->ExceptionClear(env);
-            JNU_ThrowOutOfMemoryError(env, "Could not create printer name");
-            return NULL;
-        }
         for (i = 0; i<option->num_choices; i++) {
             choice = (option->choices)+i;
-            // get the index of the default page
-            if (!strcmp(choice->choice, option->defchoice)) {
-                dims[option->num_choices*6] = (float)i;
-            }
             size = j2d_ppdPageSize(ppd, choice->choice);
             if (size != NULL) {
                 // paper width and height

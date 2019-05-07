@@ -26,7 +26,6 @@
 package sun.util.locale.provider;
 
 import java.util.Locale;
-import java.util.Objects;
 import java.util.Set;
 import java.util.TimeZone;
 import java.util.spi.TimeZoneNameProvider;
@@ -96,9 +95,8 @@ public class TimeZoneNameProviderImpl extends TimeZoneNameProvider {
      */
     @Override
     public String getDisplayName(String id, boolean daylight, int style, Locale locale) {
-        String[] names = getDisplayNameArray(id, locale);
-        if (Objects.nonNull(names)) {
-            assert names.length >= 7;
+        String[] names = getDisplayNameArray(id, 5, locale);
+        if (names != null) {
             int index = daylight ? 3 : 1;
             if (style == TimeZone.SHORT) {
                 index++;
@@ -110,18 +108,18 @@ public class TimeZoneNameProviderImpl extends TimeZoneNameProvider {
 
     @Override
     public String getGenericDisplayName(String id, int style, Locale locale) {
-        String[] names = getDisplayNameArray(id, locale);
-        if (Objects.nonNull(names)) {
-            assert names.length >= 7;
+        String[] names = getDisplayNameArray(id, 7, locale);
+        if (names != null && names.length >= 7) {
             return names[(style == TimeZone.LONG) ? 5 : 6];
         }
         return null;
     }
 
-    private String[] getDisplayNameArray(String id, Locale locale) {
-        Objects.requireNonNull(id);
-        Objects.requireNonNull(locale);
-        return LocaleProviderAdapter.forType(type).getLocaleResources(locale).getTimeZoneNames(id);
+    private String[] getDisplayNameArray(String id, int n, Locale locale) {
+        if (id == null || locale == null) {
+            throw new NullPointerException();
+        }
+        return LocaleProviderAdapter.forType(type).getLocaleResources(locale).getTimeZoneNames(id, n);
     }
 
     /**

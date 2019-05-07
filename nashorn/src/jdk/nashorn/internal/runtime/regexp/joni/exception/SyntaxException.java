@@ -19,11 +19,10 @@
  */
 package jdk.nashorn.internal.runtime.regexp.joni.exception;
 
-@SuppressWarnings("javadoc")
 public class SyntaxException extends JOniException{
     private static final long serialVersionUID = 7862720128961874288L;
 
-    public SyntaxException(final String message) {
+    public SyntaxException(String message) {
         super(message);
     }
 }

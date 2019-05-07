@@ -23,7 +23,6 @@
  * questions.
  */
 
-#include <sys/poll.h>
 #include <sys/types.h>
 #include <sys/socket.h>
 #include <string.h>
@@ -41,9 +40,6 @@
 #include "nio.h"
 #include "sun_nio_ch_PollArrayWrapper.h"
 
-#ifdef _AIX
-#include <sys/utsname.h>
-#endif
 
 /**
  * IP_MULTICAST_ALL supported since 2.6.31 but may not be available at
@@ -55,45 +51,23 @@
   #endif
 #endif
 
-#if defined(_ALLBSD_SOURCE) || defined(_AIX)
+#ifdef _ALLBSD_SOURCE
 
 #ifndef IP_BLOCK_SOURCE
-
-#if defined(_AIX)
-
-#define IP_BLOCK_SOURCE                 58   /* Block data from a given source to a given group */
-#define IP_UNBLOCK_SOURCE               59   /* Unblock data from a given source to a given group */
-#define IP_ADD_SOURCE_MEMBERSHIP        60   /* Join a source-specific group */
-#define IP_DROP_SOURCE_MEMBERSHIP       61   /* Leave a source-specific group */
-
-#else
 
 #define IP_ADD_SOURCE_MEMBERSHIP        70   /* join a source-specific group */
 #define IP_DROP_SOURCE_MEMBERSHIP       71   /* drop a single source */
 #define IP_BLOCK_SOURCE                 72   /* block a source */
 #define IP_UNBLOCK_SOURCE               73   /* unblock a source */
 
-#endif /* _AIX */
-
 #endif  /* IP_BLOCK_SOURCE */
 
 #ifndef MCAST_BLOCK_SOURCE
-
-#if defined(_AIX)
-
-#define MCAST_BLOCK_SOURCE              64
-#define MCAST_UNBLOCK_SOURCE            65
-#define MCAST_JOIN_SOURCE_GROUP         66
-#define MCAST_LEAVE_SOURCE_GROUP        67
-
-#else
 
 #define MCAST_JOIN_SOURCE_GROUP         82   /* join a source-specific group */
 #define MCAST_LEAVE_SOURCE_GROUP        83   /* leave a single source */
 #define MCAST_BLOCK_SOURCE              84   /* block a source */
 #define MCAST_UNBLOCK_SOURCE            85   /* unblock a source */
-
-#endif /* _AIX */
 
 #endif /* MCAST_BLOCK_SOURCE */
 
@@ -104,23 +78,11 @@
 
 #endif /* IPV6_ADD_MEMBERSHIP */
 
-#if defined(_AIX)
-
-struct my_ip_mreq_source {
-        struct in_addr  imr_multiaddr;
-        struct in_addr  imr_sourceaddr;
-        struct in_addr  imr_interface;
-};
-
-#else
-
 struct my_ip_mreq_source {
         struct in_addr  imr_multiaddr;
         struct in_addr  imr_interface;
         struct in_addr  imr_sourceaddr;
 };
-
-#endif /* _AIX */
 
 struct my_group_source_req {
         uint32_t                gsr_interface;  /* interface index */
@@ -161,36 +123,6 @@ static void initGroupSourceReq(JNIEnv* env, jbyteArray group, jint index,
 }
 #endif
 
-#ifdef _AIX
-
-/*
- * Checks whether or not "socket extensions for multicast source filters" is supported.
- * Returns JNI_TRUE if it is supported, JNI_FALSE otherwise
- */
-static jboolean isSourceFilterSupported(){
-    static jboolean alreadyChecked = JNI_FALSE;
-    static jboolean result = JNI_TRUE;
-    if (alreadyChecked != JNI_TRUE){
-        struct utsname uts;
-        memset(&uts, 0, sizeof(uts));
-        strcpy(uts.sysname, "?");
-        const int utsRes = uname(&uts);
-        int major = -1;
-        int minor = -1;
-        major = atoi(uts.version);
-        minor = atoi(uts.release);
-        if (strcmp(uts.sysname, "AIX") == 0) {
-            if (major < 6 || (major == 6 && minor < 1)) {// unsupported on aix < 6.1
-                result = JNI_FALSE;
-            }
-        }
-        alreadyChecked = JNI_TRUE;
-    }
-    return result;
-}
-
-#endif  /* _AIX */
-
 JNIEXPORT void JNICALL
 Java_sun_nio_ch_Net_initIDs(JNIEnv *env, jclass clazz)
 {
@@ -211,7 +143,7 @@ Java_sun_nio_ch_Net_isExclusiveBindAvailable(JNIEnv *env, jclass clazz) {
 JNIEXPORT jboolean JNICALL
 Java_sun_nio_ch_Net_canIPv6SocketJoinIPv4Group0(JNIEnv* env, jclass cl)
 {
-#if defined(MACOSX) || defined(_AIX)
+#ifdef MACOSX
     /* for now IPv6 sockets cannot join IPv4 multicast groups */
     return JNI_FALSE;
 #else
@@ -231,7 +163,7 @@ Java_sun_nio_ch_Net_canJoin6WithIPv4Group0(JNIEnv* env, jclass cl)
 
 JNIEXPORT int JNICALL
 Java_sun_nio_ch_Net_socket0(JNIEnv *env, jclass cl, jboolean preferIPv6,
-                            jboolean stream, jboolean reuse, jboolean ignored)
+                            jboolean stream, jboolean reuse)
 {
     int fd;
     int type = (stream ? SOCK_STREAM : SOCK_DGRAM);
@@ -478,8 +410,7 @@ Java_sun_nio_ch_Net_getIntOption0(JNIEnv *env, jclass clazz, jobject fdo,
 
 JNIEXPORT void JNICALL
 Java_sun_nio_ch_Net_setIntOption0(JNIEnv *env, jclass clazz, jobject fdo,
-                                  jboolean mayNeedConversion, jint level,
-                                  jint opt, jint arg, jboolean isIPv6)
+                                  jboolean mayNeedConversion, jint level, jint opt, jint arg)
 {
     int result;
     struct linger linger;
@@ -522,12 +453,6 @@ Java_sun_nio_ch_Net_setIntOption0(JNIEnv *env, jclass clazz, jobject fdo,
                                      JNU_JAVANETPKG "SocketException",
                                      "sun.nio.ch.Net.setIntOption");
     }
-#ifdef __linux__
-    if (level == IPPROTO_IPV6 && opt == IPV6_TCLASS && isIPv6) {
-        // set the V4 option also
-        setsockopt(fdval(env, fdo), IPPROTO_IP, IP_TOS, parg, arglen);
-    }
-#endif
 }
 
 JNIEXPORT jint JNICALL
@@ -550,14 +475,6 @@ Java_sun_nio_ch_Net_joinOrDrop4(JNIEnv *env, jobject this, jboolean join, jobjec
         /* no IPv4 include-mode filtering for now */
         return IOS_UNAVAILABLE;
 #else
-
-#ifdef _AIX
-        /* check AIX for support of source filtering */
-        if (isSourceFilterSupported() != JNI_TRUE){
-            return IOS_UNAVAILABLE;
-        }
-#endif
-
         mreq_source.imr_multiaddr.s_addr = htonl(group);
         mreq_source.imr_sourceaddr.s_addr = htonl(source);
         mreq_source.imr_interface.s_addr = htonl(interf);
@@ -569,7 +486,7 @@ Java_sun_nio_ch_Net_joinOrDrop4(JNIEnv *env, jobject this, jboolean join, jobjec
 
     n = setsockopt(fdval(env,fdo), IPPROTO_IP, opt, optval, optlen);
     if (n < 0) {
-        if (join && (errno == ENOPROTOOPT || errno == EOPNOTSUPP))
+        if (join && (errno == ENOPROTOOPT))
             return IOS_UNAVAILABLE;
         handleSocketError(env, errno);
     }
@@ -588,13 +505,6 @@ Java_sun_nio_ch_Net_blockOrUnblock4(JNIEnv *env, jobject this, jboolean block, j
     int n;
     int opt = (block) ? IP_BLOCK_SOURCE : IP_UNBLOCK_SOURCE;
 
-#ifdef _AIX
-    /* check AIX for support of source filtering */
-    if (isSourceFilterSupported() != JNI_TRUE){
-        return IOS_UNAVAILABLE;
-    }
-#endif
-
     mreq_source.imr_multiaddr.s_addr = htonl(group);
     mreq_source.imr_sourceaddr.s_addr = htonl(source);
     mreq_source.imr_interface.s_addr = htonl(interf);
@@ -602,7 +512,7 @@ Java_sun_nio_ch_Net_blockOrUnblock4(JNIEnv *env, jobject this, jboolean block, j
     n = setsockopt(fdval(env,fdo), IPPROTO_IP, opt,
                    (void*)&mreq_source, sizeof(mreq_source));
     if (n < 0) {
-        if (block && (errno == ENOPROTOOPT || errno == EOPNOTSUPP))
+        if (block && (errno == ENOPROTOOPT))
             return IOS_UNAVAILABLE;
         handleSocketError(env, errno);
     }
@@ -640,7 +550,7 @@ Java_sun_nio_ch_Net_joinOrDrop6(JNIEnv *env, jobject this, jboolean join, jobjec
 
     n = setsockopt(fdval(env,fdo), IPPROTO_IPV6, opt, optval, optlen);
     if (n < 0) {
-        if (join && (errno == ENOPROTOOPT || errno == EOPNOTSUPP))
+        if (join && (errno == ENOPROTOOPT))
             return IOS_UNAVAILABLE;
         handleSocketError(env, errno);
     }
@@ -669,7 +579,7 @@ Java_sun_nio_ch_Net_blockOrUnblock6(JNIEnv *env, jobject this, jboolean block, j
     n = setsockopt(fdval(env,fdo), IPPROTO_IPV6, opt,
         (void*)&req, sizeof(req));
     if (n < 0) {
-        if (block && (errno == ENOPROTOOPT || errno == EOPNOTSUPP))
+        if (block && (errno == ENOPROTOOPT))
             return IOS_UNAVAILABLE;
         handleSocketError(env, errno);
     }
@@ -767,42 +677,6 @@ Java_sun_nio_ch_Net_poll(JNIEnv* env, jclass this, jobject fdo, jint events, jlo
         handleSocketError(env, errno);
         return IOS_THROWN;
     }
-}
-
-JNIEXPORT jshort JNICALL
-Java_sun_nio_ch_Net_pollinValue(JNIEnv *env, jclass this)
-{
-    return (jshort)POLLIN;
-}
-
-JNIEXPORT jshort JNICALL
-Java_sun_nio_ch_Net_polloutValue(JNIEnv *env, jclass this)
-{
-    return (jshort)POLLOUT;
-}
-
-JNIEXPORT jshort JNICALL
-Java_sun_nio_ch_Net_pollerrValue(JNIEnv *env, jclass this)
-{
-    return (jshort)POLLERR;
-}
-
-JNIEXPORT jshort JNICALL
-Java_sun_nio_ch_Net_pollhupValue(JNIEnv *env, jclass this)
-{
-    return (jshort)POLLHUP;
-}
-
-JNIEXPORT jshort JNICALL
-Java_sun_nio_ch_Net_pollnvalValue(JNIEnv *env, jclass this)
-{
-    return (jshort)POLLNVAL;
-}
-
-JNIEXPORT jshort JNICALL
-Java_sun_nio_ch_Net_pollconnValue(JNIEnv *env, jclass this)
-{
-    return (jshort)POLLOUT;
 }
 
 

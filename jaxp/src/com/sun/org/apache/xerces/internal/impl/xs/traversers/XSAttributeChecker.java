@@ -1,13 +1,13 @@
 /*
- * Copyright (c) 2015, 2016, Oracle and/or its affiliates. All rights reserved.
+ * reserved comment block
+ * DO NOT REMOVE OR ALTER!
  */
 /*
- * Licensed to the Apache Software Foundation (ASF) under one or more
- * contributor license agreements.  See the NOTICE file distributed with
- * this work for additional information regarding copyright ownership.
- * The ASF licenses this file to You under the Apache License, Version 2.0
- * (the "License"); you may not use this file except in compliance with
- * the License.  You may obtain a copy of the License at
+ * Copyright 2001-2004 The Apache Software Foundation.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
  *
  *      http://www.apache.org/licenses/LICENSE-2.0
  *
@@ -19,6 +19,12 @@
  */
 
 package com.sun.org.apache.xerces.internal.impl.xs.traversers;
+
+import java.util.Hashtable;
+import java.util.Iterator;
+import java.util.Map;
+import java.util.StringTokenizer;
+import java.util.Vector;
 
 import com.sun.org.apache.xerces.internal.impl.dv.InvalidDatatypeValueException;
 import com.sun.org.apache.xerces.internal.impl.dv.XSSimpleType;
@@ -38,10 +44,6 @@ import com.sun.org.apache.xerces.internal.utils.XMLSecurityManager;
 import com.sun.org.apache.xerces.internal.xni.QName;
 import com.sun.org.apache.xerces.internal.xs.XSConstants;
 import java.util.HashMap;
-import java.util.Iterator;
-import java.util.Map;
-import java.util.StringTokenizer;
-import java.util.Vector;
 import org.w3c.dom.Attr;
 import org.w3c.dom.Element;
 
@@ -62,7 +64,7 @@ import org.w3c.dom.Element;
  * - Whether to return non-schema attributes/values
  * - Do we need to update NamespaceScope and ErrorReporter when reset()?
  * - Should have the datatype validators return compiled value
- * - use symbol table instead of many maps
+ * - use symbol table instead of many hashtables
  *
  * @xerces.internal
  *
@@ -1024,7 +1026,9 @@ public class XSAttributeChecker {
             return null;
         }
 
+        //Hashtable attrValues = new Hashtable();
         Object[] attrValues = getAvailableArray();
+        //Hashtable otherValues = new Hashtable();
         long fromDefault = 0;
 
         // clear the "seen" flag.
@@ -1172,7 +1176,7 @@ public class XSAttributeChecker {
             if (max != SchemaSymbols.OCCURRENCE_UNBOUNDED) {
 
                 // maxOccurLimit is only check in secure mode
-                if (fSchemaHandler.fSecurityManager != null) {
+                if (fSchemaHandler.fSecureProcessing != null) {
                     String localName = element.getLocalName();
 
                 // The maxOccurs restriction no longer applies to elements
@@ -1191,9 +1195,9 @@ public class XSAttributeChecker {
                     if (!optimize) {
                     //Revisit :: IMO this is not right place to check
                     // maxOccurNodeLimit.
-                    int maxOccurNodeLimit = fSchemaHandler.fSecurityManager.getLimit(XMLSecurityManager.Limit.MAX_OCCUR_NODE_LIMIT);
-                    if (max > maxOccurNodeLimit && !fSchemaHandler.fSecurityManager.isNoLimit(maxOccurNodeLimit)) {
-                        reportSchemaFatalError("MaxOccurLimit", new Object[] {new Integer(maxOccurNodeLimit)}, element);
+                    int maxOccurNodeLimit = fSchemaHandler.fSecureProcessing.getLimit(XMLSecurityManager.Limit.MAX_OCCUR_NODE_LIMIT);
+                    if (max > maxOccurNodeLimit && !fSchemaHandler.fSecureProcessing.isNoLimit(maxOccurNodeLimit)) {
+                        reportSchemaFatalError("maxOccurLimit", new Object[] {new Integer(maxOccurNodeLimit)}, element);
 
                         // reset max values in case processing continues on error
                         attrValues[ATTIDX_MAXOCCURS] = fXIntPool.getXInt(maxOccurNodeLimit);

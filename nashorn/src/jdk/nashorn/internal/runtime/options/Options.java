@@ -42,13 +42,13 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.MissingResourceException;
-import java.util.Objects;
 import java.util.PropertyPermission;
 import java.util.ResourceBundle;
 import java.util.StringTokenizer;
 import java.util.TimeZone;
 import java.util.TreeMap;
 import java.util.TreeSet;
+import jdk.nashorn.internal.runtime.Logging;
 import jdk.nashorn.internal.runtime.QuotedStringTokenizer;
 
 /**
@@ -79,10 +79,7 @@ public final class Options {
     /** The options map of enabled options */
     private final TreeMap<String, Option<?>> options;
 
-    /** System property that can be used to prepend options to the explicitly specified command line. */
-    private static final String NASHORN_ARGS_PREPEND_PROPERTY = "nashorn.args.prepend";
-
-    /** System property that can be used to append options to the explicitly specified command line. */
+    /** System property that can be used for command line option propagation */
     private static final String NASHORN_ARGS_PROPERTY = "nashorn.args";
 
     /**
@@ -136,30 +133,24 @@ public final class Options {
         return options.toString();
     }
 
-    private static void checkPropertyName(final String name) {
-        if (! Objects.requireNonNull(name).startsWith("nashorn.")) {
-            throw new IllegalArgumentException(name);
-        }
-    }
-
     /**
      * Convenience function for getting system properties in a safe way
 
      * @param name of boolean property
-     * @param defValue default value of boolean property
-     * @return true if set to true, default value if unset or set to false
+     * @return true if set to true, false if unset or set to false
      */
-    public static boolean getBooleanProperty(final String name, final Boolean defValue) {
-        checkPropertyName(name);
+    public static boolean getBooleanProperty(final String name) {
+        name.getClass(); // null check
+        if (!name.startsWith("nashorn.")) {
+            throw new IllegalArgumentException(name);
+        }
+
         return AccessController.doPrivileged(
                 new PrivilegedAction<Boolean>() {
                     @Override
                     public Boolean run() {
                         try {
                             final String property = System.getProperty(name);
-                            if (property == null && defValue != null) {
-                                return defValue;
-                            }
                             return property != null && !"false".equalsIgnoreCase(property);
                         } catch (final SecurityException e) {
                             // if no permission to read, assume false
@@ -171,23 +162,17 @@ public final class Options {
 
     /**
      * Convenience function for getting system properties in a safe way
-
-     * @param name of boolean property
-     * @return true if set to true, false if unset or set to false
-     */
-    public static boolean getBooleanProperty(final String name) {
-        return getBooleanProperty(name, null);
-    }
-
-    /**
-     * Convenience function for getting system properties in a safe way
      *
      * @param name of string property
      * @param defValue the default value if unset
      * @return string property if set or default value
      */
     public static String getStringProperty(final String name, final String defValue) {
-        checkPropertyName(name);
+        name.getClass(); // null check
+        if (! name.startsWith("nashorn.")) {
+            throw new IllegalArgumentException(name);
+        }
+
         return AccessController.doPrivileged(
                 new PrivilegedAction<String>() {
                     @Override
@@ -210,7 +195,11 @@ public final class Options {
      * @return integer property if set or default value
      */
     public static int getIntProperty(final String name, final int defValue) {
-        checkPropertyName(name);
+        name.getClass(); // null check
+        if (! name.startsWith("nashorn.")) {
+            throw new IllegalArgumentException(name);
+        }
+
         return AccessController.doPrivileged(
                 new PrivilegedAction<Integer>() {
                     @Override
@@ -417,18 +406,16 @@ public final class Options {
      */
     public void process(final String[] args) {
         final LinkedList<String> argList = new LinkedList<>();
-        addSystemProperties(NASHORN_ARGS_PREPEND_PROPERTY, argList);
-        processArgList(argList);
-        assert argList.isEmpty();
         Collections.addAll(argList, args);
-        processArgList(argList);
-        assert argList.isEmpty();
-        addSystemProperties(NASHORN_ARGS_PROPERTY, argList);
-        processArgList(argList);
-        assert argList.isEmpty();
-    }
 
-    private void processArgList(final LinkedList<String> argList) {
+        final String extra = getStringProperty(NASHORN_ARGS_PROPERTY, null);
+        if (extra != null) {
+            final StringTokenizer st = new StringTokenizer(extra);
+            while (st.hasMoreTokens()) {
+                argList.add(st.nextToken());
+            }
+        }
+
         while (!argList.isEmpty()) {
             final String arg = argList.remove(0);
 
@@ -509,35 +496,9 @@ public final class Options {
         }
     }
 
-    private static void addSystemProperties(final String sysPropName, final List<String> argList) {
-        final String sysArgs = getStringProperty(sysPropName, null);
-        if (sysArgs != null) {
-            final StringTokenizer st = new StringTokenizer(sysArgs);
-            while (st.hasMoreTokens()) {
-                argList.add(st.nextToken());
-            }
-        }
-    }
-
-    /**
-     * Retrieves an option template identified by key.
-     * @param shortKey the short (that is without the e.g. "nashorn.option." part) key
-     * @return the option template identified by the key
-     * @throws IllegalArgumentException if the key doesn't specify an existing template
-     */
-    public OptionTemplate getOptionTemplateByKey(final String shortKey) {
-        final String fullKey = key(shortKey);
-        for(final OptionTemplate t: validOptions) {
-            if(t.getKey().equals(fullKey)) {
-                return t;
-            }
-        }
-        throw new IllegalArgumentException(shortKey);
-    }
-
-    private static OptionTemplate getOptionTemplateByName(final String name) {
+    private static OptionTemplate getOptionTemplate(final String key) {
         for (final OptionTemplate t : Options.validOptions) {
-            if (t.nameMatches(name)) {
+            if (t.matches(key)) {
                 return t;
             }
         }
@@ -557,12 +518,14 @@ public final class Options {
         case "keyvalues":
             return new KeyValueOption(value);
         case "log":
-            return new LoggingOption(value);
+            final KeyValueOption kv = new KeyValueOption(value);
+            Logging.initialize(kv.getValues());
+            return kv;
         case "boolean":
             return new Option<>(value != null && Boolean.parseBoolean(value));
         case "integer":
             try {
-                return new Option<>(value == null ? 0 : Integer.parseInt(value));
+                return new Option<>((value == null) ? 0 : Integer.parseInt(value));
             } catch (final NumberFormatException nfe) {
                 throw new IllegalOptionException(t);
             }
@@ -697,7 +660,7 @@ public final class Options {
             }
 
             final String token = st.nextToken();
-            this.template = getOptionTemplateByName(token);
+            this.template = Options.getOptionTemplate(token);
             if (this.template == null) {
                 throw new IllegalArgumentException(argument);
             }

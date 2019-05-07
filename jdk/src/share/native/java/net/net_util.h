@@ -40,7 +40,10 @@
 #define IPv6 2
 
 #define NET_ERROR(env, ex, msg) \
-{ if (!(*env)->ExceptionOccurred(env)) JNU_ThrowByName(env, ex, msg); }
+{ if (!(*env)->ExceptionOccurred(env)) JNU_ThrowByName(env, ex, msg) }
+
+#define CHECK_NULL(x) if ((x) == NULL) return;
+#define CHECK_NULL_RETURN(x, y) if ((x) == NULL) return y;
 
 /************************************************************************
  * Cached field IDs
@@ -53,10 +56,7 @@ extern jclass ia_class;
 extern jfieldID iac_addressID;
 extern jfieldID iac_familyID;
 extern jfieldID iac_hostNameID;
-extern jfieldID iac_origHostNameID;
 extern jfieldID ia_preferIPv6AddressID;
-
-JNIEXPORT void JNICALL initInetAddressIDs(JNIEnv *env);
 
 /** (Inet6Address accessors)
  * set_ methods return JNI_TRUE on success JNI_FALSE on error
@@ -140,7 +140,7 @@ NET_InetAddressToSockaddr(JNIEnv *env, jobject iaObj, int port, struct sockaddr 
 JNIEXPORT jobject JNICALL
 NET_SockaddrToInetAddress(JNIEnv *env, struct sockaddr *him, int *port);
 
-void platformInit();
+void initLocalAddrTable ();
 void parseExclusiveBindProperty(JNIEnv *env);
 
 void
@@ -185,13 +185,9 @@ NET_MapSocketOption(jint cmd, int *level, int *optname);
 JNIEXPORT int JNICALL
 NET_MapSocketOptionV6(jint cmd, int *level, int *optname);
 
-JNIEXPORT jint JNICALL
-NET_EnableFastTcpLoopback(int fd);
-
 int getScopeID (struct sockaddr *);
 
 int cmpScopeID (unsigned int, struct sockaddr *);
 
 unsigned short in_cksum(unsigned short *addr, int len);
-
 #endif /* NET_UTILS_H */

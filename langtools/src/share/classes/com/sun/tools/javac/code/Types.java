@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2003, 2014, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2003, 2013, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -43,11 +43,9 @@ import com.sun.tools.javac.comp.Check;
 import com.sun.tools.javac.comp.Enter;
 import com.sun.tools.javac.comp.Env;
 import com.sun.tools.javac.jvm.ClassReader;
-import com.sun.tools.javac.tree.JCTree;
 import com.sun.tools.javac.util.*;
 import static com.sun.tools.javac.code.BoundKind.*;
 import static com.sun.tools.javac.code.Flags.*;
-import static com.sun.tools.javac.code.Kinds.MTH;
 import static com.sun.tools.javac.code.Scope.*;
 import static com.sun.tools.javac.code.Symbol.*;
 import static com.sun.tools.javac.code.Type.*;
@@ -125,57 +123,61 @@ public class Types {
     }
     // </editor-fold>
 
-     // <editor-fold defaultstate="collapsed" desc="bounds">
-     /**
-      * Get a wildcard's upper bound, returning non-wildcards unchanged.
-      * @param t a type argument, either a wildcard or a type
-      */
-     public Type wildUpperBound(Type t) {
-         if (t.hasTag(WILDCARD)) {
-             WildcardType w = (WildcardType) t.unannotatedType();
-             if (w.isSuperBound())
-                 return w.bound == null ? syms.objectType : w.bound.bound;
-             else
-                 return wildUpperBound(w.type);
-         }
-         else return t.unannotatedType();
-     }
-
-     /**
-      * Get a capture variable's upper bound, returning other types unchanged.
-      * @param t a type
-      */
-     public Type cvarUpperBound(Type t) {
-         if (t.hasTag(TYPEVAR)) {
-             TypeVar v = (TypeVar) t.unannotatedType();
-             return v.isCaptured() ? cvarUpperBound(v.bound) : v;
-         }
-         else return t.unannotatedType();
-     }
-
+    // <editor-fold defaultstate="collapsed" desc="upperBound">
     /**
-     * Get a wildcard's lower bound, returning non-wildcards unchanged.
-     * @param t a type argument, either a wildcard or a type
-     */
-    public Type wildLowerBound(Type t) {
-        if (t.hasTag(WILDCARD)) {
-            WildcardType w = (WildcardType) t.unannotatedType();
-            return w.isExtendsBound() ? syms.botType : wildLowerBound(w.type);
-        }
-        else return t.unannotatedType();
-    }
-
-    /**
-     * Get a capture variable's lower bound, returning other types unchanged.
+     * The "rvalue conversion".<br>
+     * The upper bound of most types is the type
+     * itself.  Wildcards, on the other hand have upper
+     * and lower bounds.
      * @param t a type
+     * @return the upper bound of the given type
      */
-    public Type cvarLowerBound(Type t) {
-        if (t.hasTag(TYPEVAR)) {
-            TypeVar v = (TypeVar) t.unannotatedType();
-            return v.isCaptured() ? cvarLowerBound(v.getLowerBound()) : v;
-        }
-        else return t.unannotatedType();
+    public Type upperBound(Type t) {
+        return upperBound.visit(t).unannotatedType();
     }
+    // where
+        private final MapVisitor<Void> upperBound = new MapVisitor<Void>() {
+
+            @Override
+            public Type visitWildcardType(WildcardType t, Void ignored) {
+                if (t.isSuperBound())
+                    return t.bound == null ? syms.objectType : t.bound.bound;
+                else
+                    return visit(t.type);
+            }
+
+            @Override
+            public Type visitCapturedType(CapturedType t, Void ignored) {
+                return visit(t.bound);
+            }
+        };
+    // </editor-fold>
+
+    // <editor-fold defaultstate="collapsed" desc="lowerBound">
+    /**
+     * The "lvalue conversion".<br>
+     * The lower bound of most types is the type
+     * itself.  Wildcards, on the other hand have upper
+     * and lower bounds.
+     * @param t a type
+     * @return the lower bound of the given type
+     */
+    public Type lowerBound(Type t) {
+        return lowerBound.visit(t);
+    }
+    // where
+        private final MapVisitor<Void> lowerBound = new MapVisitor<Void>() {
+
+            @Override
+            public Type visitWildcardType(WildcardType t, Void ignored) {
+                return t.isExtendsBound() ? syms.botType : visit(t.type);
+            }
+
+            @Override
+            public Type visitCapturedType(CapturedType t, Void ignored) {
+                return visit(t.getLowerBound());
+            }
+        };
     // </editor-fold>
 
     // <editor-fold defaultstate="collapsed" desc="isUnbounded">
@@ -305,8 +307,8 @@ public class Types {
     }
 
     /**
-     * Is t a subtype of or convertible via boxing/unboxing
-     * conversions to s?
+     * Is t a subtype of or convertiable via boxing/unboxing
+     * convertions to s?
      */
     public boolean isConvertible(Type t, Type s) {
         return isConvertible(t, s, noWarnings);
@@ -632,7 +634,7 @@ public class Types {
      * (ii) perform functional interface bridge calculation.
      */
     public ClassSymbol makeFunctionalInterfaceClass(Env<AttrContext> env, Name name, List<Type> targets, long cflags) {
-        if (targets.isEmpty()) {
+        if (targets.isEmpty() || !isFunctionalInterface(targets.head)) {
             return null;
         }
         Symbol descSym = findDescriptorSymbol(targets.head.tsym);
@@ -827,15 +829,9 @@ public class Types {
             return true;
         }
 
-        // Generally, if 's' is a type variable, recur on lower bound; but
-        // for inference variables and intersections, we need to keep 's'
-        // (see JLS 4.10.2 for intersections and 18.2.3 for inference vars)
-        if (!t.hasTag(UNDETVAR) && !t.isCompound()) {
-            // TODO: JDK-8039198, bounds checking sometimes passes in a wildcard as s
-            Type lower = cvarLowerBound(wildLowerBound(s));
-            if (s != lower)
-                return isSubtype(capture ? capture(t) : t, lower, false);
-        }
+        Type lower = lowerBound(s);
+        if (s != lower)
+            return isSubtype(capture ? capture(t) : t, lower, false);
 
         return isSubtype.visit(capture ? capture(t) : t, s);
     }
@@ -903,7 +899,7 @@ public class Types {
                                              syms.boundClass);
                         changed = true;
                     } else if (s != orig) {
-                        s = new WildcardType(wildUpperBound(s),
+                        s = new WildcardType(upperBound(s),
                                              BoundKind.EXTENDS,
                                              syms.boundClass);
                         changed = true;
@@ -919,11 +915,14 @@ public class Types {
             @Override
             public Boolean visitClassType(ClassType t, Type s) {
                 Type sup = asSuper(t, s.tsym);
-                if (sup == null) return false;
-                // If t is an intersection, sup might not be a class type
-                if (!sup.hasTag(CLASS)) return isSubtypeNoCapture(sup, s);
-                return sup.tsym == s.tsym
-                     // Check type variable containment
+                return sup != null
+                    && sup.tsym == s.tsym
+                    // You're not allowed to write
+                    //     Vector<Object> vec = new Vector<String>();
+                    // But with wildcards you can write
+                    //     Vector<? extends Object> vec = new Vector<String>();
+                    // which means that subtype checking must be done
+                    // here instead of same-type checking (via containsType).
                     && (!s.isParameterized() || containsTypeRecursive(s, sup))
                     && isSubtypeNoCapture(sup.getEnclosingType(),
                                           s.getEnclosingType());
@@ -1067,7 +1066,7 @@ public class Types {
        List<Type> argtypes = msym.type.getParameterTypes();
        return (msym.flags_field & NATIVE) != 0 &&
                msym.owner == syms.methodHandleType.tsym &&
-               argtypes.length() == 1 &&
+               argtypes.tail.tail == null &&
                argtypes.head.hasTag(TypeTag.ARRAY) &&
                msym.type.getReturnType().tsym == syms.objectType.tsym &&
                ((ArrayType)argtypes.head).elemtype.tsym == syms.objectType.tsym;
@@ -1112,7 +1111,7 @@ public class Types {
                         //check that u == t, where u has been set by Type.withTypeVar
                         return s.isSuperBound() &&
                                 !s.isExtendsBound() &&
-                                visit(t, wildUpperBound(s));
+                                visit(t, upperBound(s));
                     }
                 }
                 default:
@@ -1139,7 +1138,7 @@ public class Types {
                     return visit(s, t);
 
                 if (s.isSuperBound() && !s.isExtendsBound())
-                    return visit(t, wildUpperBound(s)) && visit(t, wildLowerBound(s));
+                    return visit(t, upperBound(s)) && visit(t, lowerBound(s));
 
                 if (t.isCompound() && s.isCompound()) {
                     if (!visit(supertype(t), supertype(s)))
@@ -1225,34 +1224,13 @@ public class Types {
         TypeRelation isSameTypeLoose = new LooseSameTypeVisitor();
 
         private class LooseSameTypeVisitor extends SameTypeVisitor {
-
-            /** cache of the type-variable pairs being (recursively) tested. */
-            private Set<TypePair> cache = new HashSet<>();
-
             @Override
             boolean sameTypeVars(TypeVar tv1, TypeVar tv2) {
-                return tv1.tsym == tv2.tsym && checkSameBounds(tv1, tv2);
+                return tv1.tsym == tv2.tsym && visit(tv1.getUpperBound(), tv2.getUpperBound());
             }
             @Override
             protected boolean containsTypes(List<Type> ts1, List<Type> ts2) {
                 return containsTypeEquivalent(ts1, ts2);
-            }
-
-            /**
-             * Since type-variable bounds can be recursive, we need to protect against
-             * infinite loops - where the same bounds are checked over and over recursively.
-             */
-            private boolean checkSameBounds(TypeVar tv1, TypeVar tv2) {
-                TypePair p = new TypePair(tv1, tv2, true);
-                if (cache.add(p)) {
-                    try {
-                        return visit(tv1.getUpperBound(), tv2.getUpperBound());
-                    } finally {
-                        cache.remove(p);
-                    }
-                } else {
-                    return false;
-                }
             }
         };
 
@@ -1308,15 +1286,14 @@ public class Types {
                 UndetVar undetvar = (UndetVar)t;
                 WildcardType wt = (WildcardType)s.unannotatedType();
                 switch(wt.kind) {
-                    case UNBOUND:
-                        break;
+                    case UNBOUND: //similar to ? extends Object
                     case EXTENDS: {
-                        Type bound = wildUpperBound(s);
+                        Type bound = upperBound(s);
                         undetvar.addBound(InferenceBound.UPPER, bound, this);
                         break;
                     }
                     case SUPER: {
-                        Type bound = wildLowerBound(s);
+                        Type bound = lowerBound(s);
                         undetvar.addBound(InferenceBound.LOWER, bound, this);
                         break;
                     }
@@ -1372,6 +1349,28 @@ public class Types {
     // where
         private TypeRelation containsType = new TypeRelation() {
 
+            private Type U(Type t) {
+                while (t.hasTag(WILDCARD)) {
+                    WildcardType w = (WildcardType)t.unannotatedType();
+                    if (w.isSuperBound())
+                        return w.bound == null ? syms.objectType : w.bound.bound;
+                    else
+                        t = w.type;
+                }
+                return t;
+            }
+
+            private Type L(Type t) {
+                while (t.hasTag(WILDCARD)) {
+                    WildcardType w = (WildcardType)t.unannotatedType();
+                    if (w.isExtendsBound())
+                        return syms.botType;
+                    else
+                        t = w.type;
+                }
+                return t;
+            }
+
             public Boolean visitType(Type t, Type s) {
                 if (s.isPartial())
                     return containedBy(s, t);
@@ -1383,13 +1382,13 @@ public class Types {
 //                System.err.println();
 //                System.err.format(" does %s contain %s?%n", t, s);
 //                System.err.format(" %s U(%s) <: U(%s) %s = %s%n",
-//                                  wildUpperBound(s), s, t, wildUpperBound(t),
+//                                  upperBound(s), s, t, U(t),
 //                                  t.isSuperBound()
-//                                  || isSubtypeNoCapture(wildUpperBound(s), wildUpperBound(t)));
+//                                  || isSubtypeNoCapture(upperBound(s), U(t)));
 //                System.err.format(" %s L(%s) <: L(%s) %s = %s%n",
-//                                  wildLowerBound(t), t, s, wildLowerBound(s),
+//                                  L(t), t, s, lowerBound(s),
 //                                  t.isExtendsBound()
-//                                  || isSubtypeNoCapture(wildLowerBound(t), wildLowerBound(s)));
+//                                  || isSubtypeNoCapture(L(t), lowerBound(s)));
 //                System.err.println();
 //            }
 
@@ -1400,11 +1399,9 @@ public class Types {
                 else {
 //                    debugContainsType(t, s);
                     return isSameWildcard(t, s)
-                        || t.type == s
                         || isCaptureOf(s, t)
-                        || ((t.isExtendsBound() || isSubtypeNoCapture(wildLowerBound(t), cvarLowerBound(wildLowerBound(s)))) &&
-                            // TODO: JDK-8039214, cvarUpperBound call here is incorrect
-                            (t.isSuperBound() || isSubtypeNoCapture(cvarUpperBound(wildUpperBound(s)), wildUpperBound(t))));
+                        || ((t.isExtendsBound() || isSubtypeNoCapture(L(t), lowerBound(s))) &&
+                            (t.isSuperBound() || isSubtypeNoCapture(upperBound(s), U(t))));
                 }
             }
 
@@ -1522,7 +1519,7 @@ public class Types {
 
             @Override
             public Boolean visitWildcardType(WildcardType t, Type s) {
-                return isCastable(wildUpperBound(t), s, warnStack.head);
+                return isCastable(upperBound(t), s, warnStack.head);
             }
 
             @Override
@@ -1539,8 +1536,8 @@ public class Types {
                     }
                 }
 
-                if (t.isIntersection() || s.isIntersection()) {
-                    return !t.isIntersection() ?
+                if (t.isCompound() || s.isCompound()) {
+                    return !t.isCompound() ?
                             visitIntersectionType((IntersectionClassType)s.unannotatedType(), t, true) :
                             visitIntersectionType((IntersectionClassType)t.unannotatedType(), s, false);
                 }
@@ -1763,25 +1760,31 @@ public class Types {
 
                 if (t.isExtendsBound()) {
                     if (s.isExtendsBound())
-                        return !isCastableRecursive(t.type, wildUpperBound(s));
+                        return !isCastableRecursive(t.type, upperBound(s));
                     else if (s.isSuperBound())
-                        return notSoftSubtypeRecursive(wildLowerBound(s), t.type);
+                        return notSoftSubtypeRecursive(lowerBound(s), t.type);
                 } else if (t.isSuperBound()) {
                     if (s.isExtendsBound())
-                        return notSoftSubtypeRecursive(t.type, wildUpperBound(s));
+                        return notSoftSubtypeRecursive(t.type, upperBound(s));
                 }
                 return false;
             }
         };
     // </editor-fold>
 
-    // <editor-fold defaultstate="collapsed" desc="cvarLowerBounds">
-    public List<Type> cvarLowerBounds(List<Type> ts) {
-        return map(ts, cvarLowerBoundMapping);
+    // <editor-fold defaultstate="collapsed" desc="lowerBoundArgtypes">
+    /**
+     * Returns the lower bounds of the formals of a method.
+     */
+    public List<Type> lowerBoundArgtypes(Type t) {
+        return lowerBounds(t.getParameterTypes());
     }
-    private final Mapping cvarLowerBoundMapping = new Mapping("cvarLowerBound") {
+    public List<Type> lowerBounds(List<Type> ts) {
+        return map(ts, lowerBoundMapping);
+    }
+    private final Mapping lowerBoundMapping = new Mapping("lowerBound") {
             public Type apply(Type t) {
-                return cvarLowerBound(t);
+                return lowerBound(t);
             }
         };
     // </editor-fold>
@@ -1804,7 +1807,7 @@ public class Types {
                                noWarnings);
         }
         if (!s.hasTag(WILDCARD))
-            s = cvarUpperBound(s);
+            s = upperBound(s);
 
         return !isSubtype(t, relaxBound(s));
     }
@@ -1861,7 +1864,7 @@ public class Types {
     // <editor-fold defaultstate="collapsed" desc="Array Utils">
     public boolean isArray(Type t) {
         while (t.hasTag(WILDCARD))
-            t = wildUpperBound(t);
+            t = upperBound(t);
         return t.hasTag(ARRAY);
     }
 
@@ -1871,7 +1874,7 @@ public class Types {
     public Type elemtype(Type t) {
         switch (t.getTag()) {
         case WILDCARD:
-            return elemtype(wildUpperBound(t));
+            return elemtype(upperBound(t));
         case ARRAY:
             t = t.unannotatedType();
             return ((ArrayType)t).elemtype;
@@ -1895,12 +1898,7 @@ public class Types {
      * Mapping to take element type of an arraytype
      */
     private Mapping elemTypeFun = new Mapping ("elemTypeFun") {
-        public Type apply(Type t) {
-            while (t.hasTag(TYPEVAR)) {
-                t = t.getUpperBound();
-            }
-            return elemtype(t);
-        }
+        public Type apply(Type t) { return elemtype(t); }
     };
 
     /**
@@ -1938,17 +1936,6 @@ public class Types {
      * @param sym a symbol
      */
     public Type asSuper(Type t, Symbol sym) {
-        /* Some examples:
-         *
-         * (Enum<E>, Comparable) => Comparable<E>
-         * (c.s.s.d.AttributeTree.ValueKind, Enum) => Enum<c.s.s.d.AttributeTree.ValueKind>
-         * (c.s.s.t.ExpressionTree, c.s.s.t.Tree) => c.s.s.t.Tree
-         * (j.u.List<capture#160 of ? extends c.s.s.d.DocTree>, Iterable) =>
-         *     Iterable<capture#160 of ? extends c.s.s.d.DocTree>
-         */
-        if (sym.type == syms.objectType) { //optimization
-            return syms.objectType;
-        }
         return asSuper.visit(t, sym);
     }
     // where
@@ -1964,18 +1951,16 @@ public class Types {
                     return t;
 
                 Type st = supertype(t);
-                if (st.hasTag(CLASS) || st.hasTag(TYPEVAR)) {
+                if (st.hasTag(CLASS) || st.hasTag(TYPEVAR) || st.hasTag(ERROR)) {
                     Type x = asSuper(st, sym);
                     if (x != null)
                         return x;
                 }
                 if ((sym.flags() & INTERFACE) != 0) {
                     for (List<Type> l = interfaces(t); l.nonEmpty(); l = l.tail) {
-                        if (!l.head.hasTag(ERROR)) {
-                            Type x = asSuper(l.head, sym);
-                            if (x != null)
-                                return x;
-                        }
+                        Type x = asSuper(l.head, sym);
+                        if (x != null)
+                            return x;
                     }
                 }
                 return null;
@@ -2079,7 +2064,7 @@ public class Types {
 
             @Override
             public Type visitWildcardType(WildcardType t, Symbol sym) {
-                return memberType(wildUpperBound(t), sym);
+                return memberType(upperBound(t), sym);
             }
 
             @Override
@@ -2198,7 +2183,7 @@ public class Types {
 
             @Override
             public Type visitWildcardType(WildcardType t, Boolean recurse) {
-                return erasure(wildUpperBound(t), recurse);
+                return erasure(upperBound(t), recurse);
             }
 
             @Override
@@ -2255,28 +2240,18 @@ public class Types {
     }
     // </editor-fold>
 
-    // <editor-fold defaultstate="collapsed" desc="makeIntersectionType">
+    // <editor-fold defaultstate="collapsed" desc="makeCompoundType">
     /**
-     * Make an intersection type from non-empty list of types.  The list should be ordered according to
-     * {@link TypeSymbol#precedes(TypeSymbol, Types)}. Note that this might cause a symbol completion.
-     * Hence, this version of makeIntersectionType may not be called during a classfile read.
+     * Make a compound type from non-empty list of types
      *
-     * @param bounds    the types from which the intersection type is formed
+     * @param bounds            the types from which the compound type is formed
+     * @param supertype         is objectType if all bounds are interfaces,
+     *                          null otherwise.
      */
-    public IntersectionClassType makeIntersectionType(List<Type> bounds) {
-        return makeIntersectionType(bounds, bounds.head.tsym.isInterface());
+    public Type makeCompoundType(List<Type> bounds) {
+        return makeCompoundType(bounds, bounds.head.tsym.isInterface());
     }
-
-    /**
-     * Make an intersection type from non-empty list of types.  The list should be ordered according to
-     * {@link TypeSymbol#precedes(TypeSymbol, Types)}. This does not cause symbol completion as
-     * an extra parameter indicates as to whether all bounds are interfaces - in which case the
-     * supertype is implicitly assumed to be 'Object'.
-     *
-     * @param bounds        the types from which the intersection type is formed
-     * @param allInterfaces are all bounds interface types?
-     */
-    public IntersectionClassType makeIntersectionType(List<Type> bounds, boolean allInterfaces) {
+    public Type makeCompoundType(List<Type> bounds, boolean allInterfaces) {
         Assert.check(bounds.nonEmpty());
         Type firstExplicitBound = bounds.head;
         if (allInterfaces) {
@@ -2289,24 +2264,23 @@ public class Types {
                                 : names.empty,
                             null,
                             syms.noSymbol);
-        IntersectionClassType intersectionType = new IntersectionClassType(bounds, bc, allInterfaces);
-        bc.type = intersectionType;
+        bc.type = new IntersectionClassType(bounds, bc, allInterfaces);
         bc.erasure_field = (bounds.head.hasTag(TYPEVAR)) ?
                 syms.objectType : // error condition, recover
                 erasure(firstExplicitBound);
         bc.members_field = new Scope(bc);
-        return intersectionType;
+        return bc.type;
     }
 
     /**
-     * A convenience wrapper for {@link #makeIntersectionType(List)}; the
+     * A convenience wrapper for {@link #makeCompoundType(List)}; the
      * arguments are converted to a list and passed to the other
      * method.  Note that this might cause a symbol completion.
-     * Hence, this version of makeIntersectionType may not be called
+     * Hence, this version of makeCompoundType may not be called
      * during a classfile read.
      */
-    public Type makeIntersectionType(Type bound1, Type bound2) {
-        return makeIntersectionType(List.of(bound1, bound2));
+    public Type makeCompoundType(Type bound1, Type bound2) {
+        return makeCompoundType(List.of(bound1, bound2));
     }
     // </editor-fold>
 
@@ -2320,7 +2294,7 @@ public class Types {
             public Type visitType(Type t, Void ignored) {
                 // A note on wildcards: there is no good way to
                 // determine a supertype for a super bounded wildcard.
-                return Type.noType;
+                return null;
             }
 
             @Override
@@ -2417,7 +2391,8 @@ public class Types {
                         if (t.hasErasedSupertypes()) {
                             t.interfaces_field = erasureRecursive(interfaces);
                         } else if (formals.nonEmpty()) {
-                            t.interfaces_field = subst(interfaces, formals, actuals);
+                            t.interfaces_field =
+                                upperBounds(subst(interfaces, formals, actuals));
                         }
                         else {
                             t.interfaces_field = interfaces;
@@ -2446,7 +2421,7 @@ public class Types {
         private final UnaryVisitor<List<Type>> directSupertypes = new UnaryVisitor<List<Type>>() {
 
             public List<Type> visitType(final Type type, final Void ignored) {
-                if (!type.isIntersection()) {
+                if (!type.isCompound()) {
                     final Type sup = supertype(type);
                     return (sup == Type.noType || sup == type || sup == null)
                         ? interfaces(type)
@@ -2487,7 +2462,7 @@ public class Types {
             return false;
         return
             t.isRaw() ||
-            supertype(t) != Type.noType && isDerivedRaw(supertype(t)) ||
+            supertype(t) != null && isDerivedRaw(supertype(t)) ||
             isDerivedRaw(interfaces(t));
     }
 
@@ -2500,32 +2475,30 @@ public class Types {
 
     // <editor-fold defaultstate="collapsed" desc="setBounds">
     /**
-     * Same as {@link Types#setBounds(TypeVar, List, boolean)}, except that third parameter is computed directly,
-     * as follows: if all all bounds are interface types, the computed supertype is Object,otherwise
-     * the supertype is simply left null (in this case, the supertype is assumed to be the head of
-     * the bound list passed as second argument). Note that this check might cause a symbol completion.
-     * Hence, this version of setBounds may not be called during a classfile read.
-     *
-     * @param t         a type variable
-     * @param bounds    the bounds, must be nonempty
+     * Set the bounds field of the given type variable to reflect a
+     * (possibly multiple) list of bounds.
+     * @param t                 a type variable
+     * @param bounds            the bounds, must be nonempty
+     * @param supertype         is objectType if all bounds are interfaces,
+     *                          null otherwise.
      */
     public void setBounds(TypeVar t, List<Type> bounds) {
         setBounds(t, bounds, bounds.head.tsym.isInterface());
     }
 
     /**
-     * Set the bounds field of the given type variable to reflect a (possibly multiple) list of bounds.
-     * This does not cause symbol completion as an extra parameter indicates as to whether all bounds
-     * are interfaces - in which case the supertype is implicitly assumed to be 'Object'.
-     *
-     * @param t             a type variable
-     * @param bounds        the bounds, must be nonempty
-     * @param allInterfaces are all bounds interface types?
+     * Same as {@link #setBounds(Type.TypeVar,List,Type)}, except that
+     * third parameter is computed directly, as follows: if all
+     * all bounds are interface types, the computed supertype is Object,
+     * otherwise the supertype is simply left null (in this case, the supertype
+     * is assumed to be the head of the bound list passed as second argument).
+     * Note that this check might cause a symbol completion. Hence, this version of
+     * setBounds may not be called during a classfile read.
      */
     public void setBounds(TypeVar t, List<Type> bounds, boolean allInterfaces) {
         t.bound = bounds.tail.isEmpty() ?
                 bounds.head :
-                makeIntersectionType(bounds, allInterfaces);
+                makeCompoundType(bounds, allInterfaces);
         t.rank_field = -1;
     }
     // </editor-fold>
@@ -2706,153 +2679,76 @@ public class Types {
     // </editor-fold>
 
     // <editor-fold defaultstate="collapsed" desc="compute transitive closure of all members in given site">
-    class MembersClosureCache extends SimpleVisitor<Scope.CompoundScope, Void> {
+    class MembersClosureCache extends SimpleVisitor<CompoundScope, Boolean> {
 
-        private Map<TypeSymbol, CompoundScope> _map = new HashMap<>();
+        private WeakHashMap<TypeSymbol, Entry> _map =
+                new WeakHashMap<TypeSymbol, Entry>();
 
-        Set<TypeSymbol> seenTypes = new HashSet<>();
+        class Entry {
+            final boolean skipInterfaces;
+            final CompoundScope compoundScope;
 
-        class MembersScope extends CompoundScope {
-
-            CompoundScope scope;
-
-            public MembersScope(CompoundScope scope) {
-                super(scope.owner);
-                this.scope = scope;
+            public Entry(boolean skipInterfaces, CompoundScope compoundScope) {
+                this.skipInterfaces = skipInterfaces;
+                this.compoundScope = compoundScope;
             }
 
-            Filter<Symbol> combine(final Filter<Symbol> sf) {
-                return new Filter<Symbol>() {
-                    @Override
-                    public boolean accepts(Symbol s) {
-                        return !s.owner.isInterface() && (sf == null || sf.accepts(s));
-                    }
-                };
-            }
-
-            @Override
-            public Iterable<Symbol> getElements(Filter<Symbol> sf) {
-                return scope.getElements(combine(sf));
-            }
-
-            @Override
-            public Iterable<Symbol> getElementsByName(Name name, Filter<Symbol> sf) {
-                return scope.getElementsByName(name, combine(sf));
-            }
-
-            @Override
-            public int getMark() {
-                return scope.getMark();
+            boolean matches(boolean skipInterfaces) {
+                return this.skipInterfaces == skipInterfaces;
             }
         }
 
-        CompoundScope nilScope;
+        List<TypeSymbol> seenTypes = List.nil();
 
         /** members closure visitor methods **/
 
-        public CompoundScope visitType(Type t, Void _unused) {
-            if (nilScope == null) {
-                nilScope = new CompoundScope(syms.noSymbol);
-            }
-            return nilScope;
+        public CompoundScope visitType(Type t, Boolean skipInterface) {
+            return null;
         }
 
         @Override
-        public CompoundScope visitClassType(ClassType t, Void _unused) {
-            if (!seenTypes.add(t.tsym)) {
+        public CompoundScope visitClassType(ClassType t, Boolean skipInterface) {
+            if (seenTypes.contains(t.tsym)) {
                 //this is possible when an interface is implemented in multiple
-                //superclasses, or when a class hierarchy is circular - in such
+                //superclasses, or when a classs hierarchy is circular - in such
                 //cases we don't need to recurse (empty scope is returned)
                 return new CompoundScope(t.tsym);
             }
             try {
-                seenTypes.add(t.tsym);
+                seenTypes = seenTypes.prepend(t.tsym);
                 ClassSymbol csym = (ClassSymbol)t.tsym;
-                CompoundScope membersClosure = _map.get(csym);
-                if (membersClosure == null) {
-                    membersClosure = new CompoundScope(csym);
-                    for (Type i : interfaces(t)) {
-                        membersClosure.addSubScope(visit(i, null));
+                Entry e = _map.get(csym);
+                if (e == null || !e.matches(skipInterface)) {
+                    CompoundScope membersClosure = new CompoundScope(csym);
+                    if (!skipInterface) {
+                        for (Type i : interfaces(t)) {
+                            membersClosure.addSubScope(visit(i, skipInterface));
+                        }
                     }
-                    membersClosure.addSubScope(visit(supertype(t), null));
+                    membersClosure.addSubScope(visit(supertype(t), skipInterface));
                     membersClosure.addSubScope(csym.members());
-                    _map.put(csym, membersClosure);
+                    e = new Entry(skipInterface, membersClosure);
+                    _map.put(csym, e);
                 }
-                return membersClosure;
+                return e.compoundScope;
             }
             finally {
-                seenTypes.remove(t.tsym);
+                seenTypes = seenTypes.tail;
             }
         }
 
         @Override
-        public CompoundScope visitTypeVar(TypeVar t, Void _unused) {
-            return visit(t.getUpperBound(), null);
+        public CompoundScope visitTypeVar(TypeVar t, Boolean skipInterface) {
+            return visit(t.getUpperBound(), skipInterface);
         }
     }
 
     private MembersClosureCache membersCache = new MembersClosureCache();
 
     public CompoundScope membersClosure(Type site, boolean skipInterface) {
-        CompoundScope cs = membersCache.visit(site, null);
-        if (cs == null)
-            Assert.error("type " + site);
-        return skipInterface ? membersCache.new MembersScope(cs) : cs;
+        return membersCache.visit(site, skipInterface);
     }
     // </editor-fold>
-
-
-    /** Return first abstract member of class `sym'.
-     */
-    public MethodSymbol firstUnimplementedAbstract(ClassSymbol sym) {
-        try {
-            return firstUnimplementedAbstractImpl(sym, sym);
-        } catch (CompletionFailure ex) {
-            chk.completionError(enter.getEnv(sym).tree.pos(), ex);
-            return null;
-        }
-    }
-        //where:
-        private MethodSymbol firstUnimplementedAbstractImpl(ClassSymbol impl, ClassSymbol c) {
-            MethodSymbol undef = null;
-            // Do not bother to search in classes that are not abstract,
-            // since they cannot have abstract members.
-            if (c == impl || (c.flags() & (ABSTRACT | INTERFACE)) != 0) {
-                Scope s = c.members();
-                for (Scope.Entry e = s.elems;
-                     undef == null && e != null;
-                     e = e.sibling) {
-                    if (e.sym.kind == MTH &&
-                        (e.sym.flags() & (ABSTRACT|IPROXY|DEFAULT)) == ABSTRACT) {
-                        MethodSymbol absmeth = (MethodSymbol)e.sym;
-                        MethodSymbol implmeth = absmeth.implementation(impl, this, true);
-                        if (implmeth == null || implmeth == absmeth) {
-                            //look for default implementations
-                            if (allowDefaultMethods) {
-                                MethodSymbol prov = interfaceCandidates(impl.type, absmeth).head;
-                                if (prov != null && prov.overrides(absmeth, impl, this, true)) {
-                                    implmeth = prov;
-                                }
-                            }
-                        }
-                        if (implmeth == null || implmeth == absmeth) {
-                            undef = absmeth;
-                        }
-                    }
-                }
-                if (undef == null) {
-                    Type st = supertype(c.type);
-                    if (st.hasTag(CLASS))
-                        undef = firstUnimplementedAbstractImpl(impl, (ClassSymbol)st.tsym);
-                }
-                for (List<Type> l = interfaces(c.type);
-                     undef == null && l.nonEmpty();
-                     l = l.tail) {
-                    undef = firstUnimplementedAbstractImpl(impl, (ClassSymbol)l.head.tsym);
-                }
-            }
-            return undef;
-        }
 
 
     //where
@@ -3053,12 +2949,6 @@ public class Types {
         }
 
         @Override
-        public Type visitUndetVar(UndetVar t, Void ignored) {
-            //do nothing - we should not replace inside undet variables
-            return t;
-        }
-
-        @Override
         public Type visitClassType(ClassType t, Void ignored) {
             if (!t.isCompound()) {
                 List<Type> typarams = t.getTypeArguments();
@@ -3071,11 +2961,11 @@ public class Types {
                     return new ClassType(outer1, typarams1, t.tsym);
             } else {
                 Type st = subst(supertype(t));
-                List<Type> is = subst(interfaces(t));
+                List<Type> is = upperBounds(subst(interfaces(t)));
                 if (st == supertype(t) && is == interfaces(t))
                     return t;
                 else
-                    return makeIntersectionType(is.prepend(st));
+                    return makeCompoundType(is.prepend(st));
             }
         }
 
@@ -3088,7 +2978,7 @@ public class Types {
                 return t;
             } else {
                 if (t.isExtendsBound() && bound.isExtendsBound())
-                    bound = wildUpperBound(bound);
+                    bound = upperBound(bound);
                 return new WildcardType(bound, t.kind, syms.boundClass, t.bound);
             }
         }
@@ -3323,7 +3213,6 @@ public class Types {
             return tvar.rank_field;
         }
         case ERROR:
-        case NONE:
             return 0;
         default:
             throw new AssertionError();
@@ -3443,15 +3332,12 @@ public class Types {
      * Insert a type in a closure
      */
     public List<Type> insert(List<Type> cl, Type t) {
-        if (cl.isEmpty()) {
+        if (cl.isEmpty() || t.tsym.precedes(cl.head.tsym, this)) {
             return cl.prepend(t);
-        } else if (t.tsym == cl.head.tsym) {
-            return cl;
-        } else if (t.tsym.precedes(cl.head.tsym, this)) {
-            return cl.prepend(t);
-        } else {
-            // t comes after head, or the two are unrelated
+        } else if (cl.head.tsym.precedes(t.tsym, this)) {
             return insert(cl.tail, t).prepend(cl.head);
+        } else {
+            return cl;
         }
     }
 
@@ -3463,15 +3349,12 @@ public class Types {
             return cl2;
         } else if (cl2.isEmpty()) {
             return cl1;
-        } else if (cl1.head.tsym == cl2.head.tsym) {
-            return union(cl1.tail, cl2.tail).prepend(cl1.head);
         } else if (cl1.head.tsym.precedes(cl2.head.tsym, this)) {
             return union(cl1.tail, cl2).prepend(cl1.head);
         } else if (cl2.head.tsym.precedes(cl1.head.tsym, this)) {
             return union(cl1, cl2.tail).prepend(cl2.head);
         } else {
-            // unrelated types
-            return union(cl1.tail, cl2).prepend(cl1.head);
+            return union(cl1.tail, cl2.tail).prepend(cl1.head);
         }
     }
 
@@ -3504,16 +3387,9 @@ public class Types {
         class TypePair {
             final Type t1;
             final Type t2;
-            boolean strict;
-
             TypePair(Type t1, Type t2) {
-                this(t1, t2, false);
-            }
-
-            TypePair(Type t1, Type t2, boolean strict) {
                 this.t1 = t1;
                 this.t2 = t2;
-                this.strict = strict;
             }
             @Override
             public int hashCode() {
@@ -3524,8 +3400,8 @@ public class Types {
                 if (!(obj instanceof TypePair))
                     return false;
                 TypePair typePair = (TypePair)obj;
-                return isSameType(t1, typePair.t1, strict)
-                    && isSameType(t2, typePair.t2, strict);
+                return isSameType(t1, typePair.t1)
+                    && isSameType(t2, typePair.t2);
             }
         }
         Set<TypePair> mergeCache = new HashSet<TypePair>();
@@ -3546,8 +3422,8 @@ public class Types {
                     TypePair pair = new TypePair(c1, c2);
                     Type m;
                     if (mergeCache.add(pair)) {
-                        m = new WildcardType(lub(wildUpperBound(act1.head),
-                                                 wildUpperBound(act2.head)),
+                        m = new WildcardType(lub(upperBound(act1.head),
+                                                 upperBound(act2.head)),
                                              BoundKind.EXTENDS,
                                              syms.boundClass);
                         mergeCache.remove(pair);
@@ -3578,7 +3454,7 @@ public class Types {
         else if (compound.tail.isEmpty())
             return compound.head;
         else
-            return makeIntersectionType(compound);
+            return makeCompoundType(compound);
     }
 
     /**
@@ -3588,76 +3464,57 @@ public class Types {
     private List<Type> closureMin(List<Type> cl) {
         ListBuffer<Type> classes = new ListBuffer<>();
         ListBuffer<Type> interfaces = new ListBuffer<>();
-        Set<Type> toSkip = new HashSet<>();
         while (!cl.isEmpty()) {
             Type current = cl.head;
-            boolean keep = !toSkip.contains(current);
-            if (keep && current.hasTag(TYPEVAR)) {
-                // skip lower-bounded variables with a subtype in cl.tail
-                for (Type t : cl.tail) {
-                    if (isSubtypeNoCapture(t, current)) {
-                        keep = false;
-                        break;
-                    }
-                }
+            if (current.isInterface())
+                interfaces.append(current);
+            else
+                classes.append(current);
+            ListBuffer<Type> candidates = new ListBuffer<>();
+            for (Type t : cl.tail) {
+                if (!isSubtypeNoCapture(current, t))
+                    candidates.append(t);
             }
-            if (keep) {
-                if (current.isInterface())
-                    interfaces.append(current);
-                else
-                    classes.append(current);
-                for (Type t : cl.tail) {
-                    // skip supertypes of 'current' in cl.tail
-                    if (isSubtypeNoCapture(current, t))
-                        toSkip.add(t);
-                }
-            }
-            cl = cl.tail;
+            cl = candidates.toList();
         }
         return classes.appendList(interfaces).toList();
     }
 
     /**
-     * Return the least upper bound of list of types.  if the lub does
+     * Return the least upper bound of pair of types.  if the lub does
      * not exist return null.
      */
-    public Type lub(List<Type> ts) {
-        return lub(ts.toArray(new Type[ts.length()]));
+    public Type lub(Type t1, Type t2) {
+        return lub(List.of(t1, t2));
     }
 
     /**
      * Return the least upper bound (lub) of set of types.  If the lub
      * does not exist return the type of null (bottom).
      */
-    public Type lub(Type... ts) {
-        final int UNKNOWN_BOUND = 0;
+    public Type lub(List<Type> ts) {
         final int ARRAY_BOUND = 1;
         final int CLASS_BOUND = 2;
-
-        int[] kinds = new int[ts.length];
-
-        int boundkind = UNKNOWN_BOUND;
-        for (int i = 0 ; i < ts.length ; i++) {
-            Type t = ts[i];
+        int boundkind = 0;
+        for (Type t : ts) {
             switch (t.getTag()) {
             case CLASS:
-                boundkind |= kinds[i] = CLASS_BOUND;
+                boundkind |= CLASS_BOUND;
                 break;
             case ARRAY:
-                boundkind |= kinds[i] = ARRAY_BOUND;
+                boundkind |= ARRAY_BOUND;
                 break;
             case  TYPEVAR:
                 do {
                     t = t.getUpperBound();
                 } while (t.hasTag(TYPEVAR));
                 if (t.hasTag(ARRAY)) {
-                    boundkind |= kinds[i] = ARRAY_BOUND;
+                    boundkind |= ARRAY_BOUND;
                 } else {
-                    boundkind |= kinds[i] = CLASS_BOUND;
+                    boundkind |= CLASS_BOUND;
                 }
                 break;
             default:
-                kinds[i] = UNKNOWN_BOUND;
                 if (t.isPrimitive())
                     return syms.errType;
             }
@@ -3668,16 +3525,15 @@ public class Types {
 
         case ARRAY_BOUND:
             // calculate lub(A[], B[])
-            Type[] elements = new Type[ts.length];
-            for (int i = 0 ; i < ts.length ; i++) {
-                Type elem = elements[i] = elemTypeFun.apply(ts[i]);
-                if (elem.isPrimitive()) {
+            List<Type> elements = Type.map(ts, elemTypeFun);
+            for (Type t : elements) {
+                if (t.isPrimitive()) {
                     // if a primitive type is found, then return
                     // arraySuperType unless all the types are the
                     // same
-                    Type first = ts[0];
-                    for (int j = 1 ; j < ts.length ; j++) {
-                        if (!isSameType(first, ts[j])) {
+                    Type first = ts.head;
+                    for (Type s : ts.tail) {
+                        if (!isSameType(first, s)) {
                              // lub(int[], B[]) is Cloneable & Serializable
                             return arraySuperType();
                         }
@@ -3692,20 +3548,13 @@ public class Types {
 
         case CLASS_BOUND:
             // calculate lub(A, B)
-            int startIdx = 0;
-            for (int i = 0; i < ts.length ; i++) {
-                Type t = ts[i];
-                if (t.hasTag(CLASS) || t.hasTag(TYPEVAR)) {
-                    break;
-                } else {
-                    startIdx++;
-                }
+            while (!ts.head.hasTag(CLASS) && !ts.head.hasTag(TYPEVAR)) {
+                ts = ts.tail;
             }
-            Assert.check(startIdx < ts.length);
+            Assert.check(!ts.isEmpty());
             //step 1 - compute erased candidate set (EC)
-            List<Type> cl = erasedSupertypes(ts[startIdx]);
-            for (int i = startIdx + 1 ; i < ts.length ; i++) {
-                Type t = ts[i];
+            List<Type> cl = erasedSupertypes(ts.head);
+            for (Type t : ts.tail) {
                 if (t.hasTag(CLASS) || t.hasTag(TYPEVAR))
                     cl = intersect(cl, erasedSupertypes(t));
             }
@@ -3714,10 +3563,9 @@ public class Types {
             //step 3 - for each element G in MEC, compute lci(Inv(G))
             List<Type> candidates = List.nil();
             for (Type erasedSupertype : mec) {
-                List<Type> lci = List.of(asSuper(ts[startIdx], erasedSupertype.tsym));
-                for (int i = startIdx + 1 ; i < ts.length ; i++) {
-                    Type superType = asSuper(ts[i], erasedSupertype.tsym);
-                    lci = intersect(lci, superType != null ? List.of(superType) : List.<Type>nil());
+                List<Type> lci = List.of(asSuper(ts.head, erasedSupertype.tsym));
+                for (Type t : ts) {
+                    lci = intersect(lci, List.of(asSuper(t, erasedSupertype.tsym)));
                 }
                 candidates = candidates.appendList(lci);
             }
@@ -3728,9 +3576,9 @@ public class Types {
         default:
             // calculate lub(A, B[])
             List<Type> classes = List.of(arraySuperType());
-            for (int i = 0 ; i < ts.length ; i++) {
-                if (kinds[i] != ARRAY_BOUND) // Filter out any arrays
-                    classes = classes.prepend(ts[i]);
+            for (Type t : ts) {
+                if (!t.hasTag(ARRAY)) // Filter out any arrays
+                    classes = classes.prepend(t);
             }
             // lub(A, B[]) is lub(A, arraySuperType)
             return lub(classes);
@@ -3756,8 +3604,8 @@ public class Types {
                 synchronized (this) {
                     if (arraySuperType == null) {
                         // JLS 10.8: all arrays implement Cloneable and Serializable.
-                        arraySuperType = makeIntersectionType(List.of(syms.serializableType,
-                                syms.cloneableType), true);
+                        arraySuperType = makeCompoundType(List.of(syms.serializableType,
+                                                                  syms.cloneableType), true);
                     }
                 }
             }
@@ -3787,19 +3635,7 @@ public class Types {
             return s;
 
         List<Type> closure = union(closure(t), closure(s));
-        return glbFlattened(closure, t);
-    }
-    //where
-    /**
-     * Perform glb for a list of non-primitive, non-error, non-compound types;
-     * redundant elements are removed.  Bounds should be ordered according to
-     * {@link Symbol#precedes(TypeSymbol,Types)}.
-     *
-     * @param flatBounds List of type to glb
-     * @param errT Original type to use if the result is an error type
-     */
-    private Type glbFlattened(List<Type> flatBounds, Type errT) {
-        List<Type> bounds = closureMin(flatBounds);
+        List<Type> bounds = closureMin(closure);
 
         if (bounds.isEmpty()) {             // length == 0
             return syms.objectType;
@@ -3807,23 +3643,13 @@ public class Types {
             return bounds.head;
         } else {                            // length > 1
             int classCount = 0;
-            List<Type> lowers = List.nil();
-            for (Type bound : bounds) {
-                if (!bound.isInterface()) {
+            for (Type bound : bounds)
+                if (!bound.isInterface())
                     classCount++;
-                    Type lower = cvarLowerBound(bound);
-                    if (bound != lower && !lower.hasTag(BOT))
-                        lowers = insert(lowers, lower);
-                }
-            }
-            if (classCount > 1) {
-                if (lowers.isEmpty())
-                    return createErrorType(errT);
-                else
-                    return glbFlattened(union(bounds, lowers), errT);
-            }
+            if (classCount > 1)
+                return createErrorType(t);
         }
-        return makeIntersectionType(bounds);
+        return makeCompoundType(bounds);
     }
     // </editor-fold>
 
@@ -4045,11 +3871,9 @@ public class Types {
         }
         return buf.reverse();
     }
-
     public Type capture(Type t) {
-        if (!t.hasTag(CLASS)) {
+        if (!t.hasTag(CLASS))
             return t;
-        }
         if (t.getEnclosingType() != Type.noType) {
             Type capturedEncl = capture(t.getEnclosingType());
             if (capturedEncl != t.getEnclosingType()) {
@@ -4095,13 +3919,8 @@ public class Types {
                     Si.lower = Ti.getSuperBound();
                     break;
                 }
-                Type tmpBound = Si.bound.hasTag(UNDETVAR) ? ((UndetVar)Si.bound).qtype : Si.bound;
-                Type tmpLower = Si.lower.hasTag(UNDETVAR) ? ((UndetVar)Si.lower).qtype : Si.lower;
-                if (!Si.bound.hasTag(ERROR) &&
-                    !Si.lower.hasTag(ERROR) &&
-                    isSameType(tmpBound, tmpLower, false)) {
+                if (Si.bound == Si.lower)
                     currentS.head = Si.bound;
-                }
             }
             currentA = currentA.tail;
             currentT = currentT.tail;
@@ -4138,6 +3957,16 @@ public class Types {
     // </editor-fold>
 
     // <editor-fold defaultstate="collapsed" desc="Internal utility methods">
+    private List<Type> upperBounds(List<Type> ss) {
+        if (ss.isEmpty()) return ss;
+        Type head = upperBound(ss.head);
+        List<Type> tail = upperBounds(ss.tail);
+        if (head != ss.head || tail != ss.tail)
+            return tail.prepend(head);
+        else
+            return ss;
+    }
+
     private boolean sideCast(Type from, Type to, Warner warn) {
         // We are casting from type $from$ to type $to$, which are
         // non-final unrelated types.  This method
@@ -4294,9 +4123,9 @@ public class Types {
         @Override
         public Void visitWildcardType(WildcardType source, Type target) throws AdaptFailure {
             if (source.isExtendsBound())
-                adaptRecursive(wildUpperBound(source), wildUpperBound(target));
+                adaptRecursive(upperBound(source), upperBound(target));
             else if (source.isSuperBound())
-                adaptRecursive(wildLowerBound(source), wildLowerBound(target));
+                adaptRecursive(lowerBound(source), lowerBound(target));
             return null;
         }
 
@@ -4308,10 +4137,10 @@ public class Types {
             Type val = mapping.get(source.tsym);
             if (val != null) {
                 if (val.isSuperBound() && target.isSuperBound()) {
-                    val = isSubtype(wildLowerBound(val), wildLowerBound(target))
+                    val = isSubtype(lowerBound(val), lowerBound(target))
                         ? target : val;
                 } else if (val.isExtendsBound() && target.isExtendsBound()) {
-                    val = isSubtype(wildUpperBound(val), wildUpperBound(target))
+                    val = isSubtype(upperBound(val), upperBound(target))
                         ? val : target;
                 } else if (!isSameType(val, target)) {
                     throw new AdaptFailure();
@@ -4422,7 +4251,7 @@ public class Types {
         }
 
         public Type visitType(Type t, Void s) {
-            return t;
+            return high ? upperBound(t) : lowerBound(t);
         }
 
         @Override
@@ -4820,7 +4649,7 @@ public class Types {
                 assembleClassSig(rawOuter
                         ? types.erasure(outer)
                         : outer);
-                append(rawOuter ? '$' : '.');
+                append('.');
                 Assert.check(c.flatname.startsWith(c.owner.enclClass().flatname));
                 append(rawOuter
                         ? c.flatname.subName(c.owner.enclClass().flatname.getByteLength() + 1, c.flatname.getByteLength())

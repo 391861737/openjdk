@@ -157,10 +157,11 @@ implements CertAttrSet<String> {
      */
     public BigInteger get(String name) throws IOException {
         if (name.equalsIgnoreCase(NUMBER)) {
-            return crlNumber;
+            if (crlNumber == null) return null;
+            else return crlNumber;
         } else {
-            throw new IOException("Attribute name not recognized by" +
-                                  " CertAttrSet:" + extensionName + '.');
+          throw new IOException("Attribute name not recognized by"
+                                + " CertAttrSet:" + extensionName + ".");
         }
     }
 

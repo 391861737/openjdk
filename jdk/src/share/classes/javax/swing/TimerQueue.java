@@ -93,9 +93,6 @@ class TimerQueue implements Runnable
     void startIfNeeded() {
         if (! running) {
             runningLock.lock();
-            if (running) {
-                return;
-            }
             try {
                 final ThreadGroup threadGroup =
                     AppContext.getAppContext().getThreadGroup();
@@ -171,17 +168,15 @@ class TimerQueue implements Runnable
         try {
             while (running) {
                 try {
-                    DelayedTimer runningTimer = queue.take();
-                    Timer timer = runningTimer.getTimer();
+                    Timer timer = queue.take().getTimer();
                     timer.getLock().lock();
                     try {
                         DelayedTimer delayedTimer = timer.delayedTimer;
-                        if (delayedTimer == runningTimer) {
+                        if (delayedTimer != null) {
                             /*
-                             * Timer is not removed (delayedTimer != null)
-                             * or not removed and added (runningTimer == delayedTimer)
-                             * after we get it from the queue and before the
-                             * lock on the timer is acquired
+                             * Timer is not removed after we get it from
+                             * the queue and before the lock on the timer is
+                             * acquired
                              */
                             timer.post(); // have timer post an event
                             timer.delayedTimer = null;

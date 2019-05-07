@@ -30,7 +30,7 @@
  * @author Jaroslav Bachorik
  * @run clean MXBeanFallbackTest
  * @run build MXBeanFallbackTest
- * @run main/othervm -Djdk.jmx.mbeans.allowNonPublic=true MXBeanFallbackTest
+ * @run main MXBeanFallbackTest
  */
 
 import javax.management.MBeanServer;
@@ -40,6 +40,7 @@ import javax.management.ObjectName;
 
 public class MXBeanFallbackTest {
     public static void main(String[] args) throws Exception {
+        System.setProperty("jdk.jmx.mbeans.allowNonPublic", "true");
         testPrivateMXBean("Private", new Private());
 
         if (failures == 0)

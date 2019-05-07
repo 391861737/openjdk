@@ -46,16 +46,17 @@ class CFileDialog implements FileDialogPeer {
         @Override
         public void run() {
             try {
-                boolean navigateApps = !AccessController.doPrivileged(
-                        new GetBooleanAction("apple.awt.use-file-dialog-packages"));
-                boolean chooseDirectories = AccessController.doPrivileged(
-                        new GetBooleanAction("apple.awt.fileDialogForDirectories"));
-
+                boolean navigateApps = false;
                 int dialogMode = target.getMode();
+
+                navigateApps = true;
+
                 String title = target.getTitle();
                 if (title == null) {
                     title = " ";
                 }
+                Boolean chooseDirectories = AccessController.doPrivileged(
+                        new GetBooleanAction("apple.awt.fileDialogForDirectories"));
 
                 String[] userFileNames = nativeRunFileDialog(title,
                         dialogMode,

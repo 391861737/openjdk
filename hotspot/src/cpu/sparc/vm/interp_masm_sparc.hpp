@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 1997, 2016, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 1997, 2013, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -104,8 +104,6 @@ class InterpreterMacroAssembler: public MacroAssembler {
   void dispatch_next_noverify_oop(TosState state, int step = 0);
   void dispatch_via (TosState state, address* table);
 
-
-  void narrow(Register result);
 
   // Removes the current activation (incl. unlocking of monitors).
   // Additionally this code is used for earlyReturn in which case we
@@ -324,11 +322,6 @@ class InterpreterMacroAssembler: public MacroAssembler {
                            Register scratch1,
                            Register scratch2,
                            Register scratch3);
-
-  void profile_obj_type(Register obj, const Address& mdo_addr, Register tmp);
-  void profile_arguments_type(Register callee, Register tmp1, Register tmp2, bool is_virtual);
-  void profile_return_type(Register ret, Register tmp1, Register tmp2);
-  void profile_parameters_type(Register tmp1, Register tmp2, Register tmp3, Register tmp4);
 
   // Debugging
   void interp_verify_oop(Register reg, TosState state, const char * file, int line);    // only if +VerifyOops && state == atos

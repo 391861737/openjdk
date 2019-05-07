@@ -367,10 +367,7 @@ public class SocketOrChannelConnectionImpl
                 }
             }
             // REVISIT - make sure reader thread is killed.
-            Selector selector = orb.getTransportManager().getSelector(0);
-            if (selector != null) {
-                selector.unregisterForEvent(this);
-            }
+            orb.getTransportManager().getSelector(0).unregisterForEvent(this);
             // Notify anyone waiting.
             purgeCalls(wrapper.connectionAbort(ex), true, false);
             // REVISIT
@@ -804,9 +801,7 @@ public class SocketOrChannelConnectionImpl
             }
             try {
                 Selector selector = orb.getTransportManager().getSelector(0);
-                if (selector != null) {
-                    selector.unregisterForEvent(this);
-                }
+                selector.unregisterForEvent(this);
                 if (socketChannel != null) {
                     socketChannel.close();
                 }
@@ -829,9 +824,7 @@ public class SocketOrChannelConnectionImpl
                dprint(".closeConnectionResources->: " + this);
            }
            Selector selector = orb.getTransportManager().getSelector(0);
-           if (selector != null) {
-               selector.unregisterForEvent(this);
-           }
+           selector.unregisterForEvent(this);
            try {
              if (socketChannel != null)
               socketChannel.close() ;

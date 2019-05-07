@@ -1031,14 +1031,6 @@ public class ExtendedCharsets
                     "ebcdic-s-871+euro"
                 });
 
-        charset("x-IBM1166", "IBM1166",
-                new String[] {
-                    "cp1166", // JDK historical
-                    "ibm1166",
-                    "ibm-1166",
-                    "1166"
-                });
-
         charset("IBM290", "IBM290",
                 new String[] {
                     "cp290",
@@ -1305,7 +1297,7 @@ public class ExtendedCharsets
         }
         String osName = AccessController.doPrivileged(
             new GetPropertyAction("os.name"));
-        if ("SunOS".equals(osName) || "Linux".equals(osName) || "AIX".equals(osName)
+        if ("SunOS".equals(osName) || "Linux".equals(osName)
                || osName.contains("OS X")) {
             charset("x-COMPOUND_TEXT", "COMPOUND_TEXT",
                     new String[] {

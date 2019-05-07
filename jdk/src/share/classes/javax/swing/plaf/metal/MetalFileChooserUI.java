@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 1998, 2015, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 1998, 2013, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -92,6 +92,8 @@ public class MetalFileChooserUI extends BasicFileChooserUI {
 
     private static int MIN_WIDTH = 500;
     private static int MIN_HEIGHT = 326;
+    private static Dimension MIN_SIZE = new Dimension(MIN_WIDTH, MIN_HEIGHT);
+
     private static int LIST_PREF_WIDTH = 405;
     private static int LIST_PREF_HEIGHT = 135;
     private static Dimension LIST_PREF_SIZE = new Dimension(LIST_PREF_WIDTH, LIST_PREF_HEIGHT);
@@ -563,7 +565,6 @@ public class MetalFileChooserUI extends BasicFileChooserUI {
      * @return   a <code>Dimension</code> specifying the preferred
      *           width and height of the file chooser
      */
-    @Override
     public Dimension getPreferredSize(JComponent c) {
         int prefWidth = PREF_SIZE.width;
         Dimension d = c.getLayout().preferredLayoutSize(c);
@@ -582,9 +583,8 @@ public class MetalFileChooserUI extends BasicFileChooserUI {
      * @return   a <code>Dimension</code> specifying the minimum
      *           width and height of the file chooser
      */
-    @Override
     public Dimension getMinimumSize(JComponent c) {
-        return new Dimension(MIN_WIDTH, MIN_HEIGHT);
+        return MIN_SIZE;
     }
 
     /**
@@ -594,7 +594,6 @@ public class MetalFileChooserUI extends BasicFileChooserUI {
      * @return   a <code>Dimension</code> specifying the maximum
      *           width and height of the file chooser
      */
-    @Override
     public Dimension getMaximumSize(JComponent c) {
         return new Dimension(Integer.MAX_VALUE, Integer.MAX_VALUE);
     }
@@ -605,8 +604,7 @@ public class MetalFileChooserUI extends BasicFileChooserUI {
         } else {
             JFileChooser fc = getFileChooser();
             if ((fc.isDirectorySelectionEnabled() && !fc.isFileSelectionEnabled()) ||
-                (fc.isDirectorySelectionEnabled() && fc.isFileSelectionEnabled()
-                 && fc.getFileSystemView().isFileSystemRoot(file))) {
+                (fc.isDirectorySelectionEnabled() && fc.isFileSelectionEnabled() && fc.getFileSystemView().isFileSystemRoot(file))) {
                 return file.getPath();
             } else {
                 return file.getName();
@@ -943,9 +941,16 @@ public class MetalFileChooserUI extends BasicFileChooserUI {
 
             directories.clear();
 
-            File[] baseFolders = (useShellFolder)
-                    ? (File[]) ShellFolder.get("fileChooserComboBoxFolders")
-                    : fsv.getRoots();
+            File[] baseFolders;
+            if (useShellFolder) {
+                baseFolders = AccessController.doPrivileged(new PrivilegedAction<File[]>() {
+                    public File[] run() {
+                        return (File[]) ShellFolder.get("fileChooserComboBoxFolders");
+                    }
+                });
+            } else {
+                baseFolders = fsv.getRoots();
+            }
             directories.addAll(Arrays.asList(baseFolders));
 
             // Get the canonical (full) path. This has the side

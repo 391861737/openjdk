@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2005, 2014, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2005, 2007, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -36,8 +36,9 @@ import java.awt.peer.TrayIconPeer;
 import java.awt.image.*;
 import sun.awt.SunToolkit;
 import sun.awt.image.IntegerComponentRaster;
+import sun.awt.windows.WPopupMenuPeer;
 
-final class WTrayIconPeer extends WObjectPeer implements TrayIconPeer {
+public class WTrayIconPeer extends WObjectPeer implements TrayIconPeer {
     final static int TRAY_ICON_WIDTH = 16;
     final static int TRAY_ICON_HEIGHT = 16;
     final static int TRAY_ICON_MASK_SIZE = (TRAY_ICON_WIDTH * TRAY_ICON_HEIGHT) / 8;
@@ -47,7 +48,6 @@ final class WTrayIconPeer extends WObjectPeer implements TrayIconPeer {
     Frame popupParent = new Frame("PopupMessageWindow");
     PopupMenu popup;
 
-    @Override
     protected void disposeImpl() {
         if (popupParent != null) {
             popupParent.dispose();
@@ -64,7 +64,6 @@ final class WTrayIconPeer extends WObjectPeer implements TrayIconPeer {
         updateImage();
     }
 
-    @Override
     public void updateImage() {
         Image image = ((TrayIcon)target).getImage();
         if (image != null) {
@@ -72,16 +71,13 @@ final class WTrayIconPeer extends WObjectPeer implements TrayIconPeer {
         }
     }
 
-    @Override
     public native void setToolTip(String tooltip);
 
-    @Override
     public synchronized void showPopupMenu(final int x, final int y) {
         if (isDisposed())
             return;
 
         SunToolkit.executeOnEventHandlerThread(target, new Runnable() {
-                @Override
                 public void run() {
                     PopupMenu newPopup = ((TrayIcon)target).getPopupMenu();
                     if (popup != newPopup) {
@@ -100,7 +96,6 @@ final class WTrayIconPeer extends WObjectPeer implements TrayIconPeer {
             });
     }
 
-    @Override
     public void displayMessage(String caption, String text, String messageType) {
         // The situation when both caption and text are null is processed in the shared code.
         if (caption == null) {
@@ -190,7 +185,6 @@ final class WTrayIconPeer extends WObjectPeer implements TrayIconPeer {
     native void _displayMessage(String caption, String text, String messageType);
 
     class IconObserver implements ImageObserver {
-        @Override
         public boolean imageUpdate(Image image, int flags, int x, int y, int width, int height) {
             if (image != ((TrayIcon)target).getImage() || // if the image has been changed
                 isDisposed())

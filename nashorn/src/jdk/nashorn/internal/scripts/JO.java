@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2010, 2015, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2010, 2013, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -29,11 +29,11 @@ import jdk.nashorn.internal.runtime.PropertyMap;
 import jdk.nashorn.internal.runtime.ScriptObject;
 
 /**
- * Empty object class for object-only fields.
+ * Empty object class.
  */
 public class JO extends ScriptObject {
 
-    private static final PropertyMap map$ = PropertyMap.newMap(JO.class);
+    private static final PropertyMap map$ = PropertyMap.newMap().setIsShared();
 
     /**
      * Returns the initial property map to be used.
@@ -53,25 +53,13 @@ public class JO extends ScriptObject {
     }
 
     /**
-     * Constructor given an initial prototype and the default initial property map.
+     * Constructor given an initial prototype and an initial property map.
      *
      * @param proto the prototype object
+     * @param map the property map
      */
-    public JO(final ScriptObject proto) {
-        super(proto, getInitialMap());
-    }
-
-    /**
-     * Constructor that takes a pre-initialized spill pool. Used by
-     * {@link jdk.nashorn.internal.codegen.SpillObjectCreator} and
-     * {@link jdk.nashorn.internal.parser.JSONParser} for initializing object literals
-     *
-     * @param map            property map
-     * @param primitiveSpill primitive spill pool
-     * @param objectSpill    reference spill pool
-     */
-    public JO(final PropertyMap map, final long[] primitiveSpill, final Object[] objectSpill) {
-        super(map, primitiveSpill, objectSpill);
+    public JO(final ScriptObject proto, final PropertyMap map) {
+        super(proto, map);
     }
 
     /**
@@ -85,4 +73,3 @@ public class JO extends ScriptObject {
         return new JO(map);
     }
 }
-

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 1996, 2015, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 1996, 2013, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -38,15 +38,12 @@ public class WEmbeddedFramePeer extends WFramePeer {
         super(target);
     }
 
-    @Override
     native void create(WComponentPeer parent);
 
     // suppress printing of an embedded frame.
-    @Override
     public void print(Graphics g) {}
 
     // supress calling native setMinSize()
-    @Override
     public void updateMinimumSize() {}
 
     @Override
@@ -62,12 +59,10 @@ public class WEmbeddedFramePeer extends WFramePeer {
         ((EmbeddedFrame)target).notifyModalBlocked(blocker, false);
     }
 
-    @Override
     public void setBoundsPrivate(int x, int y, int width, int height) {
         setBounds(x, y, width, height, SET_BOUNDS | NO_EMBEDDED_CHECK);
     }
 
-    @Override
     public native Rectangle getBoundsPrivate();
 
     @Override
@@ -78,5 +73,4 @@ public class WEmbeddedFramePeer extends WFramePeer {
         // false on other systems.
         return !Win32GraphicsEnvironment.isDWMCompositionEnabled();
     }
-
 }

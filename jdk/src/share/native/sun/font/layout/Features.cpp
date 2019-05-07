@@ -40,13 +40,9 @@ U_NAMESPACE_BEGIN
 
 LEReferenceTo<FeatureTable> FeatureListTable::getFeatureTable(const LETableReference &base, le_uint16 featureIndex, LETag *featureTag, LEErrorCode &success) const
 {
-    LEReferenceToArrayOf<FeatureRecord>
-        featureRecordArrayRef(base, success, featureRecordArray, SWAPW(featureCount));
-
-    if (featureIndex >= SWAPW(featureCount) || LE_FAILURE(success)) {
-        success = LE_INDEX_OUT_OF_BOUNDS_ERROR;
-        return LEReferenceTo<FeatureTable>();
-    }
+  if (featureIndex >= SWAPW(featureCount) || LE_FAILURE(success)) {
+    return LEReferenceTo<FeatureTable>();
+  }
 
     Offset featureTableOffset = featureRecordArray[featureIndex].featureTableOffset;
 

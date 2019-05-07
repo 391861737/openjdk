@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2011, 2014, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2011, 2013, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -22,9 +22,6 @@
  * or visit www.oracle.com if you need additional information or have any
  * questions.
  */
-
-
-#import "jni_util.h"
 
 #import <JavaNativeFoundation/JavaNativeFoundation.h>
 #import <ApplicationServices/ApplicationServices.h>
@@ -146,15 +143,53 @@ Java_sun_lwawt_macosx_CRobot_mouseEvent
 
     // This is the native method called when Robot mouse events occur.
     // The CRobot tracks the mouse position, and which button was
-    // pressed. The peer also tracks the mouse button desired state,
+    // pressed. If the mouse position is unknown it is obtained from
+    // CGEvents. The peer also tracks the mouse button desired state,
     // the appropriate key modifier state, and whether the mouse action
     // is simply a mouse move with no mouse button state changes.
+
+    CGError err = kCGErrorSuccess;
+
+    CGRect globalDeviceBounds = CGDisplayBounds(displayID);
+
+    // Set unknown mouse location, if needed.
+    if ((mouseLastX == sun_lwawt_macosx_CRobot_MOUSE_LOCATION_UNKNOWN) ||
+        (mouseLastY == sun_lwawt_macosx_CRobot_MOUSE_LOCATION_UNKNOWN))
+    {
+        CGEventRef event = CGEventCreate(NULL);
+        if (event == NULL) {
+            return;
+        }
+
+        CGPoint globalPos = CGEventGetLocation(event);
+        CFRelease(event);
+
+        // Normalize the coords within this display device, as
+        // per Robot rules.
+        if (globalPos.x < CGRectGetMinX(globalDeviceBounds)) {
+            globalPos.x = CGRectGetMinX(globalDeviceBounds);
+        }
+        else if (globalPos.x > CGRectGetMaxX(globalDeviceBounds)) {
+            globalPos.x = CGRectGetMaxX(globalDeviceBounds);
+        }
+
+        if (globalPos.y < CGRectGetMinY(globalDeviceBounds)) {
+            globalPos.y = CGRectGetMinY(globalDeviceBounds);
+        }
+        else if (globalPos.y > CGRectGetMaxY(globalDeviceBounds)) {
+            globalPos.y = CGRectGetMaxY(globalDeviceBounds);
+        }
+
+        mouseLastX = (jint)globalPos.x;
+        mouseLastY = (jint)globalPos.y;
+    }
 
     // volatile, otherwise it warns that it might be clobbered by 'longjmp'
     volatile CGPoint point;
 
-    point.x = mouseLastX;
-    point.y = mouseLastY;
+    // Translate the device relative point into a valid global CGPoint.
+    point.x = mouseLastX + globalDeviceBounds.origin.x;
+    point.y = mouseLastY + globalDeviceBounds.origin.y;
 
     __block CGMouseButton button = kCGMouseButtonLeft;
     __block CGEventType type = kCGEventMouseMoved;
@@ -308,7 +343,6 @@ Java_sun_lwawt_macosx_CRobot_nativeGetScreenPixels
 
     // get a pointer to the Java int array
     void *jPixelData = (*env)->GetPrimitiveArrayCritical(env, pixels, 0);
-    CHECK_NULL(jPixelData);
 
     // create a graphics context around the Java int array
     CGColorSpaceRef picColorSpace = CGColorSpaceCreateWithName(

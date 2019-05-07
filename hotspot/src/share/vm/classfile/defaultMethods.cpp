@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2012, 2016, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2012, 2014, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -390,6 +390,20 @@ class MethodFamily : public ResourceObj {
   Symbol* get_exception_message() { return _exception_message; }
   Symbol* get_exception_name() { return _exception_name; }
 
+  // Return true if the specified klass has a static method that matches
+  // the name and signature of the target method.
+  bool has_matching_static(InstanceKlass* root) {
+    if (_members.length() > 0) {
+      Pair<Method*,QualifiedState> entry = _members.at(0);
+      Method* impl = root->find_method(entry.first->name(),
+                                       entry.first->signature());
+      if ((impl != NULL) && impl->is_static()) {
+        return true;
+      }
+    }
+    return false;
+  }
+
   // Either sets the target or the exception error message
   void determine_target(InstanceKlass* root, TRAPS) {
     if (has_target() || throws_exception()) {
@@ -419,24 +433,26 @@ class MethodFamily : public ResourceObj {
       // If the root klass has a static method with matching name and signature
       // then do not generate an overpass method because it will hide the
       // static method during resolution.
-      if (qualified_methods.length() == 0) {
-        _exception_message = generate_no_defaults_message(CHECK);
-      } else {
-        assert(root != NULL, "Null root class");
-        _exception_message = generate_method_message(root->name(), qualified_methods.at(0), CHECK);
+      if (!has_matching_static(root)) {
+        if (qualified_methods.length() == 0) {
+          _exception_message = generate_no_defaults_message(CHECK);
+        } else {
+          assert(root != NULL, "Null root class");
+          _exception_message = generate_method_message(root->name(), qualified_methods.at(0), CHECK);
+        }
+        _exception_name = vmSymbols::java_lang_AbstractMethodError();
       }
-      _exception_name = vmSymbols::java_lang_AbstractMethodError();
 
     // If only one qualified method is default, select that
     } else if (num_defaults == 1) {
         _selected_target = qualified_methods.at(default_index);
 
-    } else if (num_defaults > 1) {
+    } else if (num_defaults > 1 && !has_matching_static(root)) {
       _exception_message = generate_conflicts_message(&qualified_methods,CHECK);
       _exception_name = vmSymbols::java_lang_IncompatibleClassChangeError();
       if (TraceDefaultMethods) {
         _exception_message->print_value_on(tty);
-        tty->cr();
+        tty->print_cr("");
       }
     }
   }
@@ -463,7 +479,7 @@ class MethodFamily : public ResourceObj {
       if (_members.at(i).second == DISQUALIFIED) {
         str->print(" (disqualified)");
       }
-      str->cr();
+      str->print_cr("");
     }
 
     if (_selected_target != NULL) {
@@ -480,7 +496,7 @@ class MethodFamily : public ResourceObj {
     if (!method_holder->is_interface()) {
       tty->print(" : in superclass");
     }
-    str->cr();
+    str->print_cr("");
   }
 
   void print_exception(outputStream* str, int indent) {
@@ -688,7 +704,7 @@ static GrowableArray<EmptyVtableSlot*>* find_empty_vtable_slots(
     for (int i = 0; i < slots->length(); ++i) {
       tty->indent();
       slots->at(i)->print_on(tty);
-      tty->cr();
+      tty->print_cr("");
     }
   }
 #endif // ndef PRODUCT
@@ -731,12 +747,10 @@ class FindMethodsByErasedSig : public HierarchyVisitor<FindMethodsByErasedSig> {
     Method* m = iklass->find_method(_method_name, _method_signature);
     // private interface methods are not candidates for default methods
     // invokespecial to private interface methods doesn't use default method logic
-    // private class methods are not candidates for default methods,
-    // private methods do not override default methods, so need to perform
-    // default method inheritance without including private methods
     // The overpasses are your supertypes' errors, we do not include them
     // future: take access controls into account for superclass methods
-    if (m != NULL && !m->is_static() && !m->is_overpass() && !m->is_private()) {
+    if (m != NULL && !m->is_static() && !m->is_overpass() &&
+         (!iklass->is_interface() || m->is_public())) {
       if (_family == NULL) {
         _family = new StatefulMethodFamily();
       }
@@ -747,9 +761,6 @@ class FindMethodsByErasedSig : public HierarchyVisitor<FindMethodsByErasedSig> {
       } else {
         // This is the rule that methods in classes "win" (bad word) over
         // methods in interfaces. This works because of single inheritance
-        // private methods in classes do not "win", they will be found
-        // first on searching, but overriding for invokevirtual needs
-        // to find default method candidates for the same signature
         _family->set_target_if_empty(m);
       }
     }
@@ -833,7 +844,7 @@ void DefaultMethods::generate_default_methods(
       streamIndentor si(tty, 2);
       tty->indent().print("Looking for default methods for slot ");
       slot->print_on(tty);
-      tty->cr();
+      tty->print_cr("");
     }
 #endif // ndef PRODUCT
 
@@ -892,8 +903,10 @@ static Method* new_method(
   m->set_constants(NULL); // This will get filled in later
   m->set_name_index(cp->utf8(name));
   m->set_signature_index(cp->utf8(sig));
+#ifdef CC_INTERP
   ResultTypeFinder rtf(sig);
-  m->constMethod()->set_result_type(rtf.type());
+  m->set_result_index(rtf.type());
+#endif
   m->set_size_of_parameters(params);
   m->set_max_stack(max_stack);
   m->set_max_locals(params);
@@ -949,7 +962,7 @@ static void create_defaults_and_exceptions(
       if (TraceDefaultMethods) {
         tty->print("for slot: ");
         slot->print_on(tty);
-        tty->cr();
+        tty->print_cr("");
         if (method->has_target()) {
           method->print_selected(tty, 1);
         } else if (method->throws_exception()) {
@@ -1094,7 +1107,6 @@ static void merge_in_new_methods(InstanceKlass* klass,
     }
     // update idnum for new location
     merged_methods->at(i)->set_method_idnum(i);
-    merged_methods->at(i)->set_orig_method_idnum(i);
   }
 
   // Verify correct order

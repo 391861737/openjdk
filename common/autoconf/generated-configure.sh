@@ -665,7 +665,6 @@ CXXFLAGS_DEBUG_SYMBOLS
 CFLAGS_DEBUG_SYMBOLS
 ZIP_DEBUGINFO_FILES
 ENABLE_DEBUG_SYMBOLS
-USING_BROKEN_SUSE_LD
 COMPILER_SUPPORTS_TARGET_BITS_FLAG
 ZERO_ARCHFLAG
 LDFLAGS_CXX_JDK
@@ -679,9 +678,6 @@ CFLAGS_JDKEXE
 CFLAGS_JDKLIB
 MACOSX_VERSION_MIN
 PACKAGE_PATH
-NO_LIFETIME_DSE_CFLAG
-NO_DELETE_NULL_POINTER_CHECKS_CFLAG
-CXXSTD_CXXFLAG
 LEGACY_EXTRA_LDFLAGS
 LEGACY_EXTRA_CXXFLAGS
 LEGACY_EXTRA_CFLAGS
@@ -714,11 +710,11 @@ OBJ_SUFFIX
 COMPILER_NAME
 JT_HOME
 JTREGEXE
+LIPO
 ac_ct_OBJDUMP
 OBJDUMP
 ac_ct_OBJCOPY
 OBJCOPY
-OTOOL
 MCS
 STRIP
 GNM
@@ -746,8 +742,6 @@ LD
 ac_ct_OBJC
 OBJCFLAGS
 OBJC
-CXX_VERSION
-CC_VERSION
 ac_ct_CXX
 CXXFLAGS
 CXX
@@ -755,7 +749,6 @@ ac_ct_PROPER_COMPILER_CXX
 PROPER_COMPILER_CXX
 POTENTIAL_CXX
 TOOLS_DIR_CXX
-COMPILER_TARGET_BITS_FLAG
 OBJEXT
 EXEEXT
 ac_ct_CC
@@ -767,9 +760,6 @@ ac_ct_PROPER_COMPILER_CC
 PROPER_COMPILER_CC
 POTENTIAL_CC
 TOOLS_DIR_CC
-SDKPATH
-XCODEBUILD
-SET_DEVELOPER_DIR
 BUILD_LD
 BUILD_CXX
 BUILD_CC
@@ -794,10 +784,7 @@ JAXWS_TOPDIR
 JAXP_TOPDIR
 CORBA_TOPDIR
 LANGTOOLS_TOPDIR
-JAVA_FLAGS_SMALL
-JAVA_FLAGS_BIG
-JAVA_FLAGS
-BOOT_JDK_BITS
+BOOT_JDK_JVMARGS
 JAVAC_FLAGS
 BOOT_JDK_SOURCETARGET
 BOOT_JDK
@@ -806,7 +793,6 @@ BOOT_RTJAR
 JAVA_CHECK
 JAVAC_CHECK
 COOKED_BUILD_NUMBER
-COOKED_JDK_UPDATE_VERSION
 JDK_VERSION
 COPYRIGHT_YEAR
 MACOSX_BUNDLE_ID_BASE
@@ -844,6 +830,7 @@ TIME
 STAT
 HG
 READELF
+OTOOL
 LDD
 ZIP
 UNZIP
@@ -864,7 +851,6 @@ VARIANT
 DEBUG_LEVEL
 MACOSX_UNIVERSAL
 INCLUDE_SA
-JVM_VARIANT_CORE
 JVM_VARIANT_ZEROSHARK
 JVM_VARIANT_ZERO
 JVM_VARIANT_KERNEL
@@ -872,7 +858,6 @@ JVM_VARIANT_MINIMAL1
 JVM_VARIANT_CLIENT
 JVM_VARIANT_SERVER
 JVM_VARIANTS
-JVM_INTERPRETER
 JDK_VARIANT
 SET_OPENJDK
 BUILD_LOG_WRAPPER
@@ -1015,11 +1000,9 @@ with_custom_make_dir
 with_target_bits
 with_sys_root
 with_tools_dir
-with_xcode_path
 with_devkit
 enable_openjdk_only
 with_jdk_variant
-with_jvm_interpreter
 with_jvm_variants
 enable_debug
 with_debug_level
@@ -1036,7 +1019,6 @@ with_milestone
 with_update_version
 with_user_release_suffix
 with_build_number
-with_copyright_year
 with_boot_jdk
 with_boot_jdk_jvmargs
 with_add_source_root
@@ -1762,15 +1744,11 @@ Optional Packages:
                           cross-compiling)
   --with-tools-dir        search this directory for compilers and tools (for
                           cross-compiling)
-  --with-xcode-path       explicit path to Xcode 4 (generally for building on
-                          10.9 and later)
   --with-devkit           use this directory as base for tools-dir and
                           sys-root (for cross-compiling)
   --with-jdk-variant      JDK variant to build (normal) [normal]
-  --with-jvm-interpreter  JVM interpreter to build (template, cpp) [template]
   --with-jvm-variants     JVM variants (separated by commas) to build (server,
-                          client, minimal1, kernel, zero, zeroshark, core)
-                          [server]
+                          client, minimal1, kernel, zero, zeroshark) [server]
   --with-debug-level      set the debug level (release, fastdebug, slowdebug)
                           [release]
   --with-conf-name        use this as the name of the configuration [generated
@@ -1789,7 +1767,6 @@ Optional Packages:
                           Add a custom string to the version string if build
                           number isn't set.[username_builddateb00]
   --with-build-number     Set build number value for build [b00]
-  --with-copyright-year   Set copyright year value for build [current year]
   --with-boot-jdk         path to Boot JDK (used to bootstrap build) [probed]
   --with-boot-jdk-jvmargs specify JVM arguments to be passed to all
                           invocations of the Boot JDK, overriding the default
@@ -3120,7 +3097,7 @@ ac_configure="$SHELL $ac_aux_dir/configure"  # Please don't use this var.
 
 # Include these first...
 #
-# Copyright (c) 2011, 2015, Oracle and/or its affiliates. All rights reserved.
+# Copyright (c) 2011, 2013, Oracle and/or its affiliates. All rights reserved.
 # DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
 #
 # This code is free software; you can redistribute it and/or modify it
@@ -3508,6 +3485,8 @@ http://www.freetype.org/
 If you put the resulting build in \"C:\Program Files\GnuWin32\", it will be found automatically."
       fi
       ;;
+    * )
+      break ;;
   esac
 }
 
@@ -3533,6 +3512,8 @@ apt_help() {
       PKGHANDLER_COMMAND="sudo apt-get install libX11-dev libxext-dev libxrender-dev libxtst-dev libxt-dev" ;;
     ccache)
       PKGHANDLER_COMMAND="sudo apt-get install ccache" ;;
+    * )
+      break ;;
   esac
 }
 
@@ -3554,6 +3535,8 @@ yum_help() {
       PKGHANDLER_COMMAND="sudo yum install libXtst-devel libXt-devel libXrender-devel" ;;
     ccache)
       PKGHANDLER_COMMAND="sudo yum install ccache" ;;
+    * )
+      break ;;
   esac
 }
 
@@ -3603,8 +3586,6 @@ pkgadd_help() {
 
 
 
-
-
 ###############################################################################
 #
 # Should we build only OpenJDK even if closed sources are present?
@@ -3636,7 +3617,7 @@ fi
 
 
 #
-# Copyright (c) 2011, 2015, Oracle and/or its affiliates. All rights reserved.
+# Copyright (c) 2011, 2012, Oracle and/or its affiliates. All rights reserved.
 # DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
 #
 # This code is free software; you can redistribute it and/or modify it
@@ -3677,7 +3658,7 @@ fi
 
 
 #
-# Copyright (c) 2011, 2015, Oracle and/or its affiliates. All rights reserved.
+# Copyright (c) 2011, 2012, Oracle and/or its affiliates. All rights reserved.
 # DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
 #
 # This code is free software; you can redistribute it and/or modify it
@@ -3776,7 +3757,7 @@ fi
 
 
 #
-# Copyright (c) 2011, 2015, Oracle and/or its affiliates. All rights reserved.
+# Copyright (c) 2011, 2012, Oracle and/or its affiliates. All rights reserved.
 # DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
 #
 # This code is free software; you can redistribute it and/or modify it
@@ -3799,19 +3780,6 @@ fi
 # or visit www.oracle.com if you need additional information or have any
 # questions.
 #
-
-# Prepare the system so that TOOLCHAIN_CHECK_COMPILER_VERSION can be called.
-# Must have CC_VERSION_NUMBER and CXX_VERSION_NUMBER.
-
-
-# Check if the configured compiler (C and C++) is of a specific version or
-# newer. TOOLCHAIN_PREPARE_FOR_VERSION_COMPARISONS must have been called before.
-#
-# Arguments:
-#   $1:   The version string to check against the found version
-#   $2:   block to run if the compiler is at least this version (>=)
-#   $3:   block to run if the compiler is older than this version (<)
-
 
 # $1 = compiler to test (CC or CXX)
 # $2 = human readable name of compiler (C or C++)
@@ -3836,29 +3804,15 @@ fi
 
 
 
-# TOOLCHAIN_C_COMPILER_CHECK_ARGUMENTS([ARGUMENT], [RUN-IF-TRUE],
-#                                      [RUN-IF-FALSE])
-# ------------------------------------------------------------
-# Check that the C compiler supports an argument
-
-
-# TOOLCHAIN_CXX_COMPILER_CHECK_ARGUMENTS([ARGUMENT], [RUN-IF-TRUE],
-#                                        [RUN-IF-FALSE])
-# ------------------------------------------------------------
-# Check that the C++ compiler supports an argument
-
-
 # TOOLCHAIN_COMPILER_CHECK_ARGUMENTS([ARGUMENT], [RUN-IF-TRUE],
-#                                    [RUN-IF-FALSE])
+#                                   [RUN-IF-FALSE])
 # ------------------------------------------------------------
-# Check that the C and C++ compilers support an argument
+# Check that the c and c++ compilers support an argument
 
 
 
 
 # Setup the JTREG paths
-
-
 
 
 #
@@ -3905,14 +3859,13 @@ fi
 
 
 
-
 # This line needs to be here, verbatim, after all includes and the dummy hook
 # definitions. It is replaced with custom functionality when building
 # custom sources.
 #CUSTOM_AUTOCONF_INCLUDE
 
 # Do not change or remove the following line, it is needed for consistency checks:
-DATE_WHEN_GENERATED=1468207795
+DATE_WHEN_GENERATED=1389186094
 
 ###############################################################################
 #
@@ -6831,11 +6784,6 @@ test -n "$target_alias" &&
       VAR_OS_API=winapi
       VAR_OS_ENV=windows.msys
       ;;
-    *aix*)
-      VAR_OS=aix
-      VAR_OS_API=posix
-      VAR_OS_ENV=aix
-      ;;
     *)
       as_fn_error $? "unsupported operating system $build_os" "$LINENO" 5
       ;;
@@ -6862,12 +6810,6 @@ test -n "$target_alias" &&
       VAR_CPU_BITS=32
       VAR_CPU_ENDIAN=little
       ;;
-    aarch64)
-      VAR_CPU=aarch64
-      VAR_CPU_ARCH=aarch64
-      VAR_CPU_BITS=64
-      VAR_CPU_ENDIAN=little
-      ;;
     powerpc)
       VAR_CPU=ppc
       VAR_CPU_ARCH=ppc
@@ -6879,12 +6821,6 @@ test -n "$target_alias" &&
       VAR_CPU_ARCH=ppc
       VAR_CPU_BITS=64
       VAR_CPU_ENDIAN=big
-      ;;
-    powerpc64le)
-      VAR_CPU=ppc64
-      VAR_CPU_ARCH=ppc
-      VAR_CPU_BITS=64
-      VAR_CPU_ENDIAN=little
       ;;
     s390)
       VAR_CPU=s390
@@ -6904,7 +6840,7 @@ test -n "$target_alias" &&
       VAR_CPU_BITS=32
       VAR_CPU_ENDIAN=big
       ;;
-    sparcv9|sparc64)
+    sparcv9)
       VAR_CPU=sparcv9
       VAR_CPU_ARCH=sparc
       VAR_CPU_BITS=64
@@ -6968,11 +6904,6 @@ $as_echo "$OPENJDK_BUILD_OS-$OPENJDK_BUILD_CPU" >&6; }
       VAR_OS_API=winapi
       VAR_OS_ENV=windows.msys
       ;;
-    *aix*)
-      VAR_OS=aix
-      VAR_OS_API=posix
-      VAR_OS_ENV=aix
-      ;;
     *)
       as_fn_error $? "unsupported operating system $host_os" "$LINENO" 5
       ;;
@@ -6999,12 +6930,6 @@ $as_echo "$OPENJDK_BUILD_OS-$OPENJDK_BUILD_CPU" >&6; }
       VAR_CPU_BITS=32
       VAR_CPU_ENDIAN=little
       ;;
-    aarch64)
-      VAR_CPU=aarch64
-      VAR_CPU_ARCH=aarch64
-      VAR_CPU_BITS=64
-      VAR_CPU_ENDIAN=little
-      ;;
     powerpc)
       VAR_CPU=ppc
       VAR_CPU_ARCH=ppc
@@ -7016,12 +6941,6 @@ $as_echo "$OPENJDK_BUILD_OS-$OPENJDK_BUILD_CPU" >&6; }
       VAR_CPU_ARCH=ppc
       VAR_CPU_BITS=64
       VAR_CPU_ENDIAN=big
-      ;;
-    powerpc64le)
-      VAR_CPU=ppc64
-      VAR_CPU_ARCH=ppc
-      VAR_CPU_BITS=64
-      VAR_CPU_ENDIAN=little
       ;;
     s390)
       VAR_CPU=s390
@@ -7041,7 +6960,7 @@ $as_echo "$OPENJDK_BUILD_OS-$OPENJDK_BUILD_CPU" >&6; }
       VAR_CPU_BITS=32
       VAR_CPU_ENDIAN=big
       ;;
-    sparcv9|sparc64)
+    sparcv9)
       VAR_CPU=sparcv9
       VAR_CPU_ARCH=sparc
       VAR_CPU_BITS=64
@@ -7259,8 +7178,7 @@ $as_echo "$COMPILE_TYPE" >&6; }
 
   # ZERO_ARCHDEF is used to enable architecture-specific code
   case "${OPENJDK_TARGET_CPU}" in
-    ppc)     ZERO_ARCHDEF=PPC32 ;;
-    ppc64)   ZERO_ARCHDEF=PPC64 ;;
+    ppc*)    ZERO_ARCHDEF=PPC   ;;
     s390*)   ZERO_ARCHDEF=S390  ;;
     sparc*)  ZERO_ARCHDEF=SPARC ;;
     x86_64*) ZERO_ARCHDEF=AMD64 ;;
@@ -7299,8 +7217,8 @@ $as_echo "$CYGWIN_VERSION" >&6; }
     WINDOWS_ENV_VENDOR='cygwin'
     WINDOWS_ENV_VERSION="$CYGWIN_VERSION"
 
-    CYGWIN_VERSION_OLD=`$ECHO $CYGWIN_VERSION | $GREP -e '^1\.0-6'`
-    if test "x$CYGWIN_VERSION_OLD" != x; then
+    CYGWIN_VERSION_OK=`$ECHO $CYGWIN_VERSION | $GREP ^[1-9].[0-9].`
+    if test "x$CYGWIN_VERSION_OK" = x; then
       { $as_echo "$as_me:${as_lineno-$LINENO}: Your cygwin is too old. You are running $CYGWIN_VERSION, but at least cygwin 1.7 is required. Please upgrade." >&5
 $as_echo "$as_me: Your cygwin is too old. You are running $CYGWIN_VERSION, but at least cygwin 1.7 is required. Please upgrade." >&6;}
       as_fn_error $? "Cannot continue" "$LINENO" 5
@@ -7656,15 +7574,6 @@ if test "${with_tools_dir+set}" = set; then :
 fi
 
 
-  # Xcode version will be validated later
-
-# Check whether --with-xcode-path was given.
-if test "${with_xcode_path+set}" = set; then :
-  withval=$with_xcode_path; XCODE_PATH=$with_xcode_path
-
-fi
-
-
 
 # Check whether --with-devkit was given.
 if test "${with_devkit+set}" = set; then :
@@ -7901,37 +7810,6 @@ fi
 $as_echo "$JDK_VARIANT" >&6; }
 
 
-###############################################################################
-#
-# Check which interpreter of the JVM we want to build.
-# Currently we have:
-#    template: Template interpreter (the default)
-#    cpp     : C++ interpreter
-{ $as_echo "$as_me:${as_lineno-$LINENO}: checking which interpreter of the JVM to build" >&5
-$as_echo_n "checking which interpreter of the JVM to build... " >&6; }
-
-# Check whether --with-jvm-interpreter was given.
-if test "${with_jvm_interpreter+set}" = set; then :
-  withval=$with_jvm_interpreter;
-fi
-
-
-if test "x$with_jvm_interpreter" = x; then
-     with_jvm_interpreter="template"
-fi
-
-JVM_INTERPRETER="$with_jvm_interpreter"
-
-if test "x$JVM_INTERPRETER" != xtemplate && test "x$JVM_INTERPRETER" != xcpp; then
-   as_fn_error $? "The available JVM interpreters are: template, cpp" "$LINENO" 5
-fi
-
-
-
-{ $as_echo "$as_me:${as_lineno-$LINENO}: result: $with_jvm_interpreter" >&5
-$as_echo "$with_jvm_interpreter" >&6; }
-
-
 
   ###############################################################################
   #
@@ -7944,7 +7822,6 @@ $as_echo "$with_jvm_interpreter" >&6; }
   #             ie normal interpreter and C1, only the serial GC, kernel jvmti etc
   #    zero: no machine code interpreter, no compiler
   #    zeroshark: zero interpreter and shark/llvm compiler backend
-#    core: interpreter only, no compiler (only works on some platforms)
   { $as_echo "$as_me:${as_lineno-$LINENO}: checking which variants of the JVM to build" >&5
 $as_echo_n "checking which variants of the JVM to build... " >&6; }
 
@@ -7959,10 +7836,10 @@ fi
   fi
 
   JVM_VARIANTS=",$with_jvm_variants,"
-  TEST_VARIANTS=`$ECHO "$JVM_VARIANTS" | $SED -e 's/server,//' -e 's/client,//'  -e 's/minimal1,//' -e 's/kernel,//' -e 's/zero,//' -e 's/zeroshark,//' -e 's/core,//'`
+  TEST_VARIANTS=`$ECHO "$JVM_VARIANTS" | $SED -e 's/server,//' -e 's/client,//'  -e 's/minimal1,//' -e 's/kernel,//' -e 's/zero,//' -e 's/zeroshark,//'`
 
   if test "x$TEST_VARIANTS" != "x,"; then
-     as_fn_error $? "The available JVM variants are: server, client, minimal1, kernel, zero, zeroshark, core" "$LINENO" 5
+    as_fn_error $? "The available JVM variants are: server, client, minimal1, kernel, zero, zeroshark" "$LINENO" 5
   fi
   { $as_echo "$as_me:${as_lineno-$LINENO}: result: $with_jvm_variants" >&5
 $as_echo "$with_jvm_variants" >&6; }
@@ -7973,7 +7850,6 @@ $as_echo "$with_jvm_variants" >&6; }
   JVM_VARIANT_KERNEL=`$ECHO "$JVM_VARIANTS" | $SED -e '/,kernel,/!s/.*/false/g' -e '/,kernel,/s/.*/true/g'`
   JVM_VARIANT_ZERO=`$ECHO "$JVM_VARIANTS" | $SED -e '/,zero,/!s/.*/false/g' -e '/,zero,/s/.*/true/g'`
   JVM_VARIANT_ZEROSHARK=`$ECHO "$JVM_VARIANTS" | $SED -e '/,zeroshark,/!s/.*/false/g' -e '/,zeroshark,/s/.*/true/g'`
-  JVM_VARIANT_CORE=`$ECHO "$JVM_VARIANTS" | $SED -e '/,core,/!s/.*/false/g' -e '/,core,/s/.*/true/g'`
 
   if test "x$JVM_VARIANT_CLIENT" = xtrue; then
     if test "x$OPENJDK_TARGET_CPU_BITS" = x64; then
@@ -7992,14 +7868,13 @@ $as_echo "$with_jvm_variants" >&6; }
   fi
 
   # Replace the commas with AND for use in the build directory name.
-  ANDED_JVM_VARIANTS=`$ECHO "$JVM_VARIANTS" | $SED -e 's/^,//' -e 's/,$//' -e 's/,/AND/g'`
-  COUNT_VARIANTS=`$ECHO "$JVM_VARIANTS" | $SED -e 's/server,/1/' -e 's/client,/1/' -e 's/minimal1,/1/' -e 's/kernel,/1/' -e 's/zero,/1/' -e 's/zeroshark,/1/' -e 's/core,/1/'`
+  ANDED_JVM_VARIANTS=`$ECHO "$JVM_VARIANTS" | $SED -e 's/^,//' -e 's/,$//' -e 's/,/AND/'`
+  COUNT_VARIANTS=`$ECHO "$JVM_VARIANTS" | $SED -e 's/server,/1/' -e 's/client,/1/' -e 's/minimal1,/1/' -e 's/kernel,/1/' -e 's/zero,/1/' -e 's/zeroshark,/1/'`
   if test "x$COUNT_VARIANTS" != "x,1"; then
     BUILDING_MULTIPLE_JVM_VARIANTS=yes
   else
     BUILDING_MULTIPLE_JVM_VARIANTS=no
   fi
-
 
 
 
@@ -8016,16 +7891,10 @@ $as_echo "$with_jvm_variants" >&6; }
   if test "x$JVM_VARIANT_ZEROSHARK" = xtrue ; then
     INCLUDE_SA=false
   fi
-  if test "x$VAR_CPU" = xppc64 ; then
-    INCLUDE_SA=false
-  fi
-  if test "x$OPENJDK_TARGET_CPU" = xaarch64; then
-    INCLUDE_SA=false
-  fi
 
 
   if test "x$OPENJDK_TARGET_OS" = "xmacosx"; then
-    MACOSX_UNIVERSAL="false"
+    MACOSX_UNIVERSAL="true"
   fi
 
 
@@ -8135,10 +8004,6 @@ $as_echo "$DEBUG_LEVEL" >&6; }
 
   if test "x$JVM_VARIANT_ZEROSHARK" = xtrue; then
     HOTSPOT_TARGET="$HOTSPOT_TARGET${HOTSPOT_DEBUG_LEVEL}shark "
-  fi
-
-  if test "x$JVM_VARIANT_CORE" = xtrue; then
-    HOTSPOT_TARGET="$HOTSPOT_TARGET${HOTSPOT_DEBUG_LEVEL}core "
   fi
 
   HOTSPOT_TARGET="$HOTSPOT_TARGET docs export_$HOTSPOT_EXPORT"
@@ -10386,6 +10251,49 @@ fi
     # We can build without it.
     LDD="true"
   fi
+  # Extract the first word of "otool", so it can be a program name with args.
+set dummy otool; ac_word=$2
+{ $as_echo "$as_me:${as_lineno-$LINENO}: checking for $ac_word" >&5
+$as_echo_n "checking for $ac_word... " >&6; }
+if ${ac_cv_path_OTOOL+:} false; then :
+  $as_echo_n "(cached) " >&6
+else
+  case $OTOOL in
+  [\\/]* | ?:[\\/]*)
+  ac_cv_path_OTOOL="$OTOOL" # Let the user override the test with a path.
+  ;;
+  *)
+  as_save_IFS=$IFS; IFS=$PATH_SEPARATOR
+for as_dir in $PATH
+do
+  IFS=$as_save_IFS
+  test -z "$as_dir" && as_dir=.
+    for ac_exec_ext in '' $ac_executable_extensions; do
+  if as_fn_executable_p "$as_dir/$ac_word$ac_exec_ext"; then
+    ac_cv_path_OTOOL="$as_dir/$ac_word$ac_exec_ext"
+    $as_echo "$as_me:${as_lineno-$LINENO}: found $as_dir/$ac_word$ac_exec_ext" >&5
+    break 2
+  fi
+done
+  done
+IFS=$as_save_IFS
+
+  ;;
+esac
+fi
+OTOOL=$ac_cv_path_OTOOL
+if test -n "$OTOOL"; then
+  { $as_echo "$as_me:${as_lineno-$LINENO}: result: $OTOOL" >&5
+$as_echo "$OTOOL" >&6; }
+else
+  { $as_echo "$as_me:${as_lineno-$LINENO}: result: no" >&5
+$as_echo "no" >&6; }
+fi
+
+
+  if test "x$OTOOL" = "x"; then
+    OTOOL="true"
+  fi
   for ac_prog in readelf greadelf
 do
   # Extract the first word of "$ac_prog", so it can be a program name with args.
@@ -11248,12 +11156,6 @@ fi
     as_fn_error $? "Update version must have a value" "$LINENO" 5
   elif test "x$with_update_version" != x; then
     JDK_UPDATE_VERSION="$with_update_version"
-    # On macosx 10.7, it's not possible to set --with-update-version=0X due
-    # to a bug in expr (which reduces it to just X). To work around this, we
-    # always add a 0 to one digit update versions.
-    if test "${#JDK_UPDATE_VERSION}" = "1"; then
-      JDK_UPDATE_VERSION="0${JDK_UPDATE_VERSION}"
-    fi
   fi
 
 
@@ -11306,19 +11208,7 @@ fi
 
 
 
-
-# Check whether --with-copyright-year was given.
-if test "${with_copyright_year+set}" = set; then :
-  withval=$with_copyright_year;
-fi
-
-  if test "x$with_copyright_year" = xyes; then
-    as_fn_error $? "Copyright year must have a value" "$LINENO" 5
-  elif test "x$with_copyright_year" != x; then
-    COPYRIGHT_YEAR="$with_copyright_year"
-  else
-    COPYRIGHT_YEAR=`date +'%Y'`
-  fi
+  COPYRIGHT_YEAR=`date +'%Y'`
 
 
   if test "x$JDK_UPDATE_VERSION" != x; then
@@ -11326,12 +11216,6 @@ fi
   else
     JDK_VERSION="${JDK_MAJOR_VERSION}.${JDK_MINOR_VERSION}.${JDK_MICRO_VERSION}"
   fi
-
-
-  # The cooked update version used to encode trailing letters in the update
-  # version into a trailing number. That is no longer needed, but need to
-  # keep the format in 8u for compatibility.
-  COOKED_JDK_UPDATE_VERSION="${JDK_UPDATE_VERSION}0"
 
 
   COOKED_BUILD_NUMBER=`$ECHO $JDK_BUILD_NUMBER | $SED -e 's/^b//' -e 's/^0//'`
@@ -15967,6 +15851,8 @@ $as_echo "$BOOT_JDK_VERSION" >&6; }
         pkgutil_help $MISSING_DEPENDENCY ;;
       pkgadd)
         pkgadd_help  $MISSING_DEPENDENCY ;;
+      * )
+        break ;;
     esac
 
     if test "x$PKGHANDLER_COMMAND" != x; then
@@ -16002,7 +15888,7 @@ $as_echo "$as_me: This might be fixed by explicitely setting --with-boot-jdk" >&
   { $as_echo "$as_me:${as_lineno-$LINENO}: checking for java in Boot JDK" >&5
 $as_echo_n "checking for java in Boot JDK... " >&6; }
   JAVA=$BOOT_JDK/bin/java
-  if test ! -x $JAVA; then
+  if [[ ! -x $JAVA ]]; then
     { $as_echo "$as_me:${as_lineno-$LINENO}: result: not found" >&5
 $as_echo "not found" >&6; }
     { $as_echo "$as_me:${as_lineno-$LINENO}: Your Boot JDK seems broken. This might be fixed by explicitely setting --with-boot-jdk" >&5
@@ -16016,7 +15902,7 @@ $as_echo "ok" >&6; }
   { $as_echo "$as_me:${as_lineno-$LINENO}: checking for javac in Boot JDK" >&5
 $as_echo_n "checking for javac in Boot JDK... " >&6; }
   JAVAC=$BOOT_JDK/bin/javac
-  if test ! -x $JAVAC; then
+  if [[ ! -x $JAVAC ]]; then
     { $as_echo "$as_me:${as_lineno-$LINENO}: result: not found" >&5
 $as_echo "not found" >&6; }
     { $as_echo "$as_me:${as_lineno-$LINENO}: Your Boot JDK seems broken. This might be fixed by explicitely setting --with-boot-jdk" >&5
@@ -16030,7 +15916,7 @@ $as_echo "ok" >&6; }
   { $as_echo "$as_me:${as_lineno-$LINENO}: checking for javah in Boot JDK" >&5
 $as_echo_n "checking for javah in Boot JDK... " >&6; }
   JAVAH=$BOOT_JDK/bin/javah
-  if test ! -x $JAVAH; then
+  if [[ ! -x $JAVAH ]]; then
     { $as_echo "$as_me:${as_lineno-$LINENO}: result: not found" >&5
 $as_echo "not found" >&6; }
     { $as_echo "$as_me:${as_lineno-$LINENO}: Your Boot JDK seems broken. This might be fixed by explicitely setting --with-boot-jdk" >&5
@@ -16044,7 +15930,7 @@ $as_echo "ok" >&6; }
   { $as_echo "$as_me:${as_lineno-$LINENO}: checking for javap in Boot JDK" >&5
 $as_echo_n "checking for javap in Boot JDK... " >&6; }
   JAVAP=$BOOT_JDK/bin/javap
-  if test ! -x $JAVAP; then
+  if [[ ! -x $JAVAP ]]; then
     { $as_echo "$as_me:${as_lineno-$LINENO}: result: not found" >&5
 $as_echo "not found" >&6; }
     { $as_echo "$as_me:${as_lineno-$LINENO}: Your Boot JDK seems broken. This might be fixed by explicitely setting --with-boot-jdk" >&5
@@ -16058,7 +15944,7 @@ $as_echo "ok" >&6; }
   { $as_echo "$as_me:${as_lineno-$LINENO}: checking for jar in Boot JDK" >&5
 $as_echo_n "checking for jar in Boot JDK... " >&6; }
   JAR=$BOOT_JDK/bin/jar
-  if test ! -x $JAR; then
+  if [[ ! -x $JAR ]]; then
     { $as_echo "$as_me:${as_lineno-$LINENO}: result: not found" >&5
 $as_echo "not found" >&6; }
     { $as_echo "$as_me:${as_lineno-$LINENO}: Your Boot JDK seems broken. This might be fixed by explicitely setting --with-boot-jdk" >&5
@@ -16072,7 +15958,7 @@ $as_echo "ok" >&6; }
   { $as_echo "$as_me:${as_lineno-$LINENO}: checking for rmic in Boot JDK" >&5
 $as_echo_n "checking for rmic in Boot JDK... " >&6; }
   RMIC=$BOOT_JDK/bin/rmic
-  if test ! -x $RMIC; then
+  if [[ ! -x $RMIC ]]; then
     { $as_echo "$as_me:${as_lineno-$LINENO}: result: not found" >&5
 $as_echo "not found" >&6; }
     { $as_echo "$as_me:${as_lineno-$LINENO}: Your Boot JDK seems broken. This might be fixed by explicitely setting --with-boot-jdk" >&5
@@ -16086,7 +15972,7 @@ $as_echo "ok" >&6; }
   { $as_echo "$as_me:${as_lineno-$LINENO}: checking for native2ascii in Boot JDK" >&5
 $as_echo_n "checking for native2ascii in Boot JDK... " >&6; }
   NATIVE2ASCII=$BOOT_JDK/bin/native2ascii
-  if test ! -x $NATIVE2ASCII; then
+  if [[ ! -x $NATIVE2ASCII ]]; then
     { $as_echo "$as_me:${as_lineno-$LINENO}: result: not found" >&5
 $as_echo "not found" >&6; }
     { $as_echo "$as_me:${as_lineno-$LINENO}: Your Boot JDK seems broken. This might be fixed by explicitely setting --with-boot-jdk" >&5
@@ -16104,18 +15990,6 @@ $as_echo "ok" >&6; }
 
 
 
-  # Check if the boot jdk is 32 or 64 bit
-  if "$JAVA" -d64 -version > /dev/null 2>&1; then
-    BOOT_JDK_BITS="64"
-  else
-    BOOT_JDK_BITS="32"
-  fi
-  { $as_echo "$as_me:${as_lineno-$LINENO}: checking if Boot JDK is 32 or 64 bits" >&5
-$as_echo_n "checking if Boot JDK is 32 or 64 bits... " >&6; }
-  { $as_echo "$as_me:${as_lineno-$LINENO}: result: $BOOT_JDK_BITS" >&5
-$as_echo "$BOOT_JDK_BITS" >&6; }
-
-
 
   ##############################################################################
   #
@@ -16128,10 +16002,117 @@ if test "${with_boot_jdk_jvmargs+set}" = set; then :
 fi
 
 
-  { $as_echo "$as_me:${as_lineno-$LINENO}: checking flags for boot jdk java command " >&5
-$as_echo_n "checking flags for boot jdk java command ... " >&6; }
+  if test "x$with_boot_jdk_jvmargs" = x; then
+    # Not all JVM:s accept the same arguments on the command line.
+    # OpenJDK specific increase in thread stack for JDK build,
+    # well more specifically, when running javac.
+    if test "x$BUILD_NUM_BITS" = x32; then
+      STACK_SIZE=768
+    else
+      # Running Javac on a JVM on a 64-bit machine, the stack takes more space
+      # since 64-bit pointers are pushed on the stach. Apparently, we need
+      # to increase the stack space when javacing the JDK....
+      STACK_SIZE=1536
+    fi
 
-  # Disable special log output when a debug build is used as Boot JDK...
+    # Minimum amount of heap memory.
+
+  $ECHO "Check if jvm arg is ok: -Xms64M" >&5
+  $ECHO "Command: $JAVA -Xms64M -version" >&5
+  OUTPUT=`$JAVA -Xms64M -version 2>&1`
+  FOUND_WARN=`$ECHO "$OUTPUT" | grep -i warn`
+  FOUND_VERSION=`$ECHO $OUTPUT | grep " version \""`
+  if test "x$FOUND_VERSION" != x && test "x$FOUND_WARN" = x; then
+    boot_jdk_jvmargs="$boot_jdk_jvmargs -Xms64M"
+    JVM_ARG_OK=true
+  else
+    $ECHO "Arg failed:" >&5
+    $ECHO "$OUTPUT" >&5
+    JVM_ARG_OK=false
+  fi
+
+    if test "x$OPENJDK_TARGET_OS" = "xmacosx"; then
+      # Why does macosx need more heap? Its the huge JDK batch.
+
+  $ECHO "Check if jvm arg is ok: -Xmx1600M" >&5
+  $ECHO "Command: $JAVA -Xmx1600M -version" >&5
+  OUTPUT=`$JAVA -Xmx1600M -version 2>&1`
+  FOUND_WARN=`$ECHO "$OUTPUT" | grep -i warn`
+  FOUND_VERSION=`$ECHO $OUTPUT | grep " version \""`
+  if test "x$FOUND_VERSION" != x && test "x$FOUND_WARN" = x; then
+    boot_jdk_jvmargs="$boot_jdk_jvmargs -Xmx1600M"
+    JVM_ARG_OK=true
+  else
+    $ECHO "Arg failed:" >&5
+    $ECHO "$OUTPUT" >&5
+    JVM_ARG_OK=false
+  fi
+
+    else
+
+  $ECHO "Check if jvm arg is ok: -Xmx1100M" >&5
+  $ECHO "Command: $JAVA -Xmx1100M -version" >&5
+  OUTPUT=`$JAVA -Xmx1100M -version 2>&1`
+  FOUND_WARN=`$ECHO "$OUTPUT" | grep -i warn`
+  FOUND_VERSION=`$ECHO $OUTPUT | grep " version \""`
+  if test "x$FOUND_VERSION" != x && test "x$FOUND_WARN" = x; then
+    boot_jdk_jvmargs="$boot_jdk_jvmargs -Xmx1100M"
+    JVM_ARG_OK=true
+  else
+    $ECHO "Arg failed:" >&5
+    $ECHO "$OUTPUT" >&5
+    JVM_ARG_OK=false
+  fi
+
+    fi
+    # When is adding -client something that speeds up the JVM?
+    # ADD_JVM_ARG_IF_OK([-client],boot_jdk_jvmargs,[$JAVA])
+
+  $ECHO "Check if jvm arg is ok: -XX:PermSize=32m" >&5
+  $ECHO "Command: $JAVA -XX:PermSize=32m -version" >&5
+  OUTPUT=`$JAVA -XX:PermSize=32m -version 2>&1`
+  FOUND_WARN=`$ECHO "$OUTPUT" | grep -i warn`
+  FOUND_VERSION=`$ECHO $OUTPUT | grep " version \""`
+  if test "x$FOUND_VERSION" != x && test "x$FOUND_WARN" = x; then
+    boot_jdk_jvmargs="$boot_jdk_jvmargs -XX:PermSize=32m"
+    JVM_ARG_OK=true
+  else
+    $ECHO "Arg failed:" >&5
+    $ECHO "$OUTPUT" >&5
+    JVM_ARG_OK=false
+  fi
+
+
+  $ECHO "Check if jvm arg is ok: -XX:MaxPermSize=160m" >&5
+  $ECHO "Command: $JAVA -XX:MaxPermSize=160m -version" >&5
+  OUTPUT=`$JAVA -XX:MaxPermSize=160m -version 2>&1`
+  FOUND_WARN=`$ECHO "$OUTPUT" | grep -i warn`
+  FOUND_VERSION=`$ECHO $OUTPUT | grep " version \""`
+  if test "x$FOUND_VERSION" != x && test "x$FOUND_WARN" = x; then
+    boot_jdk_jvmargs="$boot_jdk_jvmargs -XX:MaxPermSize=160m"
+    JVM_ARG_OK=true
+  else
+    $ECHO "Arg failed:" >&5
+    $ECHO "$OUTPUT" >&5
+    JVM_ARG_OK=false
+  fi
+
+
+  $ECHO "Check if jvm arg is ok: -XX:ThreadStackSize=$STACK_SIZE" >&5
+  $ECHO "Command: $JAVA -XX:ThreadStackSize=$STACK_SIZE -version" >&5
+  OUTPUT=`$JAVA -XX:ThreadStackSize=$STACK_SIZE -version 2>&1`
+  FOUND_WARN=`$ECHO "$OUTPUT" | grep -i warn`
+  FOUND_VERSION=`$ECHO $OUTPUT | grep " version \""`
+  if test "x$FOUND_VERSION" != x && test "x$FOUND_WARN" = x; then
+    boot_jdk_jvmargs="$boot_jdk_jvmargs -XX:ThreadStackSize=$STACK_SIZE"
+    JVM_ARG_OK=true
+  else
+    $ECHO "Arg failed:" >&5
+    $ECHO "$OUTPUT" >&5
+    JVM_ARG_OK=false
+  fi
+
+    # Disable special log output when a debug build is used as Boot JDK...
 
   $ECHO "Check if jvm arg is ok: -XX:-PrintVMOptions -XX:-UnlockDiagnosticVMOptions -XX:-LogVMOutput" >&5
   $ECHO "Command: $JAVA -XX:-PrintVMOptions -XX:-UnlockDiagnosticVMOptions -XX:-LogVMOutput -version" >&5
@@ -16147,187 +16128,9 @@ $as_echo_n "checking flags for boot jdk java command ... " >&6; }
     JVM_ARG_OK=false
   fi
 
-
-  # Apply user provided options.
-
-  $ECHO "Check if jvm arg is ok: $with_boot_jdk_jvmargs" >&5
-  $ECHO "Command: $JAVA $with_boot_jdk_jvmargs -version" >&5
-  OUTPUT=`$JAVA $with_boot_jdk_jvmargs -version 2>&1`
-  FOUND_WARN=`$ECHO "$OUTPUT" | grep -i warn`
-  FOUND_VERSION=`$ECHO $OUTPUT | grep " version \""`
-  if test "x$FOUND_VERSION" != x && test "x$FOUND_WARN" = x; then
-    boot_jdk_jvmargs="$boot_jdk_jvmargs $with_boot_jdk_jvmargs"
-    JVM_ARG_OK=true
-  else
-    $ECHO "Arg failed:" >&5
-    $ECHO "$OUTPUT" >&5
-    JVM_ARG_OK=false
   fi
 
-
-  { $as_echo "$as_me:${as_lineno-$LINENO}: result: $boot_jdk_jvmargs" >&5
-$as_echo "$boot_jdk_jvmargs" >&6; }
-
-  # For now, general JAVA_FLAGS are the same as the boot jdk jvmargs
-  JAVA_FLAGS=$boot_jdk_jvmargs
-
-
-
-  { $as_echo "$as_me:${as_lineno-$LINENO}: checking flags for boot jdk java command for big workloads" >&5
-$as_echo_n "checking flags for boot jdk java command for big workloads... " >&6; }
-
-  # Starting amount of heap memory.
-
-  $ECHO "Check if jvm arg is ok: -Xms64M" >&5
-  $ECHO "Command: $JAVA -Xms64M -version" >&5
-  OUTPUT=`$JAVA -Xms64M -version 2>&1`
-  FOUND_WARN=`$ECHO "$OUTPUT" | grep -i warn`
-  FOUND_VERSION=`$ECHO $OUTPUT | grep " version \""`
-  if test "x$FOUND_VERSION" != x && test "x$FOUND_WARN" = x; then
-    boot_jdk_jvmargs_big="$boot_jdk_jvmargs_big -Xms64M"
-    JVM_ARG_OK=true
-  else
-    $ECHO "Arg failed:" >&5
-    $ECHO "$OUTPUT" >&5
-    JVM_ARG_OK=false
-  fi
-
-
-  # Maximum amount of heap memory.
-  # Maximum stack size.
-  if test "x$BOOT_JDK_BITS" = x32; then
-    JVM_MAX_HEAP=1100M
-    STACK_SIZE=768
-  else
-    # Running Javac on a JVM on a 64-bit machine, takes more space since 64-bit
-    # pointers are used. Apparently, we need to increase the heap and stack
-    # space for the jvm. More specifically, when running javac to build huge
-    # jdk batch
-    JVM_MAX_HEAP=1600M
-    STACK_SIZE=1536
-  fi
-
-  $ECHO "Check if jvm arg is ok: -Xmx$JVM_MAX_HEAP" >&5
-  $ECHO "Command: $JAVA -Xmx$JVM_MAX_HEAP -version" >&5
-  OUTPUT=`$JAVA -Xmx$JVM_MAX_HEAP -version 2>&1`
-  FOUND_WARN=`$ECHO "$OUTPUT" | grep -i warn`
-  FOUND_VERSION=`$ECHO $OUTPUT | grep " version \""`
-  if test "x$FOUND_VERSION" != x && test "x$FOUND_WARN" = x; then
-    boot_jdk_jvmargs_big="$boot_jdk_jvmargs_big -Xmx$JVM_MAX_HEAP"
-    JVM_ARG_OK=true
-  else
-    $ECHO "Arg failed:" >&5
-    $ECHO "$OUTPUT" >&5
-    JVM_ARG_OK=false
-  fi
-
-
-  $ECHO "Check if jvm arg is ok: -XX:ThreadStackSize=$STACK_SIZE" >&5
-  $ECHO "Command: $JAVA -XX:ThreadStackSize=$STACK_SIZE -version" >&5
-  OUTPUT=`$JAVA -XX:ThreadStackSize=$STACK_SIZE -version 2>&1`
-  FOUND_WARN=`$ECHO "$OUTPUT" | grep -i warn`
-  FOUND_VERSION=`$ECHO $OUTPUT | grep " version \""`
-  if test "x$FOUND_VERSION" != x && test "x$FOUND_WARN" = x; then
-    boot_jdk_jvmargs_big="$boot_jdk_jvmargs_big -XX:ThreadStackSize=$STACK_SIZE"
-    JVM_ARG_OK=true
-  else
-    $ECHO "Arg failed:" >&5
-    $ECHO "$OUTPUT" >&5
-    JVM_ARG_OK=false
-  fi
-
-
-  $ECHO "Check if jvm arg is ok: -XX:PermSize=32m" >&5
-  $ECHO "Command: $JAVA -XX:PermSize=32m -version" >&5
-  OUTPUT=`$JAVA -XX:PermSize=32m -version 2>&1`
-  FOUND_WARN=`$ECHO "$OUTPUT" | grep -i warn`
-  FOUND_VERSION=`$ECHO $OUTPUT | grep " version \""`
-  if test "x$FOUND_VERSION" != x && test "x$FOUND_WARN" = x; then
-    boot_jdk_jvmargs_big="$boot_jdk_jvmargs_big -XX:PermSize=32m"
-    JVM_ARG_OK=true
-  else
-    $ECHO "Arg failed:" >&5
-    $ECHO "$OUTPUT" >&5
-    JVM_ARG_OK=false
-  fi
-
-
-  $ECHO "Check if jvm arg is ok: -XX:MaxPermSize=160m" >&5
-  $ECHO "Command: $JAVA -XX:MaxPermSize=160m -version" >&5
-  OUTPUT=`$JAVA -XX:MaxPermSize=160m -version 2>&1`
-  FOUND_WARN=`$ECHO "$OUTPUT" | grep -i warn`
-  FOUND_VERSION=`$ECHO $OUTPUT | grep " version \""`
-  if test "x$FOUND_VERSION" != x && test "x$FOUND_WARN" = x; then
-    boot_jdk_jvmargs_big="$boot_jdk_jvmargs_big -XX:MaxPermSize=160m"
-    JVM_ARG_OK=true
-  else
-    $ECHO "Arg failed:" >&5
-    $ECHO "$OUTPUT" >&5
-    JVM_ARG_OK=false
-  fi
-
-
-  { $as_echo "$as_me:${as_lineno-$LINENO}: result: $boot_jdk_jvmargs_big" >&5
-$as_echo "$boot_jdk_jvmargs_big" >&6; }
-
-  JAVA_FLAGS_BIG=$boot_jdk_jvmargs_big
-
-
-
-  { $as_echo "$as_me:${as_lineno-$LINENO}: checking flags for boot jdk java command for small workloads" >&5
-$as_echo_n "checking flags for boot jdk java command for small workloads... " >&6; }
-
-  # Use serial gc for small short lived tools if possible
-
-  $ECHO "Check if jvm arg is ok: -XX:+UseSerialGC" >&5
-  $ECHO "Command: $JAVA -XX:+UseSerialGC -version" >&5
-  OUTPUT=`$JAVA -XX:+UseSerialGC -version 2>&1`
-  FOUND_WARN=`$ECHO "$OUTPUT" | grep -i warn`
-  FOUND_VERSION=`$ECHO $OUTPUT | grep " version \""`
-  if test "x$FOUND_VERSION" != x && test "x$FOUND_WARN" = x; then
-    boot_jdk_jvmargs_small="$boot_jdk_jvmargs_small -XX:+UseSerialGC"
-    JVM_ARG_OK=true
-  else
-    $ECHO "Arg failed:" >&5
-    $ECHO "$OUTPUT" >&5
-    JVM_ARG_OK=false
-  fi
-
-
-  $ECHO "Check if jvm arg is ok: -Xms32M" >&5
-  $ECHO "Command: $JAVA -Xms32M -version" >&5
-  OUTPUT=`$JAVA -Xms32M -version 2>&1`
-  FOUND_WARN=`$ECHO "$OUTPUT" | grep -i warn`
-  FOUND_VERSION=`$ECHO $OUTPUT | grep " version \""`
-  if test "x$FOUND_VERSION" != x && test "x$FOUND_WARN" = x; then
-    boot_jdk_jvmargs_small="$boot_jdk_jvmargs_small -Xms32M"
-    JVM_ARG_OK=true
-  else
-    $ECHO "Arg failed:" >&5
-    $ECHO "$OUTPUT" >&5
-    JVM_ARG_OK=false
-  fi
-
-
-  $ECHO "Check if jvm arg is ok: -Xmx512M" >&5
-  $ECHO "Command: $JAVA -Xmx512M -version" >&5
-  OUTPUT=`$JAVA -Xmx512M -version 2>&1`
-  FOUND_WARN=`$ECHO "$OUTPUT" | grep -i warn`
-  FOUND_VERSION=`$ECHO $OUTPUT | grep " version \""`
-  if test "x$FOUND_VERSION" != x && test "x$FOUND_WARN" = x; then
-    boot_jdk_jvmargs_small="$boot_jdk_jvmargs_small -Xmx512M"
-    JVM_ARG_OK=true
-  else
-    $ECHO "Arg failed:" >&5
-    $ECHO "$OUTPUT" >&5
-    JVM_ARG_OK=false
-  fi
-
-
-  { $as_echo "$as_me:${as_lineno-$LINENO}: result: $boot_jdk_jvmargs_small" >&5
-$as_echo "$boot_jdk_jvmargs_small" >&6; }
-
-  JAVA_FLAGS_SMALL=$boot_jdk_jvmargs_small
+  BOOT_JDK_JVMARGS=$boot_jdk_jvmargs
 
 
 
@@ -16831,7 +16634,7 @@ $as_echo "$as_me: The path of JT_HOME, which resolves as \"$path\", is invalid."
 
 
       # jtreg win32 script works for everybody
-      JTREGEXE="$JT_HOME/bin/jtreg"
+      JTREGEXE="$JT_HOME/win32/bin/jtreg"
 
       if test ! -f "$JTREGEXE"; then
         as_fn_error $? "JTReg executable does not exist: $JTREGEXE" "$LINENO" 5
@@ -16970,17 +16773,17 @@ $as_echo "no" >&6; }
   # First-hand choice is to locate and run the vsvars bat file.
 
   if test "x$OPENJDK_TARGET_CPU_BITS" = x32; then
-    VCVARSFILE="vc/bin/vcvars32.bat"
+    VCVARSFILE="VC/Auxiliary/Build/vcvars32.bat"
   else
-    VCVARSFILE="vc/bin/amd64/vcvars64.bat"
+    VCVARSFILE="VC/Auxiliary/Build/vcvars64.bat"
   fi
 
   VS_ENV_CMD=""
   VS_ENV_ARGS=""
-  if test "x$with_toolsdir" != x; then
+  if test "x$with_tools_dir" != x; then
 
   if test "x$VS_ENV_CMD" = x; then
-    VS100BASE="$with_toolsdir/../.."
+    VS100BASE="$with_tools_dir"
     METHOD="--with-tools-dir"
 
   windows_path="$VS100BASE"
@@ -17008,7 +16811,7 @@ $as_echo "$as_me: Warning: $VCVARSFILE is missing, this is probably Visual Studi
 
   fi
 
-  if test "x$with_toolsdir" != x && test "x$VS_ENV_CMD" = x; then
+  if test "x$with_tools_dir" != x && test "x$VS_ENV_CMD" = x; then
     # Having specified an argument which is incorrect will produce an instant failure;
     # we should not go on looking
     { $as_echo "$as_me:${as_lineno-$LINENO}: The path given by --with-tools-dir does not contain a valid Visual Studio installation" >&5
@@ -19287,132 +19090,6 @@ $as_echo "$as_me: Downloading build dependency devkit from $with_builddeps_serve
     PATH=$TOOLS_DIR:$PATH
   fi
 
-  # Before we locate the compilers, we need to sanitize the Xcode build environment
-  if test "x$OPENJDK_TARGET_OS" = "xmacosx"; then
-    # determine path to Xcode developer directory
-    # can be empty in which case all the tools will rely on a sane Xcode 4 installation
-    SET_DEVELOPER_DIR=
-
-    if test -n "$XCODE_PATH"; then
-      DEVELOPER_DIR="$XCODE_PATH"/Contents/Developer
-    fi
-
-    # DEVELOPER_DIR could also be provided directly
-    { $as_echo "$as_me:${as_lineno-$LINENO}: checking Determining if we need to set DEVELOPER_DIR" >&5
-$as_echo_n "checking Determining if we need to set DEVELOPER_DIR... " >&6; }
-    if test -n "$DEVELOPER_DIR"; then
-      if test ! -d "$DEVELOPER_DIR"; then
-        as_fn_error $? "Xcode Developer path does not exist: $DEVELOPER_DIR, please provide a path to the Xcode 4 application bundle using --with-xcode-path" "$LINENO" 5
-      fi
-      if test ! -f "$DEVELOPER_DIR"/usr/bin/xcodebuild; then
-        as_fn_error $? "Xcode Developer path is not valid: $DEVELOPER_DIR, it must point to Contents/Developer inside an Xcode application bundle" "$LINENO" 5
-      fi
-      # make it visible to all the tools immediately
-      export DEVELOPER_DIR
-      SET_DEVELOPER_DIR="export DEVELOPER_DIR := $DEVELOPER_DIR"
-      { $as_echo "$as_me:${as_lineno-$LINENO}: result: yes ($DEVELOPER_DIR)" >&5
-$as_echo "yes ($DEVELOPER_DIR)" >&6; }
-    else
-      { $as_echo "$as_me:${as_lineno-$LINENO}: result: no" >&5
-$as_echo "no" >&6; }
-    fi
-
-
-    # Extract the first word of "xcodebuild", so it can be a program name with args.
-set dummy xcodebuild; ac_word=$2
-{ $as_echo "$as_me:${as_lineno-$LINENO}: checking for $ac_word" >&5
-$as_echo_n "checking for $ac_word... " >&6; }
-if ${ac_cv_path_XCODEBUILD+:} false; then :
-  $as_echo_n "(cached) " >&6
-else
-  case $XCODEBUILD in
-  [\\/]* | ?:[\\/]*)
-  ac_cv_path_XCODEBUILD="$XCODEBUILD" # Let the user override the test with a path.
-  ;;
-  *)
-  as_save_IFS=$IFS; IFS=$PATH_SEPARATOR
-for as_dir in $PATH
-do
-  IFS=$as_save_IFS
-  test -z "$as_dir" && as_dir=.
-    for ac_exec_ext in '' $ac_executable_extensions; do
-  if as_fn_executable_p "$as_dir/$ac_word$ac_exec_ext"; then
-    ac_cv_path_XCODEBUILD="$as_dir/$ac_word$ac_exec_ext"
-    $as_echo "$as_me:${as_lineno-$LINENO}: found $as_dir/$ac_word$ac_exec_ext" >&5
-    break 2
-  fi
-done
-  done
-IFS=$as_save_IFS
-
-  ;;
-esac
-fi
-XCODEBUILD=$ac_cv_path_XCODEBUILD
-if test -n "$XCODEBUILD"; then
-  { $as_echo "$as_me:${as_lineno-$LINENO}: result: $XCODEBUILD" >&5
-$as_echo "$XCODEBUILD" >&6; }
-else
-  { $as_echo "$as_me:${as_lineno-$LINENO}: result: no" >&5
-$as_echo "no" >&6; }
-fi
-
-
-    if test -z "$XCODEBUILD"; then
-      as_fn_error $? "The xcodebuild tool was not found, the Xcode command line tools are required to build on Mac OS X" "$LINENO" 5
-    fi
-
-    # Fail-fast: verify we're building on Xcode 4, we cannot build with Xcode 5 or later
-    XCODE_VERSION=`$XCODEBUILD -version | grep '^Xcode ' | sed 's/Xcode //'`
-    XC_VERSION_PARTS=( ${XCODE_VERSION//./ } )
-    if test ! "${XC_VERSION_PARTS[0]}" = "4"; then
-      as_fn_error $? "Xcode 4 is required to build JDK 8, the version found was $XCODE_VERSION. Use --with-xcode-path to specify the location of Xcode 4 or make Xcode 4 active by using xcode-select." "$LINENO" 5
-    fi
-
-    # Some versions of Xcode 5 command line tools install gcc and g++ as symlinks to
-    # clang and clang++, which will break the build. So handle that here if we need to.
-    if test -L "/usr/bin/gcc" -o -L "/usr/bin/g++"; then
-      # use xcrun to find the real gcc and add it's directory to PATH
-      # then autoconf magic will find it
-      { $as_echo "$as_me:${as_lineno-$LINENO}: Found gcc symlinks to clang in /usr/bin, adding path to real gcc to PATH" >&5
-$as_echo "$as_me: Found gcc symlinks to clang in /usr/bin, adding path to real gcc to PATH" >&6;}
-      XCODE_BIN_PATH=$(dirname `xcrun -find gcc`)
-      PATH="$XCODE_BIN_PATH":$PATH
-    fi
-
-    # Determine appropriate SDKPATH, don't use SDKROOT as it interferes with the stub tools
-    { $as_echo "$as_me:${as_lineno-$LINENO}: checking Determining Xcode SDK path" >&5
-$as_echo_n "checking Determining Xcode SDK path... " >&6; }
-    # allow SDKNAME to be set to override the default SDK selection
-    SDKPATH=`"$XCODEBUILD" -sdk ${SDKNAME:-macosx} -version | grep '^Path: ' | sed 's/Path: //'`
-    if test -n "$SDKPATH"; then
-      { $as_echo "$as_me:${as_lineno-$LINENO}: result: $SDKPATH" >&5
-$as_echo "$SDKPATH" >&6; }
-    else
-      { $as_echo "$as_me:${as_lineno-$LINENO}: result: (none, will use system headers and frameworks)" >&5
-$as_echo "(none, will use system headers and frameworks)" >&6; }
-    fi
-
-
-    # Perform a basic sanity test
-    if test ! -f "$SDKPATH/System/Library/Frameworks/Foundation.framework/Headers/Foundation.h"; then
-      as_fn_error $? "Unable to find required framework headers, provide a valid path to Xcode 4 using --with-xcode-path" "$LINENO" 5
-    fi
-
-    # if SDKPATH is non-empty then we need to add -isysroot and -iframework for gcc and g++
-    if test -n "$SDKPATH"; then
-      # We need -isysroot <path> and -iframework<path>/System/Library/Frameworks
-      CFLAGS_JDK="${CFLAGS_JDK} -isysroot \"$SDKPATH\" -iframework\"$SDKPATH/System/Library/Frameworks\""
-      CXXFLAGS_JDK="${CXXFLAGS_JDK} -isysroot \"$SDKPATH\" -iframework\"$SDKPATH/System/Library/Frameworks\""
-      LDFLAGS_JDK="${LDFLAGS_JDK} -isysroot \"$SDKPATH\" -iframework\"$SDKPATH/System/Library/Frameworks\""
-    fi
-
-    # These always need to be set, or we can't find the frameworks embedded in JavaVM.framework
-    # setting this here means it doesn't have to be peppered throughout the forest
-    CFLAGS_JDK="$CFLAGS_JDK -F\"$SDKPATH/System/Library/Frameworks/JavaVM.framework/Frameworks\""
-    CXXFLAGS_JDK="$CXXFLAGS_JDK -F\"$SDKPATH/System/Library/Frameworks/JavaVM.framework/Frameworks\""
-    LDFLAGS_JDK="$LDFLAGS_JDK -F\"$SDKPATH/System/Library/Frameworks/JavaVM.framework/Frameworks\""
-  fi
 
   ### Locate C compiler (CC)
 
@@ -19426,9 +19103,6 @@ $as_echo "(none, will use system headers and frameworks)" >&6; }
     COMPILER_CHECK_LIST="cl"
   elif test "x$OPENJDK_TARGET_OS" = "xsolaris"; then
     COMPILER_CHECK_LIST="cc gcc"
-  elif test "x$OPENJDK_TARGET_OS" = "xaix"; then
-    # Do not probe for cc on AIX.
-    COMPILER_CHECK_LIST="xlc_r"
   else
     COMPILER_CHECK_LIST="gcc cc"
   fi
@@ -19566,6 +19240,8 @@ done
         pkgutil_help $MISSING_DEPENDENCY ;;
       pkgadd)
         pkgadd_help  $MISSING_DEPENDENCY ;;
+      * )
+        break ;;
     esac
 
     if test "x$PKGHANDLER_COMMAND" != x; then
@@ -19841,12 +19517,9 @@ $as_echo "$as_me: This might be caused by spaces in the path, which is not allow
 $as_echo "$as_me: Rewriting CC to \"$new_complete\"" >&6;}
   fi
 
-  TEST_COMPILER="$CC"
-  # Don't remove symbolic links on AIX because 'xlc_r' and 'xlC_r' may all be links
-  # to 'xlc' but it is crucial that we invoke the compiler with the right name!
-  if test "x$OPENJDK_BUILD_OS" != xaix; then
-    { $as_echo "$as_me:${as_lineno-$LINENO}: checking resolved symbolic links for CC" >&5
+  { $as_echo "$as_me:${as_lineno-$LINENO}: checking resolved symbolic links for CC" >&5
 $as_echo_n "checking resolved symbolic links for CC... " >&6; }
+  TEST_COMPILER="$CC"
 
   if test "x$OPENJDK_BUILD_OS" != xwindows; then
     # Follow a chain of symbolic links. Use readlink
@@ -19895,9 +19568,8 @@ $as_echo_n "checking resolved symbolic links for CC... " >&6; }
     fi
   fi
 
-    { $as_echo "$as_me:${as_lineno-$LINENO}: result: $TEST_COMPILER" >&5
+  { $as_echo "$as_me:${as_lineno-$LINENO}: result: $TEST_COMPILER" >&5
 $as_echo "$TEST_COMPILER" >&6; }
-  fi
   { $as_echo "$as_me:${as_lineno-$LINENO}: checking if CC is disguised ccache" >&5
 $as_echo_n "checking if CC is disguised ccache... " >&6; }
 
@@ -20361,22 +20033,13 @@ $as_echo "$as_me: The result from running with -V was: \"$COMPILER_VERSION_TEST\
       COMPILER_VERSION=`$ECHO $COMPILER_VERSION_TEST | $SED -n "s/^.*[ ,\t]$COMPILER_NAME[ ,\t]\([1-9]\.[0-9][0-9]*\).*/\1/p"`
       COMPILER_VENDOR="Sun Studio"
     fi
-  elif test  "x$OPENJDK_TARGET_OS" = xaix; then
-      COMPILER_VERSION_TEST=`$COMPILER -qversion  2>&1 | $TAIL -n 1`
-      $ECHO $COMPILER_VERSION_TEST | $GREP "^Version: " > /dev/null
-      if test $? -ne 0; then
-        as_fn_error $? "Failed to detect the compiler version of $COMPILER ...." "$LINENO" 5
-      else
-        COMPILER_VERSION=`$ECHO $COMPILER_VERSION_TEST | $SED -n 's/Version: \(0-90-9\.0-90-9*\).*/\1/p'`
-        COMPILER_VENDOR='IBM'
-      fi
   elif test  "x$OPENJDK_TARGET_OS" = xwindows; then
     # First line typically looks something like:
     # Microsoft (R) 32-bit C/C++ Optimizing Compiler Version 16.00.40219.01 for 80x86
     COMPILER_VERSION_TEST=`$COMPILER 2>&1 | $HEAD -n 1 | $TR -d '\r'`
-    COMPILER_VERSION=`$ECHO $COMPILER_VERSION_TEST | $SED -n "s/^.*Version \([1-9][0-9.]*\) .*/\1/p"`
+    COMPILER_VERSION=`$ECHO $COMPILER_VERSION_TEST | $SED -n "s/^.* \([1-9][0-9.]*\) .*/\1/p"`
     COMPILER_VENDOR="Microsoft CL.EXE"
-    COMPILER_CPU_TEST=`$ECHO $COMPILER_VERSION_TEST | $SED -n "s/^.* for \(.*\)$/\1/p"`
+    COMPILER_CPU_TEST=`$ECHO $COMPILER_VERSION_TEST | $SED -n "s/^.* \([x8064]*\) .*/\1/p"`
     if test "x$OPENJDK_TARGET_CPU" = "xx86"; then
       if test "x$COMPILER_CPU_TEST" != "x80x86"; then
         as_fn_error $? "Target CPU mismatch. We are building for $OPENJDK_TARGET_CPU but CL is for \"$COMPILER_CPU_TEST\"; expected \"80x86\"." "$LINENO" 5
@@ -20400,8 +20063,7 @@ $as_echo "$as_me: The result from running with --version was: \"$COMPILER_VERSIO
 
     # First line typically looks something like:
     # gcc (Ubuntu/Linaro 4.5.2-8ubuntu4) 4.5.2
-    COMPILER_VERSION=`$ECHO $COMPILER_VERSION_TEST | \
-        $SED -e 's/^.* \([1-9]\.[0-9.]*\)[^0-9.].*$/\1/'`
+    COMPILER_VERSION=`$ECHO $COMPILER_VERSION_TEST | $SED -n "s/^.* \([1-9][0-9.]*\)/\1/p"`
     COMPILER_VENDOR=`$ECHO $COMPILER_VERSION_TEST | $SED -n "s/^\(.*\) [1-9][0-9.]*/\1/p"`
   fi
   # This sets CC_VERSION or CXX_VERSION. (This comment is a grep marker)
@@ -21012,14 +20674,6 @@ ac_link='$CXX -o conftest$ac_exeext $CXXFLAGS $CPPFLAGS $LDFLAGS conftest.$ac_ex
 ac_compiler_gnu=$ac_cv_cxx_compiler_gnu
 
 
-  # Option used to tell the compiler whether to create 32- or 64-bit executables
-  # Notice that CC contains the full compiler path at this point.
-  case $CC in
-    *xlc_r) COMPILER_TARGET_BITS_FLAG="-q";;
-    *)      COMPILER_TARGET_BITS_FLAG="-m";;
-  esac
-
-
   ### Locate C++ compiler (CXX)
 
   if test "x$CXX" != x; then
@@ -21028,9 +20682,6 @@ ac_compiler_gnu=$ac_cv_cxx_compiler_gnu
     COMPILER_CHECK_LIST="cl"
   elif test "x$OPENJDK_TARGET_OS" = "xsolaris"; then
     COMPILER_CHECK_LIST="CC g++"
-  elif test "x$OPENJDK_TARGET_OS" = "xaix"; then
-    # Do not probe for CC on AIX .
-    COMPILER_CHECK_LIST="xlC_r"
   else
     COMPILER_CHECK_LIST="g++ CC"
   fi
@@ -21168,6 +20819,8 @@ done
         pkgutil_help $MISSING_DEPENDENCY ;;
       pkgadd)
         pkgadd_help  $MISSING_DEPENDENCY ;;
+      * )
+        break ;;
     esac
 
     if test "x$PKGHANDLER_COMMAND" != x; then
@@ -21443,12 +21096,9 @@ $as_echo "$as_me: This might be caused by spaces in the path, which is not allow
 $as_echo "$as_me: Rewriting CXX to \"$new_complete\"" >&6;}
   fi
 
-  TEST_COMPILER="$CXX"
-  # Don't remove symbolic links on AIX because 'xlc_r' and 'xlC_r' may all be links
-  # to 'xlc' but it is crucial that we invoke the compiler with the right name!
-  if test "x$OPENJDK_BUILD_OS" != xaix; then
-    { $as_echo "$as_me:${as_lineno-$LINENO}: checking resolved symbolic links for CXX" >&5
+  { $as_echo "$as_me:${as_lineno-$LINENO}: checking resolved symbolic links for CXX" >&5
 $as_echo_n "checking resolved symbolic links for CXX... " >&6; }
+  TEST_COMPILER="$CXX"
 
   if test "x$OPENJDK_BUILD_OS" != xwindows; then
     # Follow a chain of symbolic links. Use readlink
@@ -21497,9 +21147,8 @@ $as_echo_n "checking resolved symbolic links for CXX... " >&6; }
     fi
   fi
 
-    { $as_echo "$as_me:${as_lineno-$LINENO}: result: $TEST_COMPILER" >&5
+  { $as_echo "$as_me:${as_lineno-$LINENO}: result: $TEST_COMPILER" >&5
 $as_echo "$TEST_COMPILER" >&6; }
-  fi
   { $as_echo "$as_me:${as_lineno-$LINENO}: checking if CXX is disguised ccache" >&5
 $as_echo_n "checking if CXX is disguised ccache... " >&6; }
 
@@ -21963,22 +21612,13 @@ $as_echo "$as_me: The result from running with -V was: \"$COMPILER_VERSION_TEST\
       COMPILER_VERSION=`$ECHO $COMPILER_VERSION_TEST | $SED -n "s/^.*[ ,\t]$COMPILER_NAME[ ,\t]\([1-9]\.[0-9][0-9]*\).*/\1/p"`
       COMPILER_VENDOR="Sun Studio"
     fi
-  elif test  "x$OPENJDK_TARGET_OS" = xaix; then
-      COMPILER_VERSION_TEST=`$COMPILER -qversion  2>&1 | $TAIL -n 1`
-      $ECHO $COMPILER_VERSION_TEST | $GREP "^Version: " > /dev/null
-      if test $? -ne 0; then
-        as_fn_error $? "Failed to detect the compiler version of $COMPILER ...." "$LINENO" 5
-      else
-        COMPILER_VERSION=`$ECHO $COMPILER_VERSION_TEST | $SED -n 's/Version: \(0-90-9\.0-90-9*\).*/\1/p'`
-        COMPILER_VENDOR='IBM'
-      fi
   elif test  "x$OPENJDK_TARGET_OS" = xwindows; then
     # First line typically looks something like:
     # Microsoft (R) 32-bit C/C++ Optimizing Compiler Version 16.00.40219.01 for 80x86
     COMPILER_VERSION_TEST=`$COMPILER 2>&1 | $HEAD -n 1 | $TR -d '\r'`
-    COMPILER_VERSION=`$ECHO $COMPILER_VERSION_TEST | $SED -n "s/^.*Version \([1-9][0-9.]*\) .*/\1/p"`
+    COMPILER_VERSION=`$ECHO $COMPILER_VERSION_TEST | $SED -n "s/^.* \([1-9][0-9.]*\) .*/\1/p"`
     COMPILER_VENDOR="Microsoft CL.EXE"
-    COMPILER_CPU_TEST=`$ECHO $COMPILER_VERSION_TEST | $SED -n "s/^.* for \(.*\)$/\1/p"`
+    COMPILER_CPU_TEST=`$ECHO $COMPILER_VERSION_TEST | $SED -n "s/^.* \([x8064]*\) .*/\1/p"`
     if test "x$OPENJDK_TARGET_CPU" = "xx86"; then
       if test "x$COMPILER_CPU_TEST" != "x80x86"; then
         as_fn_error $? "Target CPU mismatch. We are building for $OPENJDK_TARGET_CPU but CL is for \"$COMPILER_CPU_TEST\"; expected \"80x86\"." "$LINENO" 5
@@ -22002,8 +21642,7 @@ $as_echo "$as_me: The result from running with --version was: \"$COMPILER_VERSIO
 
     # First line typically looks something like:
     # gcc (Ubuntu/Linaro 4.5.2-8ubuntu4) 4.5.2
-    COMPILER_VERSION=`$ECHO $COMPILER_VERSION_TEST | \
-        $SED -e 's/^.* \([1-9]\.[0-9.]*\)[^0-9.].*$/\1/'`
+    COMPILER_VERSION=`$ECHO $COMPILER_VERSION_TEST | $SED -n "s/^.* \([1-9][0-9.]*\)/\1/p"`
     COMPILER_VENDOR=`$ECHO $COMPILER_VERSION_TEST | $SED -n "s/^\(.*\) [1-9][0-9.]*/\1/p"`
   fi
   # This sets CC_VERSION or CXX_VERSION. (This comment is a grep marker)
@@ -22272,32 +21911,6 @@ ac_cpp='$CXXCPP $CPPFLAGS'
 ac_compile='$CXX -c $CXXFLAGS $CPPFLAGS conftest.$ac_ext >&5'
 ac_link='$CXX -o conftest$ac_exeext $CXXFLAGS $CPPFLAGS $LDFLAGS conftest.$ac_ext $LIBS >&5'
 ac_compiler_gnu=$ac_cv_cxx_compiler_gnu
-
-
-  # This is the compiler version number on the form X.Y[.Z]
-
-
-
-
-  if test "x$CC_VERSION" != "x$CXX_VERSION"; then
-    { $as_echo "$as_me:${as_lineno-$LINENO}: WARNING: C and C++ compiler has different version numbers, $CC_VERSION vs $CXX_VERSION." >&5
-$as_echo "$as_me: WARNING: C and C++ compiler has different version numbers, $CC_VERSION vs $CXX_VERSION." >&2;}
-    { $as_echo "$as_me:${as_lineno-$LINENO}: WARNING: This typically indicates a broken setup, and is not supported" >&5
-$as_echo "$as_me: WARNING: This typically indicates a broken setup, and is not supported" >&2;}
-  fi
-
-  # We only check CC_VERSION since we assume CXX_VERSION is equal.
-  if  [[ "$CC_VERSION" =~ (.*\.){3} ]] ; then
-    { $as_echo "$as_me:${as_lineno-$LINENO}: WARNING: C compiler version number has more than three parts (X.Y.Z): $CC_VERSION. Comparisons might be wrong." >&5
-$as_echo "$as_me: WARNING: C compiler version number has more than three parts (X.Y.Z): $CC_VERSION. Comparisons might be wrong." >&2;}
-  fi
-
-  if  [[  "$CC_VERSION" =~ [0-9]{6} ]] ; then
-    { $as_echo "$as_me:${as_lineno-$LINENO}: WARNING: C compiler version number has a part larger than 99999: $CC_VERSION. Comparisons might be wrong." >&5
-$as_echo "$as_me: WARNING: C compiler version number has a part larger than 99999: $CC_VERSION. Comparisons might be wrong." >&2;}
-  fi
-
-  COMPARABLE_ACTUAL_VERSION=`$AWK -F. '{ printf("%05d%05d%05d\n", $1, $2, $3) }' <<< "$CC_VERSION"`
 
 
   ### Locate other tools
@@ -23204,8 +22817,6 @@ $as_echo "$as_me: Rewriting AR to \"$new_complete\"" >&6;}
   fi
   if test "x$OPENJDK_TARGET_OS" = xmacosx; then
     ARFLAGS="-r"
-  elif test "x$OPENJDK_TARGET_OS" = xaix; then
-    ARFLAGS="-X64"
   else
     ARFLAGS=""
   fi
@@ -24274,10 +23885,10 @@ fi
       -d \"JDK_BUILD_ID=\$(FULL_VERSION)\" \
       -d \"JDK_COMPANY=\$(COMPANY_NAME)\" \
       -d \"JDK_COMPONENT=\$(PRODUCT_NAME) \$(JDK_RC_PLATFORM_NAME) binary\" \
-      -d \"JDK_VER=\$(JDK_MINOR_VERSION).\$(JDK_MICRO_VERSION).\$(COOKED_JDK_UPDATE_VERSION).\$(COOKED_BUILD_NUMBER)\" \
+      -d \"JDK_VER=\$(JDK_MINOR_VERSION).\$(JDK_MICRO_VERSION).\$(if \$(JDK_UPDATE_VERSION),\$(JDK_UPDATE_VERSION),0).\$(COOKED_BUILD_NUMBER)\" \
       -d \"JDK_COPYRIGHT=Copyright \xA9 $COPYRIGHT_YEAR\" \
       -d \"JDK_NAME=\$(PRODUCT_NAME) \$(JDK_RC_PLATFORM_NAME) \$(JDK_MINOR_VERSION) \$(JDK_UPDATE_META_TAG)\" \
-      -d \"JDK_FVER=\$(JDK_MINOR_VERSION),\$(JDK_MICRO_VERSION),\$(COOKED_JDK_UPDATE_VERSION),\$(COOKED_BUILD_NUMBER)\""
+      -d \"JDK_FVER=\$(JDK_MINOR_VERSION),\$(JDK_MICRO_VERSION),\$(if \$(JDK_UPDATE_VERSION),\$(JDK_UPDATE_VERSION),0),\$(COOKED_BUILD_NUMBER)\""
 
   # lib.exe is used to create static libraries.
   # Extract the first word of "lib", so it can be a program name with args.
@@ -24891,8 +24502,7 @@ $as_echo "$as_me: Rewriting DUMPBIN to \"$new_complete\"" >&6;}
 
 
       COMPILER_TYPE=CL
-      # silence copyright notice and other headers.
-      COMMON_CCXXFLAGS="$COMMON_CCXXFLAGS -nologo"
+      CCXXFLAGS="$CCXXFLAGS -nologo"
 
 fi
 
@@ -27261,49 +26871,6 @@ $as_echo "$as_me: Rewriting MCS to \"$new_complete\"" >&6;}
   fi
 
   elif test "x$OPENJDK_TARGET_OS" != xwindows; then
-    # Extract the first word of "otool", so it can be a program name with args.
-set dummy otool; ac_word=$2
-{ $as_echo "$as_me:${as_lineno-$LINENO}: checking for $ac_word" >&5
-$as_echo_n "checking for $ac_word... " >&6; }
-if ${ac_cv_path_OTOOL+:} false; then :
-  $as_echo_n "(cached) " >&6
-else
-  case $OTOOL in
-  [\\/]* | ?:[\\/]*)
-  ac_cv_path_OTOOL="$OTOOL" # Let the user override the test with a path.
-  ;;
-  *)
-  as_save_IFS=$IFS; IFS=$PATH_SEPARATOR
-for as_dir in $PATH
-do
-  IFS=$as_save_IFS
-  test -z "$as_dir" && as_dir=.
-    for ac_exec_ext in '' $ac_executable_extensions; do
-  if as_fn_executable_p "$as_dir/$ac_word$ac_exec_ext"; then
-    ac_cv_path_OTOOL="$as_dir/$ac_word$ac_exec_ext"
-    $as_echo "$as_me:${as_lineno-$LINENO}: found $as_dir/$ac_word$ac_exec_ext" >&5
-    break 2
-  fi
-done
-  done
-IFS=$as_save_IFS
-
-  ;;
-esac
-fi
-OTOOL=$ac_cv_path_OTOOL
-if test -n "$OTOOL"; then
-  { $as_echo "$as_me:${as_lineno-$LINENO}: result: $OTOOL" >&5
-$as_echo "$OTOOL" >&6; }
-else
-  { $as_echo "$as_me:${as_lineno-$LINENO}: result: no" >&5
-$as_echo "no" >&6; }
-fi
-
-
-    if test "x$OTOOL" = "x"; then
-      OTOOL="true"
-    fi
     if test -n "$ac_tool_prefix"; then
   # Extract the first word of "${ac_tool_prefix}nm", so it can be a program name with args.
 set dummy ${ac_tool_prefix}nm; ac_word=$2
@@ -28768,6 +28335,315 @@ $as_echo "$as_me: Rewriting OBJDUMP to \"$new_complete\"" >&6;}
 
   fi
 
+  if test "x$OPENJDK_TARGET_OS" = "xmacosx"; then
+    # Extract the first word of "lipo", so it can be a program name with args.
+set dummy lipo; ac_word=$2
+{ $as_echo "$as_me:${as_lineno-$LINENO}: checking for $ac_word" >&5
+$as_echo_n "checking for $ac_word... " >&6; }
+if ${ac_cv_path_LIPO+:} false; then :
+  $as_echo_n "(cached) " >&6
+else
+  case $LIPO in
+  [\\/]* | ?:[\\/]*)
+  ac_cv_path_LIPO="$LIPO" # Let the user override the test with a path.
+  ;;
+  *)
+  as_save_IFS=$IFS; IFS=$PATH_SEPARATOR
+for as_dir in $PATH
+do
+  IFS=$as_save_IFS
+  test -z "$as_dir" && as_dir=.
+    for ac_exec_ext in '' $ac_executable_extensions; do
+  if as_fn_executable_p "$as_dir/$ac_word$ac_exec_ext"; then
+    ac_cv_path_LIPO="$as_dir/$ac_word$ac_exec_ext"
+    $as_echo "$as_me:${as_lineno-$LINENO}: found $as_dir/$ac_word$ac_exec_ext" >&5
+    break 2
+  fi
+done
+  done
+IFS=$as_save_IFS
+
+  ;;
+esac
+fi
+LIPO=$ac_cv_path_LIPO
+if test -n "$LIPO"; then
+  { $as_echo "$as_me:${as_lineno-$LINENO}: result: $LIPO" >&5
+$as_echo "$LIPO" >&6; }
+else
+  { $as_echo "$as_me:${as_lineno-$LINENO}: result: no" >&5
+$as_echo "no" >&6; }
+fi
+
+
+
+  if test "x$OPENJDK_BUILD_OS_ENV" = "xwindows.cygwin"; then
+
+  # First separate the path from the arguments. This will split at the first
+  # space.
+  complete="$LIPO"
+  path="${complete%% *}"
+  tmp="$complete EOL"
+  arguments="${tmp#* }"
+
+  # Input might be given as Windows format, start by converting to
+  # unix format.
+  new_path=`$CYGPATH -u "$path"`
+
+  # Now try to locate executable using which
+  new_path=`$WHICH "$new_path" 2> /dev/null`
+  # bat and cmd files are not always considered executable in cygwin causing which
+  # to not find them
+  if test "x$new_path" = x \
+      && test "x`$ECHO \"$path\" | $GREP -i -e \"\\.bat$\" -e \"\\.cmd$\"`" != x \
+      && test "x`$LS \"$path\" 2>/dev/null`" != x; then
+    new_path=`$CYGPATH -u "$path"`
+  fi
+  if test "x$new_path" = x; then
+    # Oops. Which didn't find the executable.
+    # The splitting of arguments from the executable at a space might have been incorrect,
+    # since paths with space are more likely in Windows. Give it another try with the whole
+    # argument.
+    path="$complete"
+    arguments="EOL"
+    new_path=`$CYGPATH -u "$path"`
+    new_path=`$WHICH "$new_path" 2> /dev/null`
+    # bat and cmd files are not always considered executable in cygwin causing which
+    # to not find them
+    if test "x$new_path" = x \
+        && test "x`$ECHO \"$path\" | $GREP -i -e \"\\.bat$\" -e \"\\.cmd$\"`" != x \
+        && test "x`$LS \"$path\" 2>/dev/null`" != x; then
+      new_path=`$CYGPATH -u "$path"`
+    fi
+    if test "x$new_path" = x; then
+      # It's still not found. Now this is an unrecoverable error.
+      { $as_echo "$as_me:${as_lineno-$LINENO}: The path of LIPO, which resolves as \"$complete\", is not found." >&5
+$as_echo "$as_me: The path of LIPO, which resolves as \"$complete\", is not found." >&6;}
+      has_space=`$ECHO "$complete" | $GREP " "`
+      if test "x$has_space" != x; then
+        { $as_echo "$as_me:${as_lineno-$LINENO}: You might be mixing spaces in the path and extra arguments, which is not allowed." >&5
+$as_echo "$as_me: You might be mixing spaces in the path and extra arguments, which is not allowed." >&6;}
+      fi
+      as_fn_error $? "Cannot locate the the path of LIPO" "$LINENO" 5
+    fi
+  fi
+
+  # Cygwin tries to hide some aspects of the Windows file system, such that binaries are
+  # named .exe but called without that suffix. Therefore, "foo" and "foo.exe" are considered
+  # the same file, most of the time (as in "test -f"). But not when running cygpath -s, then
+  # "foo.exe" is OK but "foo" is an error.
+  #
+  # This test is therefore slightly more accurate than "test -f" to check for file presence.
+  # It is also a way to make sure we got the proper file name for the real test later on.
+  test_shortpath=`$CYGPATH -s -m "$new_path" 2> /dev/null`
+  if test "x$test_shortpath" = x; then
+    # Short path failed, file does not exist as specified.
+    # Try adding .exe or .cmd
+    if test -f "${new_path}.exe"; then
+      input_to_shortpath="${new_path}.exe"
+    elif test -f "${new_path}.cmd"; then
+      input_to_shortpath="${new_path}.cmd"
+    else
+      { $as_echo "$as_me:${as_lineno-$LINENO}: The path of LIPO, which resolves as \"$new_path\", is invalid." >&5
+$as_echo "$as_me: The path of LIPO, which resolves as \"$new_path\", is invalid." >&6;}
+      { $as_echo "$as_me:${as_lineno-$LINENO}: Neither \"$new_path\" nor \"$new_path.exe/cmd\" can be found" >&5
+$as_echo "$as_me: Neither \"$new_path\" nor \"$new_path.exe/cmd\" can be found" >&6;}
+      as_fn_error $? "Cannot locate the the path of LIPO" "$LINENO" 5
+    fi
+  else
+    input_to_shortpath="$new_path"
+  fi
+
+  # Call helper function which possibly converts this using DOS-style short mode.
+  # If so, the updated path is stored in $new_path.
+  new_path="$input_to_shortpath"
+
+  input_path="$input_to_shortpath"
+  # Check if we need to convert this using DOS-style short mode. If the path
+  # contains just simple characters, use it. Otherwise (spaces, weird characters),
+  # take no chances and rewrite it.
+  # Note: m4 eats our [], so we need to use [ and ] instead.
+  has_forbidden_chars=`$ECHO "$input_path" | $GREP [^-._/a-zA-Z0-9]`
+  if test "x$has_forbidden_chars" != x; then
+    # Now convert it to mixed DOS-style, short mode (no spaces, and / instead of \)
+    shortmode_path=`$CYGPATH -s -m -a "$input_path"`
+    path_after_shortmode=`$CYGPATH -u "$shortmode_path"`
+    if test "x$path_after_shortmode" != "x$input_to_shortpath"; then
+      # Going to short mode and back again did indeed matter. Since short mode is
+      # case insensitive, let's make it lowercase to improve readability.
+      shortmode_path=`$ECHO "$shortmode_path" | $TR 'ABCDEFGHIJKLMNOPQRSTUVWXYZ' 'abcdefghijklmnopqrstuvwxyz'`
+      # Now convert it back to Unix-stile (cygpath)
+      input_path=`$CYGPATH -u "$shortmode_path"`
+      new_path="$input_path"
+    fi
+  fi
+
+  test_cygdrive_prefix=`$ECHO $input_path | $GREP ^/cygdrive/`
+  if test "x$test_cygdrive_prefix" = x; then
+    # As a simple fix, exclude /usr/bin since it's not a real path.
+    if test "x`$ECHO $input_to_shortpath | $GREP ^/usr/bin/`" = x; then
+      # The path is in a Cygwin special directory (e.g. /home). We need this converted to
+      # a path prefixed by /cygdrive for fixpath to work.
+      new_path="$CYGWIN_ROOT_PATH$input_path"
+    fi
+  fi
+
+  # remove trailing .exe if any
+  new_path="${new_path/%.exe/}"
+
+  elif test "x$OPENJDK_BUILD_OS_ENV" = "xwindows.msys"; then
+
+  # First separate the path from the arguments. This will split at the first
+  # space.
+  complete="$LIPO"
+  path="${complete%% *}"
+  tmp="$complete EOL"
+  arguments="${tmp#* }"
+
+  # Input might be given as Windows format, start by converting to
+  # unix format.
+  new_path="$path"
+
+  windows_path="$new_path"
+  if test "x$OPENJDK_BUILD_OS_ENV" = "xwindows.cygwin"; then
+    unix_path=`$CYGPATH -u "$windows_path"`
+    new_path="$unix_path"
+  elif test "x$OPENJDK_BUILD_OS_ENV" = "xwindows.msys"; then
+    unix_path=`$ECHO "$windows_path" | $SED -e 's,^\\(.\\):,/\\1,g' -e 's,\\\\,/,g'`
+    new_path="$unix_path"
+  fi
+
+
+  # Now try to locate executable using which
+  new_path=`$WHICH "$new_path" 2> /dev/null`
+
+  if test "x$new_path" = x; then
+    # Oops. Which didn't find the executable.
+    # The splitting of arguments from the executable at a space might have been incorrect,
+    # since paths with space are more likely in Windows. Give it another try with the whole
+    # argument.
+    path="$complete"
+    arguments="EOL"
+    new_path="$path"
+
+  windows_path="$new_path"
+  if test "x$OPENJDK_BUILD_OS_ENV" = "xwindows.cygwin"; then
+    unix_path=`$CYGPATH -u "$windows_path"`
+    new_path="$unix_path"
+  elif test "x$OPENJDK_BUILD_OS_ENV" = "xwindows.msys"; then
+    unix_path=`$ECHO "$windows_path" | $SED -e 's,^\\(.\\):,/\\1,g' -e 's,\\\\,/,g'`
+    new_path="$unix_path"
+  fi
+
+
+    new_path=`$WHICH "$new_path" 2> /dev/null`
+
+    if test "x$new_path" = x; then
+      # It's still not found. Now this is an unrecoverable error.
+      { $as_echo "$as_me:${as_lineno-$LINENO}: The path of LIPO, which resolves as \"$complete\", is not found." >&5
+$as_echo "$as_me: The path of LIPO, which resolves as \"$complete\", is not found." >&6;}
+      has_space=`$ECHO "$complete" | $GREP " "`
+      if test "x$has_space" != x; then
+        { $as_echo "$as_me:${as_lineno-$LINENO}: You might be mixing spaces in the path and extra arguments, which is not allowed." >&5
+$as_echo "$as_me: You might be mixing spaces in the path and extra arguments, which is not allowed." >&6;}
+      fi
+      as_fn_error $? "Cannot locate the the path of LIPO" "$LINENO" 5
+    fi
+  fi
+
+  # Now new_path has a complete unix path to the binary
+  if test "x`$ECHO $new_path | $GREP ^/bin/`" != x; then
+    # Keep paths in /bin as-is, but remove trailing .exe if any
+    new_path="${new_path/%.exe/}"
+    # Do not save /bin paths to all_fixpath_prefixes!
+  else
+    # Not in mixed or Windows style, start by that.
+    new_path=`cmd //c echo $new_path`
+
+  input_path="$new_path"
+  # Check if we need to convert this using DOS-style short mode. If the path
+  # contains just simple characters, use it. Otherwise (spaces, weird characters),
+  # take no chances and rewrite it.
+  # Note: m4 eats our [], so we need to use [ and ] instead.
+  has_forbidden_chars=`$ECHO "$input_path" | $GREP [^-_/:a-zA-Z0-9]`
+  if test "x$has_forbidden_chars" != x; then
+    # Now convert it to mixed DOS-style, short mode (no spaces, and / instead of \)
+    new_path=`cmd /c "for %A in (\"$input_path\") do @echo %~sA"|$TR \\\\\\\\ / | $TR 'ABCDEFGHIJKLMNOPQRSTUVWXYZ' 'abcdefghijklmnopqrstuvwxyz'`
+  fi
+
+    # Output is in $new_path
+
+  windows_path="$new_path"
+  if test "x$OPENJDK_BUILD_OS_ENV" = "xwindows.cygwin"; then
+    unix_path=`$CYGPATH -u "$windows_path"`
+    new_path="$unix_path"
+  elif test "x$OPENJDK_BUILD_OS_ENV" = "xwindows.msys"; then
+    unix_path=`$ECHO "$windows_path" | $SED -e 's,^\\(.\\):,/\\1,g' -e 's,\\\\,/,g'`
+    new_path="$unix_path"
+  fi
+
+    # remove trailing .exe if any
+    new_path="${new_path/%.exe/}"
+
+    # Save the first 10 bytes of this path to the storage, so fixpath can work.
+    all_fixpath_prefixes=("${all_fixpath_prefixes[@]}" "${new_path:0:10}")
+  fi
+
+  else
+    # We're on a posix platform. Hooray! :)
+    # First separate the path from the arguments. This will split at the first
+    # space.
+    complete="$LIPO"
+    path="${complete%% *}"
+    tmp="$complete EOL"
+    arguments="${tmp#* }"
+
+    # Cannot rely on the command "which" here since it doesn't always work.
+    is_absolute_path=`$ECHO "$path" | $GREP ^/`
+    if test -z "$is_absolute_path"; then
+      # Path to executable is not absolute. Find it.
+      IFS_save="$IFS"
+      IFS=:
+      for p in $PATH; do
+        if test -f "$p/$path" && test -x "$p/$path"; then
+          new_path="$p/$path"
+          break
+        fi
+      done
+      IFS="$IFS_save"
+    else
+      { $as_echo "$as_me:${as_lineno-$LINENO}: Resolving LIPO (as $path) failed, using $path directly." >&5
+$as_echo "$as_me: Resolving LIPO (as $path) failed, using $path directly." >&6;}
+      new_path="$path"
+    fi
+
+    if test "x$new_path" = x; then
+      { $as_echo "$as_me:${as_lineno-$LINENO}: The path of LIPO, which resolves as \"$complete\", is not found." >&5
+$as_echo "$as_me: The path of LIPO, which resolves as \"$complete\", is not found." >&6;}
+      has_space=`$ECHO "$complete" | $GREP " "`
+      if test "x$has_space" != x; then
+        { $as_echo "$as_me:${as_lineno-$LINENO}: This might be caused by spaces in the path, which is not allowed." >&5
+$as_echo "$as_me: This might be caused by spaces in the path, which is not allowed." >&6;}
+      fi
+      as_fn_error $? "Cannot locate the the path of LIPO" "$LINENO" 5
+    fi
+  fi
+
+  # Now join together the path and the arguments once again
+  if test "x$arguments" != xEOL; then
+    new_complete="$new_path ${arguments% *}"
+  else
+    new_complete="$new_path"
+  fi
+
+  if test "x$complete" != "x$new_complete"; then
+    LIPO="$new_complete"
+    { $as_echo "$as_me:${as_lineno-$LINENO}: Rewriting LIPO to \"$new_complete\"" >&5
+$as_echo "$as_me: Rewriting LIPO to \"$new_complete\"" >&6;}
+  fi
+
+  fi
+
 
 
   # Restore old path without tools dir
@@ -28916,17 +28792,16 @@ done
   # is made at runtime.)
   #
 
-  if test "x$OPENJDK_TARGET_OS" = xsolaris || test "x$OPENJDK_TARGET_OS" = xaix; then
-    # Always specify -m flag on Solaris
-    # And -q on AIX because otherwise the compiler produces 32-bit objects by default
+  if test "x$OPENJDK_TARGET_OS" = xsolaris; then
+    # Always specify -m flags on Solaris
 
   # When we add flags to the "official" CFLAGS etc, we need to
   # keep track of these additions in ADDED_CFLAGS etc. These
   # will later be checked to make sure only controlled additions
   # have been made to CFLAGS etc.
-  ADDED_CFLAGS=" ${COMPILER_TARGET_BITS_FLAG}${OPENJDK_TARGET_CPU_BITS}"
-  ADDED_CXXFLAGS=" ${COMPILER_TARGET_BITS_FLAG}${OPENJDK_TARGET_CPU_BITS}"
-  ADDED_LDFLAGS=" ${COMPILER_TARGET_BITS_FLAG}${OPENJDK_TARGET_CPU_BITS}"
+  ADDED_CFLAGS=" -m${OPENJDK_TARGET_CPU_BITS}"
+  ADDED_CXXFLAGS=" -m${OPENJDK_TARGET_CPU_BITS}"
+  ADDED_LDFLAGS=" -m${OPENJDK_TARGET_CPU_BITS}"
 
   CFLAGS="${CFLAGS}${ADDED_CFLAGS}"
   CXXFLAGS="${CXXFLAGS}${ADDED_CXXFLAGS}"
@@ -28944,9 +28819,9 @@ done
   # keep track of these additions in ADDED_CFLAGS etc. These
   # will later be checked to make sure only controlled additions
   # have been made to CFLAGS etc.
-  ADDED_CFLAGS=" ${COMPILER_TARGET_BITS_FLAG}${OPENJDK_TARGET_CPU_BITS}"
-  ADDED_CXXFLAGS=" ${COMPILER_TARGET_BITS_FLAG}${OPENJDK_TARGET_CPU_BITS}"
-  ADDED_LDFLAGS=" ${COMPILER_TARGET_BITS_FLAG}${OPENJDK_TARGET_CPU_BITS}"
+  ADDED_CFLAGS=" -m${OPENJDK_TARGET_CPU_BITS}"
+  ADDED_CXXFLAGS=" -m${OPENJDK_TARGET_CPU_BITS}"
+  ADDED_LDFLAGS=" -m${OPENJDK_TARGET_CPU_BITS}"
 
   CFLAGS="${CFLAGS}${ADDED_CFLAGS}"
   CXXFLAGS="${CXXFLAGS}${ADDED_CXXFLAGS}"
@@ -29020,85 +28895,20 @@ _ACEOF
 
 
 
-  # AC_CHECK_SIZEOF defines 'ac_cv_sizeof_int_p' to hold the number of bytes used by an 'int*'
-  if test "x$ac_cv_sizeof_int_p" = x; then
+  if test "x$SIZEOF_INT_P" != "x$ac_cv_sizeof_int_p"; then
+    # Workaround autoconf bug, see http://lists.gnu.org/archive/html/autoconf/2010-07/msg00004.html
+    SIZEOF_INT_P="$ac_cv_sizeof_int_p"
+  fi
+
+  if test "x$SIZEOF_INT_P" = x; then
     # The test failed, lets stick to the assumed value.
     { $as_echo "$as_me:${as_lineno-$LINENO}: WARNING: The number of bits in the target could not be determined, using $OPENJDK_TARGET_CPU_BITS." >&5
 $as_echo "$as_me: WARNING: The number of bits in the target could not be determined, using $OPENJDK_TARGET_CPU_BITS." >&2;}
   else
-    TESTED_TARGET_CPU_BITS=`expr 8 \* $ac_cv_sizeof_int_p`
+    TESTED_TARGET_CPU_BITS=`expr 8 \* $SIZEOF_INT_P`
 
     if test "x$TESTED_TARGET_CPU_BITS" != "x$OPENJDK_TARGET_CPU_BITS"; then
-      # This situation may happen on 64-bit platforms where the compiler by default only generates 32-bit objects
-      # Let's try to implicitely set the compilers target architecture and retry the test
-      { $as_echo "$as_me:${as_lineno-$LINENO}: The tested number of bits in the target ($TESTED_TARGET_CPU_BITS) differs from the number of bits expected to be found in the target ($OPENJDK_TARGET_CPU_BITS)." >&5
-$as_echo "$as_me: The tested number of bits in the target ($TESTED_TARGET_CPU_BITS) differs from the number of bits expected to be found in the target ($OPENJDK_TARGET_CPU_BITS)." >&6;}
-      { $as_echo "$as_me:${as_lineno-$LINENO}: I'll retry after setting the platforms compiler target bits flag to ${COMPILER_TARGET_BITS_FLAG}${OPENJDK_TARGET_CPU_BITS}" >&5
-$as_echo "$as_me: I'll retry after setting the platforms compiler target bits flag to ${COMPILER_TARGET_BITS_FLAG}${OPENJDK_TARGET_CPU_BITS}" >&6;}
-
-  # When we add flags to the "official" CFLAGS etc, we need to
-  # keep track of these additions in ADDED_CFLAGS etc. These
-  # will later be checked to make sure only controlled additions
-  # have been made to CFLAGS etc.
-  ADDED_CFLAGS=" ${COMPILER_TARGET_BITS_FLAG}${OPENJDK_TARGET_CPU_BITS}"
-  ADDED_CXXFLAGS=" ${COMPILER_TARGET_BITS_FLAG}${OPENJDK_TARGET_CPU_BITS}"
-  ADDED_LDFLAGS=" ${COMPILER_TARGET_BITS_FLAG}${OPENJDK_TARGET_CPU_BITS}"
-
-  CFLAGS="${CFLAGS}${ADDED_CFLAGS}"
-  CXXFLAGS="${CXXFLAGS}${ADDED_CXXFLAGS}"
-  LDFLAGS="${LDFLAGS}${ADDED_LDFLAGS}"
-
-  CFLAGS_JDK="${CFLAGS_JDK}${ADDED_CFLAGS}"
-  CXXFLAGS_JDK="${CXXFLAGS_JDK}${ADDED_CXXFLAGS}"
-  LDFLAGS_JDK="${LDFLAGS_JDK}${ADDED_LDFLAGS}"
-
-
-      # We have to unset 'ac_cv_sizeof_int_p' first, otherwise AC_CHECK_SIZEOF will use the previously cached value!
-      unset ac_cv_sizeof_int_p
-      # And we have to undef the definition of SIZEOF_INT_P in confdefs.h by the previous invocation of AC_CHECK_SIZEOF
-      cat >>confdefs.h <<_ACEOF
-#undef SIZEOF_INT_P
-_ACEOF
-
-      # The cast to long int works around a bug in the HP C Compiler
-# version HP92453-01 B.11.11.23709.GP, which incorrectly rejects
-# declarations like `int a3[[(sizeof (unsigned char)) >= 0]];'.
-# This bug is HP SR number 8606223364.
-{ $as_echo "$as_me:${as_lineno-$LINENO}: checking size of int *" >&5
-$as_echo_n "checking size of int *... " >&6; }
-if ${ac_cv_sizeof_int_p+:} false; then :
-  $as_echo_n "(cached) " >&6
-else
-  if ac_fn_cxx_compute_int "$LINENO" "(long int) (sizeof (int *))" "ac_cv_sizeof_int_p"        "$ac_includes_default"; then :
-
-else
-  if test "$ac_cv_type_int_p" = yes; then
-     { { $as_echo "$as_me:${as_lineno-$LINENO}: error: in \`$ac_pwd':" >&5
-$as_echo "$as_me: error: in \`$ac_pwd':" >&2;}
-as_fn_error 77 "cannot compute sizeof (int *)
-See \`config.log' for more details" "$LINENO" 5; }
-   else
-     ac_cv_sizeof_int_p=0
-   fi
-fi
-
-fi
-{ $as_echo "$as_me:${as_lineno-$LINENO}: result: $ac_cv_sizeof_int_p" >&5
-$as_echo "$ac_cv_sizeof_int_p" >&6; }
-
-
-
-cat >>confdefs.h <<_ACEOF
-#define SIZEOF_INT_P $ac_cv_sizeof_int_p
-_ACEOF
-
-
-
-      TESTED_TARGET_CPU_BITS=`expr 8 \* $ac_cv_sizeof_int_p`
-
-      if test "x$TESTED_TARGET_CPU_BITS" != "x$OPENJDK_TARGET_CPU_BITS"; then
-        as_fn_error $? "The tested number of bits in the target ($TESTED_TARGET_CPU_BITS) differs from the number of bits expected to be found in the target ($OPENJDK_TARGET_CPU_BITS)" "$LINENO" 5
-      fi
+      as_fn_error $? "The tested number of bits in the target ($TESTED_TARGET_CPU_BITS) differs from the number of bits expected to be found in the target ($OPENJDK_TARGET_CPU_BITS)" "$LINENO" 5
     fi
   fi
 
@@ -29411,29 +29221,6 @@ $as_echo "$ac_cv_c_bigendian" >&6; }
       POST_STRIP_CMD="$STRIP -x"
       POST_MCS_CMD="$MCS -d -a \"JDK $FULL_VERSION\""
     fi
-    if test "x$OPENJDK_TARGET_OS" = xaix; then
-        COMPILER_NAME=xlc
-        PICFLAG="-qpic=large"
-        LIBRARY_PREFIX=lib
-        SHARED_LIBRARY='lib$1.so'
-        STATIC_LIBRARY='lib$1.a'
-        SHARED_LIBRARY_FLAGS="-qmkshrobj"
-        SHARED_LIBRARY_SUFFIX='.so'
-        STATIC_LIBRARY_SUFFIX='.a'
-        OBJ_SUFFIX='.o'
-        EXE_SUFFIX=''
-        SET_SHARED_LIBRARY_NAME=''
-        SET_SHARED_LIBRARY_MAPFILE=''
-        C_FLAG_REORDER=''
-        CXX_FLAG_REORDER=''
-        SET_SHARED_LIBRARY_ORIGIN=''
-        SET_EXECUTABLE_ORIGIN=""
-        CFLAGS_JDK=""
-        CXXFLAGS_JDK=""
-        CFLAGS_JDKLIB_EXTRA=''
-        POST_STRIP_CMD="$STRIP -X32_64"
-        POST_MCS_CMD=""
-    fi
     if test "x$OPENJDK_TARGET_OS" = xwindows; then
       # If it is not gcc, then assume it is the MS Visual Studio compiler
       COMPILER_NAME=cl
@@ -29619,24 +29406,6 @@ rm -f core conftest.err conftest.$ac_objext \
 
           CFLAGS_DEBUG_SYMBOLS="-g -xs"
           CXXFLAGS_DEBUG_SYMBOLS="-g0 -xs"
-          ;;
-        xlc )
-          C_FLAG_DEPS="-qmakedep=gcc -MF"
-          CXX_FLAG_DEPS="-qmakedep=gcc -MF"
-          C_O_FLAG_HIGHEST="-O3"
-          C_O_FLAG_HI="-O3 -qstrict"
-          C_O_FLAG_NORM="-O2"
-          C_O_FLAG_NONE=""
-          CXX_O_FLAG_HIGHEST="-O3"
-          CXX_O_FLAG_HI="-O3 -qstrict"
-          CXX_O_FLAG_NORM="-O2"
-          CXX_O_FLAG_NONE=""
-          CFLAGS_DEBUG_SYMBOLS="-g"
-          CXXFLAGS_DEBUG_SYMBOLS="-g"
-          LDFLAGS_JDK="${LDFLAGS_JDK} -q64 -brtl -bnolibpath -liconv -bexpall"
-          CFLAGS_JDK="${CFLAGS_JDK} -qchars=signed -q64 -qfullpath -qsaveopt"
-          CXXFLAGS_JDK="${CXXFLAGS_JDK} -qchars=signed -q64 -qfullpath -qsaveopt"
-          ;;
       esac
       ;;
     CL )
@@ -29725,57 +29494,12 @@ fi
   #
   # Now setup the CFLAGS and LDFLAGS for the JDK build.
   # Later we will also have CFLAGS and LDFLAGS for the hotspot subrepo build.
-  #    CFLAGS_JDK    - C Compiler flags
-  #    CXXFLAGS_JDK  - C++ Compiler flags
-  #    COMMON_CCXXFLAGS_JDK - common to C and C++
   #
   case $COMPILER_NAME in
     gcc )
-      COMMON_CCXXFLAGS_JDK="$COMMON_CCXXFLAGS $COMMON_CCXXFLAGS_JDK -W -Wall -Wno-unused -Wno-parentheses \
+      CCXXFLAGS_JDK="$CCXXFLAGS $CCXXFLAGS_JDK -W -Wall -Wno-unused -Wno-parentheses \
       -pipe \
       -D_GNU_SOURCE -D_REENTRANT -D_LARGEFILE64_SOURCE"
-      CXXSTD_CXXFLAG="-std=gnu++98"
-
-  { $as_echo "$as_me:${as_lineno-$LINENO}: checking if the C++ compiler supports \"$CXXSTD_CXXFLAG $CFLAGS_WARNINGS_ARE_ERRORS\"" >&5
-$as_echo_n "checking if the C++ compiler supports \"$CXXSTD_CXXFLAG $CFLAGS_WARNINGS_ARE_ERRORS\"... " >&6; }
-  supports=yes
-
-  saved_cxxflags="$CXXFLAGS"
-  CXXFLAGS="$CXXFLAG $CXXSTD_CXXFLAG $CFLAGS_WARNINGS_ARE_ERRORS"
-  ac_ext=cpp
-ac_cpp='$CXXCPP $CPPFLAGS'
-ac_compile='$CXX -c $CXXFLAGS $CPPFLAGS conftest.$ac_ext >&5'
-ac_link='$CXX -o conftest$ac_exeext $CXXFLAGS $CPPFLAGS $LDFLAGS conftest.$ac_ext $LIBS >&5'
-ac_compiler_gnu=$ac_cv_cxx_compiler_gnu
-
-  cat confdefs.h - <<_ACEOF >conftest.$ac_ext
-/* end confdefs.h.  */
-int i;
-_ACEOF
-if ac_fn_cxx_try_compile "$LINENO"; then :
-
-else
-  supports=no
-fi
-rm -f core conftest.err conftest.$ac_objext conftest.$ac_ext
-  ac_ext=cpp
-ac_cpp='$CXXCPP $CPPFLAGS'
-ac_compile='$CXX -c $CXXFLAGS $CPPFLAGS conftest.$ac_ext >&5'
-ac_link='$CXX -o conftest$ac_exeext $CXXFLAGS $CPPFLAGS $LDFLAGS conftest.$ac_ext $LIBS >&5'
-ac_compiler_gnu=$ac_cv_cxx_compiler_gnu
-
-  CXXFLAGS="$saved_cxxflags"
-
-  { $as_echo "$as_me:${as_lineno-$LINENO}: result: $supports" >&5
-$as_echo "$supports" >&6; }
-  if test "x$supports" = "xyes" ; then
-    :
-  else
-    CXXSTD_CXXFLAG=""
-  fi
-
-      CXXFLAGS_JDK="${CXXFLAGS_JDK} ${CXXSTD_CXXFLAG}"
-
       case $OPENJDK_TARGET_CPU_ARCH in
         arm )
           # on arm we don't prevent gcc to omit frame pointer but do prevent strict aliasing
@@ -29785,234 +29509,16 @@ $as_echo "$supports" >&6; }
           # on ppc we don't prevent gcc to omit frame pointer nor strict-aliasing
           ;;
         * )
-          COMMON_CCXXFLAGS_JDK="$COMMON_CCXXFLAGS_JDK -fno-omit-frame-pointer"
+          CCXXFLAGS_JDK="$CCXXFLAGS_JDK -fno-omit-frame-pointer"
           CFLAGS_JDK="${CFLAGS_JDK} -fno-strict-aliasing"
           ;;
       esac
-
-  REFERENCE_VERSION=6
-
-  if  [[ "$REFERENCE_VERSION" =~ (.*\.){3} ]] ; then
-    as_fn_error $? "Internal error: Cannot compare to $REFERENCE_VERSION, only three parts (X.Y.Z) is supported" "$LINENO" 5
-  fi
-
-  if  [[ "$REFERENCE_VERSION" =~ [0-9]{6} ]] ; then
-    as_fn_error $? "Internal error: Cannot compare to $REFERENCE_VERSION, only parts < 99999 is supported" "$LINENO" 5
-  fi
-
-  # Version comparison method inspired by http://stackoverflow.com/a/24067243
-  COMPARABLE_REFERENCE_VERSION=`$AWK -F. '{ printf("%05d%05d%05d\n", $1, $2, $3) }' <<< "$REFERENCE_VERSION"`
-
-  if test $COMPARABLE_ACTUAL_VERSION -ge $COMPARABLE_REFERENCE_VERSION ; then
-
-  # These flags are required for GCC 6 builds as undefined behaviour in OpenJDK code
-  # runs afoul of the more aggressive versions of these optimisations.
-  # Notably, value range propagation now assumes that the this pointer of C++
-  # member functions is non-null.
-  NO_DELETE_NULL_POINTER_CHECKS_CFLAG="-fno-delete-null-pointer-checks"
-
-
-  { $as_echo "$as_me:${as_lineno-$LINENO}: checking if the C compiler supports \"$NO_DELETE_NULL_POINTER_CHECKS_CFLAG -Werror\"" >&5
-$as_echo_n "checking if the C compiler supports \"$NO_DELETE_NULL_POINTER_CHECKS_CFLAG -Werror\"... " >&6; }
-  supports=yes
-
-  saved_cflags="$CFLAGS"
-  CFLAGS="$CFLAGS $NO_DELETE_NULL_POINTER_CHECKS_CFLAG -Werror"
-  ac_ext=c
-ac_cpp='$CPP $CPPFLAGS'
-ac_compile='$CC -c $CFLAGS $CPPFLAGS conftest.$ac_ext >&5'
-ac_link='$CC -o conftest$ac_exeext $CFLAGS $CPPFLAGS $LDFLAGS conftest.$ac_ext $LIBS >&5'
-ac_compiler_gnu=$ac_cv_c_compiler_gnu
-
-
-cat confdefs.h - <<_ACEOF >conftest.$ac_ext
-/* end confdefs.h.  */
-int i;
-_ACEOF
-if ac_fn_c_try_compile "$LINENO"; then :
-
-else
-  supports=no
-fi
-rm -f core conftest.err conftest.$ac_objext conftest.$ac_ext
-  ac_ext=cpp
-ac_cpp='$CXXCPP $CPPFLAGS'
-ac_compile='$CXX -c $CXXFLAGS $CPPFLAGS conftest.$ac_ext >&5'
-ac_link='$CXX -o conftest$ac_exeext $CXXFLAGS $CPPFLAGS $LDFLAGS conftest.$ac_ext $LIBS >&5'
-ac_compiler_gnu=$ac_cv_cxx_compiler_gnu
-
-  CFLAGS="$saved_cflags"
-
-  { $as_echo "$as_me:${as_lineno-$LINENO}: result: $supports" >&5
-$as_echo "$supports" >&6; }
-  if test "x$supports" = "xyes" ; then
-    C_COMP_SUPPORTS="yes"
-  else
-    C_COMP_SUPPORTS="no"
-  fi
-
-
-  { $as_echo "$as_me:${as_lineno-$LINENO}: checking if the C++ compiler supports \"$NO_DELETE_NULL_POINTER_CHECKS_CFLAG -Werror\"" >&5
-$as_echo_n "checking if the C++ compiler supports \"$NO_DELETE_NULL_POINTER_CHECKS_CFLAG -Werror\"... " >&6; }
-  supports=yes
-
-  saved_cxxflags="$CXXFLAGS"
-  CXXFLAGS="$CXXFLAG $NO_DELETE_NULL_POINTER_CHECKS_CFLAG -Werror"
-  ac_ext=cpp
-ac_cpp='$CXXCPP $CPPFLAGS'
-ac_compile='$CXX -c $CXXFLAGS $CPPFLAGS conftest.$ac_ext >&5'
-ac_link='$CXX -o conftest$ac_exeext $CXXFLAGS $CPPFLAGS $LDFLAGS conftest.$ac_ext $LIBS >&5'
-ac_compiler_gnu=$ac_cv_cxx_compiler_gnu
-
-  cat confdefs.h - <<_ACEOF >conftest.$ac_ext
-/* end confdefs.h.  */
-int i;
-_ACEOF
-if ac_fn_cxx_try_compile "$LINENO"; then :
-
-else
-  supports=no
-fi
-rm -f core conftest.err conftest.$ac_objext conftest.$ac_ext
-  ac_ext=cpp
-ac_cpp='$CXXCPP $CPPFLAGS'
-ac_compile='$CXX -c $CXXFLAGS $CPPFLAGS conftest.$ac_ext >&5'
-ac_link='$CXX -o conftest$ac_exeext $CXXFLAGS $CPPFLAGS $LDFLAGS conftest.$ac_ext $LIBS >&5'
-ac_compiler_gnu=$ac_cv_cxx_compiler_gnu
-
-  CXXFLAGS="$saved_cxxflags"
-
-  { $as_echo "$as_me:${as_lineno-$LINENO}: result: $supports" >&5
-$as_echo "$supports" >&6; }
-  if test "x$supports" = "xyes" ; then
-    CXX_COMP_SUPPORTS="yes"
-  else
-    CXX_COMP_SUPPORTS="no"
-  fi
-
-
-  { $as_echo "$as_me:${as_lineno-$LINENO}: checking if both compilers support \"$NO_DELETE_NULL_POINTER_CHECKS_CFLAG -Werror\"" >&5
-$as_echo_n "checking if both compilers support \"$NO_DELETE_NULL_POINTER_CHECKS_CFLAG -Werror\"... " >&6; }
-  supports=no
-  if test "x$C_COMP_SUPPORTS" = "xyes" -a "x$CXX_COMP_SUPPORTS" = "xyes"; then supports=yes; fi
-
-  { $as_echo "$as_me:${as_lineno-$LINENO}: result: $supports" >&5
-$as_echo "$supports" >&6; }
-  if test "x$supports" = "xyes" ; then
-    :
-  else
-    NO_DELETE_NULL_POINTER_CHECKS_CFLAG=""
-  fi
-
-
-  NO_LIFETIME_DSE_CFLAG="-fno-lifetime-dse"
-
-
-  { $as_echo "$as_me:${as_lineno-$LINENO}: checking if the C compiler supports \"$NO_LIFETIME_DSE_CFLAG -Werror\"" >&5
-$as_echo_n "checking if the C compiler supports \"$NO_LIFETIME_DSE_CFLAG -Werror\"... " >&6; }
-  supports=yes
-
-  saved_cflags="$CFLAGS"
-  CFLAGS="$CFLAGS $NO_LIFETIME_DSE_CFLAG -Werror"
-  ac_ext=c
-ac_cpp='$CPP $CPPFLAGS'
-ac_compile='$CC -c $CFLAGS $CPPFLAGS conftest.$ac_ext >&5'
-ac_link='$CC -o conftest$ac_exeext $CFLAGS $CPPFLAGS $LDFLAGS conftest.$ac_ext $LIBS >&5'
-ac_compiler_gnu=$ac_cv_c_compiler_gnu
-
-  cat confdefs.h - <<_ACEOF >conftest.$ac_ext
-/* end confdefs.h.  */
-int i;
-_ACEOF
-if ac_fn_c_try_compile "$LINENO"; then :
-
-else
-  supports=no
-fi
-rm -f core conftest.err conftest.$ac_objext conftest.$ac_ext
-  ac_ext=cpp
-ac_cpp='$CXXCPP $CPPFLAGS'
-ac_compile='$CXX -c $CXXFLAGS $CPPFLAGS conftest.$ac_ext >&5'
-ac_link='$CXX -o conftest$ac_exeext $CXXFLAGS $CPPFLAGS $LDFLAGS conftest.$ac_ext $LIBS >&5'
-ac_compiler_gnu=$ac_cv_cxx_compiler_gnu
-
-  CFLAGS="$saved_cflags"
-
-  { $as_echo "$as_me:${as_lineno-$LINENO}: result: $supports" >&5
-$as_echo "$supports" >&6; }
-  if test "x$supports" = "xyes" ; then
-    C_COMP_SUPPORTS="yes"
-  else
-    C_COMP_SUPPORTS="no"
-  fi
-
-
-  { $as_echo "$as_me:${as_lineno-$LINENO}: checking if the C++ compiler supports \"$NO_LIFETIME_DSE_CFLAG -Werror\"" >&5
-$as_echo_n "checking if the C++ compiler supports \"$NO_LIFETIME_DSE_CFLAG -Werror\"... " >&6; }
-  supports=yes
-
-  saved_cxxflags="$CXXFLAGS"
-  CXXFLAGS="$CXXFLAG $NO_LIFETIME_DSE_CFLAG -Werror"
-  ac_ext=cpp
-ac_cpp='$CXXCPP $CPPFLAGS'
-ac_compile='$CXX -c $CXXFLAGS $CPPFLAGS conftest.$ac_ext >&5'
-ac_link='$CXX -o conftest$ac_exeext $CXXFLAGS $CPPFLAGS $LDFLAGS conftest.$ac_ext $LIBS >&5'
-ac_compiler_gnu=$ac_cv_cxx_compiler_gnu
-
-  cat confdefs.h - <<_ACEOF >conftest.$ac_ext
-/* end confdefs.h.  */
-int i;
-_ACEOF
-if ac_fn_cxx_try_compile "$LINENO"; then :
-
-else
-  supports=no
-fi
-rm -f core conftest.err conftest.$ac_objext conftest.$ac_ext
-  ac_ext=cpp
-ac_cpp='$CXXCPP $CPPFLAGS'
-ac_compile='$CXX -c $CXXFLAGS $CPPFLAGS conftest.$ac_ext >&5'
-ac_link='$CXX -o conftest$ac_exeext $CXXFLAGS $CPPFLAGS $LDFLAGS conftest.$ac_ext $LIBS >&5'
-ac_compiler_gnu=$ac_cv_cxx_compiler_gnu
-
-  CXXFLAGS="$saved_cxxflags"
-
-  { $as_echo "$as_me:${as_lineno-$LINENO}: result: $supports" >&5
-$as_echo "$supports" >&6; }
-  if test "x$supports" = "xyes" ; then
-    CXX_COMP_SUPPORTS="yes"
-  else
-    CXX_COMP_SUPPORTS="no"
-  fi
-
-
-  { $as_echo "$as_me:${as_lineno-$LINENO}: checking if both compilers support \"$NO_LIFETIME_DSE_CFLAG -Werror\"" >&5
-$as_echo_n "checking if both compilers support \"$NO_LIFETIME_DSE_CFLAG -Werror\"... " >&6; }
-  supports=no
-  if test "x$C_COMP_SUPPORTS" = "xyes" -a "x$CXX_COMP_SUPPORTS" = "xyes"; then supports=yes; fi
-
-  { $as_echo "$as_me:${as_lineno-$LINENO}: result: $supports" >&5
-$as_echo "$supports" >&6; }
-  if test "x$supports" = "xyes" ; then
-    :
-  else
-    NO_LIFETIME_DSE_CFLAG=""
-  fi
-
-  CFLAGS_JDK="${CFLAGS_JDK} ${NO_DELETE_NULL_POINTER_CHECKS_CFLAG} ${NO_LIFETIME_DSE_CFLAG}"
-
-
-
-  else
-    :
-  fi
-
       ;;
     ossc )
-      COMMON_CCXXFLAGS_JDK="$COMMON_CCXXFLAGS $COMMON_CCXXFLAGS_JDK -DTRACING -DMACRO_MEMSYS_OPS -DBREAKPTS"
+      CCXXFLAGS_JDK="$CCXXFLAGS $CCXXFLAGS_JDK -DTRACING -DMACRO_MEMSYS_OPS -DBREAKPTS"
       case $OPENJDK_TARGET_CPU_ARCH in
         x86 )
-          COMMON_CCXXFLAGS_JDK="$COMMON_CCXXFLAGS_JDK -DcpuIntel -Di586 -D$OPENJDK_TARGET_CPU_LEGACY_LIB"
+          CCXXFLAGS_JDK="$CCXXFLAGS_JDK -DcpuIntel -Di586 -D$OPENJDK_TARGET_CPU_LEGACY_LIB"
           CFLAGS_JDK="$CFLAGS_JDK -erroff=E_BAD_PRAGMA_PACK_VALUE"
           ;;
       esac
@@ -30023,24 +29529,17 @@ $as_echo "$supports" >&6; }
       LDFLAGS_JDK="$LDFLAGS_JDK -z defs -xildoff -ztext"
       LDFLAGS_CXX_JDK="$LDFLAGS_CXX_JDK -norunpath -xnolib"
       ;;
-    xlc )
-      CFLAGS_JDK="$CFLAGS_JDK -D_GNU_SOURCE -D_REENTRANT -D_LARGEFILE64_SOURCE -DSTDC"
-      CXXFLAGS_JDK="$CXXFLAGS_JDK -D_GNU_SOURCE -D_REENTRANT -D_LARGEFILE64_SOURCE -DSTDC"
-
-      LDFLAGS_JDK="$LDFLAGS_JDK"
-      LDFLAGS_CXX_JDK="$LDFLAGS_CXX_JDK"
-      ;;
     cl )
-      COMMON_CCXXFLAGS_JDK="$COMMON_CCXXFLAGS $COMMON_CCXXFLAGS_JDK -Zi -MD -Zc:wchar_t- -W3 -wd4800 \
-      -D_STATIC_CPPLIB -D_DISABLE_DEPRECATE_STATIC_CPPLIB -DWIN32_LEAN_AND_MEAN \
+	  CCXXFLAGS_JDK="$CCXXFLAGS $CCXXFLAGS_JDK -Zi -MD -Zc:wchar_t- -W3 -wd4800 \
+      -DWIN32_LEAN_AND_MEAN \
       -D_CRT_SECURE_NO_DEPRECATE -D_CRT_NONSTDC_NO_DEPRECATE \
       -DWIN32 -DIAL"
       case $OPENJDK_TARGET_CPU in
         x86 )
-          COMMON_CCXXFLAGS_JDK="$COMMON_CCXXFLAGS_JDK -D_X86_ -Dx86"
+          CCXXFLAGS_JDK="$CCXXFLAGS_JDK -D_X86_ -Dx86"
           ;;
         x86_64 )
-          COMMON_CCXXFLAGS_JDK="$COMMON_CCXXFLAGS_JDK -D_AMD64_ -Damd64"
+          CCXXFLAGS_JDK="$CCXXFLAGS_JDK -D_AMD64_ -Damd64"
           ;;
       esac
       ;;
@@ -30070,7 +29569,7 @@ $as_echo "$supports" >&6; }
       ;;
   esac
 
-  COMMON_CCXXFLAGS_JDK="$COMMON_CCXXFLAGS_JDK $ADD_LP64"
+  CCXXFLAGS_JDK="$CCXXFLAGS_JDK $ADD_LP64"
 
   # The package path is used only on macosx?
   PACKAGE_PATH=/opt/local
@@ -30083,27 +29582,24 @@ $as_echo "$supports" >&6; }
     #   Note: -Dmacro         is the same as    #define macro 1
     #         -Dmacro=        is the same as    #define macro
     if test "x$OPENJDK_TARGET_OS" = xsolaris; then
-      COMMON_CCXXFLAGS_JDK="$COMMON_CCXXFLAGS_JDK -D_LITTLE_ENDIAN="
+      CCXXFLAGS_JDK="$CCXXFLAGS_JDK -D_LITTLE_ENDIAN="
     else
-      COMMON_CCXXFLAGS_JDK="$COMMON_CCXXFLAGS_JDK -D_LITTLE_ENDIAN"
+      CCXXFLAGS_JDK="$CCXXFLAGS_JDK -D_LITTLE_ENDIAN"
     fi
   else
-    COMMON_CCXXFLAGS_JDK="$COMMON_CCXXFLAGS_JDK -D_BIG_ENDIAN"
+    CCXXFLAGS_JDK="$CCXXFLAGS_JDK -D_BIG_ENDIAN"
   fi
   if test "x$OPENJDK_TARGET_OS" = xlinux; then
-    COMMON_CCXXFLAGS_JDK="$COMMON_CCXXFLAGS_JDK -DLINUX"
+    CCXXFLAGS_JDK="$CCXXFLAGS_JDK -DLINUX"
   fi
   if test "x$OPENJDK_TARGET_OS" = xwindows; then
-    COMMON_CCXXFLAGS_JDK="$COMMON_CCXXFLAGS_JDK -DWINDOWS"
+    CCXXFLAGS_JDK="$CCXXFLAGS_JDK -DWINDOWS"
   fi
   if test "x$OPENJDK_TARGET_OS" = xsolaris; then
-    COMMON_CCXXFLAGS_JDK="$COMMON_CCXXFLAGS_JDK -DSOLARIS"
-  fi
-  if test "x$OPENJDK_TARGET_OS" = xaix; then
-    COMMON_CCXXFLAGS_JDK="$COMMON_CCXXFLAGS_JDK -DAIX -DPPC64"
+    CCXXFLAGS_JDK="$CCXXFLAGS_JDK -DSOLARIS"
   fi
   if test "x$OPENJDK_TARGET_OS" = xmacosx; then
-    COMMON_CCXXFLAGS_JDK="$COMMON_CCXXFLAGS_JDK -DMACOSX -D_ALLBSD_SOURCE -D_DARWIN_UNLIMITED_SELECT"
+    CCXXFLAGS_JDK="$CCXXFLAGS_JDK -DMACOSX -D_ALLBSD_SOURCE -D_DARWIN_UNLIMITED_SELECT"
     # Setting these parameters makes it an error to link to macosx APIs that are
     # newer than the given OS version and makes the linked binaries compatible even
     # if built on a newer version of the OS.
@@ -30113,25 +29609,25 @@ $as_echo "$supports" >&6; }
     # The macro takes the version with no dots, ex: 1070
     # Let the flags variables get resolved in make for easier override on make
     # command line.
-    COMMON_CCXXFLAGS_JDK="$COMMON_CCXXFLAGS_JDK -DMAC_OS_X_VERSION_MAX_ALLOWED=\$(subst .,,\$(MACOSX_VERSION_MIN)) -mmacosx-version-min=\$(MACOSX_VERSION_MIN)"
+    CCXXFLAGS_JDK="$CCXXFLAGS_JDK -DMAC_OS_X_VERSION_MAX_ALLOWED=\$(subst .,,\$(MACOSX_VERSION_MIN)) -mmacosx-version-min=\$(MACOSX_VERSION_MIN)"
     LDFLAGS_JDK="$LDFLAGS_JDK -mmacosx-version-min=\$(MACOSX_VERSION_MIN)"
   fi
   if test "x$OPENJDK_TARGET_OS" = xbsd; then
-    COMMON_CCXXFLAGS_JDK="$COMMON_CCXXFLAGS_JDK -DBSD -D_ALLBSD_SOURCE"
+    CCXXFLAGS_JDK="$CCXXFLAGS_JDK -DBSD -D_ALLBSD_SOURCE"
   fi
   if test "x$DEBUG_LEVEL" = xrelease; then
-    COMMON_CCXXFLAGS_JDK="$COMMON_CCXXFLAGS_JDK -DNDEBUG"
+    CCXXFLAGS_JDK="$CCXXFLAGS_JDK -DNDEBUG"
   if test "x$OPENJDK_TARGET_OS" = xsolaris; then
-    COMMON_CCXXFLAGS_JDK="$COMMON_CCXXFLAGS_JDK -DTRIMMED"
+    CCXXFLAGS_JDK="$CCXXFLAGS_JDK -DTRIMMED"
   fi
   else
-    COMMON_CCXXFLAGS_JDK="$COMMON_CCXXFLAGS_JDK -DDEBUG"
+    CCXXFLAGS_JDK="$CCXXFLAGS_JDK -DDEBUG"
   fi
 
-  COMMON_CCXXFLAGS_JDK="$COMMON_CCXXFLAGS_JDK -DARCH='\"$OPENJDK_TARGET_CPU_LEGACY\"' -D$OPENJDK_TARGET_CPU_LEGACY"
-  COMMON_CCXXFLAGS_JDK="$COMMON_CCXXFLAGS_JDK -DRELEASE='\"\$(RELEASE)\"'"
+  CCXXFLAGS_JDK="$CCXXFLAGS_JDK -DARCH='\"$OPENJDK_TARGET_CPU_LEGACY\"' -D$OPENJDK_TARGET_CPU_LEGACY"
+  CCXXFLAGS_JDK="$CCXXFLAGS_JDK -DRELEASE='\"\$(RELEASE)\"'"
 
-  COMMON_CCXXFLAGS_JDK="$COMMON_CCXXFLAGS_JDK \
+  CCXXFLAGS_JDK="$CCXXFLAGS_JDK \
       -I${JDK_OUTPUTDIR}/include \
       -I${JDK_OUTPUTDIR}/include/$OPENJDK_TARGET_OS \
       -I${JDK_TOPDIR}/src/share/javavm/export \
@@ -30140,12 +29636,12 @@ $as_echo "$supports" >&6; }
       -I${JDK_TOPDIR}/src/$OPENJDK_TARGET_OS_API_DIR/native/common"
 
   # The shared libraries are compiled using the picflag.
-  CFLAGS_JDKLIB="$COMMON_CCXXFLAGS_JDK $CFLAGS_JDK $PICFLAG $CFLAGS_JDKLIB_EXTRA"
-  CXXFLAGS_JDKLIB="$COMMON_CCXXFLAGS_JDK $CXXFLAGS_JDK $PICFLAG $CXXFLAGS_JDKLIB_EXTRA "
+  CFLAGS_JDKLIB="$CCXXFLAGS_JDK $CFLAGS_JDK $PICFLAG $CFLAGS_JDKLIB_EXTRA"
+  CXXFLAGS_JDKLIB="$CCXXFLAGS_JDK $CXXFLAGS_JDK $PICFLAG $CXXFLAGS_JDKLIB_EXTRA "
 
   # Executable flags
-  CFLAGS_JDKEXE="$COMMON_CCXXFLAGS_JDK $CFLAGS_JDK"
-  CXXFLAGS_JDKEXE="$COMMON_CCXXFLAGS_JDK $CXXFLAGS_JDK"
+  CFLAGS_JDKEXE="$CCXXFLAGS_JDK $CFLAGS_JDK"
+  CXXFLAGS_JDKEXE="$CCXXFLAGS_JDK $CXXFLAGS_JDK"
 
   # Now this is odd. The JDK native libraries have to link against libjvm.so
   # On 32-bit machines there is normally two distinct libjvm.so:s, client and server.
@@ -30229,19 +29725,19 @@ $as_echo "$supports" >&6; }
 
 
 
+
   # Some Zero and Shark settings.
   # ZERO_ARCHFLAG tells the compiler which mode to build for
   case "${OPENJDK_TARGET_CPU}" in
     s390)
-      ZERO_ARCHFLAG="${COMPILER_TARGET_BITS_FLAG}31"
+      ZERO_ARCHFLAG="-m31"
       ;;
     *)
-      ZERO_ARCHFLAG="${COMPILER_TARGET_BITS_FLAG}${OPENJDK_TARGET_CPU_BITS}"
+      ZERO_ARCHFLAG="-m${OPENJDK_TARGET_CPU_BITS}"
   esac
 
-
-  { $as_echo "$as_me:${as_lineno-$LINENO}: checking if the C compiler supports \"$ZERO_ARCHFLAG\"" >&5
-$as_echo_n "checking if the C compiler supports \"$ZERO_ARCHFLAG\"... " >&6; }
+  { $as_echo "$as_me:${as_lineno-$LINENO}: checking if compiler supports \"$ZERO_ARCHFLAG\"" >&5
+$as_echo_n "checking if compiler supports \"$ZERO_ARCHFLAG\"... " >&6; }
   supports=yes
 
   saved_cflags="$CFLAGS"
@@ -30269,19 +29765,6 @@ ac_link='$CXX -o conftest$ac_exeext $CXXFLAGS $CPPFLAGS $LDFLAGS conftest.$ac_ex
 ac_compiler_gnu=$ac_cv_cxx_compiler_gnu
 
   CFLAGS="$saved_cflags"
-
-  { $as_echo "$as_me:${as_lineno-$LINENO}: result: $supports" >&5
-$as_echo "$supports" >&6; }
-  if test "x$supports" = "xyes" ; then
-    C_COMP_SUPPORTS="yes"
-  else
-    C_COMP_SUPPORTS="no"
-  fi
-
-
-  { $as_echo "$as_me:${as_lineno-$LINENO}: checking if the C++ compiler supports \"$ZERO_ARCHFLAG\"" >&5
-$as_echo_n "checking if the C++ compiler supports \"$ZERO_ARCHFLAG\"... " >&6; }
-  supports=yes
 
   saved_cxxflags="$CXXFLAGS"
   CXXFLAGS="$CXXFLAG $ZERO_ARCHFLAG"
@@ -30312,20 +29795,6 @@ ac_compiler_gnu=$ac_cv_cxx_compiler_gnu
   { $as_echo "$as_me:${as_lineno-$LINENO}: result: $supports" >&5
 $as_echo "$supports" >&6; }
   if test "x$supports" = "xyes" ; then
-    CXX_COMP_SUPPORTS="yes"
-  else
-    CXX_COMP_SUPPORTS="no"
-  fi
-
-
-  { $as_echo "$as_me:${as_lineno-$LINENO}: checking if both compilers support \"$ZERO_ARCHFLAG\"" >&5
-$as_echo_n "checking if both compilers support \"$ZERO_ARCHFLAG\"... " >&6; }
-  supports=no
-  if test "x$C_COMP_SUPPORTS" = "xyes" -a "x$CXX_COMP_SUPPORTS" = "xyes"; then supports=yes; fi
-
-  { $as_echo "$as_me:${as_lineno-$LINENO}: result: $supports" >&5
-$as_echo "$supports" >&6; }
-  if test "x$supports" = "xyes" ; then
     :
   else
     ZERO_ARCHFLAG=""
@@ -30333,16 +29802,15 @@ $as_echo "$supports" >&6; }
 
 
 
-  # Check that the compiler supports -mX (or -qX on AIX) flags
+  # Check that the compiler supports -mX flags
   # Set COMPILER_SUPPORTS_TARGET_BITS_FLAG to 'true' if it does
 
-
-  { $as_echo "$as_me:${as_lineno-$LINENO}: checking if the C compiler supports \"${COMPILER_TARGET_BITS_FLAG}${OPENJDK_TARGET_CPU_BITS}\"" >&5
-$as_echo_n "checking if the C compiler supports \"${COMPILER_TARGET_BITS_FLAG}${OPENJDK_TARGET_CPU_BITS}\"... " >&6; }
+  { $as_echo "$as_me:${as_lineno-$LINENO}: checking if compiler supports \"-m${OPENJDK_TARGET_CPU_BITS}\"" >&5
+$as_echo_n "checking if compiler supports \"-m${OPENJDK_TARGET_CPU_BITS}\"... " >&6; }
   supports=yes
 
   saved_cflags="$CFLAGS"
-  CFLAGS="$CFLAGS ${COMPILER_TARGET_BITS_FLAG}${OPENJDK_TARGET_CPU_BITS}"
+  CFLAGS="$CFLAGS -m${OPENJDK_TARGET_CPU_BITS}"
   ac_ext=c
 ac_cpp='$CPP $CPPFLAGS'
 ac_compile='$CC -c $CFLAGS $CPPFLAGS conftest.$ac_ext >&5'
@@ -30367,21 +29835,8 @@ ac_compiler_gnu=$ac_cv_cxx_compiler_gnu
 
   CFLAGS="$saved_cflags"
 
-  { $as_echo "$as_me:${as_lineno-$LINENO}: result: $supports" >&5
-$as_echo "$supports" >&6; }
-  if test "x$supports" = "xyes" ; then
-    C_COMP_SUPPORTS="yes"
-  else
-    C_COMP_SUPPORTS="no"
-  fi
-
-
-  { $as_echo "$as_me:${as_lineno-$LINENO}: checking if the C++ compiler supports \"${COMPILER_TARGET_BITS_FLAG}${OPENJDK_TARGET_CPU_BITS}\"" >&5
-$as_echo_n "checking if the C++ compiler supports \"${COMPILER_TARGET_BITS_FLAG}${OPENJDK_TARGET_CPU_BITS}\"... " >&6; }
-  supports=yes
-
   saved_cxxflags="$CXXFLAGS"
-  CXXFLAGS="$CXXFLAG ${COMPILER_TARGET_BITS_FLAG}${OPENJDK_TARGET_CPU_BITS}"
+  CXXFLAGS="$CXXFLAG -m${OPENJDK_TARGET_CPU_BITS}"
   ac_ext=cpp
 ac_cpp='$CXXCPP $CPPFLAGS'
 ac_compile='$CXX -c $CXXFLAGS $CPPFLAGS conftest.$ac_ext >&5'
@@ -30409,46 +29864,11 @@ ac_compiler_gnu=$ac_cv_cxx_compiler_gnu
   { $as_echo "$as_me:${as_lineno-$LINENO}: result: $supports" >&5
 $as_echo "$supports" >&6; }
   if test "x$supports" = "xyes" ; then
-    CXX_COMP_SUPPORTS="yes"
-  else
-    CXX_COMP_SUPPORTS="no"
-  fi
-
-
-  { $as_echo "$as_me:${as_lineno-$LINENO}: checking if both compilers support \"${COMPILER_TARGET_BITS_FLAG}${OPENJDK_TARGET_CPU_BITS}\"" >&5
-$as_echo_n "checking if both compilers support \"${COMPILER_TARGET_BITS_FLAG}${OPENJDK_TARGET_CPU_BITS}\"... " >&6; }
-  supports=no
-  if test "x$C_COMP_SUPPORTS" = "xyes" -a "x$CXX_COMP_SUPPORTS" = "xyes"; then supports=yes; fi
-
-  { $as_echo "$as_me:${as_lineno-$LINENO}: result: $supports" >&5
-$as_echo "$supports" >&6; }
-  if test "x$supports" = "xyes" ; then
     COMPILER_SUPPORTS_TARGET_BITS_FLAG=true
   else
     COMPILER_SUPPORTS_TARGET_BITS_FLAG=false
   fi
 
-
-
-
-  # Check for broken SuSE 'ld' for which 'Only anonymous version tag is allowed in executable.'
-  USING_BROKEN_SUSE_LD=no
-  if test "x$OPENJDK_TARGET_OS" = xlinux && test "x$GCC" = xyes; then
-    { $as_echo "$as_me:${as_lineno-$LINENO}: checking for broken SuSE 'ld' which only understands anonymous version tags in executables" >&5
-$as_echo_n "checking for broken SuSE 'ld' which only understands anonymous version tags in executables... " >&6; }
-    echo "SUNWprivate_1.1 { local: *; };" > version-script.map
-    echo "int main() { }" > main.c
-    if $CXX -Xlinker -version-script=version-script.map main.c 2>&5 >&5; then
-      { $as_echo "$as_me:${as_lineno-$LINENO}: result: no" >&5
-$as_echo "no" >&6; }
-      USING_BROKEN_SUSE_LD=no
-    else
-      { $as_echo "$as_me:${as_lineno-$LINENO}: result: yes" >&5
-$as_echo "yes" >&6; }
-      USING_BROKEN_SUSE_LD=yes
-    fi
-    rm -rf version-script.map main.c
-  fi
 
 
 
@@ -30608,16 +30028,6 @@ $as_echo_n "checking what is not needed on Solaris?... " >&6; }
 $as_echo "alsa pulse" >&6; }
   fi
 
-  if test "x$OPENJDK_TARGET_OS" = xaix; then
-    { $as_echo "$as_me:${as_lineno-$LINENO}: checking what is not needed on AIX?" >&5
-$as_echo_n "checking what is not needed on AIX?... " >&6; }
-    ALSA_NOT_NEEDED=yes
-    PULSE_NOT_NEEDED=yes
-    { $as_echo "$as_me:${as_lineno-$LINENO}: result: alsa pulse" >&5
-$as_echo "alsa pulse" >&6; }
-  fi
-
-
   if test "x$OPENJDK_TARGET_OS" = xwindows; then
     { $as_echo "$as_me:${as_lineno-$LINENO}: checking what is not needed on Windows?" >&5
 $as_echo_n "checking what is not needed on Windows?... " >&6; }
@@ -30635,6 +30045,8 @@ $as_echo_n "checking what is not needed on MacOSX?... " >&6; }
     ALSA_NOT_NEEDED=yes
     PULSE_NOT_NEEDED=yes
     X11_NOT_NEEDED=yes
+    # If the java runtime framework is disabled, then we need X11.
+    # This will be adjusted below.
     { $as_echo "$as_me:${as_lineno-$LINENO}: result: alsa pulse x11" >&5
 $as_echo "alsa pulse x11" >&6; }
   fi
@@ -30655,7 +30067,11 @@ $as_echo "alsa" >&6; }
     X11_NOT_NEEDED=yes
   fi
 
-  # Deprecated and now ignored
+  ###############################################################################
+  #
+  # Check for MacOSX support for OpenJDK.
+  #
+
 
   # Check whether --enable-macosx-runtime-support was given.
 if test "${enable_macosx_runtime_support+set}" = set; then :
@@ -30667,6 +30083,16 @@ fi
 $as_echo "$as_me: WARNING: Option --enable-macosx-runtime-support is deprecated and will be ignored." >&2;}
   fi
 
+
+  { $as_echo "$as_me:${as_lineno-$LINENO}: checking for Mac OS X Java Framework" >&5
+$as_echo_n "checking for Mac OS X Java Framework... " >&6; }
+  if test -f /System/Library/Frameworks/JavaVM.framework/Frameworks/JavaRuntimeSupport.framework/Headers/JavaRuntimeSupport.h; then
+    { $as_echo "$as_me:${as_lineno-$LINENO}: result: /System/Library/Frameworks/JavaVM.framework" >&5
+$as_echo "/System/Library/Frameworks/JavaVM.framework" >&6; }
+  else
+    { $as_echo "$as_me:${as_lineno-$LINENO}: result: no" >&5
+$as_echo "no" >&6; }
+  fi
 
 
 
@@ -31412,6 +30838,8 @@ fi
         pkgutil_help $MISSING_DEPENDENCY ;;
       pkgadd)
         pkgadd_help  $MISSING_DEPENDENCY ;;
+      * )
+        break ;;
     esac
 
     if test "x$PKGHANDLER_COMMAND" != x; then
@@ -31502,6 +30930,8 @@ ac_compiler_gnu=$ac_cv_cxx_compiler_gnu
         pkgutil_help $MISSING_DEPENDENCY ;;
       pkgadd)
         pkgadd_help  $MISSING_DEPENDENCY ;;
+      * )
+        break ;;
     esac
 
     if test "x$PKGHANDLER_COMMAND" != x; then
@@ -31762,6 +31192,8 @@ $as_echo "$CUPS_FOUND" >&6; }
         pkgutil_help $MISSING_DEPENDENCY ;;
       pkgadd)
         pkgadd_help  $MISSING_DEPENDENCY ;;
+      * )
+        break ;;
     esac
 
     if test "x$PKGHANDLER_COMMAND" != x; then
@@ -34522,6 +33954,8 @@ $as_echo "$FREETYPE_LIB_PATH" >&6; }
         pkgutil_help $MISSING_DEPENDENCY ;;
       pkgadd)
         pkgadd_help  $MISSING_DEPENDENCY ;;
+      * )
+        break ;;
     esac
 
     if test "x$PKGHANDLER_COMMAND" != x; then
@@ -34857,6 +34291,8 @@ $as_echo "$as_me: Using FREETYPE_CFLAGS=$FREETYPE_CFLAGS and FREETYPE_LIBS=$FREE
         pkgutil_help $MISSING_DEPENDENCY ;;
       pkgadd)
         pkgadd_help  $MISSING_DEPENDENCY ;;
+      * )
+        break ;;
     esac
 
     if test "x$PKGHANDLER_COMMAND" != x; then
@@ -34935,7 +34371,7 @@ $as_echo "$as_me: WARNING: alsa not used, so --with-alsa is ignored" >&2;}
     fi
 
     if test "x${with_alsa}" != x; then
-      ALSA_LIBS="-L${with_alsa}/lib -lasound"
+      ALSA_LIBS="-L${with_alsa}/lib -lalsa"
       ALSA_CFLAGS="-I${with_alsa}/include"
       ALSA_FOUND=yes
     fi
@@ -34944,7 +34380,7 @@ $as_echo "$as_me: WARNING: alsa not used, so --with-alsa is ignored" >&2;}
       ALSA_FOUND=yes
     fi
     if test "x${with_alsa_lib}" != x; then
-      ALSA_LIBS="-L${with_alsa_lib} -lasound"
+      ALSA_LIBS="-L${with_alsa_lib} -lalsa"
       ALSA_FOUND=yes
     fi
     if test "x$ALSA_FOUND" = xno; then
@@ -35208,6 +34644,8 @@ done
         pkgutil_help $MISSING_DEPENDENCY ;;
       pkgadd)
         pkgadd_help  $MISSING_DEPENDENCY ;;
+      * )
+        break ;;
     esac
 
     if test "x$PKGHANDLER_COMMAND" != x; then
@@ -36010,9 +35448,6 @@ $as_echo_n "checking for number of cores... " >&6; }
     # Looks like a MacOSX system
     NUM_CORES=`/usr/sbin/system_profiler -detailLevel full SPHardwareDataType | grep 'Cores' | awk  '{print $5}'`
     FOUND_CORES=yes
-  elif test "x$OPENJDK_BUILD_OS" = xaix ; then
-    NUM_CORES=`/usr/sbin/prtconf | grep "^Number Of Processors" | awk '{ print $4 }'`
-    FOUND_CORES=yes
   elif test -n "$NUMBER_OF_PROCESSORS"; then
     # On windows, look in the env
     NUM_CORES=$NUMBER_OF_PROCESSORS
@@ -36057,8 +35492,8 @@ $as_echo_n "checking for memory size... " >&6; }
     MEMORY_SIZE=`expr $MEMORY_SIZE / 1024`
     FOUND_MEM=yes
   elif test -x /usr/sbin/prtconf; then
-    # Looks like a Solaris or AIX system
-    MEMORY_SIZE=`/usr/sbin/prtconf | grep "^Memory [Ss]ize" | awk '{ print $3 }'`
+    # Looks like a Solaris system
+    MEMORY_SIZE=`/usr/sbin/prtconf | grep "Memory size" | awk '{ print $3 }'`
     FOUND_MEM=yes
   elif test -x /usr/sbin/system_profiler; then
     # Looks like a MacOSX system
@@ -37882,7 +37317,6 @@ $as_echo "$as_me: WARNING: unrecognized options: $ac_unrecognized_opts" >&2;}
 fi
 
 
-
 # Try to move the config.log file to the output directory.
 if test -e ./config.log; then
   $MV -f ./config.log "$OUTPUT_ROOT/config.log" 2> /dev/null
@@ -37970,6 +37404,8 @@ $CHMOD +x $OUTPUT_ROOT/compare.sh
         pkgutil_help $MISSING_DEPENDENCY ;;
       pkgadd)
         pkgadd_help  $MISSING_DEPENDENCY ;;
+      * )
+        break ;;
     esac
 
     if test "x$PKGHANDLER_COMMAND" != x; then

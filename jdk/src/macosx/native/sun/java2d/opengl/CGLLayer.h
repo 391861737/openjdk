@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2011, 2016, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2011, 2012, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -31,7 +31,7 @@
 @interface CGLLayer : CAOpenGLLayer
 {
 @private
-    JNFWeakJObjectWrapper *javaLayer;
+    JNFJObjectWrapper *javaLayer;
 
     // intermediate buffer, used the RQ lock to synchronize
     GLuint textureID;
@@ -45,7 +45,7 @@
 #endif /* REMOTELAYER */
 }
 
-@property (nonatomic, retain) JNFWeakJObjectWrapper *javaLayer;
+@property (nonatomic, retain) JNFJObjectWrapper *javaLayer;
 @property (readwrite, assign) GLuint textureID;
 @property (readwrite, assign) GLenum target;
 @property (readwrite, assign) float textureWidth;
@@ -57,7 +57,7 @@
 @property (nonatomic, retain) NSObject<JRSRemoteLayer> *jrsRemoteLayer;
 #endif
 
-- (id) initWithJavaLayer:(JNFWeakJObjectWrapper *)javaLayer;
+- (id) initWithJavaLayer:(JNFJObjectWrapper *)javaLayer;
 - (void) blitTexture;
 @end
 

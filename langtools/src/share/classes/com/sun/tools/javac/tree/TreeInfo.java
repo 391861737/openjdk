@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 1999, 2017, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 1999, 2013, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -28,14 +28,12 @@ package com.sun.tools.javac.tree;
 
 
 import com.sun.source.tree.Tree;
-import com.sun.source.util.TreePath;
 import com.sun.tools.javac.code.*;
 import com.sun.tools.javac.comp.AttrContext;
 import com.sun.tools.javac.comp.Env;
 import com.sun.tools.javac.tree.JCTree.*;
 import com.sun.tools.javac.tree.JCTree.JCPolyExpression.*;
 import com.sun.tools.javac.util.*;
-
 import com.sun.tools.javac.util.JCDiagnostic.DiagnosticPosition;
 import static com.sun.tools.javac.code.Flags.*;
 import static com.sun.tools.javac.code.TypeTag.BOT;
@@ -132,14 +130,6 @@ public class TreeInfo {
         if (tree.hasTag(METHODDEF)) {
             Name name = ((JCMethodDecl) tree).name;
             return name == name.table.names.init;
-        } else {
-            return false;
-        }
-    }
-
-    public static boolean isReceiverParam(JCTree tree) {
-        if (tree.hasTag(VARDEF)) {
-            return ((JCVariableDecl)tree).nameexpr != null;
         } else {
             return false;
         }
@@ -351,18 +341,6 @@ public class TreeInfo {
             return false;
         JCLiteral lit = (JCLiteral) tree;
         return (lit.typetag == BOT);
-    }
-
-    /** Return true iff this tree is a child of some annotation. */
-    public static boolean isInAnnotation(Env<?> env, JCTree tree) {
-        TreePath tp = TreePath.getPath(env.toplevel, tree);
-        if (tp != null) {
-            for (Tree t : tp) {
-                if (t.getKind() == Tree.Kind.ANNOTATION)
-                    return true;
-            }
-        }
-        return false;
     }
 
     public static String getCommentText(Env<?> env, JCTree tree) {
@@ -612,21 +590,13 @@ public class TreeInfo {
         };
     }
 
-    public enum PosKind {
-        START_POS() { int  toPos(JCTree tree) { return TreeInfo.getStartPos(tree); } },
-        FIRST_STAT_POS() { int  toPos(JCTree tree) { return firstStatPos(tree); } },
-        END_POS() { int  toPos(JCTree tree) { return endPos(tree); } };
-
-        abstract int toPos(JCTree tree);
-    }
-
     /** The position of the finalizer of given try/synchronized statement.
      */
-    public static int finalizerPos(JCTree tree, PosKind posKind) {
+    public static int finalizerPos(JCTree tree) {
         if (tree.hasTag(TRY)) {
             JCTry t = (JCTry) tree;
             Assert.checkNonNull(t.finalizer);
-            return posKind.toPos(t.finalizer);
+            return firstStatPos(t.finalizer);
         } else if (tree.hasTag(SYNCHRONIZED)) {
             return endPos(((JCSynchronized) tree).body);
         } else {
@@ -861,8 +831,6 @@ public class TreeInfo {
             return symbol(((JCTypeApply) tree).clazz);
         case ANNOTATED_TYPE:
             return symbol(((JCAnnotatedType) tree).underlyingType);
-        case REFERENCE:
-            return ((JCMemberReference) tree).sym;
         default:
             return null;
         }

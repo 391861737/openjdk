@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2010, 2015, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2010, 2013, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -25,6 +25,7 @@
 
 package jdk.nashorn.internal.parser;
 
+import java.util.Locale;
 import static jdk.nashorn.internal.parser.TokenKind.BINARY;
 import static jdk.nashorn.internal.parser.TokenKind.BRACKET;
 import static jdk.nashorn.internal.parser.TokenKind.FUTURE;
@@ -35,21 +36,15 @@ import static jdk.nashorn.internal.parser.TokenKind.LITERAL;
 import static jdk.nashorn.internal.parser.TokenKind.SPECIAL;
 import static jdk.nashorn.internal.parser.TokenKind.UNARY;
 
-import java.util.Locale;
-
 /**
  * Description of all the JavaScript tokens.
  */
 @SuppressWarnings("javadoc")
 public enum TokenType {
-    ERROR                (SPECIAL,  null),
-    EOF                  (SPECIAL,  null),
-    EOL                  (SPECIAL,  null),
-    COMMENT              (SPECIAL,  null),
-    // comments of the form //@ foo=bar or //# foo=bar
-    // These comments are treated as special instructions
-    // to the lexer, parser or codegenerator.
-    DIRECTIVE_COMMENT    (SPECIAL,  null),
+    ERROR          (SPECIAL,  null),
+    EOF            (SPECIAL,  null),
+    EOL            (SPECIAL,  null),
+    COMMENT        (SPECIAL,  null),
 
     NOT            (UNARY,   "!",    14, false),
     NE             (BINARY,  "!=",    9, true),
@@ -112,7 +107,7 @@ public enum TokenType {
     CATCH          (KEYWORD,  "catch"),
 //  CHAR           (FUTURE,   "char"),
     CLASS          (FUTURE,   "class"),
-    CONST          (KEYWORD,  "const"),
+    CONST          (FUTURE,  "const"),
     CONTINUE       (KEYWORD,  "continue"),
     DEBUGGER       (KEYWORD,  "debugger"),
     DEFAULT        (KEYWORD,  "default"),
@@ -183,6 +178,7 @@ public enum TokenType {
     ARRAY          (LITERAL,  null),
 
     COMMALEFT      (IR,       null),
+    DISCARD        (IR,       null),
     DECPOSTFIX     (IR,       null),
     INCPOSTFIX     (IR,       null);
 
@@ -222,11 +218,9 @@ public enum TokenType {
 
     /**
      * Determines if the token has greater precedence than other.
-     *
      * @param other  Compare token.
      * @param isLeft Is to the left of the other.
-     *
-     * @return {@code true} if greater precedence.
+     * @return True if greater precedence.
      */
     public boolean needsParens(final TokenType other, final boolean isLeft) {
         return other.precedence != 0 &&
@@ -236,16 +230,16 @@ public enum TokenType {
 
     /**
      * Determines if the type is a valid operator.
-     *
-     * @param noIn {@code true} if IN operator should be ignored.
-     *
-     * @return {@code true} if valid operator.
+     * @param noIn TRUE if IN operator should be ignored.
+     * @return TRUE if valid operator.
      */
     public boolean isOperator(final boolean noIn) {
         return kind == BINARY && (!noIn || this != IN) && precedence != 0;
     }
 
-
+    /**
+     * Accessors.
+     */
     public int getLength() {
         assert name != null : "Token name not set";
         return name.length();

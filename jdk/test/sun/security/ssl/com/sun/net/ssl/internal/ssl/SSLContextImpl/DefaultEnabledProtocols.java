@@ -34,7 +34,6 @@
 import javax.net.*;
 import javax.net.ssl.*;
 import java.util.Arrays;
-import java.security.Security;
 
 public class DefaultEnabledProtocols {
     static enum ContextVersion {
@@ -93,10 +92,6 @@ public class DefaultEnabledProtocols {
     }
 
     public static void main(String[] args) throws Exception {
-        // reset the security property to make sure that the algorithms
-        // and keys used in this test are not disabled.
-        Security.setProperty("jdk.tls.disabledAlgorithms", "");
-
         boolean failed = false;
         for (ContextVersion cv : ContextVersion.values()) {
             System.out.println("Checking SSLContext of " + cv.contextVersion);

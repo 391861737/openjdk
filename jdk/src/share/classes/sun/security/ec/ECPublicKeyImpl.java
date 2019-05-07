@@ -52,7 +52,7 @@ public final class ECPublicKeyImpl extends X509Key implements ECPublicKey {
      * ECKeyFactory.
      */
     @SuppressWarnings("deprecation")
-    public ECPublicKeyImpl(ECPoint w, ECParameterSpec params)
+    ECPublicKeyImpl(ECPoint w, ECParameterSpec params)
             throws InvalidKeyException {
         this.w = w;
         this.params = params;
@@ -65,7 +65,7 @@ public final class ECPublicKeyImpl extends X509Key implements ECPublicKey {
     /**
      * Construct a key from its encoding.
      */
-    public ECPublicKeyImpl(byte[] encoded) throws InvalidKeyException {
+    ECPublicKeyImpl(byte[] encoded) throws InvalidKeyException {
         decode(encoded);
     }
 

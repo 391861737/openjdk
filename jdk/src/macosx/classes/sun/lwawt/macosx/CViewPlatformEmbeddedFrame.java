@@ -74,13 +74,13 @@ public class CViewPlatformEmbeddedFrame implements PlatformWindow {
 
     @Override
     public void dispose() {
-        view.execute(CWrapper.NSView::removeFromSuperview);
+        CWrapper.NSView.removeFromSuperview(view.getAWTView());
         view.dispose();
     }
 
     @Override
     public void setVisible(boolean visible) {
-        view.execute(ptr -> CWrapper.NSView.setHidden(ptr, !visible));
+        CWrapper.NSView.setHidden(view.getAWTView(), !visible);
     }
 
     @Override
@@ -141,6 +141,11 @@ public class CViewPlatformEmbeddedFrame implements PlatformWindow {
 
     @Override
     public void setAlwaysOnTop(boolean value) {
+    }
+
+    @Override
+    public PlatformWindow getTopmostPlatformWindowUnderMouse() {
+        return null;
     }
 
     @Override

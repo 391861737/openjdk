@@ -188,7 +188,7 @@ Node *CMoveNode::Identity( PhaseTransform *phase ) {
 const Type *CMoveNode::Value( PhaseTransform *phase ) const {
   if( phase->type(in(Condition)) == Type::TOP )
     return Type::TOP;
-  return phase->type(in(IfFalse))->meet_speculative(phase->type(in(IfTrue)));
+  return phase->type(in(IfFalse))->meet(phase->type(in(IfTrue)));
 }
 
 //------------------------------make-------------------------------------------
@@ -392,14 +392,14 @@ Node *CMoveDNode::Ideal(PhaseGVN *phase, bool can_reshape) {
 //=============================================================================
 // If input is already higher or equal to cast type, then this is an identity.
 Node *ConstraintCastNode::Identity( PhaseTransform *phase ) {
-  return phase->type(in(1))->higher_equal_speculative(_type) ? in(1) : this;
+  return phase->type(in(1))->higher_equal(_type) ? in(1) : this;
 }
 
 //------------------------------Value------------------------------------------
 // Take 'join' of input and cast-up type
 const Type *ConstraintCastNode::Value( PhaseTransform *phase ) const {
   if( in(0) && phase->type(in(0)) == Type::TOP ) return Type::TOP;
-const Type* ft = phase->type(in(1))->filter_speculative(_type);
+  const Type* ft = phase->type(in(1))->filter(_type);
 
 #ifdef ASSERT
   // Previous versions of this function had some special case logic,
@@ -409,7 +409,7 @@ const Type* ft = phase->type(in(1))->filter_speculative(_type);
     {
       const Type* t1 = phase->type(in(1));
       if( t1 == Type::TOP )  assert(ft == Type::TOP, "special case #1");
-      const Type* rt = t1->join_speculative(_type);
+      const Type* rt = t1->join(_type);
       if (rt->empty())       assert(ft == Type::TOP, "special case #2");
       break;
     }
@@ -441,107 +441,6 @@ Node *ConstraintCastNode::Ideal_DU_postCCP( PhaseCCP *ccp ) {
   return this;
 }
 
-uint CastIINode::size_of() const {
-  return sizeof(*this);
-}
-
-uint CastIINode::cmp(const Node &n) const {
-  return TypeNode::cmp(n) &&
-         ((CastIINode&)n)._carry_dependency == _carry_dependency &&
-         ((CastIINode&)n)._range_check_dependency == _range_check_dependency;
-}
-
-Node *CastIINode::Identity(PhaseTransform *phase) {
-  if (_carry_dependency) {
-    return this;
-  }
-  return ConstraintCastNode::Identity(phase);
-}
-
-const Type *CastIINode::Value(PhaseTransform *phase) const {
-  const Type *res = ConstraintCastNode::Value(phase);
-
-  // Try to improve the type of the CastII if we recognize a CmpI/If
-  // pattern.
-  if (_carry_dependency) {
-    if (in(0) != NULL && in(0)->in(0) != NULL && in(0)->in(0)->is_If()) {
-      assert(in(0)->is_IfFalse() || in(0)->is_IfTrue(), "should be If proj");
-      Node* proj = in(0);
-      if (proj->in(0)->in(1)->is_Bool()) {
-        Node* b = proj->in(0)->in(1);
-        if (b->in(1)->Opcode() == Op_CmpI) {
-          Node* cmp = b->in(1);
-          if (cmp->in(1) == in(1) && phase->type(cmp->in(2))->isa_int()) {
-            const TypeInt* in2_t = phase->type(cmp->in(2))->is_int();
-            const Type* t = TypeInt::INT;
-            BoolTest test = b->as_Bool()->_test;
-            if (proj->is_IfFalse()) {
-              test = test.negate();
-            }
-            BoolTest::mask m = test._test;
-            jlong lo_long = min_jint;
-            jlong hi_long = max_jint;
-            if (m == BoolTest::le || m == BoolTest::lt) {
-              hi_long = in2_t->_hi;
-              if (m == BoolTest::lt) {
-                hi_long -= 1;
-              }
-            } else if (m == BoolTest::ge || m == BoolTest::gt) {
-              lo_long = in2_t->_lo;
-              if (m == BoolTest::gt) {
-                lo_long += 1;
-              }
-            } else if (m == BoolTest::eq) {
-              lo_long = in2_t->_lo;
-              hi_long = in2_t->_hi;
-            } else if (m == BoolTest::ne) {
-              // can't do any better
-            } else {
-              stringStream ss;
-              test.dump_on(&ss);
-              fatal(err_msg_res("unexpected comparison %s", ss.as_string()));
-            }
-            int lo_int = (int)lo_long;
-            int hi_int = (int)hi_long;
-
-            if (lo_long != (jlong)lo_int) {
-              lo_int = min_jint;
-            }
-            if (hi_long != (jlong)hi_int) {
-              hi_int = max_jint;
-            }
-
-            t = TypeInt::make(lo_int, hi_int, Type::WidenMax);
-
-            res = res->filter_speculative(t);
-
-            return res;
-          }
-        }
-      }
-    }
-  }
-  return res;
-}
-
-Node *CastIINode::Ideal_DU_postCCP(PhaseCCP *ccp) {
-  if (_carry_dependency || _range_check_dependency) {
-    return NULL;
-  }
-  return ConstraintCastNode::Ideal_DU_postCCP(ccp);
-}
-
-#ifndef PRODUCT
-void CastIINode::dump_spec(outputStream *st) const {
-  TypeNode::dump_spec(st);
-  if (_carry_dependency) {
-    st->print(" carry dependency");
-  }
-  if (_range_check_dependency) {
-    st->print(" range check dependency");
-  }
-}
-#endif
 
 //=============================================================================
 
@@ -999,7 +898,7 @@ Node *ConvI2LNode::Ideal(PhaseGVN *phase, bool can_reshape) {
   }
 
 #ifdef _LP64
-  // Convert ConvI2L(AddI(x, y)) to AddL(ConvI2L(x), ConvI2L(y))
+  // Convert ConvI2L(AddI(x, y)) to AddL(ConvI2L(x), ConvI2L(y)) ,
   // but only if x and y have subranges that cannot cause 32-bit overflow,
   // under the assumption that x+y is in my own subrange this->type().
 
@@ -1080,10 +979,9 @@ Node *ConvI2LNode::Ideal(PhaseGVN *phase, bool can_reshape) {
       rylo = -ryhi;
       ryhi = -rylo0;
     }
-    assert(rxlo == (int)rxlo && rxhi == (int)rxhi, "x should not overflow");
-    assert(rylo == (int)rylo && ryhi == (int)ryhi, "y should not overflow");
-    Node* cx = phase->C->constrained_convI2L(phase, x, TypeInt::make(rxlo, rxhi, widen), NULL);
-    Node* cy = phase->C->constrained_convI2L(phase, y, TypeInt::make(rylo, ryhi, widen), NULL);
+
+    Node* cx = phase->transform( new (phase->C) ConvI2LNode(x, TypeLong::make(rxlo, rxhi, widen)) );
+    Node* cy = phase->transform( new (phase->C) ConvI2LNode(y, TypeLong::make(rylo, ryhi, widen)) );
     switch (op) {
     case Op_AddI:  return new (phase->C) AddLNode(cx, cy);
     case Op_SubI:  return new (phase->C) SubLNode(cx, cy);
@@ -1344,30 +1242,6 @@ uint Opaque2Node::cmp( const Node &n ) const {
   return (&n == this);          // Always fail except on self
 }
 
-//=============================================================================
-
-uint ProfileBooleanNode::hash() const { return NO_HASH; }
-uint ProfileBooleanNode::cmp( const Node &n ) const {
-  return (&n == this);
-}
-
-Node *ProfileBooleanNode::Ideal(PhaseGVN *phase, bool can_reshape) {
-  if (can_reshape && _delay_removal) {
-    _delay_removal = false;
-    return this;
-  } else {
-    return NULL;
-  }
-}
-
-Node *ProfileBooleanNode::Identity( PhaseTransform *phase ) {
-  if (_delay_removal) {
-    return this;
-  } else {
-    assert(_consumed, "profile should be consumed before elimination");
-    return in(1);
-  }
-}
 
 //------------------------------Value------------------------------------------
 const Type *MoveL2DNode::Value( PhaseTransform *phase ) const {

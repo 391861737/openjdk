@@ -31,24 +31,16 @@ import static jdk.nashorn.internal.codegen.CompilerConstants.INIT_ARGUMENTS;
 import static jdk.nashorn.internal.codegen.CompilerConstants.INIT_MAP;
 import static jdk.nashorn.internal.codegen.CompilerConstants.INIT_SCOPE;
 import static jdk.nashorn.internal.codegen.CompilerConstants.JAVA_THIS;
-import static jdk.nashorn.internal.codegen.CompilerConstants.JS_OBJECT_DUAL_FIELD_PREFIX;
-import static jdk.nashorn.internal.codegen.CompilerConstants.JS_OBJECT_SINGLE_FIELD_PREFIX;
+import static jdk.nashorn.internal.codegen.CompilerConstants.JS_OBJECT_PREFIX;
 import static jdk.nashorn.internal.codegen.CompilerConstants.className;
 import static jdk.nashorn.internal.codegen.CompilerConstants.constructorNoLookup;
 import static jdk.nashorn.internal.lookup.Lookup.MH;
-import static jdk.nashorn.internal.runtime.JSType.CONVERT_OBJECT;
-import static jdk.nashorn.internal.runtime.JSType.CONVERT_OBJECT_OPTIMISTIC;
-import static jdk.nashorn.internal.runtime.JSType.GET_UNDEFINED;
-import static jdk.nashorn.internal.runtime.JSType.TYPE_DOUBLE_INDEX;
-import static jdk.nashorn.internal.runtime.JSType.TYPE_INT_INDEX;
-import static jdk.nashorn.internal.runtime.JSType.TYPE_OBJECT_INDEX;
-import static jdk.nashorn.internal.runtime.JSType.TYPE_UNDEFINED_INDEX;
-import static jdk.nashorn.internal.runtime.JSType.getAccessorTypeIndex;
-import static jdk.nashorn.internal.runtime.UnwarrantedOptimismException.isValid;
 
 import java.lang.invoke.MethodHandle;
 import java.lang.invoke.MethodHandles;
 import java.lang.invoke.MethodType;
+import java.util.Arrays;
+import java.util.Collections;
 import java.util.EnumSet;
 import java.util.Iterator;
 import java.util.LinkedList;
@@ -56,36 +48,25 @@ import java.util.List;
 import jdk.nashorn.internal.codegen.ClassEmitter.Flag;
 import jdk.nashorn.internal.codegen.types.Type;
 import jdk.nashorn.internal.runtime.AccessorProperty;
-import jdk.nashorn.internal.runtime.AllocationStrategy;
 import jdk.nashorn.internal.runtime.Context;
+import jdk.nashorn.internal.runtime.DebugLogger;
 import jdk.nashorn.internal.runtime.FunctionScope;
 import jdk.nashorn.internal.runtime.JSType;
 import jdk.nashorn.internal.runtime.PropertyMap;
 import jdk.nashorn.internal.runtime.ScriptEnvironment;
 import jdk.nashorn.internal.runtime.ScriptObject;
-import jdk.nashorn.internal.runtime.Undefined;
-import jdk.nashorn.internal.runtime.UnwarrantedOptimismException;
-import jdk.nashorn.internal.runtime.logging.DebugLogger;
-import jdk.nashorn.internal.runtime.logging.Loggable;
-import jdk.nashorn.internal.runtime.logging.Logger;
+import jdk.nashorn.internal.runtime.ScriptRuntime;
+import jdk.nashorn.internal.runtime.options.Options;
 
 /**
  * Generates the ScriptObject subclass structure with fields for a user objects.
  */
-@Logger(name="fields")
-public final class ObjectClassGenerator implements Loggable {
+public final class ObjectClassGenerator {
 
     /**
-     * Type guard to make sure we don't unnecessarily explode field storages. Rather unbox e.g.
-     * a java.lang.Number than blow up the field. Gradually, optimistic types should create almost
-     * no boxed types
+     * Marker for scope parameters.
      */
-    private static final MethodHandle IS_TYPE_GUARD = findOwnMH("isType", boolean.class, Class.class, Object.class);
-
-    /**
-     * Marker for scope parameters
-     */
-    private static final String SCOPE_MARKER = "P";
+    static final String SCOPE_MARKER = "P";
 
     /**
      * Minimum number of extra fields in an object.
@@ -96,95 +77,140 @@ public final class ObjectClassGenerator implements Loggable {
      * Debug field logger
      * Should we print debugging information for fields when they are generated and getters/setters are called?
      */
-    private final DebugLogger log;
+    public static final DebugLogger LOG = new DebugLogger("fields", "nashorn.fields.debug");
 
-    /** Field types for object-only fields */
-    private static final Type[] FIELD_TYPES_OBJECT = new Type[] { Type.OBJECT };
-    /** Field types for dual primitive/object fields */
-    private static final Type[] FIELD_TYPES_DUAL   = new Type[] { Type.LONG, Type.OBJECT };
+    /**
+     * is field debugging enabled. Several modules in codegen and properties use this, hence
+     * public access.
+     */
+    public static final boolean DEBUG_FIELDS = LOG.isEnabled();
+
+    /**
+     * Should the runtime only use java.lang.Object slots for fields? If this is false, the representation
+     * will be a primitive 64-bit long value used for all primitives and a java.lang.Object for references.
+     * This introduces a larger number of method handles in the system, as we need to have different getters
+     * and setters for the different fields. Currently this introduces significant overhead in Hotspot.
+     *
+     * This is engineered to plug into the TaggedArray implementation, when it's done.
+     */
+    public static final boolean OBJECT_FIELDS_ONLY = !Options.getBooleanProperty("nashorn.fields.dual");
+
+    /** The field types in the system */
+    private static final List<Type> FIELD_TYPES = new LinkedList<>();
 
     /** What type is the primitive type in dual representation */
-    public static final Type PRIMITIVE_FIELD_TYPE = Type.LONG;
+    public static final Type PRIMITIVE_TYPE = Type.LONG;
 
-    private static final MethodHandle GET_DIFFERENT           = findOwnMH("getDifferent", Object.class, Object.class, Class.class, MethodHandle.class, MethodHandle.class, int.class);
-    private static final MethodHandle GET_DIFFERENT_UNDEFINED = findOwnMH("getDifferentUndefined", Object.class, int.class);
-
-    private static boolean initialized = false;
+    /**
+     * The list of field types that we support - one type creates one field. This is currently either
+     * LONG + OBJECT or just OBJECT for classic mode.
+     */
+    static {
+        if (!OBJECT_FIELDS_ONLY) {
+            System.err.println("WARNING!!! Running with primitive fields - there is untested functionality!");
+            FIELD_TYPES.add(PRIMITIVE_TYPE);
+        }
+        FIELD_TYPES.add(Type.OBJECT);
+    }
 
     /** The context */
     private final Context context;
 
-    private final boolean dualFields;
+    /**
+     * The list of available accessor types in width order. This order is used for type guesses narrow{@literal ->} wide
+     *  in the dual--fields world
+     */
+    public static final List<Type> ACCESSOR_TYPES = Collections.unmodifiableList(
+            Arrays.asList(
+                Type.INT,
+                Type.LONG,
+                Type.NUMBER,
+                Type.OBJECT));
+
+    //these are hard coded for speed and so that we can switch on them
+    private static final int TYPE_INT_INDEX    = 0; //getAccessorTypeIndex(int.class);
+    private static final int TYPE_LONG_INDEX   = 1; //getAccessorTypeIndex(long.class);
+    private static final int TYPE_DOUBLE_INDEX = 2; //getAccessorTypeIndex(double.class);
+    private static final int TYPE_OBJECT_INDEX = 3; //getAccessorTypeIndex(Object.class);
 
     /**
      * Constructor
      *
      * @param context a context
-     * @param dualFields whether to use dual fields representation
      */
-    public ObjectClassGenerator(final Context context, final boolean dualFields) {
+    public ObjectClassGenerator(final Context context) {
         this.context = context;
-        this.dualFields = dualFields;
         assert context != null;
-        this.log = initLogger(context);
-        if (!initialized) {
-            initialized = true;
-            if (!dualFields) {
-                log.warning("Running with object fields only - this is a deprecated configuration.");
-            }
-        }
-    }
-
-    @Override
-    public DebugLogger getLogger() {
-        return log;
-    }
-
-    @Override
-    public DebugLogger initLogger(final Context ctxt) {
-        return ctxt.getLogger(this.getClass());
     }
 
     /**
-     * Pack a number into a primitive long field
-     * @param n number object
-     * @return primitive long value with all the bits in the number
+     * Given a type of an accessor, return its index in [0..getNumberOfAccessorTypes())
+     *
+     * @param type the type
+     *
+     * @return the accessor index, or -1 if no accessor of this type exists
      */
-    public static long pack(final Number n) {
-        if (n instanceof Integer) {
-            return n.intValue();
-        } else if (n instanceof Long) {
-            return n.longValue();
-        } else if (n instanceof Double) {
-            return Double.doubleToRawLongBits(n.doubleValue());
-        }
-        throw new AssertionError("cannot pack" + n);
+    public static int getAccessorTypeIndex(final Type type) {
+        return getAccessorTypeIndex(type.getTypeClass());
     }
 
-    private static String getPrefixName(final boolean dualFields) {
-        return dualFields ? JS_OBJECT_DUAL_FIELD_PREFIX.symbolName() : JS_OBJECT_SINGLE_FIELD_PREFIX.symbolName();
+    /**
+     * Given a class of an accessor, return its index in [0..getNumberOfAccessorTypes())
+     *
+     * Note that this is hardcoded with respect to the dynamic contents of the accessor
+     * types array for speed. Hotspot got stuck with this as 5% of the runtime in
+     * a benchmark when it looped over values and increased an index counter. :-(
+     *
+     * @param type the type
+     *
+     * @return the accessor index, or -1 if no accessor of this type exists
+     */
+    public static int getAccessorTypeIndex(final Class<?> type) {
+        if (type == int.class) {
+            return 0;
+        } else if (type == long.class) {
+            return 1;
+        } else if (type == double.class) {
+            return 2;
+        } else if (!type.isPrimitive()) {
+            return 3;
+        }
+        return -1;
     }
 
-    private static String getPrefixName(final String className) {
-        if (className.startsWith(JS_OBJECT_DUAL_FIELD_PREFIX.symbolName())) {
-            return getPrefixName(true);
-        } else if (className.startsWith(JS_OBJECT_SINGLE_FIELD_PREFIX.symbolName())) {
-            return getPrefixName(false);
-        }
-        throw new AssertionError("Not a structure class: " + className);
+    /**
+     * Return the number of accessor types available.
+     *
+     * @return number of accessor types in system
+     */
+    public static int getNumberOfAccessorTypes() {
+        return ACCESSOR_TYPES.size();
+    }
+
+    /**
+     * Return the accessor type based on its index in [0..getNumberOfAccessorTypes())
+     * Indexes are ordered narrower{@literal ->}wider / optimistic{@literal ->}pessimistic. Invalidations always
+     * go to a type of higher index
+     *
+     * @param index accessor type index
+     *
+     * @return a type corresponding to the index.
+     */
+
+    public static Type getAccessorType(final int index) {
+        return ACCESSOR_TYPES.get(index);
     }
 
     /**
      * Returns the class name for JavaScript objects with fieldCount fields.
      *
      * @param fieldCount Number of fields to allocate.
-     * @param dualFields whether to use dual fields representation
+     *
      * @return The class name.
      */
-    public static String getClassName(final int fieldCount, final boolean dualFields) {
-        final String prefix = getPrefixName(dualFields);
-        return fieldCount != 0 ? SCRIPTS_PACKAGE + '/' + prefix + fieldCount :
-                                 SCRIPTS_PACKAGE + '/' + prefix;
+    public static String getClassName(final int fieldCount) {
+        return fieldCount != 0 ? SCRIPTS_PACKAGE + '/' + JS_OBJECT_PREFIX.symbolName() + fieldCount :
+                                 SCRIPTS_PACKAGE + '/' + JS_OBJECT_PREFIX.symbolName();
     }
 
     /**
@@ -193,24 +219,23 @@ public final class ObjectClassGenerator implements Loggable {
      *
      * @param fieldCount Number of fields to allocate.
      * @param paramCount Number of parameters to allocate
-     * @param dualFields whether to use dual fields representation
+     *
      * @return The class name.
      */
-    public static String getClassName(final int fieldCount, final int paramCount, final boolean dualFields) {
-        return SCRIPTS_PACKAGE + '/' + getPrefixName(dualFields) + fieldCount + SCOPE_MARKER + paramCount;
+    public static String getClassName(final int fieldCount, final int paramCount) {
+        return SCRIPTS_PACKAGE + '/' + JS_OBJECT_PREFIX.symbolName() + fieldCount + SCOPE_MARKER + paramCount;
     }
 
     /**
      * Returns the number of fields in the JavaScript scope class. Its name had to be generated using either
-     * {@link #getClassName(int, boolean)} or {@link #getClassName(int, int, boolean)}.
+     * {@link #getClassName(int)} or {@link #getClassName(int, int)}.
      * @param clazz the JavaScript scope class.
      * @return the number of fields in the scope class.
      */
-    public static int getFieldCount(final Class<?> clazz) {
+    public static int getFieldCount(Class<?> clazz) {
         final String name = clazz.getSimpleName();
-        final String prefix = getPrefixName(name);
-
-        if (prefix.equals(name)) {
+        final String prefix = JS_OBJECT_PREFIX.symbolName();
+        if(prefix.equals(name)) {
             return 0;
         }
         final int scopeMarker = name.indexOf(SCOPE_MARKER);
@@ -238,17 +263,14 @@ public final class ObjectClassGenerator implements Loggable {
      * @param className  name of class
      * @param fieldNames fields to initialize to undefined, where applicable
      */
-    private void initializeToUndefined(final MethodEmitter init, final String className, final List<String> fieldNames) {
-        if (dualFields) {
-            // no need to initialize anything to undefined in the dual field world
-            // - then we have a constant getter for undefined for any unknown type
-            return;
-        }
-
+    private static void initializeToUndefined(final MethodEmitter init, final String className, final List<String> fieldNames) {
         if (fieldNames.isEmpty()) {
             return;
         }
 
+        // always initialize fields to undefined, even with --dual-fields. Then it's ok to
+        // remember things like "widest set type" in properties, and if it's object, don't
+        // add any special "return undefined" getters, saving an invalidation
         init.load(Type.OBJECT, JAVA_THIS.slot());
         init.loadUndefined(Type.OBJECT);
 
@@ -292,7 +314,7 @@ public final class ObjectClassGenerator implements Loggable {
      * @return Byte codes for generated class.
      */
     public byte[] generate(final int fieldCount) {
-        final String       className    = getClassName(fieldCount, dualFields);
+        final String       className    = getClassName(fieldCount);
         final String       superName    = className(ScriptObject.class);
         final ClassEmitter classEmitter = newClassEmitter(className, superName);
 
@@ -302,14 +324,10 @@ public final class ObjectClassGenerator implements Loggable {
         init.returnVoid();
         init.end();
 
-        final MethodEmitter initWithSpillArrays = newInitWithSpillArraysMethod(classEmitter, ScriptObject.class);
-        initWithSpillArrays.returnVoid();
-        initWithSpillArrays.end();
+        newEmptyInit(classEmitter, className);
+        newAllocate(classEmitter, className);
 
-        newEmptyInit(className, classEmitter);
-        newAllocate(className, classEmitter);
-
-        return toByteArray(className, classEmitter);
+        return toByteArray(classEmitter);
     }
 
     /**
@@ -322,8 +340,8 @@ public final class ObjectClassGenerator implements Loggable {
      * @return Byte codes for generated class.
      */
     public byte[] generate(final int fieldCount, final int paramCount) {
-        final String       className    = getClassName(fieldCount, paramCount, dualFields);
-        final String       superName    = className(FunctionScope.class);
+        final String className          = getClassName(fieldCount, paramCount);
+        final String superName          = className(FunctionScope.class);
         final ClassEmitter classEmitter = newClassEmitter(className, superName);
         final List<String> initFields   = addFields(classEmitter, fieldCount);
 
@@ -332,17 +350,12 @@ public final class ObjectClassGenerator implements Loggable {
         init.returnVoid();
         init.end();
 
-        final MethodEmitter initWithSpillArrays = newInitWithSpillArraysMethod(classEmitter, FunctionScope.class);
-        initializeToUndefined(initWithSpillArrays, className, initFields);
-        initWithSpillArrays.returnVoid();
-        initWithSpillArrays.end();
-
         final MethodEmitter initWithArguments = newInitScopeWithArgumentsMethod(classEmitter);
         initializeToUndefined(initWithArguments, className, initFields);
         initWithArguments.returnVoid();
         initWithArguments.end();
 
-        return toByteArray(className, classEmitter);
+        return toByteArray(classEmitter);
     }
 
     /**
@@ -353,11 +366,11 @@ public final class ObjectClassGenerator implements Loggable {
      *
      * @return List fields that need to be initialized.
      */
-    private List<String> addFields(final ClassEmitter classEmitter, final int fieldCount) {
+    private static List<String> addFields(final ClassEmitter classEmitter, final int fieldCount) {
         final List<String> initFields = new LinkedList<>();
-        final Type[] fieldTypes = dualFields ? FIELD_TYPES_DUAL : FIELD_TYPES_OBJECT;
+
         for (int i = 0; i < fieldCount; i++) {
-            for (final Type type : fieldTypes) {
+            for (final Type type : FIELD_TYPES) {
                 final String fieldName = getFieldName(i, type);
                 classEmitter.field(fieldName, type.getTypeClass());
 
@@ -378,7 +391,7 @@ public final class ObjectClassGenerator implements Loggable {
      * @return Open class emitter.
      */
     private ClassEmitter newClassEmitter(final String className, final String superName) {
-        final ClassEmitter classEmitter = new ClassEmitter(context, className, superName);
+        final ClassEmitter classEmitter = new ClassEmitter(context.getEnv(), className, superName);
         classEmitter.begin();
 
         return classEmitter;
@@ -397,18 +410,6 @@ public final class ObjectClassGenerator implements Loggable {
         init.load(Type.OBJECT, JAVA_THIS.slot());
         init.load(Type.OBJECT, INIT_MAP.slot());
         init.invoke(constructorNoLookup(ScriptObject.class, PropertyMap.class));
-
-        return init;
-    }
-
-     private static MethodEmitter newInitWithSpillArraysMethod(final ClassEmitter classEmitter, final Class<?> superClass) {
-        final MethodEmitter init = classEmitter.init(PropertyMap.class, long[].class, Object[].class);
-        init.begin();
-        init.load(Type.OBJECT, JAVA_THIS.slot());
-        init.load(Type.OBJECT, INIT_MAP.slot());
-        init.load(Type.LONG_ARRAY, 2);
-        init.load(Type.OBJECT_ARRAY, 3);
-        init.invoke(constructorNoLookup(superClass, PropertyMap.class, long[].class, Object[].class));
 
         return init;
     }
@@ -452,7 +453,7 @@ public final class ObjectClassGenerator implements Loggable {
      * @param classEmitter Open class emitter.
      * @param className    Name of JavaScript class.
      */
-    private static void newEmptyInit(final String className, final ClassEmitter classEmitter) {
+    private static void newEmptyInit(final ClassEmitter classEmitter, final String className) {
         final MethodEmitter emptyInit = classEmitter.init();
         emptyInit.begin();
         emptyInit.load(Type.OBJECT, JAVA_THIS.slot());
@@ -468,10 +469,10 @@ public final class ObjectClassGenerator implements Loggable {
      * @param classEmitter Open class emitter.
      * @param className    Name of JavaScript class.
      */
-    private static void newAllocate(final String className, final ClassEmitter classEmitter) {
+    private static void newAllocate(final ClassEmitter classEmitter, final String className) {
         final MethodEmitter allocate = classEmitter.method(EnumSet.of(Flag.PUBLIC, Flag.STATIC), ALLOCATE.symbolName(), ScriptObject.class, PropertyMap.class);
         allocate.begin();
-        allocate._new(className, Type.typeFor(ScriptObject.class));
+        allocate._new(className);
         allocate.dup();
         allocate.load(Type.typeFor(PropertyMap.class), 0);
         allocate.invoke(constructorNoLookup(className, PropertyMap.class));
@@ -485,13 +486,15 @@ public final class ObjectClassGenerator implements Loggable {
      * @param classEmitter Open class emitter.
      * @return Byte codes for the class.
      */
-    private byte[] toByteArray(final String className, final ClassEmitter classEmitter) {
+    private byte[] toByteArray(final ClassEmitter classEmitter) {
         classEmitter.end();
 
         final byte[] code = classEmitter.toByteArray();
         final ScriptEnvironment env = context.getEnv();
 
-        DumpBytecode.dumpBytecode(env, log, code, className);
+        if (env._print_code) {
+            env.getErr().println(ClassEmitter.disassemble(code));
+        }
 
         if (env._verify_code) {
             context.verify(code);
@@ -501,154 +504,20 @@ public final class ObjectClassGenerator implements Loggable {
     }
 
     /** Double to long bits, used with --dual-fields for primitive double values */
-    public static final MethodHandle PACK_DOUBLE =
+    private static final MethodHandle PACK_DOUBLE =
         MH.explicitCastArguments(MH.findStatic(MethodHandles.publicLookup(), Double.class, "doubleToRawLongBits", MH.type(long.class, double.class)), MH.type(long.class, double.class));
 
     /** double bits to long, used with --dual-fields for primitive double values */
-    public static final MethodHandle UNPACK_DOUBLE =
+    private static MethodHandle UNPACK_DOUBLE =
         MH.findStatic(MethodHandles.publicLookup(), Double.class, "longBitsToDouble", MH.type(double.class, long.class));
 
-    //type != forType, so use the correct getter for forType, box it and throw
-    @SuppressWarnings("unused")
-    private static Object getDifferent(final Object receiver, final Class<?> forType, final MethodHandle primitiveGetter, final MethodHandle objectGetter, final int programPoint) {
-        //create the sametype getter, and upcast to value. no matter what the store format is,
-        //
-        final MethodHandle sameTypeGetter = getterForType(forType, primitiveGetter, objectGetter);
-        final MethodHandle mh = MH.asType(sameTypeGetter, sameTypeGetter.type().changeReturnType(Object.class));
-        try {
-            final Object value = mh.invokeExact(receiver);
-            throw new UnwarrantedOptimismException(value, programPoint);
-        } catch (final Error | RuntimeException e) {
-            throw e;
-        } catch (final Throwable e) {
-            throw new RuntimeException(e);
-        }
-    }
-
-    @SuppressWarnings("unused")
-    private static Object getDifferentUndefined(final int programPoint) {
-        throw new UnwarrantedOptimismException(Undefined.getUndefined(), programPoint);
-    }
-
-    private static MethodHandle getterForType(final Class<?> forType, final MethodHandle primitiveGetter, final MethodHandle objectGetter) {
-        switch (getAccessorTypeIndex(forType)) {
-        case TYPE_INT_INDEX:
-            return MH.explicitCastArguments(primitiveGetter, primitiveGetter.type().changeReturnType(int.class));
-        case TYPE_DOUBLE_INDEX:
-            return MH.filterReturnValue(primitiveGetter, UNPACK_DOUBLE);
-        case TYPE_OBJECT_INDEX:
-            return objectGetter;
-        default:
-            throw new AssertionError(forType);
-        }
-    }
-
-    //no optimism here. we do unconditional conversion to types
-    private static MethodHandle createGetterInner(final Class<?> forType, final Class<?> type, final MethodHandle primitiveGetter, final MethodHandle objectGetter, final List<MethodHandle> converters, final int programPoint) {
-        final int fti = forType == null ? TYPE_UNDEFINED_INDEX : getAccessorTypeIndex(forType);
-        final int ti  = getAccessorTypeIndex(type);
-        //this means fail if forType != type
-        final boolean isOptimistic = converters == CONVERT_OBJECT_OPTIMISTIC;
-        final boolean isPrimitiveStorage = forType != null && forType.isPrimitive();
-
-        //which is the primordial getter
-        final MethodHandle getter = primitiveGetter == null ? objectGetter : isPrimitiveStorage ? primitiveGetter : objectGetter;
-
-        if (forType == null) {
-            if (isOptimistic) {
-                //return undefined if asking for object. otherwise throw UnwarrantedOptimismException
-                if (ti == TYPE_OBJECT_INDEX) {
-                    return MH.dropArguments(GET_UNDEFINED.get(TYPE_OBJECT_INDEX), 0, Object.class);
-                }
-                //throw exception
-                return MH.asType(
-                    MH.dropArguments(
-                            MH.insertArguments(
-                                    GET_DIFFERENT_UNDEFINED,
-                                    0,
-                                    programPoint),
-                            0,
-                            Object.class),
-                    getter.type().changeReturnType(type));
-            }
-            //return an undefined and coerce it to the appropriate type
-            return MH.dropArguments(GET_UNDEFINED.get(ti), 0, Object.class);
-        }
-
-        assert primitiveGetter != null || forType == Object.class : forType;
-
-        if (isOptimistic) {
-            if (fti < ti) {
-                //asking for a wider type than currently stored. then it's OK to coerce.
-                //e.g. stored as int,  ask for long or double
-                //e.g. stored as long, ask for double
-                assert fti != TYPE_UNDEFINED_INDEX;
-                final MethodHandle tgetter = getterForType(forType, primitiveGetter, objectGetter);
-                return MH.asType(tgetter, tgetter.type().changeReturnType(type));
-            } else if (fti == ti) {
-                //Fast path, never throw exception - exact getter, just unpack if needed
-                return getterForType(forType, primitiveGetter, objectGetter);
-            } else {
-                assert fti > ti;
-                //if asking for a narrower type than the storage - throw exception
-                //unless FTI is object, in that case we have to go through the converters
-                //there is no
-                if (fti == TYPE_OBJECT_INDEX) {
-                    return MH.filterReturnValue(
-                            objectGetter,
-                            MH.insertArguments(
-                                    converters.get(ti),
-                                    1,
-                                    programPoint));
-                }
-
-                //asking for narrower primitive than we have stored, that is an
-                //UnwarrantedOptimismException
-                return MH.asType(
-                        MH.filterArguments(
-                            objectGetter,
-                            0,
-                            MH.insertArguments(
-                                    GET_DIFFERENT,
-                                    1,
-                                    forType,
-                                    primitiveGetter,
-                                    objectGetter,
-                                    programPoint)),
-                        objectGetter.type().changeReturnType(type));
-            }
-        }
-
-        assert !isOptimistic;
-        // freely coerce the result to whatever you asked for, this is e.g. Object->int for a & b
-        final MethodHandle tgetter = getterForType(forType, primitiveGetter, objectGetter);
-        if (fti == TYPE_OBJECT_INDEX) {
-            if (fti != ti) {
-                return MH.filterReturnValue(tgetter, CONVERT_OBJECT.get(ti));
-            }
-            return tgetter;
-        }
-
-        assert primitiveGetter != null;
-        final MethodType tgetterType = tgetter.type();
-        switch (fti) {
-        case TYPE_INT_INDEX: {
-            return MH.asType(tgetter, tgetterType.changeReturnType(type));
-        }
-        case TYPE_DOUBLE_INDEX:
-            switch (ti) {
-            case TYPE_INT_INDEX:
-                return MH.filterReturnValue(tgetter, JSType.TO_INT32_D.methodHandle);
-            case TYPE_DOUBLE_INDEX:
-                assert tgetterType.returnType() == double.class;
-                return tgetter;
-            default:
-                return MH.asType(tgetter, tgetterType.changeReturnType(Object.class));
-            }
-        default:
-            throw new UnsupportedOperationException(forType + "=>" + type);
-        }
-    }
+    /** object conversion quickies with JS semantics - used for return value and parameter filter */
+    private static MethodHandle[] CONVERT_OBJECT = {
+        JSType.TO_INT32.methodHandle(),
+        JSType.TO_UINT32.methodHandle(),
+        JSType.TO_NUMBER.methodHandle(),
+        null
+    };
 
     /**
      * Given a primitiveGetter (optional for non dual fields) and an objectSetter that retrieve
@@ -657,7 +526,7 @@ public final class ObjectClassGenerator implements Loggable {
      * and we want an Object getter, in the dual fields world we'd pick the primitiveGetter,
      * which reads a long, use longBitsToDouble on the result to unpack it, and then change the
      * return type to Object, boxing it. In the objects only world there are only object fields,
-     * primitives are boxed when asked for them and we don't need to bother with primitive encoding
+     * primtives are boxed when asked for them and we don't need to bother with primitive encoding
      * (or even undefined, which if forType==null) representation, so we just return whatever is
      * in the object field. The object field is always initiated to Undefined, so here, where we have
      * the representation for Undefined in all our bits, this is not a problem.
@@ -674,72 +543,62 @@ public final class ObjectClassGenerator implements Loggable {
      * @param type            type to retrieve it as
      * @param primitiveGetter getter to read the primitive version of this field (null if Objects Only)
      * @param objectGetter    getter to read the object version of this field
-     * @param programPoint    program point for getter, if program point is INVALID_PROGRAM_POINT, then this is not an optimistic getter
      *
      * @return getter for the given representation that returns the given type
      */
-    public static MethodHandle createGetter(final Class<?> forType, final Class<?> type, final MethodHandle primitiveGetter, final MethodHandle objectGetter, final int programPoint) {
-        return createGetterInner(
-                forType,
-                type,
-                primitiveGetter,
-                objectGetter,
-                isValid(programPoint) ? CONVERT_OBJECT_OPTIMISTIC : CONVERT_OBJECT,
-                programPoint);
-    }
-
-    /**
-     * This is similar to the {@link ObjectClassGenerator#createGetter} function. Performs
-     * the necessary operations to massage a setter operand of type {@code type} to
-     * fit into the primitive field (if primitive and dual fields is enabled) or into
-     * the object field (box if primitive and dual fields is disabled)
-     *
-     * @param forType         representation of the underlying object
-     * @param type            representation of field to write, and setter signature
-     * @param primitiveSetter setter that writes to the primitive field (null if Objects Only)
-     * @param objectSetter    setter that writes to the object field
-     *
-     * @return the setter for the given representation that takes a {@code type}
-     */
-    public static MethodHandle createSetter(final Class<?> forType, final Class<?> type, final MethodHandle primitiveSetter, final MethodHandle objectSetter) {
-        assert forType != null;
-
-        final int fti = getAccessorTypeIndex(forType);
+    public static MethodHandle createGetter(final Class<?> forType, final Class<?> type, final MethodHandle primitiveGetter, final MethodHandle objectGetter) {
+        final int fti = forType == null ? -1 : getAccessorTypeIndex(forType);
         final int ti  = getAccessorTypeIndex(type);
 
-        if (fti == TYPE_OBJECT_INDEX || primitiveSetter == null) {
+        if (fti == TYPE_OBJECT_INDEX || OBJECT_FIELDS_ONLY) {
             if (ti == TYPE_OBJECT_INDEX) {
-                return objectSetter;
+                return objectGetter;
             }
 
-            return MH.asType(objectSetter, objectSetter.type().changeParameterType(1, type));
+            return MH.filterReturnValue(objectGetter, CONVERT_OBJECT[ti]);
         }
 
-        final MethodType pmt = primitiveSetter.type();
+        assert !OBJECT_FIELDS_ONLY;
+        if (forType == null) {
+            return GET_UNDEFINED[ti];
+        }
+
+        final MethodType pmt = primitiveGetter.type();
 
         switch (fti) {
         case TYPE_INT_INDEX:
+        case TYPE_LONG_INDEX:
             switch (ti) {
             case TYPE_INT_INDEX:
-                return MH.asType(primitiveSetter, pmt.changeParameterType(1, int.class));
-            case TYPE_DOUBLE_INDEX:
-                return MH.filterArguments(primitiveSetter, 1, PACK_DOUBLE);
+                //get int while an int, truncating cast of long value
+                return MH.explicitCastArguments(primitiveGetter, pmt.changeReturnType(int.class));
+            case TYPE_LONG_INDEX:
+                return primitiveGetter;
             default:
-                return objectSetter;
+                return MH.asType(primitiveGetter, pmt.changeReturnType(type));
             }
         case TYPE_DOUBLE_INDEX:
-            if (ti == TYPE_OBJECT_INDEX) {
-                return objectSetter;
+            final MethodHandle getPrimitiveAsDouble = MH.filterReturnValue(primitiveGetter, UNPACK_DOUBLE);
+            switch (ti) {
+            case TYPE_INT_INDEX:
+            case TYPE_LONG_INDEX:
+                return MH.explicitCastArguments(getPrimitiveAsDouble, pmt.changeReturnType(type));
+            case TYPE_DOUBLE_INDEX:
+                return getPrimitiveAsDouble;
+            default:
+                return MH.asType(getPrimitiveAsDouble, pmt.changeReturnType(Object.class));
             }
-            return MH.asType(MH.filterArguments(primitiveSetter, 1, PACK_DOUBLE), pmt.changeParameterType(1, type));
         default:
-            throw new UnsupportedOperationException(forType + "=>" + type);
+            assert false;
+            return null;
         }
     }
 
+    private static final MethodHandle IS_TYPE_GUARD = findOwnMH("isType", boolean.class, Class.class, Object.class);
+
     @SuppressWarnings("unused")
     private static boolean isType(final Class<?> boxedForType, final Object x) {
-        return x != null && x.getClass() == boxedForType;
+        return x.getClass() == boxedForType;
     }
 
     private static Class<? extends Number> getBoxedType(final Class<?> forType) {
@@ -768,13 +627,14 @@ public final class ObjectClassGenerator implements Loggable {
      * @param primitiveSetter   primitive setter for the current type with an element of the current type
      * @param objectSetter      the object setter
      *
-     * @return method handle that checks if the element to be set is of the current type, even though it's boxed
+     * @return method handle that checks if the element to be set is of the currenttype, even though it's boxed
      *  and instead of using the generic object setter, that would blow up the type and invalidate the map,
      *  unbox it and call the primitive setter instead
      */
     public static MethodHandle createGuardBoxedPrimitiveSetter(final Class<?> forType, final MethodHandle primitiveSetter, final MethodHandle objectSetter) {
         final Class<? extends Number> boxedForType = getBoxedType(forType);
         //object setter that checks for primitive if current type is primitive
+
         return MH.guardWithTest(
             MH.insertArguments(
                 MH.dropArguments(
@@ -788,6 +648,62 @@ public final class ObjectClassGenerator implements Loggable {
                     objectSetter.type()),
                 objectSetter);
     }
+
+    /**
+     * This is similar to the {@link ObjectClassGenerator#createGetter} function. Performs
+     * the necessary operations to massage a setter operand of type {@code type} to
+     * fit into the primitive field (if primitive and dual fields is enabled) or into
+     * the object field (box if primitive and dual fields is disabled)
+     *
+     * @param forType         representation of the underlying object
+     * @param type            representation of field to write, and setter signature
+     * @param primitiveSetter setter that writes to the primitive field (null if Objects Only)
+     * @param objectSetter    setter that writes to the object field
+     *
+     * @return the setter for the given representation that takes a {@code type}
+     */
+    public static MethodHandle createSetter(final Class<?> forType, final Class<?> type, final MethodHandle primitiveSetter, final MethodHandle objectSetter) {
+        assert forType != null;
+
+        final int fti = getAccessorTypeIndex(forType);
+        final int ti  = getAccessorTypeIndex(type);
+
+        if (fti == TYPE_OBJECT_INDEX || OBJECT_FIELDS_ONLY) {
+            if (ti == TYPE_OBJECT_INDEX) {
+                return objectSetter;
+            }
+
+            return MH.asType(objectSetter, objectSetter.type().changeParameterType(1, type));
+        }
+
+        assert !OBJECT_FIELDS_ONLY;
+
+        final MethodType pmt = primitiveSetter.type();
+
+        switch (fti) {
+        case TYPE_INT_INDEX:
+        case TYPE_LONG_INDEX:
+            switch (ti) {
+            case TYPE_INT_INDEX:
+                return MH.asType(primitiveSetter, pmt.changeParameterType(1, int.class));
+            case TYPE_LONG_INDEX:
+                return primitiveSetter;
+            case TYPE_DOUBLE_INDEX:
+                return MH.filterArguments(primitiveSetter, 1, PACK_DOUBLE);
+            default:
+                return objectSetter;
+            }
+        case TYPE_DOUBLE_INDEX:
+            if (ti == TYPE_OBJECT_INDEX) {
+                return objectSetter;
+            }
+            return MH.asType(MH.filterArguments(primitiveSetter, 1, PACK_DOUBLE), pmt.changeParameterType(1, type));
+        default:
+            assert false;
+            return null;
+        }
+    }
+
     /**
      * Add padding to field count to avoid creating too many classes and have some spare fields
      * @param count the field count
@@ -797,18 +713,80 @@ public final class ObjectClassGenerator implements Loggable {
         return count / FIELD_PADDING * FIELD_PADDING + FIELD_PADDING;
     }
 
-    private static MethodHandle findOwnMH(final String name, final Class<?> rtype, final Class<?>... types) {
-        return MH.findStatic(MethodHandles.lookup(), ObjectClassGenerator.class, name, MH.type(rtype, types));
+    //
+    // Provide generic getters and setters for undefined types. If a type is undefined, all
+    // and marshals the set to the correct setter depending on the type of the value being set.
+    // Note that there are no actual undefined versions of int, long and double in JavaScript,
+    // but executing toInt32, toLong and toNumber always returns a working result, 0, 0L or NaN
+    //
+
+    /** The value of Undefined cast to an int32 */
+    public static final int    UNDEFINED_INT    = 0;
+    /** The value of Undefined cast to a long */
+    public static final long   UNDEFINED_LONG   = 0L;
+    /** The value of Undefined cast to a double */
+    public static final double UNDEFINED_DOUBLE = Double.NaN;
+
+    /**
+     * Compute type name for correct undefined getter
+     * @param type the type
+     * @return name of getter
+     */
+    private static String typeName(final Type type) {
+        String name = type.getTypeClass().getName();
+        final int dot = name.lastIndexOf('.');
+        if (dot != -1) {
+            name = name.substring(dot + 1);
+        }
+        return Character.toUpperCase(name.charAt(0)) + name.substring(1);
     }
 
     /**
-     * Creates the allocator class name and property map for a constructor function with the specified
-     * number of "this" properties that it initializes.
-     * @param thisProperties number of properties assigned to "this"
-     * @return the allocation strategy
+     * Handles for undefined getters of the different types
      */
-    static AllocationStrategy createAllocationStrategy(final int thisProperties, final boolean dualFields) {
-        final int paddedFieldCount = getPaddedFieldCount(thisProperties);
-        return new AllocationStrategy(paddedFieldCount, dualFields);
+    private static final MethodHandle[] GET_UNDEFINED = new MethodHandle[ObjectClassGenerator.getNumberOfAccessorTypes()];
+
+    /**
+     * Used to wrap getters for undefined values, where this matters. Currently only in dual fields.
+     * If an object starts out as undefined it needs special getters until it has been assigned
+     * something the first time
+     *
+     * @param returnType type to cast the undefined to
+     *
+     * @return undefined as returnType
+     */
+    public static MethodHandle getUndefined(final Class<?> returnType) {
+        return GET_UNDEFINED[ObjectClassGenerator.getAccessorTypeIndex(returnType)];
+    }
+
+    static {
+        int pos = 0;
+        for (final Type type : ACCESSOR_TYPES) {
+            GET_UNDEFINED[pos++] = findOwnMH("getUndefined" + typeName(type), type.getTypeClass(), Object.class);
+        }
+    }
+
+    @SuppressWarnings("unused")
+    private static int getUndefinedInt(final Object obj) {
+        return UNDEFINED_INT;
+    }
+
+    @SuppressWarnings("unused")
+    private static long getUndefinedLong(final Object obj) {
+        return UNDEFINED_LONG;
+    }
+
+    @SuppressWarnings("unused")
+    private static double getUndefinedDouble(final Object obj) {
+        return UNDEFINED_DOUBLE;
+    }
+
+    @SuppressWarnings("unused")
+    private static Object getUndefinedObject(final Object obj) {
+        return ScriptRuntime.UNDEFINED;
+    }
+
+    private static MethodHandle findOwnMH(final String name, final Class<?> rtype, final Class<?>... types) {
+        return MH.findStatic(MethodHandles.lookup(), ObjectClassGenerator.class, name, MH.type(rtype, types));
     }
 }

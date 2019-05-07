@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 1997, 2016, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 1997, 2013, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -231,7 +231,7 @@ void JavaCalls::call_virtual(JavaValue* result, Handle receiver, KlassHandle spe
 
 void JavaCalls::call_special(JavaValue* result, KlassHandle klass, Symbol* name, Symbol* signature, JavaCallArguments* args, TRAPS) {
   CallInfo callinfo;
-  LinkResolver::resolve_special_call(callinfo, args->receiver(), klass, name, signature, KlassHandle(), false, CHECK);
+  LinkResolver::resolve_special_call(callinfo, klass, name, signature, KlassHandle(), false, CHECK);
   methodHandle method = callinfo.selected_method();
   assert(method.not_null(), "should have thrown exception");
 
@@ -308,10 +308,6 @@ void JavaCalls::call(JavaValue* result, methodHandle method, JavaCallArguments* 
 }
 
 void JavaCalls::call_helper(JavaValue* result, methodHandle* m, JavaCallArguments* args, TRAPS) {
-  // During dumping, Java execution environment is not fully initialized. Also, Java execution
-  // may cause undesirable side-effects in the class metadata.
-  assert(!DumpSharedSpaces, "must not execute Java bytecodes when dumping");
-
   methodHandle method = *m;
   JavaThread* thread = (JavaThread*)THREAD;
   assert(thread->is_Java_thread(), "must be called by a java thread");

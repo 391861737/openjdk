@@ -1045,16 +1045,10 @@ static jint invoke_string_value_callback(jvmtiStringPrimitiveValueCallback cb,
 {
   assert(str->klass() == SystemDictionary::String_klass(), "not a string");
 
-  typeArrayOop s_value = java_lang_String::value(str);
-
-  // JDK-6584008: the value field may be null if a String instance is
-  // partially constructed.
-  if (s_value == NULL) {
-    return 0;
-  }
   // get the string value and length
   // (string value may be offset from the base)
   int s_len = java_lang_String::length(str);
+  typeArrayOop s_value = java_lang_String::value(str);
   int s_offset = java_lang_String::offset(str);
   jchar* value;
   if (s_len > 0) {
@@ -3023,7 +3017,7 @@ inline bool VM_HeapWalkOperation::collect_simple_roots() {
 
   // If there are any non-perm roots in the code cache, visit them.
   blk.set_kind(JVMTI_HEAP_REFERENCE_OTHER);
-  CodeBlobToOopClosure look_in_blobs(&blk, !CodeBlobToOopClosure::FixRelocations);
+  CodeBlobToOopClosure look_in_blobs(&blk, false);
   CodeCache::scavenge_root_nmethods_do(&look_in_blobs);
 
   return true;

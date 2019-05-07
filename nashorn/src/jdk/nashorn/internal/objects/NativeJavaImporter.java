@@ -25,9 +25,6 @@
 
 package jdk.nashorn.internal.objects;
 
-import static jdk.nashorn.internal.runtime.ECMAErrors.typeError;
-import static jdk.nashorn.internal.runtime.UnwarrantedOptimismException.isValid;
-
 import jdk.internal.dynalink.CallSiteDescriptor;
 import jdk.internal.dynalink.beans.StaticClass;
 import jdk.internal.dynalink.linker.GuardedInvocation;
@@ -37,12 +34,9 @@ import jdk.nashorn.internal.objects.annotations.Constructor;
 import jdk.nashorn.internal.objects.annotations.Function;
 import jdk.nashorn.internal.objects.annotations.ScriptClass;
 import jdk.nashorn.internal.runtime.Context;
-import jdk.nashorn.internal.runtime.JSType;
 import jdk.nashorn.internal.runtime.NativeJavaPackage;
 import jdk.nashorn.internal.runtime.PropertyMap;
 import jdk.nashorn.internal.runtime.ScriptObject;
-import jdk.nashorn.internal.runtime.ScriptRuntime;
-import jdk.nashorn.internal.runtime.UnwarrantedOptimismException;
 
 /**
  * This is "JavaImporter" constructor. This constructor allows you to use Java types omitting explicit package names.
@@ -66,13 +60,17 @@ public final class NativeJavaImporter extends ScriptObject {
     // initialized by nasgen
     private static PropertyMap $nasgenmap$;
 
+    static PropertyMap getInitialMap() {
+        return $nasgenmap$;
+    }
+
     private NativeJavaImporter(final Object[] args, final ScriptObject proto, final PropertyMap map) {
         super(proto, map);
         this.args = args;
     }
 
     private NativeJavaImporter(final Object[] args, final Global global) {
-        this(args, global.getJavaImporterPrototype(), $nasgenmap$);
+        this(args, global.getJavaImporterPrototype(), global.getJavaImporterMap());
     }
 
     private NativeJavaImporter(final Object[] args) {
@@ -92,35 +90,38 @@ public final class NativeJavaImporter extends ScriptObject {
      * @return NativeJavaImporter instance
      */
     @Constructor(arity = 1)
-    public static NativeJavaImporter constructor(final boolean isNew, final Object self, final Object... args) {
+    public static Object constructor(final boolean isNew, final Object self, final Object... args) {
         return new NativeJavaImporter(args);
     }
 
     /**
-     * "No such property" handler.
+     * "No such property" call placeholder.
+     *
+     * This can never be called as we override {@link ScriptObject#noSuchProperty}. We do declare it here as it's a signal
+     * to {@link jdk.nashorn.internal.runtime.WithObject} that it's worth trying doing a {@code noSuchProperty} on this object.
      *
      * @param self self reference
      * @param name property name
-     * @return value of the missing property
+     * @return never returns
      */
     @Function(attributes = Attribute.NOT_ENUMERABLE)
     public static Object __noSuchProperty__(final Object self, final Object name) {
-        if (! (self instanceof NativeJavaImporter)) {
-            throw typeError("not.a.java.importer", ScriptRuntime.safeToString(self));
-        }
-        return ((NativeJavaImporter)self).createProperty(JSType.toString(name));
+        throw new AssertionError("__noSuchProperty__ placeholder called");
     }
 
     /**
-     * "No such method call" handler
+     * "No such method call" placeholder
+     *
+     * This can never be called as we override {@link ScriptObject#noSuchMethod}. We do declare it here as it's a signal
+     * to {@link jdk.nashorn.internal.runtime.WithObject} that it's worth trying doing a noSuchProperty on this object.
      *
      * @param self self reference
      * @param args arguments to method
-     * @return never returns always throw TypeError
+     * @return never returns
      */
     @Function(attributes = Attribute.NOT_ENUMERABLE)
     public static Object __noSuchMethod__(final Object self, final Object... args) {
-       throw typeError("not.a.function", ScriptRuntime.safeToString(args[0]));
+        throw new AssertionError("__noSuchMethod__ placeholder called");
     }
 
     @Override
@@ -133,20 +134,11 @@ public final class NativeJavaImporter extends ScriptObject {
         return createAndSetProperty(desc) ? super.lookup(desc, request) : super.noSuchMethod(desc, request);
     }
 
-    @Override
-    protected Object invokeNoSuchProperty(final String name, final boolean isScope, final int programPoint) {
-        final Object retval = createProperty(name);
-        if (isValid(programPoint)) {
-            throw new UnwarrantedOptimismException(retval, programPoint);
-        }
-        return retval;
-    }
-
     private boolean createAndSetProperty(final CallSiteDescriptor desc) {
         final String name = desc.getNameToken(CallSiteDescriptor.NAME_OPERAND);
         final Object value = createProperty(name);
         if(value != null) {
-            set(name, value, 0);
+            set(name, value, false);
             return true;
         }
         return false;

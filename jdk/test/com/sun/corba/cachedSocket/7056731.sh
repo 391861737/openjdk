@@ -31,7 +31,7 @@
 
 OS=`uname -s`
 case "$OS" in
-  SunOS | Linux | Darwin | AIX )
+  SunOS | Linux | Darwin )
     PS=":"
     FS="/"
     ;;
@@ -55,8 +55,8 @@ PORT=1052
 cp -r ${TESTSRC}${FS}*.java  ${TESTSRC}${FS}Hello.idl .
 echo "Testing...please wait"
 
-${COMPILEJAVA}${FS}bin${FS}idlj -fall Hello.idl
-${COMPILEJAVA}${FS}bin${FS}javac *.java HelloApp/*.java
+${TESTJAVA}${FS}bin${FS}idlj -fall Hello.idl
+${TESTJAVA}${FS}bin${FS}javac *.java HelloApp/*.java
 
 echo "starting orbd"
 ${TESTJAVA}${FS}bin${FS}orbd -ORBInitialPort $PORT -ORBInitialHost localhost &
@@ -102,7 +102,7 @@ echo "resume 1";
 sleep 5 # give time for Client to throw exception
 
 # JVM_PROC should have exited but just in case, include it.
-kill -9 $ORB_PROC $JVM_PROC $SERVER_PROC
+kill -9 $ORB_PROC $JVM_PROC
 
 grep "ORBUtilSystemException.writeErrorSend" client.$$
 result=$?

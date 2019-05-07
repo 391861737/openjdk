@@ -21,11 +21,10 @@ package jdk.nashorn.internal.runtime.regexp.joni.ast;
 
 import jdk.nashorn.internal.runtime.regexp.joni.ScanEnvironment;
 
-@SuppressWarnings("javadoc")
 public final class BackRefNode extends StateNode {
     public final int backRef;
 
-    public BackRefNode(final int backRef, final ScanEnvironment env) {
+    public BackRefNode(int backRef, ScanEnvironment env) {
         this.backRef = backRef;
 
         if (backRef <= env.numMem && env.memNodes[backRef] == null) {
@@ -44,8 +43,8 @@ public final class BackRefNode extends StateNode {
     }
 
     @Override
-    public String toString(final int level) {
-        final StringBuilder value = new StringBuilder(super.toString(level));
+    public String toString(int level) {
+        StringBuilder value = new StringBuilder(super.toString(level));
         value.append("\n  back: ").append(backRef);
         return value.toString();
     }

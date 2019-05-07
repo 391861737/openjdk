@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 1998, 2015, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 1998, 2013, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -30,58 +30,26 @@
 #include "opto/cfgnode.hpp"
 #include "opto/machnode.hpp"
 #include "opto/runtime.hpp"
-#if defined AD_MD_HPP
-# include AD_MD_HPP
-#elif defined TARGET_ARCH_MODEL_x86_32
+#ifdef TARGET_ARCH_MODEL_x86_32
 # include "adfiles/ad_x86_32.hpp"
-#elif defined TARGET_ARCH_MODEL_x86_64
+#endif
+#ifdef TARGET_ARCH_MODEL_x86_64
 # include "adfiles/ad_x86_64.hpp"
-#elif defined TARGET_ARCH_MODEL_sparc
+#endif
+#ifdef TARGET_ARCH_MODEL_sparc
 # include "adfiles/ad_sparc.hpp"
-#elif defined TARGET_ARCH_MODEL_zero
+#endif
+#ifdef TARGET_ARCH_MODEL_zero
 # include "adfiles/ad_zero.hpp"
-#elif defined TARGET_ARCH_MODEL_ppc_64
-# include "adfiles/ad_ppc_64.hpp"
+#endif
+#ifdef TARGET_ARCH_MODEL_arm
+# include "adfiles/ad_arm.hpp"
+#endif
+#ifdef TARGET_ARCH_MODEL_ppc
+# include "adfiles/ad_ppc.hpp"
 #endif
 
 // Optimization - Graph Style
-
-// Check whether val is not-null-decoded compressed oop,
-// i.e. will grab into the base of the heap if it represents NULL.
-static bool accesses_heap_base_zone(Node *val) {
-  if (Universe::narrow_oop_base() > 0) { // Implies UseCompressedOops.
-    if (val && val->is_Mach()) {
-      if (val->as_Mach()->ideal_Opcode() == Op_DecodeN) {
-        // This assumes all Decodes with TypePtr::NotNull are matched to nodes that
-        // decode NULL to point to the heap base (Decode_NN).
-        if (val->bottom_type()->is_oopptr()->ptr() == TypePtr::NotNull) {
-          return true;
-        }
-      }
-      // Must recognize load operation with Decode matched in memory operand.
-      // We should not reach here exept for PPC/AIX, as os::zero_page_read_protected()
-      // returns true everywhere else. On PPC, no such memory operands
-      // exist, therefore we did not yet implement a check for such operands.
-      NOT_AIX(Unimplemented());
-    }
-  }
-  return false;
-}
-
-static bool needs_explicit_null_check_for_read(Node *val) {
-  // On some OSes (AIX) the page at address 0 is only write protected.
-  // If so, only Store operations will trap.
-  if (os::zero_page_read_protected()) {
-    return false;  // Implicit null check will work.
-  }
-  // Also a read accessing the base of a heap-based compressed heap will trap.
-  if (accesses_heap_base_zone(val) &&                    // Hits the base zone page.
-      Universe::narrow_oop_use_implicit_null_checks()) { // Base zone page is protected.
-    return false;
-  }
-
-  return true;
-}
 
 //------------------------------implicit_null_check----------------------------
 // Detect implicit-null-check opportunities.  Basically, find NULL checks
@@ -238,22 +206,6 @@ void PhaseCFG::implicit_null_check(Block* block, Node *proj, Node *val, int allo
       }
       break;
     }
-
-    // On some OSes (AIX) the page at address 0 is only write protected.
-    // If so, only Store operations will trap.
-    // But a read accessing the base of a heap-based compressed heap will trap.
-    if (!was_store && needs_explicit_null_check_for_read(val)) {
-      continue;
-    }
-
-    // Check that node's control edge is not-null block's head or dominates it,
-    // otherwise we can't hoist it because there are other control dependencies.
-    Node* ctrl = mach->in(0);
-    if (ctrl != NULL && !(ctrl == not_null_block->head() ||
-        get_block_for_node(ctrl)->dominates(not_null_block))) {
-      continue;
-    }
-
     // check if the offset is not too high for implicit exception
     {
       intptr_t offset = 0;
@@ -391,12 +343,9 @@ void PhaseCFG::implicit_null_check(Block* block, Node *proj, Node *val, int allo
   block->add_inst(best);
   map_node_to_block(best, block);
 
-  // Move the control dependence if it is pinned to not-null block.
-  // Don't change it in other cases: NULL or dominating control.
-  if (best->in(0) == not_null_block->head()) {
-    // Set it to control edge of null check.
-    best->set_req(0, proj->in(0)->in(0));
-  }
+  // Move the control dependence
+  if (best->in(0) && best->in(0) == old_block->head())
+    best->set_req(0, block->head());
 
   // Check for flag-killing projections that also need to be hoisted
   // Should be DU safe because no edge updates.
@@ -440,30 +389,11 @@ void PhaseCFG::implicit_null_check(Block* block, Node *proj, Node *val, int allo
   for (DUIterator_Last i2min, i2 = old_tst->last_outs(i2min); i2 >= i2min; --i2)
     old_tst->last_out(i2)->set_req(0, nul_chk);
   // Clean-up any dead code
-  for (uint i3 = 0; i3 < old_tst->req(); i3++) {
-    Node* in = old_tst->in(i3);
+  for (uint i3 = 0; i3 < old_tst->req(); i3++)
     old_tst->set_req(i3, NULL);
-    if (in->outcnt() == 0) {
-      // Remove dead input node
-      in->disconnect_inputs(NULL, C);
-      block->find_remove(in);
-    }
-  }
 
   latency_from_uses(nul_chk);
   latency_from_uses(best);
-
-  // insert anti-dependences to defs in this block
-  if (! best->needs_anti_dependence_check()) {
-    for (uint k = 1; k < block->number_of_nodes(); k++) {
-      Node *n = block->get_node(k);
-      if (n->needs_anti_dependence_check() &&
-          n->in(LoadNode::Memory) == best->in(StoreNode::Memory)) {
-        // Found anti-dependent load
-        insert_anti_dependences(block, n);
-      }
-    }
-  }
 }
 
 
@@ -538,6 +468,13 @@ Node* PhaseCFG::select(Block* block, Node_List &worklist, GrowableArray<int> &re
 
         // The use is a conditional branch, make them adjacent
         if (use->is_MachIf() && get_block_for_node(use) == block) {
+          found_machif = true;
+          break;
+        }
+
+        // For nodes that produce a FlagsProj, make the node adjacent to the
+        // use of the FlagsProj
+        if (use->is_FlagsProj() && get_block_for_node(use) == block) {
           found_machif = true;
           break;
         }
@@ -698,7 +635,7 @@ uint PhaseCFG::sched_call(Block* block, uint node_cnt, Node_List& worklist, Grow
   block->insert_node(proj, node_cnt++);
 
   // Select the right register save policy.
-  const char *save_policy = NULL;
+  const char * save_policy;
   switch (op) {
     case Op_CallRuntime:
     case Op_CallLeaf:
@@ -1111,12 +1048,11 @@ void PhaseCFG::call_catch_cleanup(Block* block) {
     Block *sb = block->_succs[i];
     // Clone the entire area; ignoring the edge fixup for now.
     for( uint j = end; j > beg; j-- ) {
+      // It is safe here to clone a node with anti_dependence
+      // since clones dominate on each path.
       Node *clone = block->get_node(j-1)->clone();
       sb->insert_node(clone, 1);
       map_node_to_block(clone, sb);
-      if (clone->needs_anti_dependence_check()) {
-        insert_anti_dependences(sb, clone);
-      }
     }
   }
 

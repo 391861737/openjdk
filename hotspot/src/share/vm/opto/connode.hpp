@@ -36,7 +36,7 @@ class MachNode;
 // Simple constants
 class ConNode : public TypeNode {
 public:
-  ConNode( const Type *t ) : TypeNode(t->remove_speculative(),1) {
+  ConNode( const Type *t ) : TypeNode(t,1) {
     init_req(0, (Node*)Compile::current()->root());
     init_flags(Flag_is_Con);
   }
@@ -241,37 +241,10 @@ public:
 //------------------------------CastIINode-------------------------------------
 // cast integer to integer (different range)
 class CastIINode: public ConstraintCastNode {
-  private:
-  // Can this node be removed post CCP or does it carry a required dependency?
-  const bool _carry_dependency;
-  // Is this node dependent on a range check?
-  const bool _range_check_dependency;
-
-  protected:
-  virtual uint cmp( const Node &n ) const;
-  virtual uint size_of() const;
-
 public:
-  CastIINode(Node *n, const Type *t, bool carry_dependency = false, bool range_check_dependency = false)
-    : ConstraintCastNode(n,t), _carry_dependency(carry_dependency), _range_check_dependency(range_check_dependency) {
-    init_class_id(Class_CastII);
-  }
+  CastIINode (Node *n, const Type *t ): ConstraintCastNode(n,t) {}
   virtual int Opcode() const;
   virtual uint ideal_reg() const { return Op_RegI; }
-  virtual Node *Identity( PhaseTransform *phase );
-  virtual const Type *Value( PhaseTransform *phase ) const;
-  virtual Node *Ideal_DU_postCCP( PhaseCCP * );
-  const bool has_range_check() {
- #ifdef _LP64
-     return _range_check_dependency;
- #else
-     assert(!_range_check_dependency, "Should not have range check dependency");
-     return false;
- #endif
-   }
-#ifndef PRODUCT
-  virtual void dump_spec(outputStream *st) const;
-#endif
 };
 
 //------------------------------CastPPNode-------------------------------------
@@ -667,44 +640,6 @@ public:
   }
   virtual int Opcode() const;
   virtual const Type *bottom_type() const { return TypeInt::INT; }
-};
-
-//------------------------------Opaque3Node------------------------------------
-// A node to prevent unwanted optimizations. Will be optimized only during
-// macro nodes expansion.
-class Opaque3Node : public Opaque2Node {
-  int _opt; // what optimization it was used for
-public:
-  enum { RTM_OPT };
-  Opaque3Node(Compile* C, Node *n, int opt) : Opaque2Node(C, n), _opt(opt) {}
-  virtual int Opcode() const;
-  bool rtm_opt() const { return (_opt == RTM_OPT); }
-};
-
-//------------------------------ProfileBooleanNode-------------------------------
-// A node represents value profile for a boolean during parsing.
-// Once parsing is over, the node goes away (during IGVN).
-// It is used to override branch frequencies from MDO (see has_injected_profile in parse2.cpp).
-class ProfileBooleanNode : public Node {
-  uint _false_cnt;
-  uint _true_cnt;
-  bool _consumed;
-  bool _delay_removal;
-  virtual uint hash() const ;                  // { return NO_HASH; }
-  virtual uint cmp( const Node &n ) const;
-  public:
-  ProfileBooleanNode(Node *n, uint false_cnt, uint true_cnt) : Node(0, n),
-          _false_cnt(false_cnt), _true_cnt(true_cnt), _delay_removal(true), _consumed(false) {}
-
-  uint false_count() const { return _false_cnt; }
-  uint  true_count() const { return  _true_cnt; }
-
-  void consume() { _consumed = true;  }
-
-  virtual int Opcode() const;
-  virtual Node *Ideal(PhaseGVN *phase, bool can_reshape);
-  virtual Node *Identity(PhaseTransform *phase);
-  virtual const Type *bottom_type() const { return TypeInt::BOOL; }
 };
 
 //----------------------PartialSubtypeCheckNode--------------------------------

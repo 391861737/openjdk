@@ -48,7 +48,6 @@ import sun.security.action.GetPropertyAction;
 import sun.swing.SwingUtilities2;
 
 import com.apple.laf.AquaImageFactory.SlicedImageControl;
-import sun.awt.image.MultiResolutionCachedImage;
 
 final class AquaUtils {
 
@@ -124,13 +123,6 @@ final class AquaUtils {
 
     static Image generateLightenedImage(final Image image, final int percent) {
         final GrayFilter filter = new GrayFilter(true, percent);
-        return (image instanceof MultiResolutionCachedImage)
-                ? ((MultiResolutionCachedImage) image).map(
-                        rv -> generateLightenedImage(rv, filter))
-                : generateLightenedImage(image, filter);
-    }
-
-    static Image generateLightenedImage(Image image, ImageFilter filter) {
         final ImageProducer prod = new FilteredImageSource(image.getSource(), filter);
         return Toolkit.getDefaultToolkit().createImage(prod);
     }
@@ -177,7 +169,16 @@ final class AquaUtils {
 
     abstract static class RecyclableSingleton<T> {
         final T get() {
-            return AppContext.getSoftReferenceValue(this, () -> getInstance());
+            final AppContext appContext = AppContext.getAppContext();
+            SoftReference<T> ref = (SoftReference<T>) appContext.get(this);
+            if (ref != null) {
+                final T object = ref.get();
+                if (object != null) return object;
+            }
+            final T object = getInstance();
+            ref = new SoftReference<T>(object);
+            appContext.put(this, ref);
+            return object;
         }
 
         void reset() {

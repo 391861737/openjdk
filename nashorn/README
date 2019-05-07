@@ -72,19 +72,22 @@ after which you can view the generated documentation at dist/javadoc/index.html.
 - Running tests
 
 Nashorn tests are TestNG based. Running tests requires downloading the
-TestNG library and placing its jar file into the test/lib subdirectory. This is
-done automatically when executing the "ant externals" command to get external
-test suites (see below).
+TestNG library and placing its jar file into the lib subdirectory:
 
-Once TestNG is properly installed, you can run the tests using:
+    # download and install TestNG
+    wget http://testng.org/testng-x.y.z.zip
+    unzip testng-x.y.z.zip
+    cp testng-x.y.z/testng-x.y.z.jar test/lib/testng.jar
+    
+After that, you can run the tests using:
     cd make
-    ant clean test
+    ant test
     
 You can also run the ECMA-262 test suite with Nashorn. In order to do
 that, you will need to get a copy of it and put it in
 test/script/external/test262 directory. A convenient way to do it is:
 
-   git clone https://github.com/tc39/test262 test/script/external/test262
+   hg clone http://hg.ecmascript.org/tests/test262/ test/script/external/test262
     
 Alternatively, you can check it out elsewhere and make
 test/script/external/test262 a symbolic link to that directory. After
@@ -92,11 +95,6 @@ you've done this, you can run the ECMA-262 tests using:
 
     cd nashorn~jdk8/nashorn/make
     ant test262
-
-Ant target to get/update external test suites:
-
-    ant externals
-    ant update-externals
     
 These tests take time, so we have a parallelized runner for them that
 takes advantage of all processor cores on the computer:

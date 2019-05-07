@@ -27,15 +27,14 @@ package jdk.nashorn.test.models;
 
 import java.util.List;
 
-@SuppressWarnings("javadoc")
 public class VarArgConstructor {
     private final String indicator;
 
-    public VarArgConstructor(final int x, final boolean y, final List<String> z) {
+    public VarArgConstructor(int x, boolean y, List<String> z) {
         indicator = "non-vararg";
     }
 
-    public VarArgConstructor(final int x, final boolean y, final String... z) {
+    public VarArgConstructor(int x, boolean y, String... z) {
         indicator = "vararg";
     }
 

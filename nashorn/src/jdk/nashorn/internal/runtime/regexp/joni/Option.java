@@ -19,7 +19,6 @@
  */
 package jdk.nashorn.internal.runtime.regexp.joni;
 
-@SuppressWarnings("javadoc")
 public class Option {
 
     /* options */
@@ -42,98 +41,74 @@ public class Option {
 
     public static final int DEFAULT              = NONE;
 
-    public static String toString(final int option) {
+    public static String toString(int option) {
         String options = "";
-        if (isIgnoreCase(option)) {
-            options += "IGNORECASE ";
-        }
-        if (isExtend(option)) {
-            options += "EXTEND ";
-        }
-        if (isMultiline(option)) {
-            options += "MULTILINE ";
-        }
-        if (isSingleline(option)) {
-            options += "SINGLELINE ";
-        }
-        if (isFindLongest(option)) {
-            options += "FIND_LONGEST ";
-        }
-        if (isFindNotEmpty(option)) {
-            options += "FIND_NOT_EMPTY  ";
-        }
-        if (isNegateSingleline(option)) {
-            options += "NEGATE_SINGLELINE ";
-        }
-        if (isDontCaptureGroup(option)) {
-            options += "DONT_CAPTURE_GROUP ";
-        }
-        if (isCaptureGroup(option)) {
-            options += "CAPTURE_GROUP ";
-        }
+        if (isIgnoreCase(option)) options += "IGNORECASE ";
+        if (isExtend(option)) options += "EXTEND ";
+        if (isMultiline(option)) options += "MULTILINE ";
+        if (isSingleline(option)) options += "SINGLELINE ";
+        if (isFindLongest(option)) options += "FIND_LONGEST ";
+        if (isFindNotEmpty(option)) options += "FIND_NOT_EMPTY  ";
+        if (isNegateSingleline(option)) options += "NEGATE_SINGLELINE ";
+        if (isDontCaptureGroup(option)) options += "DONT_CAPTURE_GROUP ";
+        if (isCaptureGroup(option)) options += "CAPTURE_GROUP ";
 
-        if (isNotBol(option)) {
-            options += "NOTBOL ";
-        }
-        if (isNotEol(option)) {
-            options += "NOTEOL ";
-        }
-        if (isPosixRegion(option)) {
-            options += "POSIX_REGION ";
-        }
+        if (isNotBol(option)) options += "NOTBOL ";
+        if (isNotEol(option)) options += "NOTEOL ";
+        if (isPosixRegion(option)) options += "POSIX_REGION ";
 
         return options;
     }
 
-    public static boolean isIgnoreCase(final int option) {
+    public static boolean isIgnoreCase(int option) {
         return (option & IGNORECASE) != 0;
     }
 
-    public static boolean isExtend(final int option) {
+    public static boolean isExtend(int option) {
         return (option & EXTEND) != 0;
     }
 
-    public static boolean isSingleline(final int option) {
+    public static boolean isSingleline(int option) {
         return (option & SINGLELINE) != 0;
     }
 
-    public static boolean isMultiline(final int option) {
+    public static boolean isMultiline(int option) {
         return (option & MULTILINE) != 0;
     }
 
-    public static boolean isFindLongest(final int option) {
+    public static boolean isFindLongest(int option) {
         return (option & FIND_LONGEST) != 0;
     }
 
-    public static boolean isFindNotEmpty(final int option) {
+    public static boolean isFindNotEmpty(int option) {
         return (option & FIND_NOT_EMPTY) != 0;
     }
 
-    public static boolean isFindCondition(final int option) {
+    public static boolean isFindCondition(int option) {
         return (option & (FIND_LONGEST | FIND_NOT_EMPTY)) != 0;
     }
 
-    public static boolean isNegateSingleline(final int option) {
+    public static boolean isNegateSingleline(int option) {
         return (option & NEGATE_SINGLELINE) != 0;
     }
 
-    public static boolean isDontCaptureGroup(final int option) {
+    public static boolean isDontCaptureGroup(int option) {
         return (option & DONT_CAPTURE_GROUP) != 0;
     }
 
-    public static boolean isCaptureGroup(final int option) {
+    public static boolean isCaptureGroup(int option) {
         return (option & CAPTURE_GROUP) != 0;
     }
 
-    public static boolean isNotBol(final int option) {
+    public static boolean isNotBol(int option) {
         return (option & NOTBOL) != 0;
     }
 
-    public static boolean isNotEol(final int option) {
+    public static boolean isNotEol(int option) {
         return (option & NOTEOL) != 0;
     }
 
-    public static boolean isPosixRegion(final int option) {
+    public static boolean isPosixRegion(int option) {
         return (option & POSIX_REGION) != 0;
     }
 
@@ -141,7 +116,7 @@ public class Option {
     //    public static boolean isDynamic(int option) {
     //        return (option & (MULTILINE | IGNORECASE)) != 0;
     //    }
-    public static boolean isDynamic(final int option) {
+    public static boolean isDynamic(int option) {
         return false;
     }
 }

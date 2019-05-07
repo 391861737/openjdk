@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 1998, 2015, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 1998, 2013, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -71,13 +71,11 @@ ThrowZipException(JNIEnv *env, const char *msg)
     if (msg != NULL) {
         s = JNU_NewStringPlatform(env, msg);
     }
-    if (s != NULL) {
-        x = JNU_NewObjectByName(env,
+    x = JNU_NewObjectByName(env,
                             "java/util/zip/ZipException",
                             "(Ljava/lang/String;)V", s);
-        if (x != NULL) {
-            (*env)->Throw(env, x);
-        }
+    if (x != NULL) {
+        (*env)->Throw(env, x);
     }
 }
 
@@ -174,7 +172,11 @@ Java_java_util_zip_ZipFile_getEntry(JNIEnv *env, jclass cls, jlong zfile,
     }
     (*env)->GetByteArrayRegion(env, name, 0, ulen, (jbyte *)path);
     path[ulen] = '\0';
-    ze = ZIP_GetEntry2(zip, path, (jint)ulen, addSlash);
+    if (addSlash == JNI_FALSE) {
+        ze = ZIP_GetEntry(zip, path, 0);
+    } else {
+        ze = ZIP_GetEntry(zip, path, (jint)ulen);
+    }
     if (path != buf) {
         free(path);
     }
@@ -267,7 +269,7 @@ Java_java_util_zip_ZipFile_getEntryBytes(JNIEnv *env,
     switch (type) {
     case java_util_zip_ZipFile_JZENTRY_NAME:
         if (ze->name != 0) {
-            len = (int)ze->nlen;
+            len = (int)strlen(ze->name);
             if (len == 0 || (jba = (*env)->NewByteArray(env, len)) == NULL)
                 break;
             (*env)->SetByteArrayRegion(env, jba, 0, len, (jbyte *)ze->name);
@@ -365,10 +367,8 @@ Java_java_util_jar_JarFile_getMetaInfEntryNames(JNIEnv *env, jobject obj)
 
     /* If some names were found then build array of java strings */
     if (count > 0) {
-        jclass cls = JNU_ClassString(env);
-        CHECK_NULL_RETURN(cls, NULL);
+        jclass cls = (*env)->FindClass(env, "java/lang/String");
         result = (*env)->NewObjectArray(env, count, cls, 0);
-        CHECK_NULL_RETURN(result, NULL);
         if (result != 0) {
             for (i = 0; i < count; i++) {
                 jstring str = (*env)->NewStringUTF(env, zip->metanames[i]);

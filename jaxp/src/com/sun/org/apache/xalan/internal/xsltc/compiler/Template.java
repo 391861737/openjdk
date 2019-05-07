@@ -1,13 +1,13 @@
 /*
- * Copyright (c) 2015, 2016, Oracle and/or its affiliates. All rights reserved.
+ * reserved comment block
+ * DO NOT REMOVE OR ALTER!
  */
 /*
- * Licensed to the Apache Software Foundation (ASF) under one or more
- * contributor license agreements.  See the NOTICE file distributed with
- * this work for additional information regarding copyright ownership.
- * The ASF licenses this file to You under the Apache License, Version 2.0
- * (the "License"); you may not use this file except in compliance with
- * the License.  You may obtain a copy of the License at
+ * Copyright 2001-2004 The Apache Software Foundation.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
@@ -17,11 +17,17 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+/*
+ * $Id: Template.java,v 1.2.4.1 2005/09/12 11:30:11 pvedula Exp $
+ */
 
 package com.sun.org.apache.xalan.internal.xsltc.compiler;
 
+import java.util.Vector;
+
 import com.sun.org.apache.bcel.internal.generic.ConstantPoolGen;
 import com.sun.org.apache.bcel.internal.generic.INVOKEVIRTUAL;
+import com.sun.org.apache.bcel.internal.generic.InstructionHandle;
 import com.sun.org.apache.bcel.internal.generic.InstructionList;
 import com.sun.org.apache.xalan.internal.xsltc.compiler.util.ClassGenerator;
 import com.sun.org.apache.xalan.internal.xsltc.compiler.util.ErrorMsg;
@@ -31,8 +37,6 @@ import com.sun.org.apache.xalan.internal.xsltc.compiler.util.Type;
 import com.sun.org.apache.xalan.internal.xsltc.compiler.util.TypeCheckError;
 import com.sun.org.apache.xalan.internal.xsltc.compiler.util.Util;
 import com.sun.org.apache.xml.internal.utils.XML11Char;
-import java.util.List;
-import java.util.Vector;
 
 
 /**
@@ -58,7 +62,7 @@ public final class Template extends TopLevelElement {
 
     // The list of parameters in this template. This is only used
     // for simple named templates.
-    private Vector<Param> _parameters = new Vector<>();
+    private Vector  _parameters = new Vector();
 
     public boolean hasParams() {
         return _parameters.size() > 0;
@@ -80,7 +84,7 @@ public final class Template extends TopLevelElement {
         _parameters.addElement(param);
     }
 
-    public Vector<Param> getParameters() {
+    public Vector getParameters() {
         return _parameters;
     }
 
@@ -270,8 +274,8 @@ public final class Template extends TopLevelElement {
         _priority = Double.NaN;
         _pattern = parser.parsePattern(this, "/");
 
-        final List<SyntaxTreeNode> contents = _stylesheet.getContents();
-        final SyntaxTreeNode root = contents.get(0);
+        final Vector contents = _stylesheet.getContents();
+        final SyntaxTreeNode root = (SyntaxTreeNode)contents.elementAt(0);
 
         if (root instanceof LiteralElement) {
             addElement(root);

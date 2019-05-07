@@ -20,17 +20,17 @@
 package jdk.nashorn.internal.runtime.regexp.joni;
 
 import static jdk.nashorn.internal.runtime.regexp.joni.constants.MetaChar.INEFFECTIVE_META_CHAR;
+
 import jdk.nashorn.internal.runtime.regexp.joni.constants.SyntaxProperties;
 
-@SuppressWarnings("javadoc")
-public final class Syntax implements SyntaxProperties {
+public final class Syntax implements SyntaxProperties{
     private final int op;
     private final int op2;
     private final int behavior;
     public final int options;
     public final MetaCharTable metaCharTable;
 
-    public Syntax(final int op, final int op2, final int behavior, final int options, final MetaCharTable metaCharTable) {
+    public Syntax(int op, int op2, int behavior, int options, MetaCharTable metaCharTable) {
         this.op = op;
         this.op2 = op2;
         this.behavior = behavior;
@@ -46,8 +46,8 @@ public final class Syntax implements SyntaxProperties {
         public final int oneOrMoreTime;
         public final int anyCharAnyTime;
 
-        public MetaCharTable(final int esc, final int anyChar, final int anyTime,
-                             final int zeroOrOneTime, final int oneOrMoreTime, final int anyCharAnyTime) {
+        public MetaCharTable(int esc, int anyChar, int anyTime,
+                             int zeroOrOneTime, int oneOrMoreTime, int anyCharAnyTime) {
             this.esc = esc;
             this.anyChar = anyChar;
             this.anyTime = anyTime;
@@ -57,11 +57,11 @@ public final class Syntax implements SyntaxProperties {
         }
     }
 
-    //
-    // OP
-    //
-
-    protected boolean isOp(final int opm) {
+    /**
+     * OP
+     *
+     */
+    protected boolean isOp(int opm) {
         return (op & opm) != 0;
     }
 
@@ -189,11 +189,12 @@ public final class Syntax implements SyntaxProperties {
         return isOp(OP_ESC_X_BRACE_HEX8);
     }
 
-    //
-    // OP2
-    //
 
-    protected boolean isOp2(final int opm) {
+    /**
+     * OP
+     *
+     */
+    protected boolean isOp2(int opm) {
         return (op2 & opm) != 0;
     }
 
@@ -277,11 +278,11 @@ public final class Syntax implements SyntaxProperties {
         return isOp2(OP2_INEFFECTIVE_ESCAPE);
     }
 
-    //
-    // BEHAVIOR
-    //
-
-    protected boolean isBehavior(final int bvm) {
+    /**
+     * BEHAVIOR
+     *
+     */
+    protected boolean isBehavior(int bvm) {
         return (behavior & bvm) != 0;
     }
 

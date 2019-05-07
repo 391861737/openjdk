@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 1997, 2016, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 1997, 2013, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -32,9 +32,6 @@
 #include "gc_implementation/shared/vmGCOperations.hpp"
 #include "interpreter/interpreter.hpp"
 #include "memory/allocation.inline.hpp"
-#ifdef ASSERT
-#include "memory/guardedMemory.hpp"
-#endif
 #include "oops/oop.inline.hpp"
 #include "prims/jvm.h"
 #include "prims/jvm_misc.hpp"
@@ -49,8 +46,6 @@
 #include "runtime/stubRoutines.hpp"
 #include "runtime/thread.inline.hpp"
 #include "services/attachListener.hpp"
-#include "services/nmtCommon.hpp"
-#include "services/mallocTracker.hpp"
 #include "services/memTracker.hpp"
 #include "services/threadService.hpp"
 #include "utilities/defaultStream.hpp"
@@ -70,15 +65,12 @@
 
 # include <signal.h>
 
-PRAGMA_FORMAT_MUTE_WARNINGS_FOR_GCC
-
 OSThread*         os::_starting_thread    = NULL;
 address           os::_polling_page       = NULL;
 volatile int32_t* os::_mem_serialize_page = NULL;
 uintptr_t         os::_serialize_page_mask = 0;
 long              os::_rand_seed          = 1;
 int               os::_processor_count    = 0;
-int               os::_initial_active_processor_count = 0;
 size_t            os::_page_sizes[os::page_sizes_max];
 
 #ifndef PRODUCT
@@ -137,7 +129,12 @@ char* os::iso8601_time(char* buffer, size_t buffer_length) {
 #if defined(_ALLBSD_SOURCE)
   const time_t zone = (time_t) time_struct.tm_gmtoff;
 #else
-  const time_t zone = timezone;
+  #if _MSC_VER < 1900
+    const time_t zone = timezone;
+  #else
+    const time_t zone = 0;
+    _get_timezone((long *)&zone);
+  #endif
 #endif
 
   // If daylight savings time is in effect,
@@ -323,14 +320,9 @@ static void signal_thread_entry(JavaThread* thread, TRAPS) {
 }
 
 void os::init_before_ergo() {
-  initialize_initial_active_processor_count();
   // We need to initialize large page support here because ergonomics takes some
   // decisions depending on large page support and the calculated large page size.
   large_page_init();
-
-  // VM version initialization identifies some characteristics of the
-  // the platform that are used during ergonomic decisions.
-  VM_Version::init_before_ergo();
 }
 
 void os::signal_init() {
@@ -535,16 +527,118 @@ char *os::strdup(const char *str, MEMFLAGS flags) {
 
 
 
+#ifdef ASSERT
+#define space_before             (MallocCushion + sizeof(double))
+#define space_after              MallocCushion
+#define size_addr_from_base(p)   (size_t*)(p + space_before - sizeof(size_t))
+#define size_addr_from_obj(p)    ((size_t*)p - 1)
+// MallocCushion: size of extra cushion allocated around objects with +UseMallocOnly
+// NB: cannot be debug variable, because these aren't set from the command line until
+// *after* the first few allocs already happened
+#define MallocCushion            16
+#else
+#define space_before             0
+#define space_after              0
+#define size_addr_from_base(p)   should not use w/o ASSERT
+#define size_addr_from_obj(p)    should not use w/o ASSERT
+#define MallocCushion            0
+#endif
 #define paranoid                 0  /* only set to 1 if you suspect checking code has bug */
 
 #ifdef ASSERT
-static void verify_memory(void* ptr) {
-  GuardedMemory guarded(ptr);
-  if (!guarded.verify_guards()) {
-    tty->print_cr("## nof_mallocs = " UINT64_FORMAT ", nof_frees = " UINT64_FORMAT, os::num_mallocs, os::num_frees);
-    tty->print_cr("## memory stomp:");
-    guarded.print_on(tty);
-    fatal("memory stomping error");
+inline size_t get_size(void* obj) {
+  size_t size = *size_addr_from_obj(obj);
+  if (size < 0) {
+    fatal(err_msg("free: size field of object #" PTR_FORMAT " was overwritten ("
+                  SIZE_FORMAT ")", obj, size));
+  }
+  return size;
+}
+
+u_char* find_cushion_backwards(u_char* start) {
+  u_char* p = start;
+  while (p[ 0] != badResourceValue || p[-1] != badResourceValue ||
+         p[-2] != badResourceValue || p[-3] != badResourceValue) p--;
+  // ok, we have four consecutive marker bytes; find start
+  u_char* q = p - 4;
+  while (*q == badResourceValue) q--;
+  return q + 1;
+}
+
+u_char* find_cushion_forwards(u_char* start) {
+  u_char* p = start;
+  while (p[0] != badResourceValue || p[1] != badResourceValue ||
+         p[2] != badResourceValue || p[3] != badResourceValue) p++;
+  // ok, we have four consecutive marker bytes; find end of cushion
+  u_char* q = p + 4;
+  while (*q == badResourceValue) q++;
+  return q - MallocCushion;
+}
+
+void print_neighbor_blocks(void* ptr) {
+  // find block allocated before ptr (not entirely crash-proof)
+  if (MallocCushion < 4) {
+    tty->print_cr("### cannot find previous block (MallocCushion < 4)");
+    return;
+  }
+  u_char* start_of_this_block = (u_char*)ptr - space_before;
+  u_char* end_of_prev_block_data = start_of_this_block - space_after -1;
+  // look for cushion in front of prev. block
+  u_char* start_of_prev_block = find_cushion_backwards(end_of_prev_block_data);
+  ptrdiff_t size = *size_addr_from_base(start_of_prev_block);
+  u_char* obj = start_of_prev_block + space_before;
+  if (size <= 0 ) {
+    // start is bad; mayhave been confused by OS data inbetween objects
+    // search one more backwards
+    start_of_prev_block = find_cushion_backwards(start_of_prev_block);
+    size = *size_addr_from_base(start_of_prev_block);
+    obj = start_of_prev_block + space_before;
+  }
+
+  if (start_of_prev_block + space_before + size + space_after == start_of_this_block) {
+    tty->print_cr("### previous object: " PTR_FORMAT " (" SSIZE_FORMAT " bytes)", obj, size);
+  } else {
+    tty->print_cr("### previous object (not sure if correct): " PTR_FORMAT " (" SSIZE_FORMAT " bytes)", obj, size);
+  }
+
+  // now find successor block
+  u_char* start_of_next_block = (u_char*)ptr + *size_addr_from_obj(ptr) + space_after;
+  start_of_next_block = find_cushion_forwards(start_of_next_block);
+  u_char* next_obj = start_of_next_block + space_before;
+  ptrdiff_t next_size = *size_addr_from_base(start_of_next_block);
+  if (start_of_next_block[0] == badResourceValue &&
+      start_of_next_block[1] == badResourceValue &&
+      start_of_next_block[2] == badResourceValue &&
+      start_of_next_block[3] == badResourceValue) {
+    tty->print_cr("### next object: " PTR_FORMAT " (" SSIZE_FORMAT " bytes)", next_obj, next_size);
+  } else {
+    tty->print_cr("### next object (not sure if correct): " PTR_FORMAT " (" SSIZE_FORMAT " bytes)", next_obj, next_size);
+  }
+}
+
+
+void report_heap_error(void* memblock, void* bad, const char* where) {
+  tty->print_cr("## nof_mallocs = " UINT64_FORMAT ", nof_frees = " UINT64_FORMAT, os::num_mallocs, os::num_frees);
+  tty->print_cr("## memory stomp: byte at " PTR_FORMAT " %s object " PTR_FORMAT, bad, where, memblock);
+  print_neighbor_blocks(memblock);
+  fatal("memory stomping error");
+}
+
+void verify_block(void* memblock) {
+  size_t size = get_size(memblock);
+  if (MallocCushion) {
+    u_char* ptr = (u_char*)memblock - space_before;
+    for (int i = 0; i < MallocCushion; i++) {
+      if (ptr[i] != badResourceValue) {
+        report_heap_error(memblock, ptr+i, "in front of");
+      }
+    }
+    u_char* end = (u_char*)memblock + size + space_after;
+    for (int j = -MallocCushion; j < 0; j++) {
+      if (end[j] != badResourceValue) {
+        report_heap_error(memblock, end+j, "after");
+      }
+    }
   }
 }
 #endif
@@ -569,11 +663,7 @@ static u_char* testMalloc(size_t alloc_size) {
   return ptr;
 }
 
-void* os::malloc(size_t size, MEMFLAGS flags) {
-  return os::malloc(size, flags, CALLER_PC);
-}
-
-void* os::malloc(size_t size, MEMFLAGS memflags, const NativeCallStack& stack) {
+void* os::malloc(size_t size, MEMFLAGS memflags, address caller) {
   NOT_PRODUCT(inc_stat_counter(&num_mallocs, 1));
   NOT_PRODUCT(inc_stat_counter(&alloc_bytes, size));
 
@@ -599,22 +689,16 @@ void* os::malloc(size_t size, MEMFLAGS memflags, const NativeCallStack& stack) {
     size = 1;
   }
 
-  // NMT support
-  NMT_TrackingLevel level = MemTracker::tracking_level();
-  size_t            nmt_header_size = MemTracker::malloc_header_size(level);
+  const size_t alloc_size = size + space_before + space_after;
 
-#ifndef ASSERT
-  const size_t alloc_size = size + nmt_header_size;
-#else
-  const size_t alloc_size = GuardedMemory::get_total_size(size + nmt_header_size);
-  if (size + nmt_header_size > alloc_size) { // Check for rollover.
+  if (size > alloc_size) { // Check for rollover.
     return NULL;
   }
-#endif
 
   NOT_PRODUCT(if (MallocVerifyInterval > 0) check_heap());
 
   u_char* ptr;
+
   if (MallocMaxTestWords > 0) {
     ptr = testMalloc(alloc_size);
   } else {
@@ -622,73 +706,67 @@ void* os::malloc(size_t size, MEMFLAGS memflags, const NativeCallStack& stack) {
   }
 
 #ifdef ASSERT
-  if (ptr == NULL) {
-    return NULL;
+  if (ptr == NULL) return NULL;
+  if (MallocCushion) {
+    for (u_char* p = ptr; p < ptr + MallocCushion; p++) *p = (u_char)badResourceValue;
+    u_char* end = ptr + space_before + size;
+    for (u_char* pq = ptr+MallocCushion; pq < end; pq++) *pq = (u_char)uninitBlockPad;
+    for (u_char* q = end; q < end + MallocCushion; q++) *q = (u_char)badResourceValue;
   }
-  // Wrap memory with guard
-  GuardedMemory guarded(ptr, size + nmt_header_size);
-  ptr = guarded.get_user_ptr();
+  // put size just before data
+  *size_addr_from_base(ptr) = size;
 #endif
-  if ((intptr_t)ptr == (intptr_t)MallocCatchPtr) {
-    tty->print_cr("os::malloc caught, " SIZE_FORMAT " bytes --> " PTR_FORMAT, size, ptr);
+  u_char* memblock = ptr + space_before;
+  if ((intptr_t)memblock == (intptr_t)MallocCatchPtr) {
+    tty->print_cr("os::malloc caught, " SIZE_FORMAT " bytes --> " PTR_FORMAT, size, memblock);
     breakpoint();
   }
-  debug_only(if (paranoid) verify_memory(ptr));
-  if (PrintMalloc && tty != NULL) {
-    tty->print_cr("os::malloc " SIZE_FORMAT " bytes --> " PTR_FORMAT, size, ptr);
-  }
+  debug_only(if (paranoid) verify_block(memblock));
+  if (PrintMalloc && tty != NULL) tty->print_cr("os::malloc " SIZE_FORMAT " bytes --> " PTR_FORMAT, size, memblock);
 
-  // we do not track guard memory
-  return MemTracker::record_malloc((address)ptr, size, memflags, stack, level);
+  // we do not track MallocCushion memory
+    MemTracker::record_malloc((address)memblock, size, memflags, caller == 0 ? CALLER_PC : caller);
+
+  return memblock;
 }
 
-void* os::realloc(void *memblock, size_t size, MEMFLAGS flags) {
-  return os::realloc(memblock, size, flags, CALLER_PC);
-}
 
-void* os::realloc(void *memblock, size_t size, MEMFLAGS memflags, const NativeCallStack& stack) {
-
+void* os::realloc(void *memblock, size_t size, MEMFLAGS memflags, address caller) {
 #ifndef ASSERT
   NOT_PRODUCT(inc_stat_counter(&num_mallocs, 1));
   NOT_PRODUCT(inc_stat_counter(&alloc_bytes, size));
-   // NMT support
-  void* membase = MemTracker::record_free(memblock);
-  NMT_TrackingLevel level = MemTracker::tracking_level();
-  size_t  nmt_header_size = MemTracker::malloc_header_size(level);
-  void* ptr = ::realloc(membase, size + nmt_header_size);
-  return MemTracker::record_malloc(ptr, size, memflags, stack, level);
+  MemTracker::Tracker tkr = MemTracker::get_realloc_tracker();
+  void* ptr = ::realloc(memblock, size);
+  if (ptr != NULL) {
+    tkr.record((address)memblock, (address)ptr, size, memflags,
+     caller == 0 ? CALLER_PC : caller);
+  } else {
+    tkr.discard();
+  }
+  return ptr;
 #else
   if (memblock == NULL) {
-    return os::malloc(size, memflags, stack);
+    return malloc(size, memflags, (caller == 0 ? CALLER_PC : caller));
   }
   if ((intptr_t)memblock == (intptr_t)MallocCatchPtr) {
     tty->print_cr("os::realloc caught " PTR_FORMAT, memblock);
     breakpoint();
   }
-  // NMT support
-  void* membase = MemTracker::malloc_base(memblock);
-  verify_memory(membase);
+  verify_block(memblock);
   NOT_PRODUCT(if (MallocVerifyInterval > 0) check_heap());
-  if (size == 0) {
-    return NULL;
-  }
+  if (size == 0) return NULL;
   // always move the block
-  void* ptr = os::malloc(size, memflags, stack);
-  if (PrintMalloc) {
-    tty->print_cr("os::remalloc " SIZE_FORMAT " bytes, " PTR_FORMAT " --> " PTR_FORMAT, size, memblock, ptr);
-  }
+  void* ptr = malloc(size, memflags, caller == 0 ? CALLER_PC : caller);
+  if (PrintMalloc) tty->print_cr("os::remalloc " SIZE_FORMAT " bytes, " PTR_FORMAT " --> " PTR_FORMAT, size, memblock, ptr);
   // Copy to new memory if malloc didn't fail
   if ( ptr != NULL ) {
-    GuardedMemory guarded(MemTracker::malloc_base(memblock));
-    // Guard's user data contains NMT header
-    size_t memblock_size = guarded.get_user_size() - MemTracker::malloc_header_size(memblock);
-    memcpy(ptr, memblock, MIN2(size, memblock_size));
-    if (paranoid) verify_memory(MemTracker::malloc_base(ptr));
+    memcpy(ptr, memblock, MIN2(size, get_size(memblock)));
+    if (paranoid) verify_block(ptr);
     if ((intptr_t)ptr == (intptr_t)MallocCatchPtr) {
       tty->print_cr("os::realloc caught, " SIZE_FORMAT " bytes --> " PTR_FORMAT, size, ptr);
       breakpoint();
     }
-    os::free(memblock);
+    free(memblock);
   }
   return ptr;
 #endif
@@ -703,22 +781,34 @@ void  os::free(void *memblock, MEMFLAGS memflags) {
     if (tty != NULL) tty->print_cr("os::free caught " PTR_FORMAT, memblock);
     breakpoint();
   }
-  void* membase = MemTracker::record_free(memblock);
-  verify_memory(membase);
+  verify_block(memblock);
   NOT_PRODUCT(if (MallocVerifyInterval > 0) check_heap());
-
-  GuardedMemory guarded(membase);
-  size_t size = guarded.get_user_size();
-  inc_stat_counter(&free_bytes, size);
-  membase = guarded.release_for_freeing();
-  if (PrintMalloc && tty != NULL) {
-      fprintf(stderr, "os::free " SIZE_FORMAT " bytes --> " PTR_FORMAT "\n", size, (uintptr_t)membase);
+  // Added by detlefs.
+  if (MallocCushion) {
+    u_char* ptr = (u_char*)memblock - space_before;
+    for (u_char* p = ptr; p < ptr + MallocCushion; p++) {
+      guarantee(*p == badResourceValue,
+                "Thing freed should be malloc result.");
+      *p = (u_char)freeBlockPad;
+    }
+    size_t size = get_size(memblock);
+    inc_stat_counter(&free_bytes, size);
+    u_char* end = ptr + space_before + size;
+    for (u_char* q = end; q < end + MallocCushion; q++) {
+      guarantee(*q == badResourceValue,
+                "Thing freed should be malloc result.");
+      *q = (u_char)freeBlockPad;
+    }
+    if (PrintMalloc && tty != NULL)
+      fprintf(stderr, "os::free " SIZE_FORMAT " bytes --> " PTR_FORMAT "\n", size, (uintptr_t)memblock);
+  } else if (PrintMalloc && tty != NULL) {
+    // tty->print_cr("os::free %p", memblock);
+    fprintf(stderr, "os::free " PTR_FORMAT "\n", (uintptr_t)memblock);
   }
-  ::free(membase);
-#else
-  void* membase = MemTracker::record_free(memblock);
-  ::free(membase);
 #endif
+  MemTracker::record_free((address)memblock, memflags);
+
+  ::free((char*)memblock - space_before);
 }
 
 void os::init_random(long initval) {
@@ -824,9 +914,9 @@ void os::print_environment_variables(outputStream* st, const char** env_list,
 
     for (int i = 0; env_list[i] != NULL; i++) {
       if (getenv(env_list[i], buffer, len)) {
-        st->print("%s", env_list[i]);
+        st->print(env_list[i]);
         st->print("=");
-        st->print_cr("%s", buffer);
+        st->print_cr(buffer);
       }
     }
   }
@@ -837,21 +927,13 @@ void os::print_cpu_info(outputStream* st) {
   st->print("CPU:");
   st->print("total %d", os::processor_count());
   // It's not safe to query number of active processors after crash
-  // st->print("(active %d)", os::active_processor_count()); but we can
-  // print the initial number of active processors.
-  // We access the raw value here because the assert in the accessor will
-  // fail if the crash occurs before initialization of this value.
-  st->print(" (initial active %d)", _initial_active_processor_count);
+  // st->print("(active %d)", os::active_processor_count());
   st->print(" %s", VM_Version::cpu_features());
   st->cr();
   pd_print_cpu_info(st);
 }
 
 void os::print_date_and_time(outputStream *st) {
-  const int secs_per_day  = 86400;
-  const int secs_per_hour = 3600;
-  const int secs_per_min  = 60;
-
   time_t tloc;
   (void)time(&tloc);
   st->print("time: %s", ctime(&tloc));  // ctime adds newline.
@@ -860,17 +942,7 @@ void os::print_date_and_time(outputStream *st) {
   // NOTE: It tends to crash after a SEGV if we want to printf("%f",...) in
   //       Linux. Must be a bug in glibc ? Workaround is to round "t" to int
   //       before printf. We lost some precision, but who cares?
-  int eltime = (int)t;  // elapsed time in seconds
-
-  // print elapsed time in a human-readable format:
-  int eldays = eltime / secs_per_day;
-  int day_secs = eldays * secs_per_day;
-  int elhours = (eltime - day_secs) / secs_per_hour;
-  int hour_secs = elhours * secs_per_hour;
-  int elmins = (eltime - day_secs - hour_secs) / secs_per_min;
-  int minute_secs = elmins * secs_per_min;
-  int elsecs = (eltime - day_secs - hour_secs - minute_secs);
-  st->print_cr("elapsed time: %d seconds (%dd %dh %dm %ds)", eltime, eldays, elhours, elmins, elsecs);
+  st->print_cr("elapsed time: %d seconds", (int)t);
 }
 
 // moved from debug.cpp (used to be find()) but still called from there
@@ -1014,17 +1086,15 @@ void os::print_location(outputStream* st, intptr_t x, bool verbose) {
 
   }
 
-  // Check if in metaspace and print types that have vptrs (only method now)
-  if (Metaspace::contains(addr)) {
-    if (Method::has_method_vptr((const void*)addr)) {
-      ((Method*)addr)->print_value_on(st);
-      st->cr();
-    } else {
-      // Use addr->print() from the debugger instead (not here)
-      st->print_cr(INTPTR_FORMAT " is pointing into metadata", addr);
-    }
+#ifndef PRODUCT
+  // Check if in metaspace.
+  if (ClassLoaderDataGraph::contains((address)addr)) {
+    // Use addr->print() from the debugger instead (not here)
+    st->print_cr(INTPTR_FORMAT
+                 " is pointing into metadata", addr);
     return;
   }
+#endif
 
   // Try an OS specific find
   if (os::find(addr, st)) {
@@ -1038,7 +1108,7 @@ void os::print_location(outputStream* st, intptr_t x, bool verbose) {
 // if C stack is walkable beyond current frame. The check for fp() is not
 // necessary on Sparc, but it's harmless.
 bool os::is_first_C_frame(frame* fr) {
-#if (defined(IA64) && !defined(AIX)) && !defined(_WIN32)
+#if defined(IA64) && !defined(_WIN32)
   // On IA64 we have to check if the callers bsp is still valid
   // (i.e. within the register stack bounds).
   // Notice: this only works for threads created by the VM and only if
@@ -1325,30 +1395,29 @@ bool os::stack_shadow_pages_available(Thread *thread, methodHandle method) {
   return (sp > (stack_limit + reserved_area));
 }
 
-size_t os::page_size_for_region(size_t region_size, size_t min_pages, bool must_be_aligned) {
+size_t os::page_size_for_region(size_t region_min_size, size_t region_max_size,
+                                uint min_pages)
+{
   assert(min_pages > 0, "sanity");
   if (UseLargePages) {
-    const size_t max_page_size = region_size / min_pages;
+    const size_t max_page_size = region_max_size / min_pages;
 
-    for (size_t i = 0; _page_sizes[i] != 0; ++i) {
-      const size_t page_size = _page_sizes[i];
-      if (page_size <= max_page_size) {
-        if (!must_be_aligned || is_size_aligned(region_size, page_size)) {
-          return page_size;
-        }
+    for (unsigned int i = 0; _page_sizes[i] != 0; ++i) {
+      const size_t sz = _page_sizes[i];
+      const size_t mask = sz - 1;
+      if ((region_min_size & mask) == 0 && (region_max_size & mask) == 0) {
+        // The largest page size with no fragmentation.
+        return sz;
+      }
+
+      if (sz <= max_page_size) {
+        // The largest page size that satisfies the min_pages requirement.
+        return sz;
       }
     }
   }
 
   return vm_page_size();
-}
-
-size_t os::page_size_for_region_aligned(size_t region_size, size_t min_pages) {
-  return page_size_for_region(region_size, min_pages, true);
-}
-
-size_t os::page_size_for_region_unaligned(size_t region_size, size_t min_pages) {
-  return page_size_for_region(region_size, min_pages, false);
 }
 
 #ifndef PRODUCT
@@ -1424,11 +1493,6 @@ bool os::is_server_class_machine() {
   return result;
 }
 
-void os::initialize_initial_active_processor_count() {
-  assert(_initial_active_processor_count == 0, "Initial active processor count already set.");
-  _initial_active_processor_count = active_processor_count();
-}
-
 void os::SuspendedThreadTask::run() {
   assert(Threads_lock->owned_by_self() || (_thread == VMThread::vm_thread()), "must have threads lock to call this");
   internal_do_task();
@@ -1442,7 +1506,7 @@ bool os::create_stack_guard_pages(char* addr, size_t bytes) {
 char* os::reserve_memory(size_t bytes, char* addr, size_t alignment_hint) {
   char* result = pd_reserve_memory(bytes, addr, alignment_hint);
   if (result != NULL) {
-    MemTracker::record_virtual_memory_reserve((address)result, bytes, CALLER_PC);
+    MemTracker::record_virtual_memory_reserve((address)result, bytes, mtNone, CALLER_PC);
   }
 
   return result;
@@ -1452,7 +1516,7 @@ char* os::reserve_memory(size_t bytes, char* addr, size_t alignment_hint,
    MEMFLAGS flags) {
   char* result = pd_reserve_memory(bytes, addr, alignment_hint);
   if (result != NULL) {
-    MemTracker::record_virtual_memory_reserve((address)result, bytes, CALLER_PC);
+    MemTracker::record_virtual_memory_reserve((address)result, bytes, mtNone, CALLER_PC);
     MemTracker::record_virtual_memory_type((address)result, flags);
   }
 
@@ -1462,7 +1526,7 @@ char* os::reserve_memory(size_t bytes, char* addr, size_t alignment_hint,
 char* os::attempt_reserve_memory_at(size_t bytes, char* addr) {
   char* result = pd_attempt_reserve_memory_at(bytes, addr);
   if (result != NULL) {
-    MemTracker::record_virtual_memory_reserve((address)result, bytes, CALLER_PC);
+    MemTracker::record_virtual_memory_reserve((address)result, bytes, mtNone, CALLER_PC);
   }
   return result;
 }
@@ -1502,45 +1566,34 @@ void os::commit_memory_or_exit(char* addr, size_t size, size_t alignment_hint,
 }
 
 bool os::uncommit_memory(char* addr, size_t bytes) {
-  bool res;
-  if (MemTracker::tracking_level() > NMT_minimal) {
-    Tracker tkr = MemTracker::get_virtual_memory_uncommit_tracker();
-    res = pd_uncommit_memory(addr, bytes);
-    if (res) {
-      tkr.record((address)addr, bytes);
-    }
+  MemTracker::Tracker tkr = MemTracker::get_virtual_memory_uncommit_tracker();
+  bool res = pd_uncommit_memory(addr, bytes);
+  if (res) {
+    tkr.record((address)addr, bytes);
   } else {
-    res = pd_uncommit_memory(addr, bytes);
+    tkr.discard();
   }
   return res;
 }
 
 bool os::release_memory(char* addr, size_t bytes) {
-  bool res;
-  if (MemTracker::tracking_level() > NMT_minimal) {
-    Tracker tkr = MemTracker::get_virtual_memory_release_tracker();
-    res = pd_release_memory(addr, bytes);
-    if (res) {
-      tkr.record((address)addr, bytes);
-    }
+  MemTracker::Tracker tkr = MemTracker::get_virtual_memory_release_tracker();
+  bool res = pd_release_memory(addr, bytes);
+  if (res) {
+    tkr.record((address)addr, bytes);
   } else {
-    res = pd_release_memory(addr, bytes);
+    tkr.discard();
   }
   return res;
 }
 
-void os::pretouch_memory(char* start, char* end) {
-  for (volatile char *p = start; p < end; p += os::vm_page_size()) {
-    *p = 0;
-  }
-}
 
 char* os::map_memory(int fd, const char* file_name, size_t file_offset,
                            char *addr, size_t bytes, bool read_only,
                            bool allow_exec) {
   char* result = pd_map_memory(fd, file_name, file_offset, addr, bytes, read_only, allow_exec);
   if (result != NULL) {
-    MemTracker::record_virtual_memory_reserve_and_commit((address)result, bytes, CALLER_PC);
+    MemTracker::record_virtual_memory_reserve_and_commit((address)result, bytes, mtNone, CALLER_PC);
   }
   return result;
 }
@@ -1553,15 +1606,12 @@ char* os::remap_memory(int fd, const char* file_name, size_t file_offset,
 }
 
 bool os::unmap_memory(char *addr, size_t bytes) {
-  bool result;
-  if (MemTracker::tracking_level() > NMT_minimal) {
-    Tracker tkr = MemTracker::get_virtual_memory_release_tracker();
-    result = pd_unmap_memory(addr, bytes);
-    if (result) {
-      tkr.record((address)addr, bytes);
-    }
+  MemTracker::Tracker tkr = MemTracker::get_virtual_memory_release_tracker();
+  bool result = pd_unmap_memory(addr, bytes);
+  if (result) {
+    tkr.record((address)addr, bytes);
   } else {
-    result = pd_unmap_memory(addr, bytes);
+    tkr.discard();
   }
   return result;
 }
@@ -1590,95 +1640,3 @@ os::SuspendResume::State os::SuspendResume::switch_state(os::SuspendResume::Stat
   return result;
 }
 #endif
-
-/////////////// Unit tests ///////////////
-
-#ifndef PRODUCT
-
-#define assert_eq(a,b) assert(a == b, err_msg(SIZE_FORMAT " != " SIZE_FORMAT, a, b))
-
-class TestOS : AllStatic {
-  static size_t small_page_size() {
-    return os::vm_page_size();
-  }
-
-  static size_t large_page_size() {
-    const size_t large_page_size_example = 4 * M;
-    return os::page_size_for_region_aligned(large_page_size_example, 1);
-  }
-
-  static void test_page_size_for_region_aligned() {
-    if (UseLargePages) {
-      const size_t small_page = small_page_size();
-      const size_t large_page = large_page_size();
-
-      if (large_page > small_page) {
-        size_t num_small_pages_in_large = large_page / small_page;
-        size_t page = os::page_size_for_region_aligned(large_page, num_small_pages_in_large);
-
-        assert_eq(page, small_page);
-      }
-    }
-  }
-
-  static void test_page_size_for_region_alignment() {
-    if (UseLargePages) {
-      const size_t small_page = small_page_size();
-      const size_t large_page = large_page_size();
-      if (large_page > small_page) {
-        const size_t unaligned_region = large_page + 17;
-        size_t page = os::page_size_for_region_aligned(unaligned_region, 1);
-        assert_eq(page, small_page);
-
-        const size_t num_pages = 5;
-        const size_t aligned_region = large_page * num_pages;
-        page = os::page_size_for_region_aligned(aligned_region, num_pages);
-        assert_eq(page, large_page);
-      }
-    }
-  }
-
-  static void test_page_size_for_region_unaligned() {
-    if (UseLargePages) {
-      // Given exact page size, should return that page size.
-      for (size_t i = 0; os::_page_sizes[i] != 0; i++) {
-        size_t expected = os::_page_sizes[i];
-        size_t actual = os::page_size_for_region_unaligned(expected, 1);
-        assert_eq(expected, actual);
-      }
-
-      // Given slightly larger size than a page size, return the page size.
-      for (size_t i = 0; os::_page_sizes[i] != 0; i++) {
-        size_t expected = os::_page_sizes[i];
-        size_t actual = os::page_size_for_region_unaligned(expected + 17, 1);
-        assert_eq(expected, actual);
-      }
-
-      // Given a slightly smaller size than a page size,
-      // return the next smaller page size.
-      if (os::_page_sizes[1] > os::_page_sizes[0]) {
-        size_t expected = os::_page_sizes[0];
-        size_t actual = os::page_size_for_region_unaligned(os::_page_sizes[1] - 17, 1);
-        assert_eq(actual, expected);
-      }
-
-      // Return small page size for values less than a small page.
-      size_t small_page = small_page_size();
-      size_t actual = os::page_size_for_region_unaligned(small_page - 17, 1);
-      assert_eq(small_page, actual);
-    }
-  }
-
- public:
-  static void run_tests() {
-    test_page_size_for_region_aligned();
-    test_page_size_for_region_alignment();
-    test_page_size_for_region_unaligned();
-  }
-};
-
-void TestOS_test() {
-  TestOS::run_tests();
-}
-
-#endif // PRODUCT

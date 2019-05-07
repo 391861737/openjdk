@@ -698,8 +698,8 @@ final class ValidatorHandlerImpl extends ValidatorHandler implements
                                reader.setProperty(XMLConstants.ACCESS_EXTERNAL_DTD,
                                        spm.getValue(XMLSecurityPropertyManager.Property.ACCESS_EXTERNAL_DTD));
                            } catch (SAXException exc) {
-                               XMLSecurityManager.printWarning(reader.getClass().getName(),
-                                       XMLConstants.ACCESS_EXTERNAL_DTD, exc);
+                               System.err.println("Warning: " + reader.getClass().getName() + ": " +
+                                      exc.getMessage());
                            }
                         }
                     } catch( Exception e ) {

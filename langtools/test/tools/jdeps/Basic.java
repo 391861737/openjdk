@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2012, 2014, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2012, 2013, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -23,9 +23,9 @@
 
 /*
  * @test
- * @bug 8003562 8005428 8015912 8027481 8048063 8068937
+ * @bug 8003562 8005428 8015912 8027481
  * @summary Basic tests for jdeps tool
- * @build Test p.Foo p.Bar p.C p.SubClass q.Gee javax.activity.NotCompactProfile
+ * @build Test p.Foo p.Bar javax.activity.NotCompactProfile
  * @run main Basic
  */
 
@@ -86,16 +86,6 @@ public class Basic {
              new String[] {"java.lang.Object", "java.lang.String", "p.Foo", "p.Bar"},
              new String[] {"compact1", "compact1", "not found", "not found"},
              new String[] {"-verbose:class"});
-        // test -filter:none option
-        test(new File(testDir, "p"),
-             new String[] {"java.lang", "java.util", "java.lang.management", "javax.activity", "javax.crypto", "p"},
-             new String[] {"compact1", "compact1", "compact3", testDir.getName(), "compact1", "p"},
-             new String[] {"-classpath", testDir.getPath(), "-verbose:package", "-filter:none"});
-        // test -filter:archive option
-        test(new File(testDir, "p"),
-             new String[] {"java.lang", "java.util", "java.lang.management", "javax.activity", "javax.crypto"},
-             new String[] {"compact1", "compact1", "compact3", testDir.getName(), "compact1"},
-             new String[] {"-classpath", testDir.getPath(), "-verbose:package", "-filter:archive"});
         // test -p option
         test(new File(testDir, "Test.class"),
              new String[] {"p.Foo", "p.Bar"},
@@ -110,25 +100,11 @@ public class Basic {
              new String[] {"java.lang"},
              new String[] {"compact1"},
              new String[] {"-verbose:package", "-e", "java\\.lang\\..*"});
-
-        // parse p.C, p.SubClass and q.*
-        // p.SubClass have no dependency other than p.C
-        // q.Gee depends on p.SubClass that should be found
-        test(testDir,
-             new String[] {"java.lang", "p"},
-             new String[] {"compact1", testDir.getName()},
-             new String[] {"-include", "p.C|p.SubClass|q\\..*"});
-        test(testDir,
-             new String[] {"java.lang", "p"},
-             new String[] {"compact1", testDir.getName()},
-             new String[] {"-classpath", testDir.getPath(), "-include", "p.C|p.SubClass|q\\..*"});
-
-
         // test -classpath and -include options
         test(null,
-             new String[] {"java.lang", "java.util", "java.lang.management",
-                           "javax.activity", "javax.crypto"},
-             new String[] {"compact1", "compact1", "compact3", testDir.getName(), "compact1"},
+             new String[] {"java.lang", "java.util",
+                           "java.lang.management", "javax.crypto"},
+             new String[] {"compact1", "compact1", "compact3", "compact1"},
              new String[] {"-classpath", testDir.getPath(), "-include", "p.+|Test.class"});
         test(new File(testDir, "Test.class"),
              new String[] {"java.lang.Object", "java.lang.String", "p.Foo", "p.Bar"},

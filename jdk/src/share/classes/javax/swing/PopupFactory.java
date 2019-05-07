@@ -25,14 +25,10 @@
 
 package javax.swing;
 
-import sun.awt.EmbeddedFrame;
-import sun.awt.OSInfo;
-
 import java.applet.Applet;
 import java.awt.*;
 import java.awt.event.WindowAdapter;
 import java.awt.event.WindowEvent;
-import java.security.AccessController;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -230,13 +226,7 @@ public class PopupFactory {
         case MEDIUM_WEIGHT_POPUP:
             return getMediumWeightPopup(owner, contents, ownerX, ownerY);
         case HEAVY_WEIGHT_POPUP:
-            Popup popup = getHeavyWeightPopup(owner, contents, ownerX, ownerY);
-            if ((AccessController.doPrivileged(OSInfo.getOSTypeAction()) ==
-                OSInfo.OSType.MACOSX) && (owner != null) &&
-                (EmbeddedFrame.getAppletIfAncestorOf(owner) != null)) {
-                ((HeavyWeightPopup)popup).setCacheEnabled(false);
-            }
-            return popup;
+            return getHeavyWeightPopup(owner, contents, ownerX, ownerY);
         }
         return null;
     }
@@ -303,8 +293,6 @@ public class PopupFactory {
     private static class HeavyWeightPopup extends Popup {
         private static final Object heavyWeightPopupCacheKey =
                  new StringBuffer("PopupFactory.heavyWeightPopupCache");
-
-        private volatile boolean isCacheEnabled = true;
 
         /**
          * Returns either a new or recycled <code>Popup</code> containing
@@ -460,23 +448,12 @@ public class PopupFactory {
             }
         }
 
-        /**
-         * Enables or disables cache for current object.
-         */
-        void setCacheEnabled(boolean enable) {
-            isCacheEnabled = enable;
-        }
-
         //
         // Popup methods
         //
         public void hide() {
             super.hide();
-            if (isCacheEnabled) {
-                recycleHeavyWeightPopup(this);
-            } else {
-                this._dispose();
-            }
+            recycleHeavyWeightPopup(this);
         }
 
         /**

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 1997, 2014, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 1997, 2011, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -79,19 +79,19 @@ final class ArrayBeanInfoImpl  extends JaxBeanInfo {
 
         @Override
         public void startElement(UnmarshallingContext.State state, TagName ea) {
-            state.setTarget(new ArrayList());
+            state.target = new ArrayList();
         }
 
         @Override
         public void leaveElement(UnmarshallingContext.State state, TagName ea) {
-            state.setTarget(toArray((List)state.getTarget()));
+            state.target = toArray((List)state.target);
         }
 
         @Override
         public void childElement(UnmarshallingContext.State state, TagName ea) throws SAXException {
             if(ea.matches("","item")) {
-                state.setLoader(itemLoader);
-                state.setReceiver(this);
+                state.loader = itemLoader;
+                state.receiver = this;
             } else {
                 super.childElement(state,ea);
             }
@@ -103,9 +103,9 @@ final class ArrayBeanInfoImpl  extends JaxBeanInfo {
         }
 
         public void receive(UnmarshallingContext.State state, Object o) {
-            ((List)state.getTarget()).add(o);
+            ((List)state.target).add(o);
         }
-    }
+    };
 
     protected Object toArray( List list ) {
         int len = list.size();

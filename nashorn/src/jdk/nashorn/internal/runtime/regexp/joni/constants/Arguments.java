@@ -19,7 +19,6 @@
  */
 package jdk.nashorn.internal.runtime.regexp.joni.constants;
 
-@SuppressWarnings("javadoc")
 public interface Arguments {
     final int SPECIAL       = -1;
     final int NON           = 0;

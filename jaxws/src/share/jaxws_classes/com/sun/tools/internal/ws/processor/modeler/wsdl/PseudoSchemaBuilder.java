@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 1997, 2014, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 1997, 2013, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -41,7 +41,6 @@ import javax.xml.namespace.QName;
 import java.io.ByteArrayInputStream;
 import java.io.StringReader;
 import java.io.StringWriter;
-import java.nio.charset.StandardCharsets;
 import java.text.MessageFormat;
 import java.util.*;
 
@@ -108,7 +107,7 @@ public class PseudoSchemaBuilder {
         }
         //add w3c EPR binding
         if(!(options.noAddressingBbinding) && options.target.isLaterThan(Options.Target.V2_1)){
-            InputSource is = new InputSource(new ByteArrayInputStream(w3ceprSchemaBinding.getBytes(StandardCharsets.UTF_8)));
+            InputSource is = new InputSource(new ByteArrayInputStream(w3ceprSchemaBinding.getBytes()));
             is.setSystemId(sysId+(++i +1));
             b.schemas.add(is);
         }

@@ -362,13 +362,12 @@ public class Proxy implements java.io.Serializable {
                                          Class<?>... interfaces)
         throws IllegalArgumentException
     {
-        final Class<?>[] intfs = interfaces.clone();
-        final SecurityManager sm = System.getSecurityManager();
+        SecurityManager sm = System.getSecurityManager();
         if (sm != null) {
-            checkProxyAccess(Reflection.getCallerClass(), loader, intfs);
+            checkProxyAccess(Reflection.getCallerClass(), loader, interfaces);
         }
 
-        return getProxyClass0(loader, intfs);
+        return getProxyClass0(loader, interfaces);
     }
 
     /*
@@ -707,16 +706,15 @@ public class Proxy implements java.io.Serializable {
     {
         Objects.requireNonNull(h);
 
-        final Class<?>[] intfs = interfaces.clone();
         final SecurityManager sm = System.getSecurityManager();
         if (sm != null) {
-            checkProxyAccess(Reflection.getCallerClass(), loader, intfs);
+            checkProxyAccess(Reflection.getCallerClass(), loader, interfaces);
         }
 
         /*
          * Look up or generate the designated proxy class.
          */
-        Class<?> cl = getProxyClass0(loader, intfs);
+        Class<?> cl = getProxyClass0(loader, interfaces);
 
         /*
          * Invoke its constructor with the designated invocation handler.

@@ -30,7 +30,7 @@
 //---------------------------------------------------------------------------------
 //
 //  Little Color Management System
-//  Copyright (c) 1998-2016 Marti Maria Saguer
+//  Copyright (c) 1998-2010 Marti Maria Saguer
 //
 // Permission is hereby granted, free of charge, to any person obtaining
 // a copy of this software and associated documentation files (the "Software"),
@@ -110,7 +110,7 @@ typedef struct {
 #define ANYFLAVOR       FLAVOR_SH(1)
 
 
-// Suppress waning about info never being used
+// Supress waning about info never being used
 
 #ifdef _MSC_VER
 #pragma warning(disable : 4100)
@@ -309,23 +309,6 @@ cmsUInt8Number* Unroll3BytesSkip1Swap(register _cmsTRANSFORM* info,
     wIn[2] = FROM_8_TO_16(*accum); accum++; // B
     wIn[1] = FROM_8_TO_16(*accum); accum++; // G
     wIn[0] = FROM_8_TO_16(*accum); accum++; // R
-
-    return accum;
-
-    cmsUNUSED_PARAMETER(info);
-    cmsUNUSED_PARAMETER(Stride);
-}
-
-static
-cmsUInt8Number* Unroll3BytesSkip1SwapSwapFirst(register _cmsTRANSFORM* info,
-                                              register cmsUInt16Number wIn[],
-                                              register cmsUInt8Number* accum,
-                                              register cmsUInt32Number Stride)
-{
-    wIn[2] = FROM_8_TO_16(*accum); accum++; // B
-    wIn[1] = FROM_8_TO_16(*accum); accum++; // G
-    wIn[0] = FROM_8_TO_16(*accum); accum++; // R
-    accum++; // A
 
     return accum;
 
@@ -878,42 +861,6 @@ cmsUInt8Number* UnrollXYZDoubleTo16(register _cmsTRANSFORM* info,
     else {
         cmsFloat2XYZEncoded(wIn, (cmsCIEXYZ*) accum);
         accum += sizeof(cmsCIEXYZ) + T_EXTRA(info ->InputFormat) * sizeof(cmsFloat64Number);
-
-        return accum;
-    }
-}
-
-// This is a conversion of XYZ float to 16 bits
-static
-cmsUInt8Number* UnrollXYZFloatTo16(register _cmsTRANSFORM* info,
-                                   register cmsUInt16Number wIn[],
-                                   register cmsUInt8Number* accum,
-                                   register cmsUInt32Number Stride)
-{
-    if (T_PLANAR(info -> InputFormat)) {
-
-        cmsFloat32Number* Pt = (cmsFloat32Number*) accum;
-        cmsCIEXYZ XYZ;
-
-        XYZ.X = Pt[0];
-        XYZ.Y = Pt[Stride];
-        XYZ.Z = Pt[Stride*2];
-        cmsFloat2XYZEncoded(wIn, &XYZ);
-
-        return accum + sizeof(cmsFloat32Number);
-
-    }
-
-    else {
-        cmsFloat32Number* Pt = (cmsFloat32Number*) accum;
-        cmsCIEXYZ XYZ;
-
-        XYZ.X = Pt[0];
-        XYZ.Y = Pt[1];
-        XYZ.Z = Pt[2];
-        cmsFloat2XYZEncoded(wIn, &XYZ);
-
-        accum += 3 * sizeof(cmsFloat32Number) + T_EXTRA(info ->InputFormat) * sizeof(cmsFloat32Number);
 
         return accum;
     }
@@ -2370,39 +2317,6 @@ cmsUInt8Number* PackXYZDoubleFrom16(register _cmsTRANSFORM* Info,
 }
 
 static
-cmsUInt8Number* PackXYZFloatFrom16(register _cmsTRANSFORM* Info,
-                                   register cmsUInt16Number wOut[],
-                                   register cmsUInt8Number* output,
-                                   register cmsUInt32Number Stride)
-{
-    if (T_PLANAR(Info -> OutputFormat)) {
-
-        cmsCIEXYZ XYZ;
-        cmsFloat32Number* Out = (cmsFloat32Number*) output;
-        cmsXYZEncoded2Float(&XYZ, wOut);
-
-        Out[0]        = (cmsFloat32Number) XYZ.X;
-        Out[Stride]   = (cmsFloat32Number) XYZ.Y;
-        Out[Stride*2] = (cmsFloat32Number) XYZ.Z;
-
-        return output + sizeof(cmsFloat32Number);
-
-    }
-    else {
-
-        cmsCIEXYZ XYZ;
-        cmsFloat32Number* Out = (cmsFloat32Number*) output;
-        cmsXYZEncoded2Float(&XYZ, wOut);
-
-        Out[0] = (cmsFloat32Number) XYZ.X;
-        Out[1] = (cmsFloat32Number) XYZ.Y;
-        Out[2] = (cmsFloat32Number) XYZ.Z;
-
-        return output + (3 * sizeof(cmsFloat32Number) + T_EXTRA(Info ->OutputFormat) * sizeof(cmsFloat32Number));
-    }
-}
-
-static
 cmsUInt8Number* PackDoubleFrom16(register _cmsTRANSFORM* info,
                                 register cmsUInt16Number wOut[],
                                 register cmsUInt8Number* output,
@@ -2438,6 +2352,9 @@ cmsUInt8Number* PackDoubleFrom16(register _cmsTRANSFORM* info,
             ((cmsFloat64Number*) output)[i + start] = v;
     }
 
+    if (!ExtraFirst) {
+        output += Extra * sizeof(cmsFloat64Number);
+    }
 
     if (Extra == 0 && SwapFirst) {
 
@@ -2448,7 +2365,7 @@ cmsUInt8Number* PackDoubleFrom16(register _cmsTRANSFORM* info,
     if (T_PLANAR(info -> OutputFormat))
         return output + sizeof(cmsFloat64Number);
     else
-        return output + (nChan + Extra) * sizeof(cmsFloat64Number);
+        return output + nChan * sizeof(cmsFloat64Number);
 
 }
 
@@ -2459,47 +2376,50 @@ cmsUInt8Number* PackFloatFrom16(register _cmsTRANSFORM* info,
                                 register cmsUInt8Number* output,
                                 register cmsUInt32Number Stride)
 {
-       int nChan = T_CHANNELS(info->OutputFormat);
-       int DoSwap = T_DOSWAP(info->OutputFormat);
-       int Reverse = T_FLAVOR(info->OutputFormat);
-       int Extra = T_EXTRA(info->OutputFormat);
-       int SwapFirst = T_SWAPFIRST(info->OutputFormat);
-       int Planar = T_PLANAR(info->OutputFormat);
-       int ExtraFirst = DoSwap ^ SwapFirst;
-       cmsFloat64Number maximum = IsInkSpace(info->OutputFormat) ? 655.35 : 65535.0;
-       cmsFloat64Number v = 0;
-       cmsFloat32Number* swap1 = (cmsFloat32Number*)output;
-       int i, start = 0;
+    int nChan      = T_CHANNELS(info -> OutputFormat);
+    int DoSwap     = T_DOSWAP(info ->OutputFormat);
+    int Reverse    = T_FLAVOR(info ->OutputFormat);
+    int Extra      = T_EXTRA(info -> OutputFormat);
+    int SwapFirst  = T_SWAPFIRST(info -> OutputFormat);
+    int Planar     = T_PLANAR(info -> OutputFormat);
+    int ExtraFirst = DoSwap ^ SwapFirst;
+    cmsFloat64Number maximum = IsInkSpace(info ->OutputFormat) ? 655.35 : 65535.0;
+    cmsFloat64Number v = 0;
+    cmsFloat32Number* swap1 = (cmsFloat32Number*) output;
+    int i, start = 0;
 
-       if (ExtraFirst)
-              start = Extra;
+    if (ExtraFirst)
+        start = Extra;
 
-       for (i = 0; i < nChan; i++) {
+    for (i=0; i < nChan; i++) {
 
-              int index = DoSwap ? (nChan - i - 1) : i;
+        int index = DoSwap ? (nChan - i - 1) : i;
 
-              v = (cmsFloat64Number)wOut[index] / maximum;
+        v = (cmsFloat64Number) wOut[index] / maximum;
 
-              if (Reverse)
-                     v = maximum - v;
+        if (Reverse)
+            v = maximum - v;
 
-              if (Planar)
-                     ((cmsFloat32Number*)output)[(i + start) * Stride] = (cmsFloat32Number)v;
-              else
-                     ((cmsFloat32Number*)output)[i + start] = (cmsFloat32Number)v;
-       }
+        if (Planar)
+            ((cmsFloat32Number*) output)[(i + start ) * Stride]= (cmsFloat32Number) v;
+        else
+            ((cmsFloat32Number*) output)[i + start] = (cmsFloat32Number) v;
+    }
 
+    if (!ExtraFirst) {
+        output += Extra * sizeof(cmsFloat32Number);
+    }
 
-       if (Extra == 0 && SwapFirst) {
+  if (Extra == 0 && SwapFirst) {
 
-              memmove(swap1 + 1, swap1, (nChan - 1)* sizeof(cmsFloat32Number));
-              *swap1 = (cmsFloat32Number)v;
-       }
+         memmove(swap1 + 1, swap1, (nChan-1)* sizeof(cmsFloat32Number));
+        *swap1 = (cmsFloat32Number) v;
+    }
 
-       if (T_PLANAR(info->OutputFormat))
-              return output + sizeof(cmsFloat32Number);
-       else
-              return output + (nChan + Extra) * sizeof(cmsFloat32Number);
+    if (T_PLANAR(info -> OutputFormat))
+        return output + sizeof(cmsFloat32Number);
+    else
+        return output + nChan * sizeof(cmsFloat32Number);
 }
 
 
@@ -2512,47 +2432,50 @@ cmsUInt8Number* PackFloatsFromFloat(_cmsTRANSFORM* info,
                                     cmsUInt8Number* output,
                                     cmsUInt32Number Stride)
 {
-       int nChan = T_CHANNELS(info->OutputFormat);
-       int DoSwap = T_DOSWAP(info->OutputFormat);
-       int Reverse = T_FLAVOR(info->OutputFormat);
-       int Extra = T_EXTRA(info->OutputFormat);
-       int SwapFirst = T_SWAPFIRST(info->OutputFormat);
-       int Planar = T_PLANAR(info->OutputFormat);
-       int ExtraFirst = DoSwap ^ SwapFirst;
-       cmsFloat64Number maximum = IsInkSpace(info->OutputFormat) ? 100.0 : 1.0;
-       cmsFloat32Number* swap1 = (cmsFloat32Number*)output;
-       cmsFloat64Number v = 0;
-       int i, start = 0;
+    int nChan      = T_CHANNELS(info -> OutputFormat);
+    int DoSwap     = T_DOSWAP(info ->OutputFormat);
+    int Reverse    = T_FLAVOR(info ->OutputFormat);
+    int Extra      = T_EXTRA(info -> OutputFormat);
+    int SwapFirst  = T_SWAPFIRST(info -> OutputFormat);
+    int Planar     = T_PLANAR(info -> OutputFormat);
+    int ExtraFirst = DoSwap ^ SwapFirst;
+    cmsFloat64Number maximum = IsInkSpace(info ->OutputFormat) ? 100.0 : 1.0;
+    cmsFloat32Number* swap1 = (cmsFloat32Number*) output;
+    cmsFloat64Number v = 0;
+    int i, start = 0;
 
-       if (ExtraFirst)
-              start = Extra;
+    if (ExtraFirst)
+        start = Extra;
 
-       for (i = 0; i < nChan; i++) {
+    for (i=0; i < nChan; i++) {
 
-              int index = DoSwap ? (nChan - i - 1) : i;
+        int index = DoSwap ? (nChan - i - 1) : i;
 
-              v = wOut[index] * maximum;
+        v = wOut[index] * maximum;
 
-              if (Reverse)
-                     v = maximum - v;
+        if (Reverse)
+            v = maximum - v;
 
-              if (Planar)
-                     ((cmsFloat32Number*)output)[(i + start)* Stride] = (cmsFloat32Number)v;
-              else
-                     ((cmsFloat32Number*)output)[i + start] = (cmsFloat32Number)v;
-       }
+        if (Planar)
+            ((cmsFloat32Number*) output)[(i + start)* Stride]= (cmsFloat32Number) v;
+        else
+            ((cmsFloat32Number*) output)[i + start] = (cmsFloat32Number) v;
+    }
 
+    if (!ExtraFirst) {
+        output += Extra * sizeof(cmsFloat32Number);
+    }
 
-       if (Extra == 0 && SwapFirst) {
+   if (Extra == 0 && SwapFirst) {
 
-              memmove(swap1 + 1, swap1, (nChan - 1)* sizeof(cmsFloat32Number));
-              *swap1 = (cmsFloat32Number)v;
-       }
+         memmove(swap1 + 1, swap1, (nChan-1)* sizeof(cmsFloat32Number));
+        *swap1 = (cmsFloat32Number) v;
+    }
 
-       if (T_PLANAR(info->OutputFormat))
-              return output + sizeof(cmsFloat32Number);
-       else
-              return output + (nChan + Extra) * sizeof(cmsFloat32Number);
+    if (T_PLANAR(info -> OutputFormat))
+        return output + sizeof(cmsFloat32Number);
+    else
+        return output + nChan * sizeof(cmsFloat32Number);
 }
 
 static
@@ -2561,47 +2484,51 @@ cmsUInt8Number* PackDoublesFromFloat(_cmsTRANSFORM* info,
                                     cmsUInt8Number* output,
                                     cmsUInt32Number Stride)
 {
-       int nChan = T_CHANNELS(info->OutputFormat);
-       int DoSwap = T_DOSWAP(info->OutputFormat);
-       int Reverse = T_FLAVOR(info->OutputFormat);
-       int Extra = T_EXTRA(info->OutputFormat);
-       int SwapFirst = T_SWAPFIRST(info->OutputFormat);
-       int Planar = T_PLANAR(info->OutputFormat);
-       int ExtraFirst = DoSwap ^ SwapFirst;
-       cmsFloat64Number maximum = IsInkSpace(info->OutputFormat) ? 100.0 : 1.0;
-       cmsFloat64Number v = 0;
-       cmsFloat64Number* swap1 = (cmsFloat64Number*)output;
-       int i, start = 0;
+    int nChan      = T_CHANNELS(info -> OutputFormat);
+    int DoSwap     = T_DOSWAP(info ->OutputFormat);
+    int Reverse    = T_FLAVOR(info ->OutputFormat);
+    int Extra      = T_EXTRA(info -> OutputFormat);
+    int SwapFirst  = T_SWAPFIRST(info -> OutputFormat);
+    int Planar     = T_PLANAR(info -> OutputFormat);
+    int ExtraFirst = DoSwap ^ SwapFirst;
+    cmsFloat64Number maximum = IsInkSpace(info ->OutputFormat) ? 100.0 : 1.0;
+    cmsFloat64Number v = 0;
+    cmsFloat64Number* swap1 = (cmsFloat64Number*) output;
+    int i, start = 0;
 
-       if (ExtraFirst)
-              start = Extra;
+    if (ExtraFirst)
+        start = Extra;
 
-       for (i = 0; i < nChan; i++) {
+    for (i=0; i < nChan; i++) {
 
-              int index = DoSwap ? (nChan - i - 1) : i;
+        int index = DoSwap ? (nChan - i - 1) : i;
 
-              v = wOut[index] * maximum;
+        v = wOut[index] * maximum;
 
-              if (Reverse)
-                     v = maximum - v;
+        if (Reverse)
+            v = maximum - v;
 
-              if (Planar)
-                     ((cmsFloat64Number*)output)[(i + start) * Stride] = v;
-              else
-                     ((cmsFloat64Number*)output)[i + start] = v;
-       }
+        if (Planar)
+            ((cmsFloat64Number*) output)[(i + start) * Stride] =  v;
+        else
+            ((cmsFloat64Number*) output)[i + start] =  v;
+    }
 
-       if (Extra == 0 && SwapFirst) {
+    if (!ExtraFirst) {
+        output += Extra * sizeof(cmsFloat64Number);
+    }
 
-              memmove(swap1 + 1, swap1, (nChan - 1)* sizeof(cmsFloat64Number));
-              *swap1 = v;
-       }
+   if (Extra == 0 && SwapFirst) {
+
+         memmove(swap1 + 1, swap1, (nChan-1)* sizeof(cmsFloat64Number));
+        *swap1 = v;
+    }
 
 
-       if (T_PLANAR(info->OutputFormat))
-              return output + sizeof(cmsFloat64Number);
-       else
-              return output + (nChan + Extra) * sizeof(cmsFloat64Number);
+    if (T_PLANAR(info -> OutputFormat))
+        return output + sizeof(cmsFloat64Number);
+    else
+        return output + nChan * sizeof(cmsFloat64Number);
 
 }
 
@@ -2837,47 +2764,50 @@ cmsUInt8Number* PackHalfFrom16(register _cmsTRANSFORM* info,
                                 register cmsUInt8Number* output,
                                 register cmsUInt32Number Stride)
 {
-       int nChan = T_CHANNELS(info->OutputFormat);
-       int DoSwap = T_DOSWAP(info->OutputFormat);
-       int Reverse = T_FLAVOR(info->OutputFormat);
-       int Extra = T_EXTRA(info->OutputFormat);
-       int SwapFirst = T_SWAPFIRST(info->OutputFormat);
-       int Planar = T_PLANAR(info->OutputFormat);
-       int ExtraFirst = DoSwap ^ SwapFirst;
-       cmsFloat32Number maximum = IsInkSpace(info->OutputFormat) ? 655.35F : 65535.0F;
-       cmsFloat32Number v = 0;
-       cmsUInt16Number* swap1 = (cmsUInt16Number*)output;
-       int i, start = 0;
+    int nChan      = T_CHANNELS(info -> OutputFormat);
+    int DoSwap     = T_DOSWAP(info ->OutputFormat);
+    int Reverse    = T_FLAVOR(info ->OutputFormat);
+    int Extra      = T_EXTRA(info -> OutputFormat);
+    int SwapFirst  = T_SWAPFIRST(info -> OutputFormat);
+    int Planar     = T_PLANAR(info -> OutputFormat);
+    int ExtraFirst = DoSwap ^ SwapFirst;
+    cmsFloat32Number maximum = IsInkSpace(info ->OutputFormat) ? 655.35F : 65535.0F;
+    cmsFloat32Number v = 0;
+    cmsUInt16Number* swap1 = (cmsUInt16Number*) output;
+    int i, start = 0;
 
-       if (ExtraFirst)
-              start = Extra;
+    if (ExtraFirst)
+        start = Extra;
 
-       for (i = 0; i < nChan; i++) {
+    for (i=0; i < nChan; i++) {
 
-              int index = DoSwap ? (nChan - i - 1) : i;
+        int index = DoSwap ? (nChan - i - 1) : i;
 
-              v = (cmsFloat32Number)wOut[index] / maximum;
+        v = (cmsFloat32Number) wOut[index] / maximum;
 
-              if (Reverse)
-                     v = maximum - v;
+        if (Reverse)
+            v = maximum - v;
 
-              if (Planar)
-                     ((cmsUInt16Number*)output)[(i + start) * Stride] = _cmsFloat2Half(v);
-              else
-                     ((cmsUInt16Number*)output)[i + start] = _cmsFloat2Half(v);
-       }
+        if (Planar)
+            ((cmsUInt16Number*) output)[(i + start ) * Stride]= _cmsFloat2Half(v);
+        else
+            ((cmsUInt16Number*) output)[i + start] =  _cmsFloat2Half(v);
+    }
 
+    if (!ExtraFirst) {
+        output += Extra * sizeof(cmsUInt16Number);
+    }
 
-       if (Extra == 0 && SwapFirst) {
+  if (Extra == 0 && SwapFirst) {
 
-              memmove(swap1 + 1, swap1, (nChan - 1)* sizeof(cmsUInt16Number));
-              *swap1 = _cmsFloat2Half(v);
-       }
+         memmove(swap1 + 1, swap1, (nChan-1)* sizeof(cmsUInt16Number));
+        *swap1 = _cmsFloat2Half(v);
+    }
 
-       if (T_PLANAR(info->OutputFormat))
-              return output + sizeof(cmsUInt16Number);
-       else
-              return output + (nChan + Extra) * sizeof(cmsUInt16Number);
+    if (T_PLANAR(info -> OutputFormat))
+        return output + sizeof(cmsUInt16Number);
+    else
+        return output + nChan * sizeof(cmsUInt16Number);
 }
 
 
@@ -2888,47 +2818,50 @@ cmsUInt8Number* PackHalfFromFloat(_cmsTRANSFORM* info,
                                     cmsUInt8Number* output,
                                     cmsUInt32Number Stride)
 {
-       int nChan = T_CHANNELS(info->OutputFormat);
-       int DoSwap = T_DOSWAP(info->OutputFormat);
-       int Reverse = T_FLAVOR(info->OutputFormat);
-       int Extra = T_EXTRA(info->OutputFormat);
-       int SwapFirst = T_SWAPFIRST(info->OutputFormat);
-       int Planar = T_PLANAR(info->OutputFormat);
-       int ExtraFirst = DoSwap ^ SwapFirst;
-       cmsFloat32Number maximum = IsInkSpace(info->OutputFormat) ? 100.0F : 1.0F;
-       cmsUInt16Number* swap1 = (cmsUInt16Number*)output;
-       cmsFloat32Number v = 0;
-       int i, start = 0;
+    int nChan      = T_CHANNELS(info -> OutputFormat);
+    int DoSwap     = T_DOSWAP(info ->OutputFormat);
+    int Reverse    = T_FLAVOR(info ->OutputFormat);
+    int Extra      = T_EXTRA(info -> OutputFormat);
+    int SwapFirst  = T_SWAPFIRST(info -> OutputFormat);
+    int Planar     = T_PLANAR(info -> OutputFormat);
+    int ExtraFirst = DoSwap ^ SwapFirst;
+    cmsFloat32Number maximum = IsInkSpace(info ->OutputFormat) ? 100.0F : 1.0F;
+    cmsUInt16Number* swap1 = (cmsUInt16Number*) output;
+    cmsFloat32Number v = 0;
+    int i, start = 0;
 
-       if (ExtraFirst)
-              start = Extra;
+    if (ExtraFirst)
+        start = Extra;
 
-       for (i = 0; i < nChan; i++) {
+    for (i=0; i < nChan; i++) {
 
-              int index = DoSwap ? (nChan - i - 1) : i;
+        int index = DoSwap ? (nChan - i - 1) : i;
 
-              v = wOut[index] * maximum;
+        v = wOut[index] * maximum;
 
-              if (Reverse)
-                     v = maximum - v;
+        if (Reverse)
+            v = maximum - v;
 
-              if (Planar)
-                     ((cmsUInt16Number*)output)[(i + start)* Stride] = _cmsFloat2Half(v);
-              else
-                     ((cmsUInt16Number*)output)[i + start] = _cmsFloat2Half(v);
-       }
+        if (Planar)
+            ((cmsUInt16Number*) output)[(i + start)* Stride]= _cmsFloat2Half( v );
+        else
+            ((cmsUInt16Number*) output)[i + start] = _cmsFloat2Half( v );
+    }
 
+    if (!ExtraFirst) {
+        output += Extra * sizeof(cmsUInt16Number);
+    }
 
-       if (Extra == 0 && SwapFirst) {
+   if (Extra == 0 && SwapFirst) {
 
-              memmove(swap1 + 1, swap1, (nChan - 1)* sizeof(cmsUInt16Number));
-              *swap1 = (cmsUInt16Number)_cmsFloat2Half(v);
-       }
+         memmove(swap1 + 1, swap1, (nChan-1)* sizeof(cmsUInt16Number));
+        *swap1 = (cmsUInt16Number)  _cmsFloat2Half( v );
+    }
 
-       if (T_PLANAR(info->OutputFormat))
-              return output + sizeof(cmsUInt16Number);
-       else
-              return output + (nChan + Extra)* sizeof(cmsUInt16Number);
+    if (T_PLANAR(info -> OutputFormat))
+        return output + sizeof(cmsUInt16Number);
+    else
+        return output + nChan * sizeof(cmsUInt16Number);
 }
 
 #endif
@@ -2943,7 +2876,6 @@ static cmsFormatters16 InputFormatters16[] = {
     { TYPE_Lab_DBL,                                 ANYPLANAR|ANYEXTRA,   UnrollLabDoubleTo16},
     { TYPE_XYZ_DBL,                                 ANYPLANAR|ANYEXTRA,   UnrollXYZDoubleTo16},
     { TYPE_Lab_FLT,                                 ANYPLANAR|ANYEXTRA,   UnrollLabFloatTo16},
-    { TYPE_XYZ_FLT,                                 ANYPLANAR|ANYEXTRA,   UnrollXYZFloatTo16},
     { TYPE_GRAY_DBL,                                                 0,   UnrollDouble1Chan},
     { FLOAT_SH(1)|BYTES_SH(0), ANYCHANNELS|ANYPLANAR|ANYSWAPFIRST|ANYFLAVOR|
                                              ANYSWAP|ANYEXTRA|ANYSPACE,   UnrollDoubleTo16},
@@ -2968,9 +2900,6 @@ static cmsFormatters16 InputFormatters16[] = {
     { CHANNELS_SH(3)|BYTES_SH(1)|DOSWAP_SH(1),                 ANYSPACE,  Unroll3BytesSwap},
     { CHANNELS_SH(3)|EXTRA_SH(1)|BYTES_SH(1)|DOSWAP_SH(1),     ANYSPACE,  Unroll3BytesSkip1Swap},
     { CHANNELS_SH(3)|EXTRA_SH(1)|BYTES_SH(1)|SWAPFIRST_SH(1),  ANYSPACE,  Unroll3BytesSkip1SwapFirst},
-
-    { CHANNELS_SH(3)|EXTRA_SH(1)|BYTES_SH(1)|DOSWAP_SH(1)|SWAPFIRST_SH(1),
-                                                               ANYSPACE,  Unroll3BytesSkip1SwapSwapFirst},
 
     { CHANNELS_SH(4)|BYTES_SH(1),                              ANYSPACE,  Unroll4Bytes},
     { CHANNELS_SH(4)|BYTES_SH(1)|FLAVOR_SH(1),                 ANYSPACE,  Unroll4BytesReverse},
@@ -3078,7 +3007,6 @@ static cmsFormatters16 OutputFormatters16[] = {
     { TYPE_XYZ_DBL,                                      ANYPLANAR|ANYEXTRA,  PackXYZDoubleFrom16},
 
     { TYPE_Lab_FLT,                                      ANYPLANAR|ANYEXTRA,  PackLabFloatFrom16},
-    { TYPE_XYZ_FLT,                                      ANYPLANAR|ANYEXTRA,  PackXYZFloatFrom16},
 
     { FLOAT_SH(1)|BYTES_SH(0),      ANYFLAVOR|ANYSWAPFIRST|ANYSWAP|
                                     ANYCHANNELS|ANYPLANAR|ANYEXTRA|ANYSPACE,  PackDoubleFrom16},
@@ -3188,8 +3116,6 @@ cmsFormatter _cmsGetStockOutputFormatter(cmsUInt32Number dwInput, cmsUInt32Numbe
     cmsUInt32Number i;
     cmsFormatter fr;
 
-    // Optimization is only a hint
-    dwInput &= ~OPTIMIZED_SH(1);
 
     switch (dwFlags)
     {
@@ -3236,98 +3162,40 @@ typedef struct _cms_formatters_factory_list {
 
 } cmsFormattersFactoryList;
 
-_cmsFormattersPluginChunkType _cmsFormattersPluginChunk = { NULL };
-
-
-// Duplicates the zone of memory used by the plug-in in the new context
-static
-void DupFormatterFactoryList(struct _cmsContext_struct* ctx,
-                                               const struct _cmsContext_struct* src)
-{
-   _cmsFormattersPluginChunkType newHead = { NULL };
-   cmsFormattersFactoryList*  entry;
-   cmsFormattersFactoryList*  Anterior = NULL;
-   _cmsFormattersPluginChunkType* head = (_cmsFormattersPluginChunkType*) src->chunks[FormattersPlugin];
-
-     _cmsAssert(head != NULL);
-
-   // Walk the list copying all nodes
-   for (entry = head->FactoryList;
-       entry != NULL;
-       entry = entry ->Next) {
-
-           cmsFormattersFactoryList *newEntry = ( cmsFormattersFactoryList *) _cmsSubAllocDup(ctx ->MemPool, entry, sizeof(cmsFormattersFactoryList));
-
-           if (newEntry == NULL)
-               return;
-
-           // We want to keep the linked list order, so this is a little bit tricky
-           newEntry -> Next = NULL;
-           if (Anterior)
-               Anterior -> Next = newEntry;
-
-           Anterior = newEntry;
-
-           if (newHead.FactoryList == NULL)
-               newHead.FactoryList = newEntry;
-   }
-
-   ctx ->chunks[FormattersPlugin] = _cmsSubAllocDup(ctx->MemPool, &newHead, sizeof(_cmsFormattersPluginChunkType));
-}
-
-// The interpolation plug-in memory chunk allocator/dup
-void _cmsAllocFormattersPluginChunk(struct _cmsContext_struct* ctx,
-                                    const struct _cmsContext_struct* src)
-{
-      _cmsAssert(ctx != NULL);
-
-     if (src != NULL) {
-
-         // Duplicate the LIST
-         DupFormatterFactoryList(ctx, src);
-     }
-     else {
-          static _cmsFormattersPluginChunkType FormattersPluginChunk = { NULL };
-          ctx ->chunks[FormattersPlugin] = _cmsSubAllocDup(ctx ->MemPool, &FormattersPluginChunk, sizeof(_cmsFormattersPluginChunkType));
-     }
-}
-
+static cmsFormattersFactoryList* FactoryList = NULL;
 
 
 // Formatters management
-cmsBool  _cmsRegisterFormattersPlugin(cmsContext ContextID, cmsPluginBase* Data)
+cmsBool  _cmsRegisterFormattersPlugin(cmsPluginBase* Data)
 {
-    _cmsFormattersPluginChunkType* ctx = ( _cmsFormattersPluginChunkType*) _cmsContextGetClientChunk(ContextID, FormattersPlugin);
     cmsPluginFormatters* Plugin = (cmsPluginFormatters*) Data;
     cmsFormattersFactoryList* fl ;
 
-    // Reset to built-in defaults
+    // Reset
     if (Data == NULL) {
 
-          ctx ->FactoryList = NULL;
+          FactoryList = NULL;
           return TRUE;
     }
 
-    fl = (cmsFormattersFactoryList*) _cmsPluginMalloc(ContextID, sizeof(cmsFormattersFactoryList));
+    fl = (cmsFormattersFactoryList*) _cmsPluginMalloc(sizeof(cmsFormattersFactoryList));
     if (fl == NULL) return FALSE;
 
     fl ->Factory    = Plugin ->FormattersFactory;
 
-    fl ->Next = ctx -> FactoryList;
-    ctx ->FactoryList = fl;
+    fl ->Next = FactoryList;
+    FactoryList = fl;
 
     return TRUE;
 }
 
-cmsFormatter _cmsGetFormatter(cmsContext ContextID,
-                             cmsUInt32Number Type,         // Specific type, i.e. TYPE_RGB_8
+cmsFormatter _cmsGetFormatter(cmsUInt32Number Type,         // Specific type, i.e. TYPE_RGB_8
                              cmsFormatterDirection Dir,
                              cmsUInt32Number dwFlags)
 {
-    _cmsFormattersPluginChunkType* ctx = ( _cmsFormattersPluginChunkType*) _cmsContextGetClientChunk(ContextID, FormattersPlugin);
     cmsFormattersFactoryList* f;
 
-    for (f =ctx->FactoryList; f != NULL; f = f ->Next) {
+    for (f = FactoryList; f != NULL; f = f ->Next) {
 
         cmsFormatter fn = f ->Factory(Type, Dir, dwFlags);
         if (fn.Fmt16 != NULL) return fn;

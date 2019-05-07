@@ -511,7 +511,7 @@ implements ReferenceType {
             methodMap.put(method.name().concat(method.signature()), method);
         }
 
-    abstract void addVisibleMethods(Map<String, Method> methodMap, Set<InterfaceType> seenInterfaces);
+    abstract void addVisibleMethods(Map<String, Method> methodMap);
 
     public List<Method> visibleMethods() {
         /*
@@ -520,7 +520,7 @@ implements ReferenceType {
          * concatenation of name and signature.
          */
         Map<String, Method> map = new HashMap<String, Method>();
-        addVisibleMethods(map, new HashSet<InterfaceType>());
+        addVisibleMethods(map);
 
         /*
          * ... but the hash map destroys order. Methods should be

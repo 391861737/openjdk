@@ -26,7 +26,6 @@
 package jdk.nashorn.internal.ir;
 
 import java.util.Arrays;
-import java.util.Collections;
 import java.util.List;
 import jdk.nashorn.internal.codegen.Label;
 
@@ -34,13 +33,11 @@ import jdk.nashorn.internal.codegen.Label;
  * A loop node, for example a while node, do while node or for node
  */
 public abstract class LoopNode extends BreakableStatement {
-    private static final long serialVersionUID = 1L;
-
     /** loop continue label. */
     protected final Label continueLabel;
 
     /** Loop test node, null if infinite */
-    protected final JoinPredecessorExpression test;
+    protected final Expression test;
 
     /** Loop body */
     protected final Block body;
@@ -54,13 +51,14 @@ public abstract class LoopNode extends BreakableStatement {
      * @param lineNumber         lineNumber
      * @param token              token
      * @param finish             finish
+     * @param test               test, or null if infinite loop
      * @param body               loop body
      * @param controlFlowEscapes controlFlowEscapes
      */
-    protected LoopNode(final int lineNumber, final long token, final int finish, final Block body, final boolean controlFlowEscapes) {
+    protected LoopNode(final int lineNumber, final long token, final int finish, final Expression test, final Block body, final boolean controlFlowEscapes) {
         super(lineNumber, token, finish, new Label("while_break"));
         this.continueLabel = new Label("while_continue");
-        this.test = null;
+        this.test = test;
         this.body = body;
         this.controlFlowEscapes = controlFlowEscapes;
     }
@@ -72,11 +70,9 @@ public abstract class LoopNode extends BreakableStatement {
      * @param test     new test
      * @param body     new body
      * @param controlFlowEscapes controlFlowEscapes
-     * @param conversion the local variable conversion carried by this loop node.
      */
-    protected LoopNode(final LoopNode loopNode, final JoinPredecessorExpression test, final Block body,
-            final boolean controlFlowEscapes, final LocalVariableConversion conversion) {
-        super(loopNode, conversion);
+    protected LoopNode(final LoopNode loopNode, final Expression test, final Block body, final boolean controlFlowEscapes) {
+        super(loopNode);
         this.continueLabel = new Label(loopNode.continueLabel);
         this.test = test;
         this.body = body;
@@ -129,7 +125,7 @@ public abstract class LoopNode extends BreakableStatement {
 
     @Override
     public List<Label> getLabels() {
-        return Collections.unmodifiableList(Arrays.asList(breakLabel, continueLabel));
+        return Arrays.asList(breakLabel, continueLabel);
     }
 
     @Override
@@ -154,9 +150,7 @@ public abstract class LoopNode extends BreakableStatement {
      * Get the test for this for node
      * @return the test
      */
-    public final JoinPredecessorExpression getTest() {
-        return test;
-    }
+    public abstract Expression getTest();
 
     /**
      * Set the test for this for node
@@ -165,7 +159,7 @@ public abstract class LoopNode extends BreakableStatement {
      * @param test new test
      * @return same or new node depending on if test was changed
      */
-    public abstract LoopNode setTest(final LexicalContext lc, final JoinPredecessorExpression test);
+    public abstract LoopNode setTest(final LexicalContext lc, final Expression test);
 
     /**
      * Set the control flow escapes flag for this node.
@@ -177,9 +171,4 @@ public abstract class LoopNode extends BreakableStatement {
      */
     public abstract LoopNode setControlFlowEscapes(final LexicalContext lc, final boolean controlFlowEscapes);
 
-    /**
-     * Does this loop have a LET declaration and hence require a per-iteration scope?
-     * @return true if a per-iteration scope is required.
-     */
-    public abstract boolean hasPerIterationScope();
 }

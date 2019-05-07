@@ -24,12 +24,15 @@
  */
 package javax.swing;
 
+import sun.swing.SwingUtilities2;
 
 import java.awt.*;
+import java.awt.event.*;
 import java.lang.reflect.*;
 import java.net.*;
 import java.util.*;
 import java.io.*;
+import java.util.*;
 
 import javax.swing.plaf.*;
 import javax.swing.text.*;
@@ -40,7 +43,7 @@ import javax.accessibility.*;
 /**
  * A text component to edit various kinds of content.
  * You can find how-to information and examples of using editor panes in
- * <a href="https://docs.oracle.com/javase/tutorial/uiswing/components/text.html">Using Text Components</a>,
+ * <a href="http://docs.oracle.com/javase/tutorial/uiswing/components/text.html">Using Text Components</a>,
  * a section in <em>The Java Tutorial.</em>
  *
  * <p>
@@ -1241,11 +1244,7 @@ public class JEditorPane extends JTextComponent {
      */
     public static void registerEditorKitForContentType(String type, String classname, ClassLoader loader) {
         getKitTypeRegistry().put(type, classname);
-        if (loader != null) {
-            getKitLoaderRegistry().put(type, loader);
-        } else {
-            getKitLoaderRegistry().remove(type);
-        }
+        getKitLoaderRegistry().put(type, loader);
         getKitRegisty().remove(type);
     }
 

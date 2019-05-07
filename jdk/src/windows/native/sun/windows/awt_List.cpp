@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 1996, 2014, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 1996, 2009, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -219,7 +219,7 @@ void AwtList::SetMultiSelect(BOOL ms) {
     JNIEnv *env = (JNIEnv *)JNU_GetEnv(jvm, JNI_VERSION_1_2);
 
     /* Copy current box's contents to string array */
-    const int nCount = GetCount();
+    int nCount = GetCount();
     LPTSTR * strings = new LPTSTR[nCount];
     int i;
 
@@ -614,8 +614,7 @@ void AwtList::_AddItems(void *param)
             {
                 LPTSTR itemPtr = NULL;
                 jstring item = (jstring)env->GetObjectArrayElement(items, i);
-                if (env->ExceptionCheck()) goto ret;
-                if (item == NULL) goto next_item;
+                JNI_CHECK_NULL_GOTO(item, "null item", next_item);
                 itemPtr = (LPTSTR)JNU_GetStringPlatformChars(env, item, 0);
                 if (itemPtr == NULL)
                 {

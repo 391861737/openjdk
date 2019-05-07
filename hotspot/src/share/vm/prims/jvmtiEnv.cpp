@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2003, 2017, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2003, 2013, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -23,7 +23,6 @@
  */
 
 #include "precompiled.hpp"
-#include "classfile/classLoaderExt.hpp"
 #include "classfile/systemDictionary.hpp"
 #include "classfile/vmSymbols.hpp"
 #include "interpreter/bytecodeStream.hpp"
@@ -308,9 +307,9 @@ JvmtiEnv::GetObjectSize(jobject object, jlong* size_ptr) {
       !java_lang_Class::is_primitive(mirror)) {
     Klass* k = java_lang_Class::as_Klass(mirror);
     assert(k != NULL, "class for non-primitive mirror must exist");
-    *size_ptr = (jlong)k->size() * wordSize;
+    *size_ptr = k->size() * wordSize;
   } else {
-    *size_ptr = (jlong)mirror->size() * wordSize;
+    *size_ptr = mirror->size() * wordSize;
     }
   return JVMTI_ERROR_NONE;
 } /* end GetObjectSize */
@@ -476,7 +475,7 @@ JvmtiEnv::AddToBootstrapClassLoaderSearch(const char* segment) {
     if (TraceClassLoading) {
       tty->print_cr("[Opened %s]", zip_entry->name());
     }
-    ClassLoaderExt::append_boot_classpath(zip_entry);
+    ClassLoader::add_to_list(zip_entry);
     return JVMTI_ERROR_NONE;
   } else {
     return JVMTI_ERROR_WRONG_PHASE;
@@ -946,7 +945,7 @@ JvmtiEnv::GetThreadInfo(jthread thread, jvmtiThreadInfo* info_ptr) {
     return JVMTI_ERROR_INVALID_THREAD;
 
   Handle thread_obj(current_thread, thread_oop);
-  Handle name;
+  typeArrayHandle    name;
   ThreadPriority priority;
   Handle     thread_group;
   Handle context_class_loader;
@@ -954,7 +953,7 @@ JvmtiEnv::GetThreadInfo(jthread thread, jvmtiThreadInfo* info_ptr) {
 
   { MutexLocker mu(Threads_lock);
 
-    name = Handle(current_thread, java_lang_Thread::name(thread_obj()));
+    name = typeArrayHandle(current_thread, java_lang_Thread::name(thread_obj()));
     priority = java_lang_Thread::priority(thread_obj());
     thread_group = Handle(current_thread, java_lang_Thread::threadGroup(thread_obj()));
     is_daemon = java_lang_Thread::is_daemon(thread_obj());
@@ -965,7 +964,7 @@ JvmtiEnv::GetThreadInfo(jthread thread, jvmtiThreadInfo* info_ptr) {
   { const char *n;
 
     if (name() != NULL) {
-      n = java_lang_String::as_utf8_string(name());
+      n = UNICODE::as_utf8((jchar*) name->base(T_CHAR), name->length());
     } else {
       n = UNICODE::as_utf8(NULL, 0);
     }
@@ -1000,9 +999,8 @@ JvmtiEnv::GetOwnedMonitorInfo(JavaThread* java_thread, jint* owned_monitor_count
   GrowableArray<jvmtiMonitorStackDepthInfo*> *owned_monitors_list =
       new (ResourceObj::C_HEAP, mtInternal) GrowableArray<jvmtiMonitorStackDepthInfo*>(1, true);
 
-  // It is only safe to perform the direct operation on the current
-  // thread. All other usage needs to use a vm-safepoint-op for safety.
-  if (java_thread == calling_thread) {
+  uint32_t debug_bits = 0;
+  if (is_thread_fully_suspended(java_thread, true, &debug_bits)) {
     err = get_owned_monitors(calling_thread, java_thread, owned_monitors_list);
   } else {
     // JVMTI get monitors info at safepoint. Do not require target thread to
@@ -1046,9 +1044,8 @@ JvmtiEnv::GetOwnedMonitorStackDepthInfo(JavaThread* java_thread, jint* monitor_i
   GrowableArray<jvmtiMonitorStackDepthInfo*> *owned_monitors_list =
          new (ResourceObj::C_HEAP, mtInternal) GrowableArray<jvmtiMonitorStackDepthInfo*>(1, true);
 
-  // It is only safe to perform the direct operation on the current
-  // thread. All other usage needs to use a vm-safepoint-op for safety.
-  if (java_thread == calling_thread) {
+  uint32_t debug_bits = 0;
+  if (is_thread_fully_suspended(java_thread, true, &debug_bits)) {
     err = get_owned_monitors(calling_thread, java_thread, owned_monitors_list);
   } else {
     // JVMTI get owned monitors info at safepoint. Do not require target thread to
@@ -1089,11 +1086,9 @@ JvmtiEnv::GetOwnedMonitorStackDepthInfo(JavaThread* java_thread, jint* monitor_i
 jvmtiError
 JvmtiEnv::GetCurrentContendedMonitor(JavaThread* java_thread, jobject* monitor_ptr) {
   jvmtiError err = JVMTI_ERROR_NONE;
+  uint32_t debug_bits = 0;
   JavaThread* calling_thread  = JavaThread::current();
-
-  // It is only safe to perform the direct operation on the current
-  // thread. All other usage needs to use a vm-safepoint-op for safety.
-  if (java_thread == calling_thread) {
+  if (is_thread_fully_suspended(java_thread, true, &debug_bits)) {
     err = get_current_contended_monitor(calling_thread, java_thread, monitor_ptr);
   } else {
     // get contended monitor information at safepoint.
@@ -1302,10 +1297,8 @@ JvmtiEnv::GetThreadGroupChildren(jthreadGroup group, jint* thread_count_ptr, jth
 jvmtiError
 JvmtiEnv::GetStackTrace(JavaThread* java_thread, jint start_depth, jint max_frame_count, jvmtiFrameInfo* frame_buffer, jint* count_ptr) {
   jvmtiError err = JVMTI_ERROR_NONE;
-
-  // It is only safe to perform the direct operation on the current
-  // thread. All other usage needs to use a vm-safepoint-op for safety.
-  if (java_thread == JavaThread::current()) {
+  uint32_t debug_bits = 0;
+  if (is_thread_fully_suspended(java_thread, true, &debug_bits)) {
     err = get_stack_trace(java_thread, start_depth, max_frame_count, frame_buffer, count_ptr);
   } else {
     // JVMTI get stack trace at safepoint. Do not require target thread to
@@ -3016,7 +3009,7 @@ JvmtiEnv::RawMonitorEnter(JvmtiRawMonitor * rmonitor) {
     // in thread.cpp.
     JvmtiPendingMonitors::enter(rmonitor);
   } else {
-    int r = 0;
+    int r;
     Thread* thread = Thread::current();
 
     if (thread->is_Java_thread()) {
@@ -3079,7 +3072,7 @@ JvmtiEnv::RawMonitorExit(JvmtiRawMonitor * rmonitor) {
       err = JVMTI_ERROR_NOT_MONITOR_OWNER;
     }
   } else {
-    int r = 0;
+    int r;
     Thread* thread = Thread::current();
 
     if (thread->is_Java_thread()) {
@@ -3113,7 +3106,7 @@ JvmtiEnv::RawMonitorExit(JvmtiRawMonitor * rmonitor) {
 // rmonitor - pre-checked for validity
 jvmtiError
 JvmtiEnv::RawMonitorWait(JvmtiRawMonitor * rmonitor, jlong millis) {
-  int r = 0;
+  int r;
   Thread* thread = Thread::current();
 
   if (thread->is_Java_thread()) {
@@ -3172,7 +3165,7 @@ JvmtiEnv::RawMonitorWait(JvmtiRawMonitor * rmonitor, jlong millis) {
 // rmonitor - pre-checked for validity
 jvmtiError
 JvmtiEnv::RawMonitorNotify(JvmtiRawMonitor * rmonitor) {
-  int r = 0;
+  int r;
   Thread* thread = Thread::current();
 
   if (thread->is_Java_thread()) {
@@ -3203,7 +3196,7 @@ JvmtiEnv::RawMonitorNotify(JvmtiRawMonitor * rmonitor) {
 // rmonitor - pre-checked for validity
 jvmtiError
 JvmtiEnv::RawMonitorNotifyAll(JvmtiRawMonitor * rmonitor) {
-  int r = 0;
+  int r;
   Thread* thread = Thread::current();
 
   if (thread->is_Java_thread()) {

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2011, 2014, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2011, 2013, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -135,15 +135,8 @@ static NSSize ScaledImageSizeForStatusBar(NSSize imageSize) {
 
     clickCount = [event clickCount];
 
-    jdouble deltaX = [event deltaX];
-    jdouble deltaY = [event deltaY];
-    if ([AWTToolkit hasPreciseScrollingDeltas: event]) {
-        deltaX = [event scrollingDeltaX] * 0.1;
-        deltaY = [event scrollingDeltaY] * 0.1;
-    }
-
-    static JNF_CLASS_CACHE(jc_NSEvent, "sun/lwawt/macosx/NSEvent");
-    static JNF_CTOR_CACHE(jctor_NSEvent, jc_NSEvent, "(IIIIIIIIDDI)V");
+    static JNF_CLASS_CACHE(jc_NSEvent, "sun/lwawt/macosx/event/NSEvent");
+    static JNF_CTOR_CACHE(jctor_NSEvent, jc_NSEvent, "(IIIIIIIIDD)V");
     jobject jEvent = JNFNewObject(env, jctor_NSEvent,
                                   [event type],
                                   [event modifierFlags],
@@ -151,16 +144,15 @@ static NSSize ScaledImageSizeForStatusBar(NSSize imageSize) {
                                   [event buttonNumber],
                                   (jint)localPoint.x, (jint)localPoint.y,
                                   (jint)absP.x, (jint)absP.y,
-                                  deltaY,
-                                  deltaX,
-                                  [AWTToolkit scrollStateWithEvent: event]);
+                                  [event deltaY],
+                                  [event deltaX]);
     if (jEvent == nil) {
         // Unable to create event by some reason.
         return;
     }
 
     static JNF_CLASS_CACHE(jc_TrayIcon, "sun/lwawt/macosx/CTrayIcon");
-    static JNF_MEMBER_CACHE(jm_handleMouseEvent, jc_TrayIcon, "handleMouseEvent", "(Lsun/lwawt/macosx/NSEvent;)V");
+    static JNF_MEMBER_CACHE(jm_handleMouseEvent, jc_TrayIcon, "handleMouseEvent", "(Lsun/lwawt/macosx/event/NSEvent;)V");
     JNFCallVoidMethod(env, peer, jm_handleMouseEvent, jEvent);
 }
 

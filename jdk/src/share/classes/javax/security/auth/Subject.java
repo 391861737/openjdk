@@ -959,30 +959,14 @@ public final class Subject implements java.io.Serializable {
     /**
      * Reads this object from a stream (i.e., deserializes it)
      */
-    @SuppressWarnings("unchecked")
     private void readObject(java.io.ObjectInputStream s)
                 throws java.io.IOException, ClassNotFoundException {
 
-        ObjectInputStream.GetField gf = s.readFields();
-
-        readOnly = gf.get("readOnly", false);
-
-        Set<Principal> inputPrincs = (Set<Principal>)gf.get("principals", null);
+        s.defaultReadObject();
 
         // Rewrap the principals into a SecureSet
-        if (inputPrincs == null) {
-            throw new NullPointerException
-                (ResourcesMgr.getString("invalid.null.input.s."));
-        }
-        try {
-            principals = Collections.synchronizedSet(new SecureSet<Principal>
-                                (this, PRINCIPAL_SET, inputPrincs));
-        } catch (NullPointerException npe) {
-            // Sometimes people deserialize the principals set only.
-            // Subject is not accessible, so just don't fail.
-            principals = Collections.synchronizedSet
-                        (new SecureSet<Principal>(this, PRINCIPAL_SET));
-        }
+        principals = Collections.synchronizedSet(new SecureSet<Principal>
+                                (this, PRINCIPAL_SET, principals));
 
         // The Credential {@code Set} is not serialized, but we do not
         // want the default deserialization routine to set it to null.

@@ -1024,8 +1024,7 @@ final class XTextAreaPeer extends XComponentPeer implements TextAreaPeer {
             }
         }
 
-        @Override
-        protected void uninstallListeners(JComponent scrollPane) {
+        protected void uninstallListeners(JScrollPane scrollPane) {
             super.uninstallListeners(scrollPane);
             scrollPane.removePropertyChangeListener(propertyChangeHandler);
         }

@@ -1,5 +1,5 @@
-/**
- * Copyright (c) 1996, 2017, Oracle and/or its affiliates. All rights reserved.
+/*
+ * Copyright (c) 1996, 2009, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -226,16 +226,6 @@ public class DerValue {
         data = init(stringTag, value);
     }
 
-    // Creates a DerValue from a tag and some DER-encoded data w/ additional
-    // arg to control whether DER checks are enforced.
-    DerValue(byte tag, byte[] data, boolean allowBER) {
-        this.tag = tag;
-        buffer = new DerInputBuffer(data.clone(), allowBER);
-        length = data.length;
-        this.data = new DerInputStream(buffer);
-        this.data.mark(Integer.MAX_VALUE);
-    }
-
     /**
      * Creates a DerValue from a tag and some DER-encoded data.
      *
@@ -243,19 +233,23 @@ public class DerValue {
      * @param data the DER-encoded data
      */
     public DerValue(byte tag, byte[] data) {
-        this(tag, data, true);
+        this.tag = tag;
+        buffer = new DerInputBuffer(data.clone());
+        length = data.length;
+        this.data = new DerInputStream(buffer);
+        this.data.mark(Integer.MAX_VALUE);
     }
 
     /*
      * package private
      */
     DerValue(DerInputBuffer in) throws IOException {
-
         // XXX must also parse BER-encoded constructed
         // values such as sequences, sets...
+
         tag = (byte)in.read();
         byte lenByte = (byte)in.read();
-        length = DerInputStream.getLength(lenByte, in);
+        length = DerInputStream.getLength((lenByte & 0xff), in);
         if (length == -1) {  // indefinite length encoding found
             DerInputBuffer inbuf = in.dup();
             int readLen = inbuf.available();
@@ -267,7 +261,7 @@ public class DerValue {
             dis.readFully(indefData, offset, readLen);
             dis.close();
             DerIndefLenConverter derIn = new DerIndefLenConverter();
-            inbuf = new DerInputBuffer(derIn.convert(indefData), in.allowBER);
+            inbuf = new DerInputBuffer(derIn.convert(indefData));
             if (tag != inbuf.read())
                 throw new IOException
                         ("Indefinite length encoding not supported");
@@ -289,12 +283,6 @@ public class DerValue {
         }
     }
 
-    // Get an ASN.1/DER encoded datum from a buffer w/ additional
-    // arg to control whether DER checks are enforced.
-    DerValue(byte[] buf, boolean allowBER) throws IOException {
-        data = init(true, new ByteArrayInputStream(buf), allowBER);
-    }
-
     /**
      * Get an ASN.1/DER encoded datum from a buffer.  The
      * entire buffer must hold exactly one datum, including
@@ -303,14 +291,7 @@ public class DerValue {
      * @param buf buffer holding a single DER-encoded datum.
      */
     public DerValue(byte[] buf) throws IOException {
-        this(buf, true);
-    }
-
-    // Get an ASN.1/DER encoded datum from part of a buffer w/ additional
-    // arg to control whether DER checks are enforced.
-    DerValue(byte[] buf, int offset, int len, boolean allowBER)
-        throws IOException {
-        data = init(true, new ByteArrayInputStream(buf, offset, len), allowBER);
+        data = init(true, new ByteArrayInputStream(buf));
     }
 
     /**
@@ -323,13 +304,7 @@ public class DerValue {
      * @param length how many bytes are in the encoded datum
      */
     public DerValue(byte[] buf, int offset, int len) throws IOException {
-        this(buf, offset, len, true);
-    }
-
-    // Get an ASN1/DER encoded datum from an input stream w/ additional
-    // arg to control whether DER checks are enforced.
-    DerValue(InputStream in, boolean allowBER) throws IOException {
-        data = init(false, in, allowBER);
+        data = init(true, new ByteArrayInputStream(buf, offset, len));
     }
 
     /**
@@ -342,11 +317,10 @@ public class DerValue {
      *  which may be followed by additional data
      */
     public DerValue(InputStream in) throws IOException {
-        this(in, true);
+        data = init(false, in);
     }
 
-    private DerInputStream init(byte stringTag, String value)
-        throws IOException {
+    private DerInputStream init(byte stringTag, String value) throws IOException {
         String enc = null;
 
         tag = stringTag;
@@ -374,7 +348,7 @@ public class DerValue {
 
         byte[] buf = value.getBytes(enc);
         length = buf.length;
-        buffer = new DerInputBuffer(buf, true);
+        buffer = new DerInputBuffer(buf);
         DerInputStream result = new DerInputStream(buffer);
         result.mark(Integer.MAX_VALUE);
         return result;
@@ -383,12 +357,12 @@ public class DerValue {
     /*
      * helper routine
      */
-    private DerInputStream init(boolean fullyBuffered, InputStream in,
-        boolean allowBER) throws IOException {
+    private DerInputStream init(boolean fullyBuffered, InputStream in)
+            throws IOException {
 
         tag = (byte)in.read();
         byte lenByte = (byte)in.read();
-        length = DerInputStream.getLength(lenByte, in);
+        length = DerInputStream.getLength((lenByte & 0xff), in);
         if (length == -1) { // indefinite length encoding found
             int readLen = in.available();
             int offset = 2;     // for tag and length bytes
@@ -411,7 +385,7 @@ public class DerValue {
 
         byte[] bytes = IOUtils.readFully(in, length, true);
 
-        buffer = new DerInputBuffer(bytes, allowBER);
+        buffer = new DerInputBuffer(bytes);
         return new DerInputStream(buffer);
     }
 
@@ -506,8 +480,7 @@ public class DerValue {
         if (buffer.read(bytes) != length)
             throw new IOException("short read on DerValue buffer");
         if (isConstructed()) {
-            DerInputStream in = new DerInputStream(bytes, 0, bytes.length,
-                buffer.allowBER);
+            DerInputStream in = new DerInputStream(bytes);
             bytes = null;
             while (in.available() != 0) {
                 bytes = append(bytes, in.getOctetString());

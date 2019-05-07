@@ -25,29 +25,21 @@
 
 package jdk.nashorn.internal.objects;
 
-import static jdk.nashorn.internal.codegen.CompilerConstants.specialCall;
-
-import java.lang.invoke.MethodHandle;
-import java.lang.invoke.MethodHandles;
-import java.nio.ByteBuffer;
 import jdk.nashorn.internal.objects.annotations.Attribute;
 import jdk.nashorn.internal.objects.annotations.Constructor;
 import jdk.nashorn.internal.objects.annotations.Function;
 import jdk.nashorn.internal.objects.annotations.Property;
 import jdk.nashorn.internal.objects.annotations.ScriptClass;
 import jdk.nashorn.internal.objects.annotations.Where;
-import jdk.nashorn.internal.runtime.JSType;
 import jdk.nashorn.internal.runtime.PropertyMap;
 import jdk.nashorn.internal.runtime.ScriptObject;
 import jdk.nashorn.internal.runtime.arrays.ArrayData;
-import jdk.nashorn.internal.runtime.arrays.TypedArrayData;
 
 /**
  * Uint8 array for TypedArray extension
  */
 @ScriptClass("Uint8Array")
 public final class NativeUint8Array extends ArrayBufferView {
-
     /**
      * The size in bytes of each element in the array.
      */
@@ -63,111 +55,31 @@ public final class NativeUint8Array extends ArrayBufferView {
         public ArrayBufferView construct(final NativeArrayBuffer buffer, final int byteOffset, final int length) {
             return new NativeUint8Array(buffer, byteOffset, length);
         }
-
         @Override
-        public Uint8ArrayData createArrayData(final ByteBuffer nb, final int start, final int end) {
-            return new Uint8ArrayData(nb, start, end);
-        }
-
-        @Override
-        public String getClassName() {
-            return "Uint8Array";
+        public ArrayData createArrayData(final NativeArrayBuffer buffer, final int byteOffset, final int length) {
+            return new Uint8ArrayData(buffer, byteOffset, length);
         }
     };
 
-    private static final class Uint8ArrayData extends TypedArrayData<ByteBuffer> {
-
-        private static final MethodHandle GET_ELEM = specialCall(MethodHandles.lookup(), Uint8ArrayData.class, "getElem", int.class, int.class).methodHandle();
-        private static final MethodHandle SET_ELEM = specialCall(MethodHandles.lookup(), Uint8ArrayData.class, "setElem", void.class, int.class, int.class).methodHandle();
-
-        private Uint8ArrayData(final ByteBuffer nb, final int start, final int end) {
-            super(((ByteBuffer)nb.position(start).limit(end)).slice(), end - start);
+    private static final class Uint8ArrayData extends ArrayDataImpl {
+        private Uint8ArrayData(final NativeArrayBuffer buffer, final int byteOffset, final int elementLength) {
+            super(buffer, byteOffset, elementLength);
         }
 
         @Override
-        protected MethodHandle getGetElem() {
-            return GET_ELEM;
+        protected int byteIndex(final int index) {
+            return index * BYTES_PER_ELEMENT + byteOffset;
         }
 
         @Override
-        protected MethodHandle getSetElem() {
-            return SET_ELEM;
-        }
-
-        private int getElem(final int index) {
-            try {
-                return nb.get(index) & 0xff;
-            } catch (final IndexOutOfBoundsException e) {
-                throw new ClassCastException(); //force relink - this works for unoptimistic too
-            }
-        }
-
-        private void setElem(final int index, final int elem) {
-            try {
-                if (index < nb.limit()) {
-                    nb.put(index, (byte) elem);
-                }
-            } catch (final IndexOutOfBoundsException e) {
-                throw new ClassCastException();
-            }
+        protected int getIntImpl(final int index) {
+            return buffer.getByteArray()[byteIndex(index)] & 0xff;
         }
 
         @Override
-        public boolean isUnsigned() {
-            return true;
+        protected void setImpl(final int index, final int value) {
+            buffer.getByteArray()[byteIndex(index)] = (byte)value;
         }
-
-        @Override
-        public Class<?> getElementType() {
-            return int.class;
-        }
-
-        @Override
-        public Class<?> getBoxedElementType() {
-            return Integer.class;
-        }
-
-        @Override
-        public int getInt(final int index) {
-            return getElem(index);
-        }
-
-        @Override
-        public int getIntOptimistic(final int index, final int programPoint) {
-            return getElem(index);
-        }
-
-        @Override
-        public double getDouble(final int index) {
-            return getInt(index);
-        }
-
-        @Override
-        public double getDoubleOptimistic(final int index, final int programPoint) {
-            return getElem(index);
-        }
-
-        @Override
-        public Object getObject(final int index) {
-            return getInt(index);
-        }
-
-        @Override
-        public ArrayData set(final int index, final Object value, final boolean strict) {
-            return set(index, JSType.toInt32(value), strict);
-        }
-
-        @Override
-        public ArrayData set(final int index, final int value, final boolean strict) {
-            setElem(index, value);
-            return this;
-        }
-
-        @Override
-        public ArrayData set(final int index, final double value, final boolean strict) {
-            return set(index, (int)value, strict);
-        }
-
     }
 
     /**
@@ -180,12 +92,17 @@ public final class NativeUint8Array extends ArrayBufferView {
      * @return new typed array
      */
     @Constructor(arity = 1)
-    public static NativeUint8Array constructor(final boolean newObj, final Object self, final Object... args) {
-        return (NativeUint8Array)constructorImpl(newObj, args, FACTORY);
+    public static Object constructor(final boolean newObj, final Object self, final Object... args) {
+        return constructorImpl(args, FACTORY);
     }
 
     NativeUint8Array(final NativeArrayBuffer buffer, final int byteOffset, final int length) {
         super(buffer, byteOffset, length);
+    }
+
+    @Override
+    public String getClassName() {
+        return "Uint8Array";
     }
 
     @Override
@@ -226,8 +143,8 @@ public final class NativeUint8Array extends ArrayBufferView {
      * @return sub array
      */
     @Function(attributes = Attribute.NOT_ENUMERABLE)
-    protected static NativeUint8Array subarray(final Object self, final Object begin, final Object end) {
-        return (NativeUint8Array)ArrayBufferView.subarrayImpl(self, begin, end);
+    protected static Object subarray(final Object self, final Object begin, final Object end) {
+        return ArrayBufferView.subarrayImpl(self, begin, end);
     }
 
     @Override

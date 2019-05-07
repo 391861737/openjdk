@@ -200,10 +200,7 @@ AwtTextField::HandleEvent(MSG *msg, BOOL synthetic)
             si.cbSize = sizeof(si);
             si.fMask = SIF_PAGE | SIF_POS | SIF_RANGE;
 
-            SendMessage(EM_SHOWSCROLLBAR, SB_HORZ, TRUE);
             VERIFY(::GetScrollInfo(GetHWnd(), SB_HORZ, &si));
-            SendMessage(EM_SHOWSCROLLBAR, SB_HORZ, FALSE);
-
             if (bScrollLeft == TRUE) {
                 si.nPos = si.nPos - si.nPage / 2;
                 si.nPos = max(si.nMin, si.nPos);
@@ -249,7 +246,13 @@ AwtTextField::HandleEvent(MSG *msg, BOOL synthetic)
         }
     }
 
-    returnVal = AwtTextComponent::HandleEvent(msg, synthetic);
+    /*
+     * Store the 'synthetic' parameter so that the WM_PASTE security check
+     * happens only for synthetic events.
+     */
+    m_synthetic = synthetic;
+    returnVal = AwtComponent::HandleEvent(msg, synthetic);
+    m_synthetic = FALSE;
 
     if(systemBeeperEnabled){
         SystemParametersInfo(SPI_SETBEEP, 1, NULL, 0);

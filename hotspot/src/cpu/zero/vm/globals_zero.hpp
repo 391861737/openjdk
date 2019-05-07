@@ -38,13 +38,11 @@ define_pd_global(bool,  CountInterpCalls,     true);
 define_pd_global(bool,  NeedsDeoptSuspend,    false);
 
 define_pd_global(bool,  ImplicitNullChecks,   true);
-define_pd_global(bool,  TrapBasedNullChecks,  false);
 define_pd_global(bool,  UncommonNullCast,     true);
 
 define_pd_global(intx,  CodeEntryAlignment,   32);
 define_pd_global(intx,  OptoLoopAlignment,    16);
 define_pd_global(intx,  InlineFrequencyCount, 100);
-define_pd_global(intx,  InlineSmallCode,      1000 );
 define_pd_global(intx,  PreInflateSpin,       10);
 
 define_pd_global(intx,  StackYellowPages,     2);
@@ -60,8 +58,6 @@ define_pd_global(bool,  UseMembar,            true);
 define_pd_global(uintx, CMSYoungGenPerWorker, 16*M);  // default max size of CMS young gen, per GC worker thread
 
 define_pd_global(uintx, TypeProfileLevel, 0);
-
-define_pd_global(bool, PreserveFramePointer, false);
 
 #define ARCH_FLAGS(develop, product, diagnostic, experimental, notproduct)
 

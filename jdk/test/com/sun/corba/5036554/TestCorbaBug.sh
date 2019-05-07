@@ -48,7 +48,7 @@ fi
 # set platform-dependent variables
 OS=`uname -s`
 case "$OS" in
-  SunOS | Linux | Darwin | AIX )
+  SunOS | Linux | Darwin )
     PS=":"
     FS="/"
     ;;
@@ -75,13 +75,13 @@ ${TESTJAVA}${FS}bin${FS}java -version
 mkdir bug
 
 cp ${TESTSRC}${FS}bug.idl .
-${COMPILEJAVA}${FS}bin${FS}idlj bug.idl
+${TESTJAVA}${FS}bin${FS}idlj bug.idl
 
 cp ${TESTSRC}${FS}JavaBug.java bug
 
 chmod -fR 777 bug
 
-${COMPILEJAVA}${FS}bin${FS}javac -d . bug${FS}*.java
+${TESTJAVA}${FS}bin${FS}javac -d . bug${FS}*.java
 
 ${TESTJAVA}${FS}bin${FS}java -cp . bug/JavaBug > test.out 2>&1 
 

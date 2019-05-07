@@ -1,13 +1,13 @@
 /*
- * Copyright (c) 2007, 2015, Oracle and/or its affiliates. All rights reserved.
+ * reserved comment block
+ * DO NOT REMOVE OR ALTER!
  */
 /*
- * Licensed to the Apache Software Foundation (ASF) under one or more
- * contributor license agreements.  See the NOTICE file distributed with
- * this work for additional information regarding copyright ownership.
- * The ASF licenses this file to You under the Apache License, Version 2.0
- * (the "License"); you may not use this file except in compliance with
- * the License.  You may obtain a copy of the License at
+ * Copyright 2001-2004 The Apache Software Foundation.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
@@ -31,7 +31,10 @@ import com.sun.org.apache.xalan.internal.xsltc.compiler.util.MethodGenerator;
 import com.sun.org.apache.xalan.internal.xsltc.compiler.util.Type;
 import com.sun.org.apache.xalan.internal.xsltc.compiler.util.TypeCheckError;
 import com.sun.org.apache.xml.internal.utils.SystemIDResolver;
-import java.util.Iterator;
+import java.io.File;
+import java.net.URL;
+import java.net.MalformedURLException;
+import java.util.Enumeration;
 import javax.xml.XMLConstants;
 import org.xml.sax.InputSource;
 import org.xml.sax.XMLReader;
@@ -130,10 +133,10 @@ final class Import extends TopLevelElement {
             parser.setCurrentStylesheet(_imported);
             _imported.parseContents(parser);
 
-            final Iterator<SyntaxTreeNode> elements = _imported.elements();
+            final Enumeration elements = _imported.elements();
             final Stylesheet topStylesheet = parser.getTopLevelStylesheet();
-            while (elements.hasNext()) {
-                final SyntaxTreeNode element = elements.next();
+            while (elements.hasMoreElements()) {
+                final Object element = elements.nextElement();
                 if (element instanceof TopLevelElement) {
                     if (element instanceof Variable) {
                         topStylesheet.addVariable((Variable) element);

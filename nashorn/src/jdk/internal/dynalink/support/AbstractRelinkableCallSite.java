@@ -100,7 +100,7 @@ public abstract class AbstractRelinkableCallSite extends MutableCallSite impleme
      * Creates a new relinkable call site.
      * @param descriptor the descriptor for this call site
      */
-    protected AbstractRelinkableCallSite(final CallSiteDescriptor descriptor) {
+    protected AbstractRelinkableCallSite(CallSiteDescriptor descriptor) {
         super(descriptor.getMethodType());
         this.descriptor = descriptor;
     }
@@ -111,7 +111,7 @@ public abstract class AbstractRelinkableCallSite extends MutableCallSite impleme
     }
 
     @Override
-    public void initialize(final MethodHandle relinkAndInvoke) {
+    public void initialize(MethodHandle relinkAndInvoke) {
         setTarget(relinkAndInvoke);
     }
 }

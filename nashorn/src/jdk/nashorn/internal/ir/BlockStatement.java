@@ -32,19 +32,8 @@ import jdk.nashorn.internal.ir.visitor.NodeVisitor;
  * Represents a block used as a statement.
  */
 public class BlockStatement extends Statement {
-    private static final long serialVersionUID = 1L;
-
     /** Block to execute. */
     private final Block block;
-
-    /**
-     * Constructor
-     *
-     * @param block the block to execute
-     */
-    public BlockStatement(final Block block) {
-        this(block.getFirstStatementLineNumber(), block);
-    }
 
     /**
      * Constructor
@@ -69,7 +58,7 @@ public class BlockStatement extends Statement {
      * @return a block statement with the new statements. It will have the line number, token, and finish of the
      * original statement.
      */
-    public static BlockStatement createReplacement(final Statement stmt, final List<Statement> newStmts) {
+    public static Statement createReplacement(final Statement stmt, final List<Statement> newStmts) {
         return createReplacement(stmt, stmt.getFinish(), newStmts);
     }
 
@@ -81,7 +70,7 @@ public class BlockStatement extends Statement {
      * @return a block statement with the new statements. It will have the line number, and token of the
      * original statement.
      */
-    public static BlockStatement createReplacement(final Statement stmt, final int finish, final List<Statement> newStmts) {
+    public static Statement createReplacement(final Statement stmt, int finish, final List<Statement> newStmts) {
         return new BlockStatement(stmt.getLineNumber(), new Block(stmt.getToken(), finish, newStmts));
     }
 
@@ -100,8 +89,8 @@ public class BlockStatement extends Statement {
     }
 
     @Override
-    public void toString(final StringBuilder sb, final boolean printType) {
-        block.toString(sb, printType);
+    public void toString(final StringBuilder sb) {
+        block.toString(sb);
     }
 
     /**

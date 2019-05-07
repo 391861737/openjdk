@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2011, 2017, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2011, 2012, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -57,19 +57,15 @@ public class CInputMethodDescriptor implements InputMethodDescriptor {
     }
 
     static Object[] getAvailableLocalesInternal() {
-        List<Object> workList = nativeGetAvailableLocales();
-        Locale currentLocale = CInputMethod.getNativeLocale();
+        List workList = nativeGetAvailableLocales();
 
-        if (workList == null || workList.isEmpty()) {
-            return new Object[] {
-                    currentLocale != null ? currentLocale : Locale.getDefault()
-            };
-        } else {
-            if (currentLocale != null && !workList.contains(currentLocale)) {
-                workList.add(currentLocale);
-            }
+        if (workList != null) {
             return workList.toArray();
         }
+
+        return new Object[] {
+            Locale.getDefault()
+        };
     }
 
     /**
@@ -123,5 +119,5 @@ public class CInputMethodDescriptor implements InputMethodDescriptor {
     }
 
     private static native void nativeInit();
-    private static native List<Object> nativeGetAvailableLocales();
+    private static native List nativeGetAvailableLocales();
 }

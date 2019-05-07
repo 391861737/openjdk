@@ -34,8 +34,6 @@ import jdk.nashorn.internal.ir.visitor.NodeVisitor;
  */
 @Immutable
 public final class WhileNode extends LoopNode {
-    private static final long serialVersionUID = 1L;
-
 
     /** is this a do while node ? */
     private final boolean isDoWhile;
@@ -49,7 +47,7 @@ public final class WhileNode extends LoopNode {
      * @param isDoWhile  is this a do while loop?
      */
     public WhileNode(final int lineNumber, final long token, final int finish, final boolean isDoWhile) {
-        super(lineNumber, token, finish, null, false);
+        super(lineNumber, token, finish, null, null, false);
         this.isDoWhile = isDoWhile;
     }
 
@@ -60,16 +58,15 @@ public final class WhileNode extends LoopNode {
      * @param test      test
      * @param body      body
      * @param controlFlowEscapes control flow escapes?
-     * @param conversion TODO
      */
-    private WhileNode(final WhileNode whileNode, final JoinPredecessorExpression test, final Block body, final boolean controlFlowEscapes, final LocalVariableConversion conversion) {
-        super(whileNode, test, body, controlFlowEscapes, conversion);
+    protected WhileNode(final WhileNode whileNode, final Expression test, final Block body, final boolean controlFlowEscapes) {
+        super(whileNode, test, body, controlFlowEscapes);
         this.isDoWhile = whileNode.isDoWhile;
     }
 
     @Override
     public Node ensureUniqueLabels(final LexicalContext lc) {
-        return Node.replaceInLexicalContext(lc, this, new WhileNode(this, test, body, controlFlowEscapes, conversion));
+        return Node.replaceInLexicalContext(lc, this, new WhileNode(this, test, body, controlFlowEscapes));
     }
 
     @Override
@@ -83,21 +80,26 @@ public final class WhileNode extends LoopNode {
             if (isDoWhile()) {
                 return visitor.leaveWhileNode(
                         setBody(lc, (Block)body.accept(visitor)).
-                        setTest(lc, (JoinPredecessorExpression)test.accept(visitor)));
+                        setTest(lc, (Expression)test.accept(visitor)));
             }
             return visitor.leaveWhileNode(
-                    setTest(lc, (JoinPredecessorExpression)test.accept(visitor)).
+                    setTest(lc, (Expression)test.accept(visitor)).
                     setBody(lc, (Block)body.accept(visitor)));
         }
         return this;
     }
 
     @Override
-    public WhileNode setTest(final LexicalContext lc, final JoinPredecessorExpression test) {
+    public Expression getTest() {
+        return test;
+    }
+
+    @Override
+    public WhileNode setTest(final LexicalContext lc, final Expression test) {
         if (this.test == test) {
             return this;
         }
-        return Node.replaceInLexicalContext(lc, this, new WhileNode(this, test, body, controlFlowEscapes, conversion));
+        return Node.replaceInLexicalContext(lc, this, new WhileNode(this, test, body, controlFlowEscapes));
     }
 
     @Override
@@ -110,7 +112,7 @@ public final class WhileNode extends LoopNode {
         if (this.body == body) {
             return this;
         }
-        return Node.replaceInLexicalContext(lc, this, new WhileNode(this, test, body, controlFlowEscapes, conversion));
+        return Node.replaceInLexicalContext(lc, this, new WhileNode(this, test, body, controlFlowEscapes));
     }
 
     @Override
@@ -118,12 +120,7 @@ public final class WhileNode extends LoopNode {
         if (this.controlFlowEscapes == controlFlowEscapes) {
             return this;
         }
-        return Node.replaceInLexicalContext(lc, this, new WhileNode(this, test, body, controlFlowEscapes, conversion));
-    }
-
-    @Override
-    JoinPredecessor setLocalVariableConversionChanged(final LexicalContext lc, final LocalVariableConversion conversion) {
-        return Node.replaceInLexicalContext(lc, this, new WhileNode(this, test, body, controlFlowEscapes, conversion));
+        return Node.replaceInLexicalContext(lc, this, new WhileNode(this, test, body, controlFlowEscapes));
     }
 
     /**
@@ -135,9 +132,9 @@ public final class WhileNode extends LoopNode {
     }
 
     @Override
-    public void toString(final StringBuilder sb, final boolean printType) {
+    public void toString(final StringBuilder sb) {
         sb.append("while (");
-        test.toString(sb, printType);
+        test.toString(sb);
         sb.append(')');
     }
 
@@ -147,10 +144,5 @@ public final class WhileNode extends LoopNode {
             return true;
         }
         return test == null;
-    }
-
-    @Override
-    public boolean hasPerIterationScope() {
-        return false;
     }
 }

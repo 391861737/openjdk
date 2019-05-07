@@ -27,7 +27,6 @@ package jdk.nashorn.internal.runtime.linker;
 
 import static jdk.nashorn.internal.lookup.Lookup.MH;
 import static jdk.nashorn.internal.runtime.ECMAErrors.typeError;
-import static jdk.nashorn.internal.runtime.JSType.isString;
 import static jdk.nashorn.internal.runtime.ScriptRuntime.UNDEFINED;
 
 import java.lang.invoke.MethodHandle;
@@ -79,7 +78,7 @@ final class JavaArgumentConverters {
         }
 
         if (obj == UNDEFINED) {
-            // NOTE: same reasoning for FindBugs NP_BOOLEAN_RETURN_NULL warning as in the preceding comment.
+            // NOTE: same reasoning for FindBugs NP_BOOLEAN_RETURN_NUL warning as in the preceding comment.
             return null;
         }
 
@@ -88,7 +87,7 @@ final class JavaArgumentConverters {
             return num != 0 && !Double.isNaN(num);
         }
 
-        if (isString(obj)) {
+        if (obj instanceof String || obj instanceof ConsString) {
             return ((CharSequence) obj).length() > 0;
         }
 
@@ -125,14 +124,34 @@ final class JavaArgumentConverters {
         return s.charAt(0);
     }
 
-    static char toCharPrimitive(final Object obj0) {
+    @SuppressWarnings("unused")
+    private static char toCharPrimitive(final Object obj0) {
         final Character c = toChar(obj0);
         return c == null ? (char)0 : c;
     }
 
-    // Almost identical to ScriptRuntime.toString, but returns null for null instead of the string "null".
-    static String toString(final Object obj) {
-        return obj == null ? null : JSType.toString(obj);
+    // Almost identical to ScriptRuntime.toString, but doesn't handle StaticClass specially, and it returns null for
+    // null instead of the string "null".
+    private static String toString(final Object obj0) {
+        for (Object obj = obj0; ;) {
+            if (obj == null) {
+                return null;
+            } else if (obj instanceof String) {
+                return (String) obj;
+            } else if (obj instanceof ConsString) {
+                return obj.toString();
+            } else if (obj instanceof Number) {
+                return JSType.toString(((Number)obj).doubleValue());
+            } else if (obj instanceof Boolean) {
+                return ((Boolean) obj).toString();
+            } else if (obj == UNDEFINED) {
+                return "undefined";
+            } else if (obj instanceof ScriptObject) {
+                obj = JSType.toPrimitive(obj, String.class);
+                continue;
+            }
+            throw assertUnexpectedType(obj);
+        }
     }
 
     @SuppressWarnings("unused")
@@ -208,7 +227,7 @@ final class JavaArgumentConverters {
                 return f.longValue();
             } else if (obj instanceof Number) {
                 return ((Number)obj).longValue();
-            } else if (isString(obj)) {
+            } else if (obj instanceof String || obj instanceof ConsString) {
                 return JSType.toLong(obj);
             } else if (obj instanceof Boolean) {
                 return (Boolean)obj ? 1L : 0L;

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 1999, 2015, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 1999, 2006, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -39,7 +39,7 @@ import java.awt.datatransfer.UnsupportedFlavorException;
 
 import java.beans.PropertyChangeEvent;
 import java.beans.PropertyChangeListener;
-import java.util.Arrays;
+
 import java.util.Iterator;
 import java.util.Set;
 import java.util.HashSet;
@@ -64,6 +64,9 @@ import sun.awt.EventListenerAggregate;
 public abstract class SunClipboard extends Clipboard
     implements PropertyChangeListener {
 
+    public static final FlavorTable flavorMap =
+        (FlavorTable)SystemFlavorMap.getDefaultFlavorMap();
+
     private AppContext contentsContext = null;
 
     private final Object CLIPBOARD_FLAVOR_LISTENER_KEY;
@@ -75,11 +78,12 @@ public abstract class SunClipboard extends Clipboard
     private volatile int numberOfFlavorListeners = 0;
 
     /**
-     * A set of {@code DataFlavor}s that is available on this clipboard. It is
-     * used for tracking changes of {@code DataFlavor}s available on this
-     * clipboard. Can be {@code null}.
+     * A set of <code>DataFlavor</code>s that is available on
+     * this clipboard. It is used for tracking changes
+     * of <code>DataFlavor</code>s available on this clipboard.
      */
-    private volatile long[] currentFormats;
+    private volatile Set currentDataFlavors;
+
 
     public SunClipboard(String name) {
         super(name);
@@ -149,7 +153,7 @@ public abstract class SunClipboard extends Clipboard
      *         AppContext as it is currently retrieved or null otherwise
      * @since 1.5
      */
-    protected synchronized Transferable getContextContents() {
+    private synchronized Transferable getContextContents() {
         AppContext context = AppContext.getAppContext();
         return (context == contentsContext) ? contents : null;
     }
@@ -168,7 +172,7 @@ public abstract class SunClipboard extends Clipboard
         long[] formats = getClipboardFormatsOpenClose();
 
         return DataTransferer.getInstance().
-            getFlavorsForFormatsAsArray(formats, getDefaultFlavorTable());
+            getFlavorsForFormatsAsArray(formats, flavorMap);
     }
 
     /**
@@ -214,7 +218,7 @@ public abstract class SunClipboard extends Clipboard
 
             long[] formats = getClipboardFormats();
             Long lFormat = (Long)DataTransferer.getInstance().
-                    getFlavorsForFormats(formats, getDefaultFlavorTable()).get(flavor);
+                    getFlavorsForFormats(formats, flavorMap).get(flavor);
 
             if (lFormat == null) {
                 throw new UnsupportedFlavorException(flavor);
@@ -280,40 +284,41 @@ public abstract class SunClipboard extends Clipboard
             return;
         }
 
-        SunToolkit.postEvent(context, new PeerEvent(this, () -> lostOwnershipNow(disposedContext),
+        final Runnable runnable = new Runnable() {
+                public void run() {
+                    final SunClipboard sunClipboard = SunClipboard.this;
+                    ClipboardOwner owner = null;
+                    Transferable contents = null;
+
+                    synchronized (sunClipboard) {
+                        final AppContext context = sunClipboard.contentsContext;
+
+                        if (context == null) {
+                            return;
+                        }
+
+                        if (disposedContext == null || context == disposedContext) {
+                            owner = sunClipboard.owner;
+                            contents = sunClipboard.contents;
+                            sunClipboard.contentsContext = null;
+                            sunClipboard.owner = null;
+                            sunClipboard.contents = null;
+                            sunClipboard.clearNativeContext();
+                            context.removePropertyChangeListener
+                                (AppContext.DISPOSED_PROPERTY_NAME, sunClipboard);
+                        } else {
+                            return;
+                        }
+                    }
+                    if (owner != null) {
+                        owner.lostOwnership(sunClipboard, contents);
+                    }
+                }
+            };
+
+        SunToolkit.postEvent(context, new PeerEvent(this, runnable,
                                                     PeerEvent.PRIORITY_EVENT));
     }
-
-    protected void lostOwnershipNow(final AppContext disposedContext) {
-        final SunClipboard sunClipboard = SunClipboard.this;
-        ClipboardOwner owner = null;
-        Transferable contents = null;
-
-        synchronized (sunClipboard) {
-            final AppContext context = sunClipboard.contentsContext;
-
-            if (context == null) {
-                return;
-            }
-
-            if (disposedContext == null || context == disposedContext) {
-                owner = sunClipboard.owner;
-                contents = sunClipboard.contents;
-                sunClipboard.contentsContext = null;
-                sunClipboard.owner = null;
-                sunClipboard.contents = null;
-                sunClipboard.clearNativeContext();
-                context.removePropertyChangeListener
-                        (AppContext.DISPOSED_PROPERTY_NAME, sunClipboard);
-            } else {
-                return;
-            }
-        }
-        if (owner != null) {
-            owner.lostOwnership(sunClipboard, contents);
-        }
-    }
-
 
     protected abstract void clearNativeContext();
 
@@ -344,7 +349,7 @@ public abstract class SunClipboard extends Clipboard
     private static Set formatArrayAsDataFlavorSet(long[] formats) {
         return (formats == null) ? null :
                 DataTransferer.getInstance().
-                getFlavorsForFormatsAsSet(formats, getDefaultFlavorTable());
+                getFlavorsForFormatsAsSet(formats, flavorMap);
     }
 
 
@@ -366,11 +371,11 @@ public abstract class SunClipboard extends Clipboard
             try {
                 openClipboard(null);
                 currentFormats = getClipboardFormats();
-            } catch (final IllegalStateException ignored) {
+            } catch (IllegalStateException exc) {
             } finally {
                 closeClipboard();
             }
-            this.currentFormats = currentFormats;
+            currentDataFlavors = formatArrayAsDataFlavorSet(currentFormats);
 
             registerClipboardViewerChecked();
         }
@@ -390,7 +395,7 @@ public abstract class SunClipboard extends Clipboard
         if (contextFlavorListeners.remove(listener) &&
                 --numberOfFlavorListeners == 0) {
             unregisterClipboardViewerChecked();
-            currentFormats = null;
+            currentDataFlavors = null;
         }
     }
 
@@ -419,15 +424,17 @@ public abstract class SunClipboard extends Clipboard
      * @param formats data formats that have just been retrieved from
      *        this clipboard
      */
-    protected final void checkChange(final long[] formats) {
-        if (Arrays.equals(formats, currentFormats)) {
+    public void checkChange(long[] formats) {
+        Set prevDataFlavors = currentDataFlavors;
+        currentDataFlavors = formatArrayAsDataFlavorSet(formats);
+
+        if ((prevDataFlavors != null) && (currentDataFlavors != null) &&
+                prevDataFlavors.equals(currentDataFlavors)) {
             // we've been able to successfully get available on the clipboard
             // DataFlavors this and previous time and they are coincident;
             // don't notify
             return;
         }
-        currentFormats = formats;
-
 
         class SunFlavorChangeNotifier implements Runnable {
             private final FlavorListener flavorListener;
@@ -462,7 +469,4 @@ public abstract class SunClipboard extends Clipboard
         }
     }
 
-    public static FlavorTable getDefaultFlavorTable() {
-        return (FlavorTable) SystemFlavorMap.getDefaultFlavorMap();
-    }
 }

@@ -68,8 +68,6 @@ class Opcode;
 class InsEncode;
 class RegDef;
 class RegClass;
-class CodeSnippetRegClass;
-class ConditionalRegClass;
 class AllocClass;
 class ResourceForm;
 class PipeClassForm;

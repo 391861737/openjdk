@@ -29,8 +29,6 @@ package jdk.nashorn.internal.codegen.types;
  * This is a numeric type, i.e. NUMBER, LONG, INT, INT32.
  */
 public abstract class NumericType extends Type implements BytecodeNumericOps {
-    private static final long serialVersionUID = 1L;
-
     /**
      * Constructor
      *

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2005, 2016, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2005, 2013, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -169,8 +169,6 @@ class LIRGenerator: public InstructionVisitor, public BlockClosure {
     return this;
   }
 
-  void print_if_not_loaded(const NewInstance* new_instance) PRODUCT_RETURN;
-
 #ifdef ASSERT
   LIR_List* lir(const char * file, int line) const {
     _lir->set_file_and_line(file, line);
@@ -277,9 +275,6 @@ class LIRGenerator: public InstructionVisitor, public BlockClosure {
 
   void G1SATBCardTableModRef_post_barrier(LIR_OprDesc* addr, LIR_OprDesc* new_val);
   void CardTableModRef_post_barrier(LIR_OprDesc* addr, LIR_OprDesc* new_val);
-#ifdef CARDTABLEMODREF_POST_BARRIER_HELPER
-  void CardTableModRef_post_barrier_helper(LIR_OprDesc* addr, LIR_Const* card_table_base);
-#endif
 
 
   static LIR_Opr result_register_for(ValueType* type, bool callee = false);
@@ -312,7 +307,7 @@ class LIRGenerator: public InstructionVisitor, public BlockClosure {
 
   void store_stack_parameter (LIR_Opr opr, ByteSize offset_from_sp_in_bytes);
 
-  void klass2reg_with_patching(LIR_Opr r, ciMetadata* obj, CodeEmitInfo* info, bool need_resolve = false);
+  void klass2reg_with_patching(LIR_Opr r, ciMetadata* obj, CodeEmitInfo* info);
 
   // this loads the length and compares against the index
   void array_range_check          (LIR_Opr array, LIR_Opr index, CodeEmitInfo* null_check_info, CodeEmitInfo* range_check_info);
@@ -330,7 +325,7 @@ class LIRGenerator: public InstructionVisitor, public BlockClosure {
   void monitor_enter (LIR_Opr object, LIR_Opr lock, LIR_Opr hdr, LIR_Opr scratch, int monitor_no, CodeEmitInfo* info_for_exception, CodeEmitInfo* info);
   void monitor_exit  (LIR_Opr object, LIR_Opr lock, LIR_Opr hdr, LIR_Opr scratch, int monitor_no);
 
-  void new_instance    (LIR_Opr  dst, ciInstanceKlass* klass, bool is_unresolved, LIR_Opr  scratch1, LIR_Opr  scratch2, LIR_Opr  scratch3,  LIR_Opr scratch4, LIR_Opr  klass_reg, CodeEmitInfo* info);
+  void new_instance    (LIR_Opr  dst, ciInstanceKlass* klass, LIR_Opr  scratch1, LIR_Opr  scratch2, LIR_Opr  scratch3,  LIR_Opr scratch4, LIR_Opr  klass_reg, CodeEmitInfo* info);
 
   // machine dependent
   void cmp_mem_int(LIR_Condition condition, LIR_Opr base, int disp, int c, CodeEmitInfo* info);
@@ -410,7 +405,7 @@ class LIRGenerator: public InstructionVisitor, public BlockClosure {
   }
 
   static LIR_Condition lir_cond(If::Condition cond) {
-    LIR_Condition l = lir_cond_unknown;
+    LIR_Condition l;
     switch (cond) {
     case If::eql: l = lir_cond_equal;        break;
     case If::neq: l = lir_cond_notEqual;     break;
@@ -420,7 +415,6 @@ class LIRGenerator: public InstructionVisitor, public BlockClosure {
     case If::gtr: l = lir_cond_greater;      break;
     case If::aeq: l = lir_cond_aboveEqual;   break;
     case If::beq: l = lir_cond_belowEqual;   break;
-    default: fatal("You must pass valid If::Condition");
     };
     return l;
   }
@@ -446,7 +440,6 @@ class LIRGenerator: public InstructionVisitor, public BlockClosure {
   void profile_arguments(ProfileCall* x);
   void profile_parameters(Base* x);
   void profile_parameters_at_call(ProfileCall* x);
-  LIR_Opr maybe_mask_boolean(StoreIndexed* x, LIR_Opr array, LIR_Opr value, CodeEmitInfo*& null_check_info);
 
  public:
   Compilation*  compilation() const              { return _compilation; }
@@ -554,10 +547,6 @@ class LIRGenerator: public InstructionVisitor, public BlockClosure {
   virtual void do_RangeCheckPredicate(RangeCheckPredicate* x);
 #ifdef ASSERT
   virtual void do_Assert         (Assert*          x);
-#endif
-
-#ifdef C1_LIRGENERATOR_MD_HPP
-#include C1_LIRGENERATOR_MD_HPP
 #endif
 };
 

@@ -3239,7 +3239,6 @@ public class BasicTabbedPaneUI extends TabbedPaneUI implements SwingConstants {
                 }
             }
             tabScroller.tabPanel.setPreferredSize(new Dimension(totalWidth, totalHeight));
-            tabScroller.tabPanel.invalidate();
         }
     }
 
@@ -3607,7 +3606,6 @@ public class BasicTabbedPaneUI extends TabbedPaneUI implements SwingConstants {
             setFocusIndex(tabPane.getSelectedIndex(), false);
 
             if (scrollableTabLayoutEnabled()) {
-                ensureCurrentLayout();
                 int index = tabPane.getSelectedIndex();
                 if (index < rects.length && index != -1) {
                     tabScroller.tabPanel.scrollRectToVisible(

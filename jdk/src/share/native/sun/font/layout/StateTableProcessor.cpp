@@ -81,12 +81,10 @@ void StateTableProcessor::process(LEGlyphStorage &glyphStorage, LEErrorCode &suc
 
     while (currGlyph <= glyphCount) {
         if(LE_STATE_PATIENCE_DECR()) break; // patience exceeded.
-        if (LE_FAILURE(success)) break;
         ClassCode classCode = classCodeOOB;
         if (currGlyph == glyphCount) {
             // XXX: How do we handle EOT vs. EOL?
             classCode = classCodeEOT;
-            break;
         } else {
             TTGlyphID glyphCode = (TTGlyphID) LE_GET_GLYPH(glyphStorage[currGlyph]);
 
@@ -99,9 +97,8 @@ void StateTableProcessor::process(LEGlyphStorage &glyphStorage, LEErrorCode &suc
 
         LEReferenceToArrayOf<EntryTableIndex> stateArray(stHeader, success, currentState, LE_UNBOUNDED_ARRAY);
         EntryTableIndex entryTableIndex = stateArray.getObject((le_uint8)classCode, success);
-        if (LE_FAILURE(success)) { break; }
         LE_STATE_PATIENCE_CURR(le_int32, currGlyph);
-        currentState = processStateEntry(glyphStorage, currGlyph, entryTableIndex, success);
+        currentState = processStateEntry(glyphStorage, currGlyph, entryTableIndex);
         LE_STATE_PATIENCE_INCR(currGlyph);
     }
 

@@ -22,7 +22,6 @@ package jdk.nashorn.internal.runtime.regexp.joni.ast;
 import jdk.nashorn.internal.runtime.regexp.joni.Option;
 import jdk.nashorn.internal.runtime.regexp.joni.constants.EncloseType;
 
-@SuppressWarnings("javadoc")
 public final class EncloseNode extends StateNode implements EncloseType {
 
     public final int type;                // enclose type
@@ -36,7 +35,7 @@ public final class EncloseNode extends StateNode implements EncloseType {
     public int optCount;            // referenced count in optimize_node_left()
 
     // node_new_enclose / onig_node_new_enclose
-    public EncloseNode(final int type) {
+    public EncloseNode(int type) {
         this.type = type;
         callAddr = -1;
     }
@@ -47,7 +46,7 @@ public final class EncloseNode extends StateNode implements EncloseType {
     }
 
     // node_new_option
-    public EncloseNode(final int option, final int i) {
+    public EncloseNode(int option, int i) {
         this(OPTION);
         this.option = option;
     }
@@ -58,7 +57,7 @@ public final class EncloseNode extends StateNode implements EncloseType {
     }
 
     @Override
-    protected void setChild(final Node newChild) {
+    protected void setChild(Node newChild) {
         target = newChild;
     }
 
@@ -67,7 +66,7 @@ public final class EncloseNode extends StateNode implements EncloseType {
         return target;
     }
 
-    public void setTarget(final Node tgt) {
+    public void setTarget(Node tgt) {
         target = tgt;
         tgt.parent = this;
     }
@@ -78,8 +77,8 @@ public final class EncloseNode extends StateNode implements EncloseType {
     }
 
     @Override
-    public String toString(final int level) {
-        final StringBuilder value = new StringBuilder(super.toString(level));
+    public String toString(int level) {
+        StringBuilder value = new StringBuilder(super.toString(level));
         value.append("\n  type: " + typeToString());
         value.append("\n  regNum: " + regNum);
         value.append("\n  option: " + Option.toString(option));
@@ -94,7 +93,7 @@ public final class EncloseNode extends StateNode implements EncloseType {
     }
 
     public String typeToString() {
-        final StringBuilder types = new StringBuilder();
+        StringBuilder types = new StringBuilder();
         if (isStopBacktrack()) types.append("STOP_BACKTRACK ");
         if (isMemory()) types.append("MEMORY ");
         if (isOption()) types.append("OPTION ");

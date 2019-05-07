@@ -288,7 +288,7 @@ void LIR_Assembler::osr_entry() {
 
   // build frame
   ciMethod* m = compilation()->method();
-  __ build_frame(initial_frame_size_in_bytes(), bang_size_in_bytes());
+  __ build_frame(initial_frame_size_in_bytes());
 
   // OSR buffer is
   //
@@ -376,7 +376,7 @@ void LIR_Assembler::klass2reg_with_patching(Register reg, CodeEmitInfo* info) {
 }
 
 // This specifies the rsp decrement needed to build the frame
-int LIR_Assembler::initial_frame_size_in_bytes() const {
+int LIR_Assembler::initial_frame_size_in_bytes() {
   // if rounding, must let FrameMap know!
 
   // The frame_map records size in slots (32bit word)
@@ -801,13 +801,7 @@ void LIR_Assembler::const2mem(LIR_Opr src, LIR_Opr dest, BasicType type, CodeEmi
         if (UseCompressedOops && !wide) {
           __ movl(as_Address(addr), (int32_t)NULL_WORD);
         } else {
-#ifdef _LP64
-          __ xorptr(rscratch1, rscratch1);
-          null_check_here = code_offset();
-          __ movptr(as_Address(addr), rscratch1);
-#else
           __ movptr(as_Address(addr), NULL_WORD);
-#endif
         }
       } else {
         if (is_literal_address(addr)) {
@@ -1714,8 +1708,8 @@ void LIR_Assembler::emit_typecheck_helper(LIR_OpTypeCheck *op, Label* success, L
   Register Rtmp1 = noreg;
 
   // check if it needs to be profiled
-  ciMethodData* md = NULL;
-  ciProfileData* data = NULL;
+  ciMethodData* md;
+  ciProfileData* data;
 
   if (op->should_profile()) {
     ciMethod* method = op->profiled_method();
@@ -1874,8 +1868,8 @@ void LIR_Assembler::emit_opTypeCheck(LIR_OpTypeCheck* op) {
     CodeStub* stub = op->stub();
 
     // check if it needs to be profiled
-    ciMethodData* md = NULL;
-    ciProfileData* data = NULL;
+    ciMethodData* md;
+    ciProfileData* data;
 
     if (op->should_profile()) {
       ciMethod* method = op->profiled_method();
@@ -2052,8 +2046,7 @@ void LIR_Assembler::cmove(LIR_Condition condition, LIR_Opr opr1, LIR_Opr opr2, L
     case lir_cond_greater:      acond = Assembler::greater;      ncond = Assembler::lessEqual;    break;
     case lir_cond_belowEqual:   acond = Assembler::belowEqual;   ncond = Assembler::above;        break;
     case lir_cond_aboveEqual:   acond = Assembler::aboveEqual;   ncond = Assembler::below;        break;
-    default:                    acond = Assembler::equal;        ncond = Assembler::notEqual;
-                                ShouldNotReachHere();
+    default:                    ShouldNotReachHere();
   }
 
   if (opr1->is_cpu_register()) {
@@ -3238,23 +3231,27 @@ void LIR_Assembler::emit_arraycopy(LIR_OpArrayCopy* op) {
   assert(default_type != NULL && default_type->is_array_klass() && default_type->is_loaded(), "must be true at this point");
 
   int elem_size = type2aelembytes(basic_type);
+  int shift_amount;
   Address::ScaleFactor scale;
 
   switch (elem_size) {
     case 1 :
+      shift_amount = 0;
       scale = Address::times_1;
       break;
     case 2 :
+      shift_amount = 1;
       scale = Address::times_2;
       break;
     case 4 :
+      shift_amount = 2;
       scale = Address::times_4;
       break;
     case 8 :
+      shift_amount = 3;
       scale = Address::times_8;
       break;
     default:
-      scale = Address::no_scale;
       ShouldNotReachHere();
   }
 
@@ -3273,23 +3270,6 @@ void LIR_Assembler::emit_arraycopy(LIR_OpArrayCopy* op) {
   if (flags & LIR_OpArrayCopy::dst_null_check) {
     __ testptr(dst, dst);
     __ jcc(Assembler::zero, *stub->entry());
-  }
-
-  // If the compiler was not able to prove that exact type of the source or the destination
-  // of the arraycopy is an array type, check at runtime if the source or the destination is
-  // an instance type.
-  if (flags & LIR_OpArrayCopy::type_check) {
-    if (!(flags & LIR_OpArrayCopy::dst_objarray)) {
-      __ load_klass(tmp, dst);
-      __ cmpl(Address(tmp, in_bytes(Klass::layout_helper_offset())), Klass::_lh_neutral_value);
-      __ jcc(Assembler::greaterEqual, *stub->entry());
-    }
-
-    if (!(flags & LIR_OpArrayCopy::src_objarray)) {
-      __ load_klass(tmp, src);
-      __ cmpl(Address(tmp, in_bytes(Klass::layout_helper_offset())), Klass::_lh_neutral_value);
-      __ jcc(Assembler::greaterEqual, *stub->entry());
-    }
   }
 
   // check if negative

@@ -46,20 +46,14 @@ Java_java_awt_Rectangle_initIDs(JNIEnv *env, jclass cls) {
     TRY;
 
     AwtRectangle::xID = env->GetFieldID(cls, "x", "I");
-    DASSERT(AwtRectangle::xID != NULL);
-    CHECK_NULL(AwtRectangle::xID);
-
     AwtRectangle::yID = env->GetFieldID(cls, "y", "I");
-    DASSERT(AwtRectangle::yID != NULL);
-    CHECK_NULL(AwtRectangle::yID);
-
     AwtRectangle::widthID = env->GetFieldID(cls, "width", "I");
-    DASSERT(AwtRectangle::widthID != NULL);
-    CHECK_NULL(AwtRectangle::widthID);
-
     AwtRectangle::heightID = env->GetFieldID(cls, "height", "I");
+
+    DASSERT(AwtRectangle::xID != NULL);
+    DASSERT(AwtRectangle::yID != NULL);
+    DASSERT(AwtRectangle::widthID != NULL);
     DASSERT(AwtRectangle::heightID != NULL);
-    CHECK_NULL(AwtRectangle::heightID);
 
     CATCH_BAD_ALLOC;
 }

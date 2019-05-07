@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 1996, 2015, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 1996, 2013, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -36,8 +36,6 @@ import java.security.spec.ECParameterSpec;
 
 import java.security.cert.X509Certificate;
 import java.security.cert.CertificateException;
-import java.security.cert.CertificateParsingException;
-import javax.security.auth.x500.X500Principal;
 
 import javax.crypto.SecretKey;
 import javax.crypto.spec.SecretKeySpec;
@@ -58,10 +56,6 @@ import static sun.security.ssl.CipherSuite.KeyExchange.*;
  * @author David Brownell
  */
 final class ClientHandshaker extends Handshaker {
-
-    // constants for subject alt names of type DNS and IP
-    private final static int ALTNAME_DNS = 2;
-    private final static int ALTNAME_IP  = 7;
 
     // the server's public key from its certificate.
     private PublicKey serverKey;
@@ -95,64 +89,10 @@ final class ClientHandshaker extends Handshaker {
     private final static boolean enableSNIExtension =
             Debug.getBooleanProperty("jsse.enableSNIExtension", true);
 
-    /*
-     * Allow unsafe server certificate change?
-     *
-     * Server certificate change during SSL/TLS renegotiation may be considered
-     * unsafe, as described in the Triple Handshake attacks:
-     *
-     *     https://secure-resumption.com/tlsauth.pdf
-     *
-     * Endpoint identification (See
-     * SSLParameters.getEndpointIdentificationAlgorithm()) is a pretty nice
-     * guarantee that the server certificate change in renegotiation is legal.
-     * However, endpoing identification is only enabled for HTTPS and LDAP
-     * over SSL/TLS by default.  It is not enough to protect SSL/TLS
-     * connections other than HTTPS and LDAP.
-     *
-     * The renegotiation indication extension (See RFC 5764) is a pretty
-     * strong guarantee that the endpoints on both client and server sides
-     * are identical on the same connection.  However, the Triple Handshake
-     * attacks can bypass this guarantee if there is a session-resumption
-     * handshake between the initial full handshake and the renegotiation
-     * full handshake.
-     *
-     * Server certificate change may be unsafe and should be restricted if
-     * endpoint identification is not enabled and the previous handshake is
-     * a session-resumption abbreviated initial handshake, unless the
-     * identities represented by both certificates can be regraded as the
-     * same (See isIdentityEquivalent()).
-     *
-     * Considering the compatibility impact and the actual requirements to
-     * support server certificate change in practice, the system property,
-     * jdk.tls.allowUnsafeServerCertChange, is used to define whether unsafe
-     * server certificate change in renegotiation is allowed or not.  The
-     * default value of the system property is "false".  To mitigate the
-     * compactibility impact, applications may want to set the system
-     * property to "true" at their own risk.
-     *
-     * If the value of the system property is "false", server certificate
-     * change in renegotiation after a session-resumption abbreviated initial
-     * handshake is restricted (See isIdentityEquivalent()).
-     *
-     * If the system property is set to "true" explicitly, the restriction on
-     * server certificate change in renegotiation is disabled.
-     */
-    private final static boolean allowUnsafeServerCertChange =
-        Debug.getBooleanProperty("jdk.tls.allowUnsafeServerCertChange", false);
-
     private List<SNIServerName> requestedServerNames =
             Collections.<SNIServerName>emptyList();
 
     private boolean serverNamesAccepted = false;
-
-    /*
-     * the reserved server certificate chain in previous handshaking
-     *
-     * The server certificate chain is only reserved if the previous
-     * handshake is a session-resumption abbreviated initial handshake.
-     */
-    private X509Certificate[] reservedServerCerts = null;
 
     /*
      * Constructors
@@ -269,7 +209,7 @@ final class ClientHandshaker extends Handshaker {
                         input, serverKey,
                         clnt_random.random_bytes, svr_random.random_bytes,
                         messageLen,
-                        getLocalSupportedSignAlgs(), protocolVersion));
+                        localSupportedSignAlgs, protocolVersion));
                 } catch (GeneralSecurityException e) {
                     throwSSLException("Server key", e);
                 }
@@ -281,7 +221,7 @@ final class ClientHandshaker extends Handshaker {
                     this.serverKeyExchange(new ECDH_ServerKeyExchange
                         (input, serverKey, clnt_random.random_bytes,
                         svr_random.random_bytes,
-                        getLocalSupportedSignAlgs(), protocolVersion));
+                        localSupportedSignAlgs, protocolVersion));
                 } catch (GeneralSecurityException e) {
                     throwSSLException("Server key", e);
                 }
@@ -293,7 +233,7 @@ final class ClientHandshaker extends Handshaker {
             case K_ECDH_RSA:
                 throw new SSLProtocolException(
                     "Protocol violation: server sent a server key exchange"
-                    + " message for key exchange " + keyExchange);
+                    + "message for key exchange " + keyExchange);
             case K_KRB5:
             case K_KRB5_EXPORT:
                 throw new SSLProtocolException(
@@ -331,7 +271,7 @@ final class ClientHandshaker extends Handshaker {
 
                 Collection<SignatureAndHashAlgorithm> supportedPeerSignAlgs =
                     SignatureAndHashAlgorithm.getSupportedAlgorithms(
-                            algorithmConstraints, peerSignAlgs);
+                                                            peerSignAlgs);
                 if (supportedPeerSignAlgs.isEmpty()) {
                     throw new SSLHandshakeException(
                         "No supported signature and hash algorithm in common");
@@ -349,13 +289,6 @@ final class ClientHandshaker extends Handshaker {
             break;
 
         case HandshakeMessage.ht_finished:
-            // A ChangeCipherSpec record must have been received prior to
-            // reception of the Finished message (RFC 5246, 7.4.9).
-            if (!receivedChangeCipherSpec()) {
-                fatalSE(Alerts.alert_handshake_failure,
-                        "Received Finished message before ChangeCipherSpec");
-            }
-
             this.serverFinished(
                 new Finished(protocolVersion, input, cipherSuite));
             break;
@@ -489,7 +422,7 @@ final class ClientHandshaker extends Handshaker {
                         0, clientVerifyData.length);
                 System.arraycopy(serverVerifyData, 0, verifyData,
                         clientVerifyData.length, serverVerifyData.length);
-                if (!MessageDigest.isEqual(verifyData,
+                if (!Arrays.equals(verifyData,
                                 serverHelloRI.getRenegotiatedConnection())) {
                     fatalSE(Alerts.alert_handshake_failure,
                         "Incorrect verify data in ServerHello " +
@@ -620,27 +553,16 @@ final class ClientHandshaker extends Handshaker {
                 }
             } else {
                 // we wanted to resume, but the server refused
-                //
-                // Invalidate the session for initial handshake in case
-                // of reusing next time.
-                if (isInitialHandshake) {
-                    session.invalidate();
-                }
                 session = null;
                 if (!enableNewSession) {
-                    throw new SSLException("New session creation is disabled");
+                    throw new SSLException
+                        ("New session creation is disabled");
                 }
             }
         }
 
         if (resumingSession && session != null) {
             setHandshakeSessionSE(session);
-            // Reserve the handshake state if this is a session-resumption
-            // abbreviated initial handshake.
-            if (isInitialHandshake) {
-                session.setAsSessionResumption(true);
-            }
-
             return;
         }
 
@@ -685,14 +607,6 @@ final class ClientHandshaker extends Handshaker {
             // NOTREACHED
         }
         ephemeralServerKey = mesg.getPublicKey();
-
-        // check constraints of RSA PublicKey
-        if (!algorithmConstraints.permits(
-            EnumSet.of(CryptoPrimitive.KEY_AGREEMENT), ephemeralServerKey)) {
-
-            throw new SSLHandshakeException("RSA ServerKeyExchange " +
-                    "does not comply to algorithm constraints");
-        }
     }
 
 
@@ -710,9 +624,6 @@ final class ClientHandshaker extends Handshaker {
         dh = new DHCrypt(mesg.getModulus(), mesg.getBase(),
                                             sslContext.getSecureRandom());
         serverDH = mesg.getServerPublicKey();
-
-        // check algorithm constraints
-        dh.checkConstraints(algorithmConstraints, serverDH);
     }
 
     private void serverKeyExchange(ECDH_ServerKeyExchange mesg)
@@ -723,14 +634,6 @@ final class ClientHandshaker extends Handshaker {
         ECPublicKey key = mesg.getPublicKey();
         ecdh = new ECDHCrypt(key.getParams(), sslContext.getSecureRandom());
         ephemeralServerKey = key;
-
-        // check constraints of EC PublicKey
-        if (!algorithmConstraints.permits(
-            EnumSet.of(CryptoPrimitive.KEY_AGREEMENT), ephemeralServerKey)) {
-
-            throw new SSLHandshakeException("ECDH ServerKeyExchange " +
-                    "does not comply to algorithm constraints");
-        }
     }
 
     /*
@@ -765,33 +668,30 @@ final class ClientHandshaker extends Handshaker {
                 String typeName;
 
                 switch (certRequest.types[i]) {
-                    case CertificateRequest.cct_rsa_sign:
-                        typeName = "RSA";
-                        break;
+                case CertificateRequest.cct_rsa_sign:
+                    typeName = "RSA";
+                    break;
 
-                    case CertificateRequest.cct_dss_sign:
-                        typeName = "DSA";
-                            break;
+                case CertificateRequest.cct_dss_sign:
+                    typeName = "DSA";
+                    break;
 
-                    case CertificateRequest.cct_ecdsa_sign:
-                        // ignore if we do not have EC crypto available
-                        typeName = JsseJce.isEcAvailable() ? "EC" : null;
-                        break;
+                case CertificateRequest.cct_ecdsa_sign:
+                    // ignore if we do not have EC crypto available
+                    typeName = JsseJce.isEcAvailable() ? "EC" : null;
+                    break;
 
-                    // Fixed DH/ECDH client authentication not supported
-                    //
-                    // case CertificateRequest.cct_rsa_fixed_dh:
-                    // case CertificateRequest.cct_dss_fixed_dh:
-                    // case CertificateRequest.cct_rsa_fixed_ecdh:
-                    // case CertificateRequest.cct_ecdsa_fixed_ecdh:
-                    //
-                    // Any other values (currently not used in TLS)
-                    //
-                    // case CertificateRequest.cct_rsa_ephemeral_dh:
-                    // case CertificateRequest.cct_dss_ephemeral_dh:
-                    default:
-                        typeName = null;
-                        break;
+                // Fixed DH/ECDH client authentication not supported
+                case CertificateRequest.cct_rsa_fixed_dh:
+                case CertificateRequest.cct_dss_fixed_dh:
+                case CertificateRequest.cct_rsa_fixed_ecdh:
+                case CertificateRequest.cct_ecdsa_fixed_ecdh:
+                // Any other values (currently not used in TLS)
+                case CertificateRequest.cct_rsa_ephemeral_dh:
+                case CertificateRequest.cct_dss_ephemeral_dh:
+                default:
+                    typeName = null;
+                    break;
                 }
 
                 if ((typeName != null) && (!keytypesTmp.contains(typeName))) {
@@ -819,6 +719,18 @@ final class ClientHandshaker extends Handshaker {
                 X509Certificate[] certs = km.getCertificateChain(alias);
                 if ((certs != null) && (certs.length != 0)) {
                     PublicKey publicKey = certs[0].getPublicKey();
+                    // for EC, make sure we use a supported named curve
+                    if (publicKey instanceof ECPublicKey) {
+                        ECParameterSpec params =
+                            ((ECPublicKey)publicKey).getParams();
+                        int index =
+                            SupportedEllipticCurvesExtension.getCurveIndex(
+                                params);
+                        if (!SupportedEllipticCurvesExtension.isSupported(
+                                index)) {
+                            publicKey = null;
+                        }
+                    }
                     if (publicKey != null) {
                         m1 = new CertificateMsg(certs);
                         signingKey = km.getPrivateKey(alias);
@@ -837,11 +749,6 @@ final class ClientHandshaker extends Handshaker {
                     m1 = new CertificateMsg(new X509Certificate [0]);
                 } else {
                     warningSE(Alerts.alert_no_certificate);
-                }
-                if (debug != null && Debug.isOn("handshake")) {
-                    System.out.println(
-                        "Warning: no suitable certificate found - " +
-                        "continuing without client authentication");
                 }
             }
 
@@ -1088,8 +995,8 @@ final class ClientHandshaker extends Handshaker {
                 if (protocolVersion.v >= ProtocolVersion.TLS12.v) {
                     preferableSignatureAlgorithm =
                         SignatureAndHashAlgorithm.getPreferableAlgorithm(
-                            getPeerSupportedSignAlgs(),
-                            signingKey.getAlgorithm(), signingKey);
+                            peerSupportedSignAlgs, signingKey.getAlgorithm(),
+                            signingKey);
 
                     if (preferableSignatureAlgorithm == null) {
                         throw new SSLHandshakeException(
@@ -1154,13 +1061,6 @@ final class ClientHandshaker extends Handshaker {
          */
         if (secureRenegotiation) {
             serverVerifyData = mesg.getVerifyData();
-        }
-
-        /*
-         * Reset the handshake state if this is not an initial handshake.
-         */
-        if (!isInitialHandshake) {
-            session.setAsSessionResumption(false);
         }
 
         /*
@@ -1261,23 +1161,8 @@ final class ClientHandshaker extends Handshaker {
                 System.out.println("%% No cached client session");
             }
         }
-        if (session != null) {
-            // If unsafe server certificate change is not allowed, reserve
-            // current server certificates if the previous handshake is a
-            // session-resumption abbreviated initial handshake.
-            if (!allowUnsafeServerCertChange && session.isSessionResumption()) {
-                try {
-                    // If existing, peer certificate chain cannot be null.
-                    reservedServerCerts =
-                        (X509Certificate[])session.getPeerCertificates();
-                } catch (SSLPeerUnverifiedException puve) {
-                    // Maybe not certificate-based, ignore the exception.
-                }
-            }
-
-            if (!session.isRejoinable()) {
-                session = null;
-            }
+        if ((session != null) && (session.isRejoinable() == false)) {
+            session = null;
         }
 
         if (session != null) {
@@ -1379,17 +1264,6 @@ final class ClientHandshaker extends Handshaker {
                 sslContext.getSecureRandom(), maxProtocolVersion,
                 sessionId, cipherSuites);
 
-        // add elliptic curves and point format extensions
-        if (cipherSuites.containsEC()) {
-            SupportedEllipticCurvesExtension ece =
-                SupportedEllipticCurvesExtension.createExtension(algorithmConstraints);
-            if (ece != null) {
-                clientHelloMessage.extensions.add(ece);
-                clientHelloMessage.extensions.add(
-                   SupportedEllipticPointFormatsExtension.DEFAULT);
-            }
-        }
-
         // add signature_algorithm extension
         if (maxProtocolVersion.v >= ProtocolVersion.TLS12.v) {
             // we will always send the signature_algorithm extension
@@ -1457,28 +1331,9 @@ final class ClientHandshaker extends Handshaker {
         }
         X509Certificate[] peerCerts = mesg.getCertificateChain();
         if (peerCerts.length == 0) {
-            fatalSE(Alerts.alert_bad_certificate, "empty certificate chain");
+            fatalSE(Alerts.alert_bad_certificate,
+                "empty certificate chain");
         }
-
-        // Allow server certificate change in client side during renegotiation
-        // after a session-resumption abbreviated initial handshake?
-        //
-        // DO NOT need to check allowUnsafeServerCertChange here. We only
-        // reserve server certificates when allowUnsafeServerCertChange is
-        // flase.
-        if (reservedServerCerts != null) {
-            // It is not necessary to check the certificate update if endpoint
-            // identification is enabled.
-            String identityAlg = getEndpointIdentificationAlgorithmSE();
-            if ((identityAlg == null || identityAlg.length() == 0) &&
-                !isIdentityEquivalent(peerCerts[0], reservedServerCerts[0])) {
-
-                fatalSE(Alerts.alert_bad_certificate,
-                        "server certificate change is restricted " +
-                        "during renegotiation");
-            }
-        }
-
         // ask the trust manager to verify the chain
         X509TrustManager tm = sslContext.getX509TrustManager();
         try {
@@ -1514,125 +1369,5 @@ final class ClientHandshaker extends Handshaker {
             fatalSE(Alerts.alert_certificate_unknown, e);
         }
         session.setPeerCertificates(peerCerts);
-    }
-
-    /*
-     * Whether the certificates can represent the same identity?
-     *
-     * The certificates can be used to represent the same identity:
-     *     1. If the subject alternative names of IP address are present in
-     *        both certificates, they should be identical; otherwise,
-     *     2. if the subject alternative names of DNS name are present in
-     *        both certificates, they should be identical; otherwise,
-     *     3. if the subject fields are present in both certificates, the
-     *        certificate subjects and issuers should be identical.
-     */
-    private static boolean isIdentityEquivalent(X509Certificate thisCert,
-            X509Certificate prevCert) {
-        if (thisCert.equals(prevCert)) {
-            return true;
-        }
-
-        // check subject alternative names
-        Collection<List<?>> thisSubjectAltNames = null;
-        try {
-            thisSubjectAltNames = thisCert.getSubjectAlternativeNames();
-        } catch (CertificateParsingException cpe) {
-            if (debug != null && Debug.isOn("handshake")) {
-                System.out.println(
-                        "Attempt to obtain subjectAltNames extension failed!");
-            }
-        }
-
-        Collection<List<?>> prevSubjectAltNames = null;
-        try {
-            prevSubjectAltNames = prevCert.getSubjectAlternativeNames();
-        } catch (CertificateParsingException cpe) {
-            if (debug != null && Debug.isOn("handshake")) {
-                System.out.println(
-                        "Attempt to obtain subjectAltNames extension failed!");
-            }
-        }
-
-        if ((thisSubjectAltNames != null) && (prevSubjectAltNames != null)) {
-            // check the iPAddress field in subjectAltName extension
-            Collection<String> thisSubAltIPAddrs =
-                        getSubjectAltNames(thisSubjectAltNames, ALTNAME_IP);
-            Collection<String> prevSubAltIPAddrs =
-                        getSubjectAltNames(prevSubjectAltNames, ALTNAME_IP);
-            if ((thisSubAltIPAddrs != null) && (prevSubAltIPAddrs != null) &&
-                (isEquivalent(thisSubAltIPAddrs, prevSubAltIPAddrs))) {
-
-                return true;
-            }
-
-            // check the dNSName field in subjectAltName extension
-            Collection<String> thisSubAltDnsNames =
-                        getSubjectAltNames(thisSubjectAltNames, ALTNAME_DNS);
-            Collection<String> prevSubAltDnsNames =
-                        getSubjectAltNames(prevSubjectAltNames, ALTNAME_DNS);
-            if ((thisSubAltDnsNames != null) && (prevSubAltDnsNames != null) &&
-                (isEquivalent(thisSubAltDnsNames, prevSubAltDnsNames))) {
-
-                return true;
-            }
-        }
-
-        // check the certificate subject and issuer
-        X500Principal thisSubject = thisCert.getSubjectX500Principal();
-        X500Principal prevSubject = prevCert.getSubjectX500Principal();
-        X500Principal thisIssuer = thisCert.getIssuerX500Principal();
-        X500Principal prevIssuer = prevCert.getIssuerX500Principal();
-        if (!thisSubject.getName().isEmpty() &&
-                !prevSubject.getName().isEmpty() &&
-                thisSubject.equals(prevSubject) &&
-                thisIssuer.equals(prevIssuer)) {
-            return true;
-        }
-
-        return false;
-    }
-
-    /*
-     * Returns the subject alternative name of the specified type in the
-     * subjectAltNames extension of a certificate.
-     *
-     * Note that only those subjectAltName types that use String data
-     * should be passed into this function.
-     */
-    private static Collection<String> getSubjectAltNames(
-            Collection<List<?>> subjectAltNames, int type) {
-
-        HashSet<String> subAltDnsNames = null;
-        for (List<?> subjectAltName : subjectAltNames) {
-            int subjectAltNameType = (Integer)subjectAltName.get(0);
-            if (subjectAltNameType == type) {
-                String subAltDnsName = (String)subjectAltName.get(1);
-                if ((subAltDnsName != null) && !subAltDnsName.isEmpty()) {
-                    if (subAltDnsNames == null) {
-                        subAltDnsNames =
-                                new HashSet<>(subjectAltNames.size());
-                    }
-                    subAltDnsNames.add(subAltDnsName);
-                }
-            }
-        }
-
-        return subAltDnsNames;
-    }
-
-    private static boolean isEquivalent(Collection<String> thisSubAltNames,
-            Collection<String> prevSubAltNames) {
-
-        for (String thisSubAltName : thisSubAltNames) {
-            for (String prevSubAltName : prevSubAltNames) {
-                // Only allow the exactly match.  Check no wildcard character.
-                if (thisSubAltName.equalsIgnoreCase(prevSubAltName)) {
-                    return true;
-                }
-            }
-        }
-
-        return false;
     }
 }

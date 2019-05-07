@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 1996, 2016, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 1996, 2013, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -71,7 +71,7 @@ class WMenuItemPeer extends WObjectPeer implements MenuItemPeer {
         enable(false);
     }
 
-    private void readShortcutLabel() {
+    public void readShortcutLabel() {
         //Fix for 6288578: PIT. Windows: Shortcuts displayed for the menuitems in a popup menu
         WMenuPeer ancestor = parent;
         while (ancestor != null && !(ancestor instanceof WMenuBarPeer)) {
@@ -107,7 +107,6 @@ class WMenuItemPeer extends WObjectPeer implements MenuItemPeer {
         this.target = target;
         this.parent = (WMenuPeer) WToolkit.targetToPeer(target.getParent());
         this.isCheckbox = isCheckbox;
-        parent.addChildPeer(this);
         create(parent);
         // fix for 5088782: check if menu object is created successfully
         checkMenuCreation();
@@ -115,7 +114,7 @@ class WMenuItemPeer extends WObjectPeer implements MenuItemPeer {
         readShortcutLabel();
     }
 
-    void checkMenuCreation()
+    protected void checkMenuCreation()
     {
         // fix for 5088782: check if menu peer is created successfully
         if (pData == 0)

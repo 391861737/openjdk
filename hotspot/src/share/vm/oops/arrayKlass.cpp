@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 1997, 2017, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 1997, 2013, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -64,20 +64,10 @@ oop ArrayKlass::multi_allocate(int rank, jint* sizes, TRAPS) {
   return NULL;
 }
 
-// find field according to JVM spec 5.4.3.2, returns the klass in which the field is defined
-Klass* ArrayKlass::find_field(Symbol* name, Symbol* sig, fieldDescriptor* fd) const {
-  // There are no fields in an array klass but look to the super class (Object)
-  assert(super(), "super klass must be present");
-  return super()->find_field(name, sig, fd);
-}
-
-Method* ArrayKlass::uncached_lookup_method(Symbol* name, Symbol* signature, OverpassLookupMode overpass_mode) const {
+Method* ArrayKlass::uncached_lookup_method(Symbol* name, Symbol* signature) const {
   // There are no methods in an array klass but the super class (Object) has some
   assert(super(), "super klass must be present");
-  // Always ignore overpass methods in superclasses, although technically the
-  // super klass of an array, (j.l.Object) should not have
-  // any overpass methods present.
-  return super()->uncached_lookup_method(name, signature, Klass::skip_overpass);
+  return super()->uncached_lookup_method(name, signature);
 }
 
 ArrayKlass::ArrayKlass(Symbol* name) {
@@ -103,7 +93,7 @@ void ArrayKlass::complete_create_array_klass(ArrayKlass* k, KlassHandle super_kl
   ResourceMark rm(THREAD);
   k->initialize_supers(super_klass(), CHECK);
   k->vtable()->initialize_vtable(false, CHECK);
-  java_lang_Class::create_mirror(k, Handle(THREAD, k->class_loader()), Handle(NULL), CHECK);
+  java_lang_Class::create_mirror(k, Handle(NULL), CHECK);
 }
 
 GrowableArray<Klass*>* ArrayKlass::compute_secondary_supers(int num_extra_slots) {
@@ -196,9 +186,8 @@ void ArrayKlass::remove_unshareable_info() {
   set_component_mirror(NULL);
 }
 
-void ArrayKlass::restore_unshareable_info(ClassLoaderData* loader_data, Handle protection_domain, TRAPS) {
-  assert(loader_data == ClassLoaderData::the_null_class_loader_data(), "array classes belong to null loader");
-  Klass::restore_unshareable_info(loader_data, protection_domain, CHECK);
+void ArrayKlass::restore_unshareable_info(TRAPS) {
+  Klass::restore_unshareable_info(CHECK);
   // Klass recreates the component mirror also
 }
 
@@ -225,8 +214,8 @@ void ArrayKlass::oop_print_on(oop obj, outputStream* st) {
 
 // Verification
 
-void ArrayKlass::verify_on(outputStream* st) {
-  Klass::verify_on(st);
+void ArrayKlass::verify_on(outputStream* st, bool check_dictionary) {
+  Klass::verify_on(st, check_dictionary);
 
   if (component_mirror() != NULL) {
     guarantee(component_mirror()->klass() != NULL, "should have a class");

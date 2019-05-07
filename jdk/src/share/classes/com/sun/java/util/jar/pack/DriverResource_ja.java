@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2005, 2016, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2005, 2013, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -61,8 +61,8 @@ public class DriverResource_ja extends ListResourceBundle {
                 "\u4F7F\u7528\u65B9\u6CD5:  pack200 [-opt... | --option=value]... x.pack[.gz] y.jar",
                 "",
                 "\u5727\u7E2E\u30AA\u30D7\u30B7\u30E7\u30F3",
-                "  -g\u3001--no-gzip                   \u5727\u7E2E\u305B\u305A\u306B\u30D7\u30EC\u30FC\u30F3\u306A*.pack\u30D5\u30A1\u30A4\u30EB\u3092\u51FA\u529B\u3057\u307E\u3059",
-                "  --gzip                          (\u30C7\u30D5\u30A9\u30EB\u30C8) pack\u51FA\u529B\u3092gzip\u3067\u5F8C\u51E6\u7406\u3057\u307E\u3059",
+                "  -g\u3001--no-gzip                   \u30D7\u30EC\u30FC\u30F3\u306A*.pack\u30D5\u30A1\u30A4\u30EB\u3092\u5727\u7E2E\u305B\u305A\u306B\u51FA\u529B\u3057\u307E\u3059",
+                "  --gzip                          (\u30C7\u30D5\u30A9\u30EB\u30C8)\u5727\u7E2E\u51FA\u529B\u3092gzip\u3067\u5F8C\u51E6\u7406\u3057\u307E\u3059",
                 "  -G\u3001--strip-debug               \u5727\u7E2E\u4E2D\u306B\u30C7\u30D0\u30C3\u30B0\u5C5E\u6027\u3092\u524A\u9664\u3057\u307E\u3059",
                 "  -O\u3001--no-keep-file-order        \u30D5\u30A1\u30A4\u30EB\u306E\u9806\u5E8F\u4ED8\u3051\u60C5\u5831\u3092\u8EE2\u9001\u3057\u307E\u305B\u3093",
                 "  --keep-file-order               (\u30C7\u30D5\u30A9\u30EB\u30C8)\u5165\u529B\u30D5\u30A1\u30A4\u30EB\u306E\u9806\u5E8F\u4ED8\u3051\u3092\u4FDD\u6301\u3057\u307E\u3059",
@@ -84,7 +84,7 @@ public class DriverResource_ja extends ListResourceBundle {
                 "  -V\u3001--version                   \u30D7\u30ED\u30B0\u30E9\u30E0\u306E\u30D0\u30FC\u30B8\u30E7\u30F3\u3092\u51FA\u529B\u3057\u307E\u3059",
                 "  -J{X}                           \u30AA\u30D7\u30B7\u30E7\u30F3X\u3092\u57FA\u790E\u3068\u306A\u308BJava VM\u306B\u6E21\u3057\u307E\u3059",
                 "",
-                "\u6CE8:",
+                "\u6CE8\u610F:",
                 "  -P\u3001-C\u3001-F\u3001-M\u304A\u3088\u3073-D\u30AA\u30D7\u30B7\u30E7\u30F3\u306F\u7D2F\u7A4D\u3055\u308C\u307E\u3059\u3002",
                 "  \u5C5E\u6027\u5B9A\u7FA9\u306E\u4F8B:  -C SourceFile=RUH .",
                 "  Config.\u30D5\u30A1\u30A4\u30EB\u30FB\u30D7\u30ED\u30D1\u30C6\u30A3\u306F\u3001Pack200 API\u306B\u3088\u3063\u3066\u5B9A\u7FA9\u3055\u308C\u307E\u3059\u3002",

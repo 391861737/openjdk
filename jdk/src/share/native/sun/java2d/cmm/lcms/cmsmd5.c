@@ -30,7 +30,7 @@
 //---------------------------------------------------------------------------------
 //
 //  Little Color Management System
-//  Copyright (c) 1998-2016 Marti Maria Saguer
+//  Copyright (c) 1998-2012 Marti Maria Saguer
 //
 // Permission is hereby granted, free of charge, to any person obtaining
 // a copy of this software and associated documentation files (the "Software"),
@@ -338,7 +338,7 @@ cmsBool CMSEXPORT cmsMD5computeID(cmsHPROFILE hProfile)
 Error:
 
     // Free resources as something went wrong
-    // "MD5" cannot be other than NULL here, so no need to free it
+    if (MD5 != NULL) _cmsFree(ContextID, MD5);
     if (Mem != NULL) _cmsFree(ContextID, Mem);
     memmove(Icc, &Keep, sizeof(_cmsICCPROFILE));
     return FALSE;

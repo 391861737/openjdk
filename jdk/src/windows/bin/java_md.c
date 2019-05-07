@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 1997, 2015, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 1997, 2012, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -179,7 +179,7 @@ CreateExecutionEnvironment(int *pargc, char ***pargv,
     int wanted = running;
 
     char** argv = *pargv;
-    for (i = 1; i < *pargc ; i++) {
+    for (i = 0; i < *pargc ; i++) {
         if (JLI_StrCmp(argv[i], "-J-d64") == 0 || JLI_StrCmp(argv[i], "-d64") == 0) {
             wanted = 64;
             continue;
@@ -188,11 +188,6 @@ CreateExecutionEnvironment(int *pargc, char ***pargv,
             wanted = 32;
             continue;
         }
-
-        if (IsJavaArgs() && argv[i][0] != '-')
-            continue;
-        if (argv[i][0] != '-')
-            break;
     }
     if (running != wanted) {
         JLI_ReportErrorMessage(JRE_ERROR2, wanted);
@@ -318,11 +313,7 @@ GetJREPath(char *path, jint pathsize)
             JLI_TraceLauncher("JRE path is %s\n", path);
             return JNI_TRUE;
         }
-        /* ensure storage for path + \jre + NULL */
-        if ((JLI_StrLen(path) + 4 + 1) > pathsize) {
-            JLI_TraceLauncher("Insufficient space to store JRE path\n");
-            return JNI_FALSE;
-        }
+
         /* Does this app ship a private JRE in <apphome>\jre directory? */
         JLI_Snprintf(javadll, sizeof (javadll), "%s\\jre\\bin\\" JAVA_DLL, path);
         if (stat(javadll, &s) == 0) {
@@ -1310,14 +1301,6 @@ int AWTPreload(const char *funcName)
             /* save path length */
             jrePathLen = JLI_StrLen(libraryPath);
 
-            if (jrePathLen + JLI_StrLen("\\bin\\verify.dll") >= MAXPATHLEN) {
-              /* jre path is too long, the library path will not fit there;
-               * report and abort preloading
-               */
-              JLI_ReportErrorMessage(JRE_ERROR11);
-              break;
-            }
-
             /* load msvcrt 1st */
             LoadMSVCRT();
 
@@ -1407,26 +1390,6 @@ ProcessPlatformOption(const char *arg)
     return JNI_FALSE;
 }
 
-int
-filterArgs(StdArg *stdargs, const int nargc, StdArg **pargv) {
-    StdArg* argv = NULL;
-    int nargs = 0;
-    int i;
-
-    /* Copy the non-vm args */
-    for (i = 0; i < nargc ; i++) {
-        const char *arg = stdargs[i].arg;
-        if (arg[0] == '-' && arg[1] == 'J')
-            continue;
-        argv = (StdArg*) JLI_MemRealloc(argv, (nargs+1) * sizeof(StdArg));
-        argv[nargs].arg = JLI_StringDup(arg);
-        argv[nargs].has_wildcard = stdargs[i].has_wildcard;
-        nargs++;
-    }
-    *pargv = argv;
-    return nargs;
-}
-
 /*
  * At this point we have the arguments to the application, and we need to
  * check with original stdargs in order to compare which of these truly
@@ -1441,9 +1404,8 @@ CreateApplicationArgs(JNIEnv *env, char **strv, int argc)
     char *ostart, *astart, **nargv;
     jboolean needs_expansion = JNI_FALSE;
     jmethodID mid;
-    int filteredargc, stdargc;
+    int stdargc;
     StdArg *stdargs;
-    StdArg *filteredargs;
     jclass cls = GetLauncherHelperClass(env);
     NULL_CHECK0(cls);
 
@@ -1454,8 +1416,6 @@ CreateApplicationArgs(JNIEnv *env, char **strv, int argc)
     stdargs = JLI_GetStdArgs();
     stdargc = JLI_GetStdArgc();
 
-    filteredargc = filterArgs(stdargs, stdargc, &filteredargs);
-
     // sanity check, this should never happen
     if (argc > stdargc) {
         JLI_TraceLauncher("Warning: app args is larger than the original, %d %d\n", argc, stdargc);
@@ -1464,8 +1424,8 @@ CreateApplicationArgs(JNIEnv *env, char **strv, int argc)
     }
 
     // sanity check, match the args we have, to the holy grail
-    idx = filteredargc - argc;
-    ostart = filteredargs[idx].arg;
+    idx = stdargc - argc;
+    ostart = stdargs[idx].arg;
     astart = strv[0];
     // sanity check, ensure that the first argument of the arrays are the same
     if (JLI_StrCmp(ostart, astart) != 0) {
@@ -1478,8 +1438,8 @@ CreateApplicationArgs(JNIEnv *env, char **strv, int argc)
     // make a copy of the args which will be expanded in java if required.
     nargv = (char **)JLI_MemAlloc(argc * sizeof(char*));
     for (i = 0, j = idx; i < argc; i++, j++) {
-        jboolean arg_expand = (JLI_StrCmp(filteredargs[j].arg, strv[i]) == 0)
-                                ? filteredargs[j].has_wildcard
+        jboolean arg_expand = (JLI_StrCmp(stdargs[j].arg, strv[i]) == 0)
+                                ? stdargs[j].has_wildcard
                                 : JNI_FALSE;
         if (needs_expansion == JNI_FALSE)
             needs_expansion = arg_expand;
@@ -1516,6 +1476,5 @@ CreateApplicationArgs(JNIEnv *env, char **strv, int argc)
         JLI_MemFree(nargv[i]);
     }
     JLI_MemFree(nargv);
-    JLI_MemFree(filteredargs);
     return outArray;
 }

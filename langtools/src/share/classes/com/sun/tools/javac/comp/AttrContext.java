@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 1999, 2014, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 1999, 2012, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -25,7 +25,6 @@
 
 package com.sun.tools.javac.comp;
 
-import com.sun.tools.javac.tree.JCTree;
 import com.sun.tools.javac.util.*;
 import com.sun.tools.javac.code.*;
 
@@ -55,10 +54,6 @@ public class AttrContext {
      */
     boolean selectSuper = false;
 
-    /** Is the current target of lambda expression or method reference serializable?
-     */
-    boolean isSerializable = false;
-
     /** Are arguments to current function applications boxed into an array for varargs?
      */
     Resolve.MethodResolutionPhase pendingResolutionPhase = null;
@@ -81,13 +76,6 @@ public class AttrContext {
      */
     Type defaultSuperCallSite = null;
 
-    /** Tree that when non null, is to be preferentially used in diagnostics.
-     *  Usually Env<AttrContext>.tree is the tree to be referred to in messages,
-     *  but this may not be true during the window a method is looked up in enclosing
-     *  contexts (JDK-8145466)
-     */
-    JCTree preferredTreeForDiagnostics;
-
     /** Duplicate this context, replacing scope field and copying all others.
      */
     AttrContext dup(Scope scope) {
@@ -101,8 +89,6 @@ public class AttrContext {
         info.enclVar = enclVar;
         info.returnResult = returnResult;
         info.defaultSuperCallSite = defaultSuperCallSite;
-        info.isSerializable = isSerializable;
-        info.preferredTreeForDiagnostics = preferredTreeForDiagnostics;
         return info;
     }
 

@@ -62,12 +62,6 @@ public class RandomAccessFile implements DataOutput, DataInput, Closeable {
     private FileChannel channel = null;
     private boolean rw;
 
-    /**
-     * The path of the referenced file
-     * (null if the stream is created with a file descriptor)
-     */
-    private final String path;
-
     private Object closeLock = new Object();
     private volatile boolean closed = false;
 
@@ -239,7 +233,6 @@ public class RandomAccessFile implements DataOutput, DataInput, Closeable {
         }
         fd = new FileDescriptor();
         fd.attach(this);
-        path = name;
         open(name, imode);
     }
 
@@ -279,7 +272,7 @@ public class RandomAccessFile implements DataOutput, DataInput, Closeable {
     public final FileChannel getChannel() {
         synchronized (this) {
             if (channel == null) {
-                channel = FileChannelImpl.open(fd, path, true, rw, this);
+                channel = FileChannelImpl.open(fd, true, rw, this);
             }
             return channel;
         }
@@ -296,25 +289,8 @@ public class RandomAccessFile implements DataOutput, DataInput, Closeable {
      * @param mode the mode flags, a combination of the O_ constants
      *             defined above
      */
-    private native void open0(String name, int mode)
+    private native void open(String name, int mode)
         throws FileNotFoundException;
-
-    // wrap native call to allow instrumentation
-    /**
-     * Opens a file and returns the file descriptor.  The file is
-     * opened in read-write mode if the O_RDWR bit in {@code mode}
-     * is true, else the file is opened as read-only.
-     * If the {@code name} refers to a directory, an IOException
-     * is thrown.
-     *
-     * @param name the name of the file
-     * @param mode the mode flags, a combination of the O_ constants
-     *             defined above
-     */
-    private void open(String name, int mode)
-        throws FileNotFoundException {
-        open0(name, mode);
-    }
 
     // 'Read' primitives
 
@@ -333,11 +309,7 @@ public class RandomAccessFile implements DataOutput, DataInput, Closeable {
      * @exception  IOException  if an I/O error occurs. Not thrown if
      *                          end-of-file has been reached.
      */
-    public int read() throws IOException {
-        return read0();
-    }
-
-    private native int read0() throws IOException;
+    public native int read() throws IOException;
 
     /**
      * Reads a sub array as a sequence of bytes.
@@ -485,11 +457,7 @@ public class RandomAccessFile implements DataOutput, DataInput, Closeable {
      * @param      b   the {@code byte} to be written.
      * @exception  IOException  if an I/O error occurs.
      */
-    public void write(int b) throws IOException {
-        write0(b);
-    }
-
-    private native void write0(int b) throws IOException;
+    public native void write(int b) throws IOException;
 
     /**
      * Writes a sub array as a sequence of bytes.

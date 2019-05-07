@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 1997, 2017, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 1997, 2013, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -74,7 +74,7 @@ class TempNewSymbol : public StackObj {
   operator Symbol*()                             { return _temp; }
 };
 
-class SymbolTable : public RehashableHashtable<Symbol*, mtSymbol> {
+class SymbolTable : public Hashtable<Symbol*, mtSymbol> {
   friend class VMStructs;
   friend class ClassFileParser;
 
@@ -86,8 +86,8 @@ private:
   static bool _needs_rehashing;
 
   // For statistics
-  static int _symbols_removed;
-  static int _symbols_counted;
+  static int symbols_removed;
+  static int symbols_counted;
 
   Symbol* allocate_symbol(const u1* name, int len, bool c_heap, TRAPS); // Assumes no characters larger than 0x7F
 
@@ -110,10 +110,10 @@ private:
   Symbol* lookup(int index, const char* name, int len, unsigned int hash);
 
   SymbolTable()
-    : RehashableHashtable<Symbol*, mtSymbol>(SymbolTableSize, sizeof (HashtableEntry<Symbol*, mtSymbol>)) {}
+    : Hashtable<Symbol*, mtSymbol>(SymbolTableSize, sizeof (HashtableEntry<Symbol*, mtSymbol>)) {}
 
   SymbolTable(HashtableBucket<mtSymbol>* t, int number_of_entries)
-    : RehashableHashtable<Symbol*, mtSymbol>(SymbolTableSize, sizeof (HashtableEntry<Symbol*, mtSymbol>), t,
+    : Hashtable<Symbol*, mtSymbol>(SymbolTableSize, sizeof (HashtableEntry<Symbol*, mtSymbol>), t,
                 number_of_entries) {}
 
   // Arena for permanent symbols (null class loader) that are never unloaded
@@ -121,14 +121,6 @@ private:
   static Arena* arena() { return _arena; }  // called for statistics
 
   static void initialize_symbols(int arena_alloc_size = 0);
-
-  static volatile int _parallel_claimed_idx;
-
-  typedef SymbolTable::BucketUnlinkContext BucketUnlinkContext;
-  // Release any dead symbols. Unlinked bucket entries are collected in the given
-  // context to be freed later.
-  // This allows multiple threads to work on the table at once.
-  static void buckets_unlink(int start_idx, int end_idx, BucketUnlinkContext* context, size_t* memory_total);
 public:
   enum {
     symbol_alloc_batch_size = 8,
@@ -185,14 +177,7 @@ public:
                   unsigned int* hashValues, TRAPS);
 
   // Release any dead symbols
-  static void unlink() {
-    int processed = 0;
-    int removed = 0;
-    unlink(&processed, &removed);
-  }
-  static void unlink(int* processed, int* removed);
-  // Release any dead symbols, possibly parallel version
-  static void possibly_parallel_unlink(int* processed, int* removed);
+  static void unlink();
 
   // iterate over symbols
   static void symbols_do(SymbolClosure *cl);
@@ -250,12 +235,9 @@ public:
   // Rehash the symbol table if it gets out of balance
   static void rehash_table();
   static bool needs_rehashing()         { return _needs_rehashing; }
-  // Parallel chunked scanning
-  static void clear_parallel_claimed_index() { _parallel_claimed_idx = 0; }
-  static int parallel_claimed_index()        { return _parallel_claimed_idx; }
 };
 
-class StringTable : public RehashableHashtable<oop, mtSymbol> {
+class StringTable : public Hashtable<oop, mtSymbol> {
   friend class VMStructs;
 
 private:
@@ -276,20 +258,13 @@ private:
 
   // Apply the give oop closure to the entries to the buckets
   // in the range [start_idx, end_idx).
-  static void buckets_oops_do(OopClosure* f, int start_idx, int end_idx);
+  static void buckets_do(OopClosure* f, int start_idx, int end_idx);
 
-  typedef StringTable::BucketUnlinkContext BucketUnlinkContext;
-  // Unlink or apply the give oop closure to the entries to the buckets
-  // in the range [start_idx, end_idx). Unlinked bucket entries are collected in the given
-  // context to be freed later.
-  // This allows multiple threads to work on the table at once.
-  static void buckets_unlink_or_oops_do(BoolObjectClosure* is_alive, OopClosure* f, int start_idx, int end_idx, BucketUnlinkContext* context);
-
-  StringTable() : RehashableHashtable<oop, mtSymbol>((int)StringTableSize,
+  StringTable() : Hashtable<oop, mtSymbol>((int)StringTableSize,
                               sizeof (HashtableEntry<oop, mtSymbol>)) {}
 
   StringTable(HashtableBucket<mtSymbol>* t, int number_of_entries)
-    : RehashableHashtable<oop, mtSymbol>((int)StringTableSize, sizeof (HashtableEntry<oop, mtSymbol>), t,
+    : Hashtable<oop, mtSymbol>((int)StringTableSize, sizeof (HashtableEntry<oop, mtSymbol>), t,
                      number_of_entries) {}
 public:
   // The string table
@@ -305,28 +280,15 @@ public:
 
   // GC support
   //   Delete pointers to otherwise-unreachable objects.
-  static void unlink_or_oops_do(BoolObjectClosure* cl, OopClosure* f) {
-    int processed = 0;
-    int removed = 0;
-    unlink_or_oops_do(cl, f, &processed, &removed);
-  }
+  static void unlink_or_oops_do(BoolObjectClosure* cl, OopClosure* f);
   static void unlink(BoolObjectClosure* cl) {
-    int processed = 0;
-    int removed = 0;
-    unlink_or_oops_do(cl, NULL, &processed, &removed);
+    unlink_or_oops_do(cl, NULL);
   }
-  static void unlink_or_oops_do(BoolObjectClosure* cl, OopClosure* f, int* processed, int* removed);
-  static void unlink(BoolObjectClosure* cl, int* processed, int* removed) {
-    unlink_or_oops_do(cl, NULL, processed, removed);
-  }
+
   // Serially invoke "f->do_oop" on the locations of all oops in the table.
   static void oops_do(OopClosure* f);
 
-  // Possibly parallel versions of the above
-  static void possibly_parallel_unlink_or_oops_do(BoolObjectClosure* cl, OopClosure* f, int* processed, int* removed);
-  static void possibly_parallel_unlink(BoolObjectClosure* cl, int* processed, int* removed) {
-    possibly_parallel_unlink_or_oops_do(cl, NULL, processed, removed);
-  }
+  // Possibly parallel version of the above
   static void possibly_parallel_oops_do(OopClosure* f);
 
   // Hashing algorithm, used as the hash value used by the
@@ -387,6 +349,5 @@ public:
 
   // Parallel chunked scanning
   static void clear_parallel_claimed_index() { _parallel_claimed_idx = 0; }
-  static int parallel_claimed_index() { return _parallel_claimed_idx; }
 };
 #endif // SHARE_VM_CLASSFILE_SYMBOLTABLE_HPP

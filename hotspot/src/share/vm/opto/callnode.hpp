@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 1997, 2015, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 1997, 2013, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -30,7 +30,6 @@
 #include "opto/multnode.hpp"
 #include "opto/opcodes.hpp"
 #include "opto/phaseX.hpp"
-#include "opto/replacednodes.hpp"
 #include "opto/type.hpp"
 
 // Portions of code courtesy of Clifford Click
@@ -300,8 +299,6 @@ public:
   JVMState* clone_deep(Compile* C) const;    // recursively clones caller chain
   JVMState* clone_shallow(Compile* C) const; // retains uncloned caller
   void      set_map_deep(SafePointNode *map);// reset map for all callers
-  void      adapt_position(int delta);       // Adapt offsets in in-array after adding an edge.
-  int       interpreter_frame_size() const;
 
 #ifndef PRODUCT
   void      format(PhaseRegAlloc *regalloc, const Node *n, outputStream* st) const;
@@ -336,7 +333,6 @@ public:
   OopMap*         _oop_map;   // Array of OopMap info (8-bit char) for GC
   JVMState* const _jvms;      // Pointer to list of JVM State objects
   const TypePtr*  _adr_type;  // What type of memory does this node produce?
-  ReplacedNodes   _replaced_nodes; // During parsing: list of pair of nodes from calls to GraphKit::replace_in_map()
 
   // Many calls take *all* of memory as input,
   // but some produce a limited subset of that memory as output.
@@ -427,37 +423,6 @@ public:
   SafePointNode*         next_exception() const;
   void               set_next_exception(SafePointNode* n);
   bool                   has_exceptions() const { return next_exception() != NULL; }
-
-  // Helper methods to operate on replaced nodes
-  ReplacedNodes replaced_nodes() const {
-    return _replaced_nodes;
-  }
-
-  void set_replaced_nodes(ReplacedNodes replaced_nodes) {
-    _replaced_nodes = replaced_nodes;
-  }
-
-  void clone_replaced_nodes() {
-    _replaced_nodes.clone();
-  }
-  void record_replaced_node(Node* initial, Node* improved) {
-    _replaced_nodes.record(initial, improved);
-  }
-  void transfer_replaced_nodes_from(SafePointNode* sfpt, uint idx = 0) {
-    _replaced_nodes.transfer_from(sfpt->_replaced_nodes, idx);
-  }
-  void delete_replaced_nodes() {
-    _replaced_nodes.reset();
-  }
-  void apply_replaced_nodes(uint idx) {
-    _replaced_nodes.apply(this, idx);
-  }
-  void merge_replaced_nodes_with(SafePointNode* sfpt) {
-    _replaced_nodes.merge_with(sfpt->_replaced_nodes);
-  }
-  bool has_replaced_nodes() const {
-    return !_replaced_nodes.is_empty();
-  }
 
   // Standard Node stuff
   virtual int            Opcode() const;
@@ -594,15 +559,9 @@ public:
   // Are we guaranteed that this node is a safepoint?  Not true for leaf calls and
   // for some macro nodes whose expansion does not have a safepoint on the fast path.
   virtual bool        guaranteed_safepoint()  { return true; }
-  // For macro nodes, the JVMState gets modified during expansion. If calls
-  // use MachConstantBase, it gets modified during matching. So when cloning
-  // the node the JVMState must be cloned. Default is not to clone.
-  virtual void clone_jvms(Compile* C) {
-    if (C->needs_clone_jvms() && jvms() != NULL) {
-      set_jvms(jvms()->clone_deep(C));
-      jvms()->set_map_deep(this);
-    }
-  }
+  // For macro nodes, the JVMState gets modified during expansion, so when cloning
+  // the node the JVMState must be cloned.
+  virtual void        clone_jvms(Compile* C) { }   // default is not to clone
 
   // Returns true if the call may modify n
   virtual bool        may_modify(const TypeOopPtr *t_oop, PhaseTransform *phase);
@@ -985,9 +944,6 @@ public:
   bool is_coarsened()   const { return (_kind == Coarsened); }
   bool is_nested()      const { return (_kind == Nested); }
 
-  const char * kind_as_string() const;
-  void log_lock_optimization(Compile* c, const char * tag) const;
-
   void set_non_esc_obj() { _kind = NonEscObj; set_eliminated_lock_counter(); }
   void set_coarsened()   { _kind = Coarsened; set_eliminated_lock_counter(); }
   void set_nested()      { _kind = Nested; set_eliminated_lock_counter(); }
@@ -1048,24 +1004,15 @@ public:
   }
 
   bool is_nested_lock_region(); // Is this Lock nested?
-  bool is_nested_lock_region(Compile * c); // Why isn't this Lock nested?
 };
 
 //------------------------------Unlock---------------------------------------
 // High-level unlock operation
 class UnlockNode : public AbstractLockNode {
-private:
-#ifdef ASSERT
-  JVMState* const _dbg_jvms;      // Pointer to list of JVM State objects
-#endif
 public:
   virtual int Opcode() const;
   virtual uint size_of() const; // Size is bigger
-  UnlockNode(Compile* C, const TypeFunc *tf) : AbstractLockNode( tf )
-#ifdef ASSERT
-    , _dbg_jvms(NULL)
-#endif
-  {
+  UnlockNode(Compile* C, const TypeFunc *tf) : AbstractLockNode( tf ) {
     init_class_id(Class_Unlock);
     init_flags(Flag_is_macro);
     C->add_macro_node(this);
@@ -1073,14 +1020,6 @@ public:
   virtual Node *Ideal(PhaseGVN *phase, bool can_reshape);
   // unlock is never a safepoint
   virtual bool        guaranteed_safepoint()  { return false; }
-#ifdef ASSERT
-  void set_dbg_jvms(JVMState* s) {
-    *(JVMState**)&_dbg_jvms = s;  // override const attribute in the accessor
-  }
-  JVMState* dbg_jvms() const { return _dbg_jvms; }
-#else
-  JVMState* dbg_jvms() const { return NULL; }
-#endif
 };
 
 #endif // SHARE_VM_OPTO_CALLNODE_HPP

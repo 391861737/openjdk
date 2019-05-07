@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2007, 2014, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2007, 2013, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -32,11 +32,8 @@
 #include "oops/oop.inline.hpp"
 #include "runtime/java.hpp"
 #include "runtime/mutexLocker.hpp"
-#include "runtime/orderAccess.inline.hpp"
 #include "runtime/virtualspace.hpp"
 #include "runtime/vmThread.hpp"
-
-PRAGMA_FORMAT_MUTE_WARNINGS_FOR_GCC
 
 void CardTableModRefBS::non_clean_card_iterate_parallel_work(Space* sp, MemRegion mr,
                                                              OopsInGenClosure* cl,
@@ -452,13 +449,9 @@ get_LNC_array_for_space(Space* sp,
   // event lock and do the read again in case some other thread had already
   // succeeded and done the resize.
   int cur_collection = Universe::heap()->total_collections();
-  // Updated _last_LNC_resizing_collection[i] must not be visible before
-  // _lowest_non_clean and friends are visible. Therefore use acquire/release
-  // to guarantee this on non TSO architecures.
-  if (OrderAccess::load_acquire(&_last_LNC_resizing_collection[i]) != cur_collection) {
+  if (_last_LNC_resizing_collection[i] != cur_collection) {
     MutexLocker x(ParGCRareEvent_lock);
-    // This load_acquire is here for clarity only. The MutexLocker already fences.
-    if (OrderAccess::load_acquire(&_last_LNC_resizing_collection[i]) != cur_collection) {
+    if (_last_LNC_resizing_collection[i] != cur_collection) {
       if (_lowest_non_clean[i] == NULL ||
           n_chunks != _lowest_non_clean_chunk_size[i]) {
 
@@ -478,8 +471,7 @@ get_LNC_array_for_space(Space* sp,
             _lowest_non_clean[i][j] = NULL;
         }
       }
-      // Make sure this gets visible only after _lowest_non_clean* was initialized
-      OrderAccess::release_store(&_last_LNC_resizing_collection[i], cur_collection);
+      _last_LNC_resizing_collection[i] = cur_collection;
     }
   }
   // In any case, now do the initialization.

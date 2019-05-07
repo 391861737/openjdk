@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 1997, 2016, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 1997, 2013, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -33,7 +33,6 @@
 #include <netdb.h>
 #include <stdlib.h>
 #include <dlfcn.h>
-#include <sys/time.h>
 
 #ifndef _ALLBSD_SOURCE
 #include <values.h>
@@ -69,6 +68,13 @@
 
 #include "java_net_SocketOptions.h"
 
+/* needed from libsocket on Solaris 8 */
+
+getaddrinfo_f getaddrinfo_ptr = NULL;
+freeaddrinfo_f freeaddrinfo_ptr = NULL;
+gai_strerror_f gai_strerror_ptr = NULL;
+getnameinfo_f getnameinfo_ptr = NULL;
+
 /*
  * EXCLBIND socket options only on Solaris
  */
@@ -91,7 +97,6 @@ void setDefaultScopeID(JNIEnv *env, struct sockaddr *him)
         CHECK_NULL(c);
         ni_defaultIndexID = (*env)->GetStaticFieldID(
             env, c, "defaultIndex", "I");
-        CHECK_NULL(ni_defaultIndexID);
         ni_class = c;
     }
     int defaultIndex;
@@ -107,8 +112,6 @@ void setDefaultScopeID(JNIEnv *env, struct sockaddr *him)
 int getDefaultScopeID(JNIEnv *env) {
     static jclass ni_class = NULL;
     static jfieldID ni_defaultIndexID;
-    int defaultIndex = 0;
-
     if (ni_class == NULL) {
         jclass c = (*env)->FindClass(env, "java/net/NetworkInterface");
         CHECK_NULL_RETURN(c, 0);
@@ -116,9 +119,9 @@ int getDefaultScopeID(JNIEnv *env) {
         CHECK_NULL_RETURN(c, 0);
         ni_defaultIndexID = (*env)->GetStaticFieldID(env, c,
                                                      "defaultIndex", "I");
-        CHECK_NULL_RETURN(ni_defaultIndexID, 0);
         ni_class = c;
     }
+    int defaultIndex = 0;
     defaultIndex = (*env)->GetStaticIntField(env, ni_class,
                                              ni_defaultIndexID);
     return defaultIndex;
@@ -259,7 +262,9 @@ int cmpScopeID (unsigned int scope, struct sockaddr *him) {
 void
 NET_ThrowByNameWithLastError(JNIEnv *env, const char *name,
                    const char *defaultDetail) {
-    JNU_ThrowByNameWithMessageAndLastError(env, name, defaultDetail);
+    char errmsg[255];
+    sprintf(errmsg, "errno: %d, error: %s\n", errno, defaultDetail);
+    JNU_ThrowByNameWithLastError(env, name, errmsg);
 }
 
 void
@@ -334,7 +339,6 @@ jint  IPv6_supported()
     if (getsockname(0, (struct sockaddr *)&sa, &sa_len) == 0) {
         struct sockaddr *saP = (struct sockaddr *)&sa;
         if (saP->sa_family != AF_INET6) {
-            close(fd);
             return JNI_FALSE;
         }
     }
@@ -428,7 +432,8 @@ void ThrowUnknownHostExceptionWithGaiError(JNIEnv *env,
     int size;
     char *buf;
     const char *format = "%s: %s";
-    const char *error_string = gai_strerror(gai_error);
+    const char *error_string =
+        (gai_strerror_ptr == NULL) ? NULL : (*gai_strerror_ptr)(gai_error);
     if (error_string == NULL)
         error_string = "unknown error";
 
@@ -732,23 +737,14 @@ static int getLocalScopeID (char *addr) {
     return 0;
 }
 
-void platformInit () {
+void initLocalAddrTable () {
     initLoopbackRoutes();
     initLocalIfs();
 }
 
-#elif defined(_AIX)
-
-/* Initialize stubs for blocking I/O workarounds (see src/solaris/native/java/net/linux_close.c) */
-extern void aix_close_init();
-
-void platformInit () {
-    aix_close_init();
-}
-
 #else
 
-void platformInit () {}
+void initLocalAddrTable () {}
 
 #endif
 
@@ -770,11 +766,6 @@ void parseExclusiveBindProperty(JNIEnv *env) {
         useExclBind = 1;
     }
 #endif
-}
-
-JNIEXPORT jint JNICALL
-NET_EnableFastTcpLoopback(int fd) {
-    return 0;
 }
 
 /* In the case of an IPv4 Inetaddress this method will return an
@@ -1005,10 +996,12 @@ NET_MapSocketOption(jint cmd, int *level, int *optname) {
 
     int i;
 
+    /*
+     * Different multicast options if IPv6 is enabled
+     */
 #ifdef AF_INET6
     if (ipv6_available()) {
         switch (cmd) {
-            // Different multicast options if IPv6 is enabled
             case java_net_SocketOptions_IP_MULTICAST_IF:
             case java_net_SocketOptions_IP_MULTICAST_IF2:
                 *level = IPPROTO_IPV6;
@@ -1019,13 +1012,6 @@ NET_MapSocketOption(jint cmd, int *level, int *optname) {
                 *level = IPPROTO_IPV6;
                 *optname = IPV6_MULTICAST_LOOP;
                 return 0;
-#if (defined(__solaris__) || defined(MACOSX))
-            // Map IP_TOS request to IPV6_TCLASS
-            case java_net_SocketOptions_IP_TOS:
-                *level = IPPROTO_IPV6;
-                *optname = IPV6_TCLASS;
-                return 0;
-#endif
         }
     }
 #endif
@@ -1201,6 +1187,9 @@ int getDefaultIPv6Interface(struct in6_addr *target_addr) {
  * Wrapper for getsockopt system routine - does any necessary
  * pre/post processing to deal with OS specific oddities :-
  *
+ * IP_TOS is a no-op with IPv6 sockets as it's setup when
+ * the connection is established.
+ *
  * On Linux the SO_SNDBUF/SO_RCVBUF values must be post-processed
  * to compensate for an incorrect value returned by the kernel.
  */
@@ -1209,10 +1198,31 @@ NET_GetSockOpt(int fd, int level, int opt, void *result,
                int *len)
 {
     int rv;
-    socklen_t socklen = *len;
 
-    rv = getsockopt(fd, level, opt, result, &socklen);
-    *len = socklen;
+#ifdef AF_INET6
+    if ((level == IPPROTO_IP) && (opt == IP_TOS)) {
+        if (ipv6_available()) {
+
+            /*
+             * For IPv6 socket option implemented at Java-level
+             * so return -1.
+             */
+            int *tc = (int *)result;
+            *tc = -1;
+            return 0;
+        }
+    }
+#endif
+
+#ifdef __solaris__
+    rv = getsockopt(fd, level, opt, result, len);
+#else
+    {
+        socklen_t socklen = *len;
+        rv = getsockopt(fd, level, opt, result, &socklen);
+        *len = socklen;
+    }
+#endif
 
     if (rv < 0) {
         return rv;
@@ -1254,13 +1264,13 @@ NET_GetSockOpt(int fd, int level, int opt, void *result,
  *
  * For IP_TOS socket option need to mask off bits as this
  * aren't automatically masked by the kernel and results in
- * an error.
+ * an error. In addition IP_TOS is a NOOP with IPv6 as it
+ * should be setup as connection time.
  */
 int
 NET_SetSockOpt(int fd, int level, int  opt, const void *arg,
                int len)
 {
-
 #ifndef IPTOS_TOS_MASK
 #define IPTOS_TOS_MASK 0x1e
 #endif
@@ -1281,39 +1291,36 @@ NET_SetSockOpt(int fd, int level, int  opt, const void *arg,
 #else
     static long maxsockbuf = -1;
 #endif
+
+    int addopt;
+    struct linger *ling;
 #endif
 
     /*
      * IPPROTO/IP_TOS :-
-     * 1. IPv6 on Solaris/Mac OS:
-     *    Set the TOS OR Traffic Class value to cater for
-     *    IPv6 and IPv4 scenarios.
+     * 1. IPv6 on Solaris/Mac OS: NOOP and will be set
+     *    in flowinfo field when connecting TCP socket,
+     *    or sending UDP packet.
      * 2. IPv6 on Linux: By default Linux ignores flowinfo
      *    field so enable IPV6_FLOWINFO_SEND so that flowinfo
-     *    will be examined. We also set the IPv4 TOS option in this case.
+     *    will be examined.
      * 3. IPv4: set socket option based on ToS and Precedence
      *    fields (otherwise get invalid argument)
      */
     if (level == IPPROTO_IP && opt == IP_TOS) {
         int *iptos;
 
+#if defined(AF_INET6) && (defined(__solaris__) || defined(MACOSX))
+        if (ipv6_available()) {
+            return 0;
+        }
+#endif
+
 #if defined(AF_INET6) && defined(__linux__)
         if (ipv6_available()) {
             int optval = 1;
-            if (setsockopt(fd, IPPROTO_IPV6, IPV6_FLOWINFO_SEND,
-                           (void *)&optval, sizeof(optval)) < 0) {
-                return -1;
-            }
-           /*
-            * Let's also set the IPV6_TCLASS flag.
-            * Linux appears to allow both IP_TOS and IPV6_TCLASS to be set
-            * This helps in mixed environments where IPv4 and IPv6 sockets
-            * are connecting.
-            */
-           if (setsockopt(fd, IPPROTO_IPV6, IPV6_TCLASS,
-                           arg, len) < 0) {
-                return -1;
-            }
+            return setsockopt(fd, IPPROTO_IPV6, IPV6_FLOWINFO_SEND,
+                              (void *)&optval, sizeof(optval));
         }
 #endif
 
@@ -1379,34 +1386,11 @@ NET_SetSockOpt(int fd, int level, int  opt, const void *arg,
     }
 #endif
 
-#ifdef _AIX
-    if (level == SOL_SOCKET) {
-        if (opt == SO_SNDBUF || opt == SO_RCVBUF) {
-            /*
-             * Just try to set the requested size. If it fails we will leave the
-             * socket option as is. Setting the buffer size means only a hint in
-             * the jse2/java software layer, see javadoc. In the previous
-             * solution the buffer has always been truncated to a length of
-             * 0x100000 Byte, even if the technical limit has not been reached.
-             * This kind of absolute truncation was unexpected in the jck tests.
-             */
-            int ret = setsockopt(fd, level, opt, arg, len);
-            if ((ret == 0) || (ret == -1 && errno == ENOBUFS)) {
-                // Accept failure because of insufficient buffer memory resources.
-                return 0;
-            } else {
-                // Deliver all other kinds of errors.
-                return ret;
-            }
-        }
-    }
-#endif
-
     /*
      * On Linux the receive buffer is used for both socket
      * structures and the the packet payload. The implication
      * is that if SO_RCVBUF is too small then small packets
-     * must be discarded.
+     * must be discard.
      */
 #ifdef __linux__
     if (level == SOL_SOCKET && opt == SO_RCVBUF) {
@@ -1458,12 +1442,10 @@ NET_SetSockOpt(int fd, int level, int  opt, const void *arg,
 
         }
     }
-#endif
 
-#if defined(_ALLBSD_SOURCE) || defined(_AIX)
     /*
      * On Solaris, SO_REUSEADDR will allow multiple datagram
-     * sockets to bind to the same port. The network jck tests check
+     * sockets to bind to the same port.  The network jck tests
      * for this "feature", so we need to emulate it by turning on
      * SO_REUSEPORT as well for that combination.
      */
@@ -1477,9 +1459,11 @@ NET_SetSockOpt(int fd, int level, int  opt, const void *arg,
         }
 
         if (sotype == SOCK_DGRAM) {
-            setsockopt(fd, level, SO_REUSEPORT, arg, len);
+            addopt = SO_REUSEPORT;
+            setsockopt(fd, level, addopt, arg, len);
         }
     }
+
 #endif
 
     return setsockopt(fd, level, opt, arg, len);
@@ -1505,7 +1489,6 @@ NET_Bind(int fd, struct sockaddr *him, int len)
     int exclbind = -1;
 #endif
     int rv;
-    int arg, alen;
 
 #ifdef __linux__
     /*
@@ -1522,7 +1505,7 @@ NET_Bind(int fd, struct sockaddr *him, int len)
     }
 #endif
 
-#if defined(__solaris__)
+#if defined(__solaris__) && defined(AF_INET6)
     /*
      * Solaris has separate IPv4 and IPv6 port spaces so we
      * use an exclusive bind when SO_REUSEADDR is not used to
@@ -1532,31 +1515,35 @@ NET_Bind(int fd, struct sockaddr *him, int len)
      * results in a late bind that fails because the
      * corresponding IPv4 port is in use.
      */
-    alen = sizeof(arg);
-    if (useExclBind || getsockopt(fd, SOL_SOCKET, SO_REUSEADDR,
-                   (char *)&arg, &alen) == 0) {
-        if (useExclBind || arg == 0) {
-            /*
-             * SO_REUSEADDR is disabled or sun.net.useExclusiveBind
-             * property is true so enable TCP_EXCLBIND or
-             * UDP_EXCLBIND
-             */
-            alen = sizeof(arg);
-            if (getsockopt(fd, SOL_SOCKET, SO_TYPE, (char *)&arg,
-                           &alen) == 0) {
-                if (arg == SOCK_STREAM) {
-                    level = IPPROTO_TCP;
-                    exclbind = TCP_EXCLBIND;
-                } else {
-                    level = IPPROTO_UDP;
-                    exclbind = UDP_EXCLBIND;
-                }
-            }
+    if (ipv6_available()) {
+        int arg, len;
 
-            arg = 1;
-            setsockopt(fd, level, exclbind, (char *)&arg,
-                       sizeof(arg));
+        len = sizeof(arg);
+        if (useExclBind || getsockopt(fd, SOL_SOCKET, SO_REUSEADDR,
+                       (char *)&arg, &len) == 0) {
+            if (useExclBind || arg == 0) {
+                /*
+                 * SO_REUSEADDR is disabled or sun.net.useExclusiveBind
+                 * property is true so enable TCP_EXCLBIND or
+                 * UDP_EXCLBIND
+                 */
+                len = sizeof(arg);
+                if (getsockopt(fd, SOL_SOCKET, SO_TYPE, (char *)&arg,
+                               &len) == 0) {
+                    if (arg == SOCK_STREAM) {
+                        level = IPPROTO_TCP;
+                        exclbind = TCP_EXCLBIND;
+                    } else {
+                        level = IPPROTO_UDP;
+                        exclbind = UDP_EXCLBIND;
+                    }
+                }
+
+                arg = 1;
+                setsockopt(fd, level, exclbind, (char *)&arg,
+                           sizeof(arg));
             }
+        }
     }
 
 #endif
@@ -1586,7 +1573,7 @@ NET_Bind(int fd, struct sockaddr *him, int len)
  * NET_WAIT_READ, NET_WAIT_WRITE & NET_WAIT_CONNECT.
  *
  * The function will return when either the socket is ready for one
- * of the specified operations or the timeout expired.
+ * of the specified operation or the timeout expired.
  *
  * It returns the time left from the timeout (possibly 0), or -1 if it expired.
  */
@@ -1646,7 +1633,7 @@ NET_Wait(JNIEnv *env, jint fd, jint flags, jint timeout)
         if (timeout <= 0) {
           return read_rv > 0 ? 0 : -1;
         }
-        prevTime = newTime;
+        newTime = prevTime;
 
         if (read_rv > 0) {
           break;
@@ -1657,20 +1644,3 @@ NET_Wait(JNIEnv *env, jint fd, jint flags, jint timeout)
 
     return timeout;
 }
-
-#if !defined(__solaris__)
-long NET_GetCurrentTime() {
-    struct timeval time;
-    gettimeofday(&time, NULL);
-    return (time.tv_sec * 1000 + time.tv_usec / 1000);
-}
-
-int NET_TimeoutWithCurrentTime(int s, long timeout, long currentTime) {
-    return NET_Timeout0(s, timeout, currentTime);
-}
-
-int NET_Timeout(int s, long timeout) {
-    long currentTime = (timeout > 0) ? NET_GetCurrentTime() : 0;
-    return NET_Timeout0(s, timeout, currentTime);
-}
-#endif

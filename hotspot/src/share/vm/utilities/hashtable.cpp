@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2003, 2017, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2003, 2013, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -36,22 +36,21 @@
 #include "utilities/numberSeq.hpp"
 
 
-// This hashtable is implemented as an open hash table with a fixed number of buckets.
+// This is a generic hashtable, designed to be used for the symbol
+// and string tables.
+//
+// It is implemented as an open hash table with a fixed number of buckets.
+//
+// %note:
+//  - HashtableEntrys are allocated in blocks to reduce the space overhead.
 
-template <MEMFLAGS F> BasicHashtableEntry<F>* BasicHashtable<F>::new_entry_free_list() {
-  BasicHashtableEntry<F>* entry = NULL;
-  if (_free_list != NULL) {
+template <MEMFLAGS F> BasicHashtableEntry<F>* BasicHashtable<F>::new_entry(unsigned int hashValue) {
+  BasicHashtableEntry<F>* entry;
+
+  if (_free_list) {
     entry = _free_list;
     _free_list = _free_list->next();
-  }
-  return entry;
-}
-
-// HashtableEntrys are allocated in blocks to reduce the space overhead.
-template <MEMFLAGS F> BasicHashtableEntry<F>* BasicHashtable<F>::new_entry(unsigned int hashValue) {
-  BasicHashtableEntry<F>* entry = new_entry_free_list();
-
-  if (entry == NULL) {
+  } else {
     if (_first_free_entry + _entry_size >= _end_block) {
       int block_size = MIN2(512, MAX2((int)_table_size / 2, (int)_number_of_entries));
       int len = _entry_size * block_size;
@@ -84,9 +83,9 @@ template <class T, MEMFLAGS F> HashtableEntry<T, F>* Hashtable<T, F>::new_entry(
 // This is somewhat an arbitrary heuristic but if one bucket gets to
 // rehash_count which is currently 100, there's probably something wrong.
 
-template <class T, MEMFLAGS F> bool RehashableHashtable<T, F>::check_rehash_table(int count) {
-  assert(this->table_size() != 0, "underflow");
-  if (count > (((double)this->number_of_entries()/(double)this->table_size())*rehash_multiple)) {
+template <MEMFLAGS F> bool BasicHashtable<F>::check_rehash_table(int count) {
+  assert(table_size() != 0, "underflow");
+  if (count > (((double)number_of_entries()/(double)table_size())*rehash_multiple)) {
     // Set a flag for the next safepoint, which should be at some guaranteed
     // safepoint interval.
     return true;
@@ -94,13 +93,13 @@ template <class T, MEMFLAGS F> bool RehashableHashtable<T, F>::check_rehash_tabl
   return false;
 }
 
-template <class T, MEMFLAGS F> juint RehashableHashtable<T, F>::_seed = 0;
+template <class T, MEMFLAGS F> jint Hashtable<T, F>::_seed = 0;
 
 // Create a new table and using alternate hash code, populate the new table
 // with the existing elements.   This can be used to change the hash code
 // and could in the future change the size of the table.
 
-template <class T, MEMFLAGS F> void RehashableHashtable<T, F>::move_to(RehashableHashtable<T, F>* new_table) {
+template <class T, MEMFLAGS F> void Hashtable<T, F>::move_to(Hashtable<T, F>* new_table) {
 
   // Initialize the global seed for hashing.
   _seed = AltHashing::compute_seed();
@@ -110,7 +109,7 @@ template <class T, MEMFLAGS F> void RehashableHashtable<T, F>::move_to(Rehashabl
 
   // Iterate through the table and create a new entry for the new table
   for (int i = 0; i < new_table->table_size(); ++i) {
-    for (HashtableEntry<T, F>* p = this->bucket(i); p != NULL; ) {
+    for (HashtableEntry<T, F>* p = bucket(i); p != NULL; ) {
       HashtableEntry<T, F>* next = p->next();
       T string = p->literal();
       // Use alternate hashing algorithm on the symbol in the first table
@@ -172,35 +171,6 @@ template <MEMFLAGS F> void BasicHashtable<F>::reverse() {
   }
 }
 
-template <MEMFLAGS F> void BasicHashtable<F>::BucketUnlinkContext::free_entry(BasicHashtableEntry<F>* entry) {
-  entry->set_next(_removed_head);
-  _removed_head = entry;
-  if (_removed_tail == NULL) {
-    _removed_tail = entry;
-  }
-  _num_removed++;
-}
-
-template <MEMFLAGS F> void BasicHashtable<F>::bulk_free_entries(BucketUnlinkContext* context) {
-  if (context->_num_removed == 0) {
-    assert(context->_removed_head == NULL && context->_removed_tail == NULL,
-           err_msg("Zero entries in the unlink context, but elements linked from " PTR_FORMAT " to " PTR_FORMAT,
-                   p2i(context->_removed_head), p2i(context->_removed_tail)));
-    return;
-  }
-
-  // MT-safe add of the list of BasicHashTableEntrys from the context to the free list.
-  BasicHashtableEntry<F>* current = _free_list;
-  while (true) {
-    context->_removed_tail->set_next(current);
-    BasicHashtableEntry<F>* old = (BasicHashtableEntry<F>*)Atomic::cmpxchg_ptr(context->_removed_head, &_free_list, current);
-    if (old == current) {
-      break;
-    }
-    current = old;
-  }
-  Atomic::add(-context->_num_removed, &_number_of_entries);
-}
 
 // Copy the table to the shared space.
 
@@ -268,11 +238,11 @@ template <class T, MEMFLAGS F> void Hashtable<T, F>::reverse(void* boundary) {
   }
 }
 
-template <class T, MEMFLAGS F> int RehashableHashtable<T, F>::literal_size(Symbol *symbol) {
+template <class T, MEMFLAGS F> int Hashtable<T, F>::literal_size(Symbol *symbol) {
   return symbol->size() * HeapWordSize;
 }
 
-template <class T, MEMFLAGS F> int RehashableHashtable<T, F>::literal_size(oop oop) {
+template <class T, MEMFLAGS F> int Hashtable<T, F>::literal_size(oop oop) {
   // NOTE: this would over-count if (pre-JDK8) java_lang_Class::has_offset_field() is true,
   // and the String.value array is shared by several Strings. However, starting from JDK8,
   // the String.value array is not shared anymore.
@@ -285,12 +255,12 @@ template <class T, MEMFLAGS F> int RehashableHashtable<T, F>::literal_size(oop o
 // Note: if you create a new subclass of Hashtable<MyNewType, F>, you will need to
 // add a new function Hashtable<T, F>::literal_size(MyNewType lit)
 
-template <class T, MEMFLAGS F> void RehashableHashtable<T, F>::dump_table(outputStream* st, const char *table_name) {
+template <class T, MEMFLAGS F> void Hashtable<T, F>::dump_table(outputStream* st, const char *table_name) {
   NumberSeq summary;
   int literal_bytes = 0;
   for (int i = 0; i < this->table_size(); ++i) {
     int count = 0;
-    for (HashtableEntry<T, F>* e = this->bucket(i);
+    for (HashtableEntry<T, F>* e = bucket(i);
        e != NULL; e = e->next()) {
       count++;
       literal_bytes += literal_size(e->literal());
@@ -300,7 +270,7 @@ template <class T, MEMFLAGS F> void RehashableHashtable<T, F>::dump_table(output
   double num_buckets = summary.num();
   double num_entries = summary.sum();
 
-  int bucket_bytes = (int)num_buckets * sizeof(HashtableBucket<F>);
+  int bucket_bytes = (int)num_buckets * sizeof(bucket(0));
   int entry_bytes  = (int)num_entries * sizeof(HashtableEntry<T, F>);
   int total_bytes = literal_bytes +  bucket_bytes + entry_bytes;
 
@@ -382,20 +352,12 @@ template <MEMFLAGS F> void BasicHashtable<F>::verify_lookup_length(double load) 
 
 #endif
 // Explicitly instantiate these types
-#if INCLUDE_ALL_GCS
-template class Hashtable<nmethod*, mtGC>;
-template class HashtableEntry<nmethod*, mtGC>;
-template class BasicHashtable<mtGC>;
-#endif
 template class Hashtable<ConstantPool*, mtClass>;
-template class RehashableHashtable<Symbol*, mtSymbol>;
-template class RehashableHashtable<oopDesc*, mtSymbol>;
 template class Hashtable<Symbol*, mtSymbol>;
 template class Hashtable<Klass*, mtClass>;
 template class Hashtable<oop, mtClass>;
 #if defined(SOLARIS) || defined(CHECK_UNHANDLED_OOPS)
 template class Hashtable<oop, mtSymbol>;
-template class RehashableHashtable<oop, mtSymbol>;
 #endif // SOLARIS || CHECK_UNHANDLED_OOPS
 template class Hashtable<oopDesc*, mtSymbol>;
 template class Hashtable<Symbol*, mtClass>;

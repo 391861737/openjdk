@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 1997, 2015, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 1997, 2013, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -45,8 +45,6 @@
 #include "runtime/vframe.hpp"
 #include "runtime/vframeArray.hpp"
 #include "runtime/vframe_hp.hpp"
-
-PRAGMA_FORMAT_MUTE_WARNINGS_FOR_GCC
 
 vframe::vframe(const frame* fr, const RegisterMap* reg_map, JavaThread* thread)
 : _reg_map(reg_map), _thread(thread) {
@@ -148,7 +146,8 @@ static void print_locked_object_class_name(outputStream* st, Handle obj, const c
   if (obj.not_null()) {
     st->print("\t- %s <" INTPTR_FORMAT "> ", lock_state, (address)obj());
     if (obj->klass() == SystemDictionary::Class_klass()) {
-      st->print_cr("(a java.lang.Class for %s)", java_lang_Class::as_external_name(obj()));
+      Klass* target_klass = java_lang_Class::as_Klass(obj());
+      st->print_cr("(a java.lang.Class for %s)", InstanceKlass::cast(target_klass)->external_name());
     } else {
       Klass* k = obj->klass();
       st->print_cr("(a %s)", k->external_name());
@@ -188,7 +187,6 @@ void javaVFrame::print_lock_info_on(outputStream* st, int frame_count) {
       if (monitor->eliminated() && is_compiled_frame()) { // Eliminated in compiled code
         if (monitor->owner_is_scalar_replaced()) {
           Klass* k = java_lang_Class::as_Klass(monitor->owner_klass());
-          // format below for lockbits matches this one.
           st->print("\t- eliminated <owner is scalar replaced> (a %s)", k->external_name());
         } else {
           oop obj = monitor->owner();
@@ -199,37 +197,23 @@ void javaVFrame::print_lock_info_on(outputStream* st, int frame_count) {
         continue;
       }
       if (monitor->owner() != NULL) {
-        // the monitor is associated with an object, i.e., it is locked
 
         // First, assume we have the monitor locked. If we haven't found an
         // owned monitor before and this is the first frame, then we need to
         // see if we have completed the lock or we are blocked trying to
         // acquire it - we can only be blocked if the monitor is inflated
 
-        markOop mark = NULL;
         const char *lock_state = "locked"; // assume we have the monitor locked
         if (!found_first_monitor && frame_count == 0) {
-          mark = monitor->owner()->mark();
+          markOop mark = monitor->owner()->mark();
           if (mark->has_monitor() &&
-              ( // we have marked ourself as pending on this monitor
-                mark->monitor() == thread()->current_pending_monitor() ||
-                // we are not the owner of this monitor
-                !mark->monitor()->is_entered(thread())
-              )) {
+              mark->monitor() == thread()->current_pending_monitor()) {
             lock_state = "waiting to lock";
-          } else {
-            mark = NULL; // Disable printing below
           }
-        }
-        print_locked_object_class_name(st, monitor->owner(), lock_state);
-        if (Verbose && mark != NULL) {
-          // match with format above, replacing "-" with " ".
-          st->print("\t  lockbits=");
-          mark->print_on(st);
-          st->cr();
         }
 
         found_first_monitor = true;
+        print_locked_object_class_name(st, monitor->owner(), lock_state);
       }
     }
   }
@@ -269,156 +253,65 @@ Method* interpretedVFrame::method() const {
   return fr().interpreter_frame_method();
 }
 
-static StackValue* create_stack_value_from_oop_map(const InterpreterOopMap& oop_mask,
-                                                   int index,
-                                                   const intptr_t* const addr) {
-
-  assert(index >= 0 &&
-         index < oop_mask.number_of_entries(), "invariant");
-
-  // categorize using oop_mask
-  if (oop_mask.is_oop(index)) {
-    // reference (oop) "r"
-    Handle h(addr != NULL ? (*(oop*)addr) : (oop)NULL);
-    return new StackValue(h);
-  }
-  // value (integer) "v"
-  return new StackValue(addr != NULL ? *addr : 0);
-}
-
-static bool is_in_expression_stack(const frame& fr, const intptr_t* const addr) {
-  assert(addr != NULL, "invariant");
-
-  // Ensure to be 'inside' the expresion stack (i.e., addr >= sp for Intel).
-  // In case of exceptions, the expression stack is invalid and the sp
-  // will be reset to express this condition.
-  if (frame::interpreter_frame_expression_stack_direction() > 0) {
-    return addr <= fr.interpreter_frame_tos_address();
-  }
-
-  return addr >= fr.interpreter_frame_tos_address();
-}
-
-static void stack_locals(StackValueCollection* result,
-                         int length,
-                         const InterpreterOopMap& oop_mask,
-                         const frame& fr) {
-
-  assert(result != NULL, "invariant");
-
-  for (int i = 0; i < length; ++i) {
-    const intptr_t* const addr = fr.interpreter_frame_local_at(i);
-    assert(addr != NULL, "invariant");
-    assert(addr >= fr.sp(), "must be inside the frame");
-
-    StackValue* const sv = create_stack_value_from_oop_map(oop_mask, i, addr);
-    assert(sv != NULL, "sanity check");
-
-    result->add(sv);
-  }
-}
-
-static void stack_expressions(StackValueCollection* result,
-                              int length,
-                              int max_locals,
-                              const InterpreterOopMap& oop_mask,
-                              const frame& fr) {
-
-  assert(result != NULL, "invariant");
-
-  for (int i = 0; i < length; ++i) {
-    const intptr_t* addr = fr.interpreter_frame_expression_stack_at(i);
-    assert(addr != NULL, "invariant");
-    if (!is_in_expression_stack(fr, addr)) {
-      // Need to ensure no bogus escapes.
-      addr = NULL;
-    }
-
-    StackValue* const sv = create_stack_value_from_oop_map(oop_mask,
-                                                           i + max_locals,
-                                                           addr);
-    assert(sv != NULL, "sanity check");
-
-    result->add(sv);
-  }
-}
-
 StackValueCollection* interpretedVFrame::locals() const {
-  return stack_data(false);
-}
+  int length = method()->max_locals();
 
-StackValueCollection* interpretedVFrame::expressions() const {
-  return stack_data(true);
-}
+  if (method()->is_native()) {
+    // If the method is native, max_locals is not telling the truth.
+    // maxlocals then equals the size of parameters
+    length = method()->size_of_parameters();
+  }
 
-/*
- * Worker routine for fetching references and/or values
- * for a particular bci in the interpretedVFrame.
- *
- * Returns data for either "locals" or "expressions",
- * using bci relative oop_map (oop_mask) information.
- *
- * @param expressions  bool switch controlling what data to return
-                       (false == locals / true == expressions)
- *
- */
-StackValueCollection* interpretedVFrame::stack_data(bool expressions) const {
+  StackValueCollection* result = new StackValueCollection(length);
 
+  // Get oopmap describing oops and int for current bci
   InterpreterOopMap oop_mask;
-  // oopmap for current bci
   if (TraceDeoptimization && Verbose) {
-    methodHandle m_h(Thread::current(), method());
+    methodHandle m_h(thread(), method());
     OopMapCache::compute_one_oop_map(m_h, bci(), &oop_mask);
   } else {
     method()->mask_for(bci(), &oop_mask);
   }
+  // handle locals
+  for(int i=0; i < length; i++) {
+    // Find stack location
+    intptr_t *addr = locals_addr_at(i);
 
-  const int mask_len = oop_mask.number_of_entries();
-
-  // If the method is native, method()->max_locals() is not telling the truth.
-  // For our purposes, max locals instead equals the size of parameters.
-  const int max_locals = method()->is_native() ?
-    method()->size_of_parameters() : method()->max_locals();
-
-  assert(mask_len >= max_locals, "invariant");
-
-  const int length = expressions ? mask_len - max_locals : max_locals;
-  assert(length >= 0, "invariant");
-
-  StackValueCollection* const result = new StackValueCollection(length);
-
-  if (0 == length) {
-    return result;
+    // Depending on oop/int put it in the right package
+    StackValue *sv;
+    if (oop_mask.is_oop(i)) {
+      // oop value
+      Handle h(*(oop *)addr);
+      sv = new StackValue(h);
+    } else {
+      // integer
+      sv = new StackValue(*addr);
+    }
+    assert(sv != NULL, "sanity check");
+    result->add(sv);
   }
-
-  if (expressions) {
-    stack_expressions(result, length, max_locals, oop_mask, fr());
-  } else {
-    stack_locals(result, length, oop_mask, fr());
-  }
-
-  assert(length == result->size(), "invariant");
-
   return result;
 }
 
 void interpretedVFrame::set_locals(StackValueCollection* values) const {
   if (values == NULL || values->size() == 0) return;
 
-  // If the method is native, max_locals is not telling the truth.
-  // maxlocals then equals the size of parameters
-  const int max_locals = method()->is_native() ?
-    method()->size_of_parameters() : method()->max_locals();
+  int length = method()->max_locals();
+  if (method()->is_native()) {
+    // If the method is native, max_locals is not telling the truth.
+    // maxlocals then equals the size of parameters
+    length = method()->size_of_parameters();
+  }
 
-  assert(max_locals == values->size(), "Mismatch between actual stack format and supplied data");
+  assert(length == values->size(), "Mismatch between actual stack format and supplied data");
 
   // handle locals
-  for (int i = 0; i < max_locals; i++) {
+  for (int i = 0; i < length; i++) {
     // Find stack location
     intptr_t *addr = locals_addr_at(i);
 
     // Depending on oop/int put it in the right package
-    const StackValue* const sv = values->at(i);
+    StackValue *sv = values->at(i);
     assert(sv != NULL, "sanity check");
     if (sv->type() == T_OBJECT) {
       *(oop *) addr = (sv->get_obj())();
@@ -427,6 +320,46 @@ void interpretedVFrame::set_locals(StackValueCollection* values) const {
     }
   }
 }
+
+StackValueCollection*  interpretedVFrame::expressions() const {
+  int length = fr().interpreter_frame_expression_stack_size();
+  if (method()->is_native()) {
+    // If the method is native, there is no expression stack
+    length = 0;
+  }
+
+  int nof_locals = method()->max_locals();
+  StackValueCollection* result = new StackValueCollection(length);
+
+  InterpreterOopMap oop_mask;
+  // Get oopmap describing oops and int for current bci
+  if (TraceDeoptimization && Verbose) {
+    methodHandle m_h(method());
+    OopMapCache::compute_one_oop_map(m_h, bci(), &oop_mask);
+  } else {
+    method()->mask_for(bci(), &oop_mask);
+  }
+  // handle expressions
+  for(int i=0; i < length; i++) {
+    // Find stack location
+    intptr_t *addr = fr().interpreter_frame_expression_stack_at(i);
+
+    // Depending on oop/int put it in the right package
+    StackValue *sv;
+    if (oop_mask.is_oop(i + nof_locals)) {
+      // oop value
+      Handle h(*(oop *)addr);
+      sv = new StackValue(h);
+    } else {
+      // integer
+      sv = new StackValue(*addr);
+    }
+    assert(sv != NULL, "sanity check");
+    result->add(sv);
+  }
+  return result;
+}
+
 
 // ------------- cChunk --------------
 
@@ -587,15 +520,10 @@ void javaVFrame::print() {
       tty->print("( null )");
     } else {
       monitor->owner()->print_value();
-      tty->print("(owner=" INTPTR_FORMAT ")", (address)monitor->owner());
+      tty->print("(" INTPTR_FORMAT ")", (address)monitor->owner());
     }
-    if (monitor->eliminated()) {
-      if(is_compiled_frame()) {
-        tty->print(" ( lock is eliminated in compiled frame )");
-      } else {
-        tty->print(" ( lock is eliminated, frame not compiled )");
-      }
-    }
+    if (monitor->eliminated() && is_compiled_frame())
+      tty->print(" ( lock is eliminated )");
     tty->cr();
     tty->print("\t  ");
     monitor->lock()->print_on(tty);

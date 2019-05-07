@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2012, 2014, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2012, 2013, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -147,8 +147,7 @@ class VerifyErrorCases {
                  "no stackmap frame at jump location or bad jump",
                  "Inconsistent stackmap frames at branch target "),
 
-        /* Backward jump with uninit is allowed starting with JDK 8 */
-        new Case("case15", "stackMapTable.cpp", false, "check_new_object",
+        new Case("case15", "stackMapTable.cpp", true, "check_new_object",
                  "backward jump with uninit",
                  "Uninitialized object exists on backward branch "),
 

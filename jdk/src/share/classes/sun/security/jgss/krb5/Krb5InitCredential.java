@@ -235,11 +235,8 @@ public class Krb5InitCredential
      */
     public int getInitLifetime() throws GSSException {
         int retVal = 0;
-        Date d = getEndTime();
-        if (d == null) {
-            return 0;
-        }
-        retVal = (int)(d.getTime() - (new Date().getTime()));
+        retVal = (int)(getEndTime().getTime()
+                       - (new Date().getTime()));
 
         return retVal/1000;
     }

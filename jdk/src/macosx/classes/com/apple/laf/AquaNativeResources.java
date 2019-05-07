@@ -66,12 +66,11 @@ public class AquaNativeResources {
     }
 
     static BufferedImage getRadioButtonSizerImage() {
-        final BufferedImage img = new BufferedImage(20, 20, BufferedImage.TYPE_INT_ARGB_PRE);
+        final BufferedImage img = new BufferedImage(20, 20, BufferedImage.TYPE_INT_ARGB);
 
         Graphics g = img.getGraphics();
         g.setColor(Color.pink);
         g.fillRect(0, 0, 20, 20);
-        g.dispose();
 
         return img;
     }

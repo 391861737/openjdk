@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2005, 2014, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2005, 2008, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -37,8 +37,6 @@ import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.concurrent.CopyOnWriteArrayList;
-import java.util.concurrent.Semaphore;
 import javax.management.MBeanServer;
 import javax.management.MBeanServerConnection;
 import javax.management.MBeanServerFactory;
@@ -58,12 +56,10 @@ import javax.security.auth.Subject;
 public class NotificationAccessControllerTest {
 
     public class NAC implements NotificationAccessController {
-        private final boolean throwException;
+        private boolean throwException;
         public NAC(boolean throwException) {
             this.throwException = throwException;
         }
-
-        @Override
         public void addNotificationListener(
             String connectionId,
             ObjectName name,
@@ -77,13 +73,9 @@ public class NotificationAccessControllerTest {
             if (throwException)
                 if (name.getCanonicalName().equals("domain:name=1,type=NB")
                     &&
-                    subject != null
-                    &&
                     subject.getPrincipals().contains(new JMXPrincipal("role")))
                     throw new SecurityException();
         }
-
-        @Override
         public void removeNotificationListener(
             String connectionId,
             ObjectName name,
@@ -97,13 +89,9 @@ public class NotificationAccessControllerTest {
             if (throwException)
                 if (name.getCanonicalName().equals("domain:name=2,type=NB")
                     &&
-                    subject != null
-                    &&
                     subject.getPrincipals().contains(new JMXPrincipal("role")))
                     throw new SecurityException();
         }
-
-        @Override
         public void fetchNotification(
             String connectionId,
             ObjectName name,
@@ -117,17 +105,13 @@ public class NotificationAccessControllerTest {
             echo("\tsubject: " +
                  (subject == null ? null : subject.getPrincipals()));
             if (!throwException)
-                if (name.getCanonicalName().equals("domain:name=2,type=NB")
-                    &&
-                    subject != null
-                    &&
+                if (name.getCanonicalName().equals("domain:name=2,type=NB") &&
                     subject.getPrincipals().contains(new JMXPrincipal("role")))
                     throw new SecurityException();
         }
     }
 
     public class CustomJMXAuthenticator implements JMXAuthenticator {
-        @Override
         public Subject authenticate(Object credentials) {
             String role = ((String[]) credentials)[0];
             echo("\nCreate principal with name = " + role);
@@ -145,7 +129,6 @@ public class NotificationAccessControllerTest {
     public static class NB
         extends NotificationBroadcasterSupport
         implements NBMBean {
-        @Override
         public void emitNotification(int seqnum, ObjectName name) {
             if (name == null) {
                 sendNotification(new Notification("nb", this, seqnum));
@@ -156,20 +139,13 @@ public class NotificationAccessControllerTest {
     }
 
     public class Listener implements NotificationListener {
-        public final List<Notification> notifs = new CopyOnWriteArrayList<>();
-
-        private final Semaphore s;
-        public Listener(Semaphore s) {
-            this.s = s;
-        }
-        @Override
+        public List<Notification> notifs = new ArrayList<Notification>();
         public void handleNotification(Notification n, Object h) {
             echo("handleNotification:");
             echo("\tNotification = " + n);
             echo("\tNotification.SeqNum = " + n.getSequenceNumber());
             echo("\tHandback = " + h);
             notifs.add(n);
-            s.release();
         }
     }
 
@@ -216,17 +192,6 @@ public class NotificationAccessControllerTest {
         JMXConnectorServer server = null;
         JMXConnector client = null;
 
-        /*
-        * (!enableChecks)
-        * - List must contain three notifs from sources nb1, nb2 and nb3
-        * (enableChecks && !throwException)
-        * - List must contain one notif from source nb1
-        * (enableChecks && throwException)
-        * - List must contain two notifs from sources nb2 and nb3
-        */
-        final int expected_notifs =
-            (!enableChecks ? 3 : (throwException ? 2 : 1));
-
         // Create a new MBeanServer
         //
         final MBeanServer mbs = MBeanServerFactory.createMBeanServer();
@@ -234,7 +199,7 @@ public class NotificationAccessControllerTest {
         try {
             // Create server environment map
             //
-            final Map<String,Object> env = new HashMap<>();
+            final Map<String,Object> env = new HashMap<String,Object>();
             env.put("jmx.remote.authenticator", new CustomJMXAuthenticator());
             if (enableChecks) {
                 env.put("com.sun.jmx.remote.notification.access.controller",
@@ -257,7 +222,7 @@ public class NotificationAccessControllerTest {
 
             // Create server environment map
             //
-            final Map<String,Object> cenv = new HashMap<>();
+            final Map<String,Object> cenv = new HashMap<String,Object>();
             String[] credentials = new String[] { "role" , "password" };
             cenv.put("jmx.remote.credentials", credentials);
 
@@ -281,9 +246,7 @@ public class NotificationAccessControllerTest {
 
             // Add notification listener
             //
-            Semaphore s = new Semaphore(0);
-
-            Listener li = new Listener(s);
+            Listener li = new Listener();
             try {
                 mbsc.addNotificationListener(nb1, li, null, null);
                 if (enableChecks && throwException) {
@@ -300,9 +263,6 @@ public class NotificationAccessControllerTest {
             }
             mbsc.addNotificationListener(nb2, li, null, null);
 
-            System.out.println("\n+++ Expecting to receive " + expected_notifs +
-                               " notification" + (expected_notifs > 1 ? "s" : "") +
-                               " +++");
             // Invoke the "sendNotification" method
             //
             mbsc.invoke(nb1, "emitNotification",
@@ -317,7 +277,7 @@ public class NotificationAccessControllerTest {
 
             // Wait for notifications to be emitted
             //
-            s.acquire(expected_notifs);
+            Thread.sleep(2000);
 
             // Remove notification listener
             //
@@ -343,7 +303,21 @@ public class NotificationAccessControllerTest {
             sources.add(nb1);
             sources.add(nb2);
             sources.add(nb3);
-            result = checkNotifs(expected_notifs, li.notifs, sources);
+            if (!enableChecks) {
+                // List must contain three notifs from sources nb1, nb2 and nb3
+                //
+                result = checkNotifs(3, li.notifs, sources);
+            }
+            if (enableChecks && !throwException) {
+                // List must contain one notif from source nb1
+                //
+                result = checkNotifs(1, li.notifs, sources);
+            }
+            if (enableChecks && throwException) {
+                // List must contain two notifs from sources nb2 and nb3
+                //
+                result = checkNotifs(2, li.notifs, sources);
+            }
             if (result > 0) {
                 return result;
             }

@@ -106,7 +106,7 @@ abstract class FacetIntrospector {
 
     protected final AccessibleMembersLookup membersLookup;
 
-    FacetIntrospector(final Class<?> clazz, final boolean instance) {
+    FacetIntrospector(Class<?> clazz, boolean instance) {
         this.clazz = clazz;
         this.instance = instance;
         isRestricted = CheckRestrictedPackage.isRestrictedClass(clazz);
@@ -135,24 +135,18 @@ abstract class FacetIntrospector {
 
         final Field[] fields = clazz.getFields();
         final Collection<Field> cfields = new ArrayList<>(fields.length);
-        for(final Field field: fields) {
-            final boolean isStatic = Modifier.isStatic(field.getModifiers());
-            if(isStatic && clazz != field.getDeclaringClass()) {
-                // ignore inherited static fields
-                continue;
-            }
-
-            if(instance != isStatic && isAccessible(field)) {
+        for(Field field: fields) {
+            if(instance != Modifier.isStatic(field.getModifiers()) && isAccessible(field)) {
                 cfields.add(field);
             }
         }
         return cfields;
     }
 
-    boolean isAccessible(final Member m) {
+    boolean isAccessible(Member m) {
         final Class<?> declaring = m.getDeclaringClass();
         // (declaring == clazz) is just an optimization - we're calling this only from code that operates on a
-        // non-restricted class, so if the declaring class is identical to the class being inspected, then forego
+        // non-restriced class, so if the declaring class is identical to the class being inspected, then forego
         // a potentially expensive restricted-package check.
         return declaring == clazz || !CheckRestrictedPackage.isRestrictedClass(declaring);
     }
@@ -166,11 +160,11 @@ abstract class FacetIntrospector {
     }
 
 
-    MethodHandle unreflectGetter(final Field field) {
+    MethodHandle unreflectGetter(Field field) {
         return editMethodHandle(Lookup.PUBLIC.unreflectGetter(field));
     }
 
-    MethodHandle unreflectSetter(final Field field) {
+    MethodHandle unreflectSetter(Field field) {
         return editMethodHandle(Lookup.PUBLIC.unreflectSetter(field));
     }
 

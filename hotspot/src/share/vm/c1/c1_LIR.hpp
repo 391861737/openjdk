@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2000, 2015, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2000, 2013, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -25,7 +25,6 @@
 #ifndef SHARE_VM_C1_C1_LIR_HPP
 #define SHARE_VM_C1_C1_LIR_HPP
 
-#include "c1/c1_Defs.hpp"
 #include "c1/c1_ValueType.hpp"
 #include "oops/method.hpp"
 
@@ -562,13 +561,7 @@ class LIR_Address: public LIR_OprPtr {
   virtual BasicType type() const                 { return _type; }
   virtual void print_value_on(outputStream* out) const PRODUCT_RETURN;
 
-  void verify0() const PRODUCT_RETURN;
-#if defined(LIR_ADDRESS_PD_VERIFY) && !defined(PRODUCT)
-  void pd_verify() const;
-  void verify() const { pd_verify(); }
-#else
-  void verify() const { verify0(); }
-#endif
+  void verify() const PRODUCT_RETURN;
 
   static Scale scale(BasicType type);
 };
@@ -617,15 +610,19 @@ class LIR_OprFact: public AllStatic {
                                                                              LIR_OprDesc::float_type           |
                                                                              LIR_OprDesc::fpu_register         |
                                                                              LIR_OprDesc::single_size); }
-#if defined(C1_LIR_MD_HPP)
-# include C1_LIR_MD_HPP
-#elif defined(SPARC)
+#if defined(ARM)
+  static LIR_Opr double_fpu(int reg1, int reg2)    { return (LIR_Opr)((reg1 << LIR_OprDesc::reg1_shift) | (reg2 << LIR_OprDesc::reg2_shift) | LIR_OprDesc::double_type | LIR_OprDesc::fpu_register | LIR_OprDesc::double_size); }
+  static LIR_Opr single_softfp(int reg)            { return (LIR_Opr)((reg  << LIR_OprDesc::reg1_shift) |                                     LIR_OprDesc::float_type  | LIR_OprDesc::cpu_register | LIR_OprDesc::single_size); }
+  static LIR_Opr double_softfp(int reg1, int reg2) { return (LIR_Opr)((reg1 << LIR_OprDesc::reg1_shift) | (reg2 << LIR_OprDesc::reg2_shift) | LIR_OprDesc::double_type | LIR_OprDesc::cpu_register | LIR_OprDesc::double_size); }
+#endif
+#ifdef SPARC
   static LIR_Opr double_fpu(int reg1, int reg2) { return (LIR_Opr)(intptr_t)((reg1 << LIR_OprDesc::reg1_shift) |
                                                                              (reg2 << LIR_OprDesc::reg2_shift) |
                                                                              LIR_OprDesc::double_type          |
                                                                              LIR_OprDesc::fpu_register         |
                                                                              LIR_OprDesc::double_size); }
-#elif defined(X86)
+#endif
+#ifdef X86
   static LIR_Opr double_fpu(int reg)            { return (LIR_Opr)(intptr_t)((reg  << LIR_OprDesc::reg1_shift) |
                                                                              (reg  << LIR_OprDesc::reg2_shift) |
                                                                              LIR_OprDesc::double_type          |
@@ -643,7 +640,8 @@ class LIR_OprFact: public AllStatic {
                                                                              LIR_OprDesc::fpu_register         |
                                                                              LIR_OprDesc::double_size          |
                                                                              LIR_OprDesc::is_xmm_mask); }
-#elif defined(PPC)
+#endif // X86
+#ifdef PPC
   static LIR_Opr double_fpu(int reg)            { return (LIR_Opr)(intptr_t)((reg  << LIR_OprDesc::reg1_shift) |
                                                                              (reg  << LIR_OprDesc::reg2_shift) |
                                                                              LIR_OprDesc::double_type          |
@@ -1129,7 +1127,6 @@ class LIR_Op: public CompilationResourceObj {
   virtual void print_instr(outputStream* out) const   = 0;
   virtual void print_on(outputStream* st) const PRODUCT_RETURN;
 
-  virtual bool is_patching() { return false; }
   virtual LIR_OpCall* as_OpCall() { return NULL; }
   virtual LIR_OpJavaCall* as_OpJavaCall() { return NULL; }
   virtual LIR_OpLabel* as_OpLabel() { return NULL; }
@@ -1216,8 +1213,10 @@ class LIR_OpJavaCall: public LIR_OpCall {
   // JSR 292 support.
   bool is_invokedynamic() const                  { return code() == lir_dynamic_call; }
   bool is_method_handle_invoke() const {
-    return method()->is_compiled_lambda_form() ||   // Java-generated lambda form
-           method()->is_method_handle_intrinsic();  // JVM-generated MH intrinsic
+    return
+      method()->is_compiled_lambda_form()  // Java-generated adapter
+      ||
+      method()->is_method_handle_intrinsic();  // JVM-generated MH intrinsic
   }
 
   intptr_t vtable_offset() const {
@@ -1388,7 +1387,6 @@ class LIR_Op1: public LIR_Op {
     return (LIR_MoveKind)_flags;
   }
 
-  virtual bool is_patching() { return _patch != lir_patch_none; }
   virtual void emit_code(LIR_Assembler* masm);
   virtual LIR_Op1* as_Op1() { return this; }
   virtual const char * name() const PRODUCT_RETURN0;
@@ -1621,7 +1619,6 @@ public:
   int       profiled_bci() const                 { return _profiled_bci;      }
   bool      should_profile() const               { return _should_profile;    }
 
-  virtual bool is_patching() { return _info_for_patch != NULL; }
   virtual void emit_code(LIR_Assembler* masm);
   virtual LIR_OpTypeCheck* as_OpTypeCheck() { return this; }
   void print_instr(outputStream* out) const PRODUCT_RETURN;
@@ -2153,7 +2150,7 @@ class LIR_List: public CompilationResourceObj {
   void   pack64(LIR_Opr src, LIR_Opr dst) { append(new LIR_Op1(lir_pack64,   src, dst, T_LONG, lir_patch_none, NULL)); }
   void unpack64(LIR_Opr src, LIR_Opr dst) { append(new LIR_Op1(lir_unpack64, src, dst, T_LONG, lir_patch_none, NULL)); }
 
-  void null_check(LIR_Opr opr, CodeEmitInfo* info, bool deoptimize_on_null = false);
+  void null_check(LIR_Opr opr, CodeEmitInfo* info)         { append(new LIR_Op1(lir_null_check, opr, info)); }
   void throw_exception(LIR_Opr exceptionPC, LIR_Opr exceptionOop, CodeEmitInfo* info) {
     append(new LIR_Op2(lir_throw, exceptionPC, exceptionOop, LIR_OprFact::illegalOpr, info));
   }

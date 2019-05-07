@@ -41,14 +41,17 @@
 #include "trace/traceEvent.hpp"
 #include "utilities/macros.hpp"
 #include "utilities/ticks.hpp"
+
 #if INCLUDE_TRACE
+
+
 #include "trace/traceStream.hpp"
 #include "utilities/ostream.hpp"
 
   <xsl:apply-templates select="trace/events/struct" mode="trace"/>
   <xsl:apply-templates select="trace/events/event" mode="trace"/>
 
-#else // !INCLUDE_TRACE
+#else
 
 class TraceEvent {
 public:
@@ -62,8 +65,9 @@ public:
   <xsl:apply-templates select="trace/events/struct" mode="empty"/>
   <xsl:apply-templates select="trace/events/event" mode="empty"/>
 
-#endif // INCLUDE_TRACE
-#endif // TRACEFILES_TRACEEVENTCLASSES_HPP
+#endif
+
+#endif
 </xsl:template>
 
 <xsl:template match="struct" mode="trace">

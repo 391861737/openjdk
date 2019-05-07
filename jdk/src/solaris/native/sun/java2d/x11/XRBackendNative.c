@@ -72,8 +72,8 @@ typedef struct _XRadialGradient {
 
 #include <dlfcn.h>
 
-#if defined(__solaris__) || defined(_AIX)
-/* Solaris 10 and AIX will not have these symbols at runtime */
+#ifdef __solaris__
+/* Solaris 10 will not have these symbols at runtime */
 
 typedef Picture (*XRenderCreateLinearGradientFuncType)
                                      (Display *dpy,
@@ -147,7 +147,7 @@ static jboolean IsXRenderAvailable(jboolean verbose, jboolean ignoreLinuxVersion
         return JNI_FALSE;
     }
 
-#if defined(__solaris__) || defined(_AIX)
+#ifdef __solaris__
     xrenderlib = dlopen("libXrender.so",RTLD_GLOBAL|RTLD_LAZY);
     if (xrenderlib != NULL) {
 

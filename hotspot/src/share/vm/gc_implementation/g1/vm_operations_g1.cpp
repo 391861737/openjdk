@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2001, 2015, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2001, 2013, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -34,18 +34,18 @@
 #include "gc_implementation/g1/vm_operations_g1.hpp"
 #include "runtime/interfaceSupport.hpp"
 
-VM_G1CollectForAllocation::VM_G1CollectForAllocation(uint gc_count_before,
-                                                     size_t word_size)
+VM_G1CollectForAllocation::VM_G1CollectForAllocation(
+                                                  unsigned int gc_count_before,
+                                                  size_t word_size)
   : VM_G1OperationWithAllocRequest(gc_count_before, word_size,
                                    GCCause::_allocation_failure) {
-  guarantee(word_size != 0, "An allocation should always be requested with this operation.");
+  guarantee(word_size > 0, "an allocation should always be requested");
 }
 
 void VM_G1CollectForAllocation::doit() {
   G1CollectedHeap* g1h = G1CollectedHeap::heap();
   GCCauseSetter x(g1h, _gc_cause);
-
-  _result = g1h->satisfy_failed_allocation(_word_size, allocation_context(), &_pause_succeeded);
+  _result = g1h->satisfy_failed_allocation(_word_size, &_pause_succeeded);
   assert(_result == NULL || _pause_succeeded,
          "if we get back a result, the pause should have succeeded");
 }
@@ -56,11 +56,12 @@ void VM_G1CollectFull::doit() {
   g1h->do_full_collection(false /* clear_all_soft_refs */);
 }
 
-VM_G1IncCollectionPause::VM_G1IncCollectionPause(uint           gc_count_before,
-                                                 size_t         word_size,
-                                                 bool           should_initiate_conc_mark,
-                                                 double         target_pause_time_ms,
-                                                 GCCause::Cause gc_cause)
+VM_G1IncCollectionPause::VM_G1IncCollectionPause(
+                                      unsigned int   gc_count_before,
+                                      size_t         word_size,
+                                      bool           should_initiate_conc_mark,
+                                      double         target_pause_time_ms,
+                                      GCCause::Cause gc_cause)
   : VM_G1OperationWithAllocRequest(gc_count_before, word_size, gc_cause),
     _should_initiate_conc_mark(should_initiate_conc_mark),
     _target_pause_time_ms(target_pause_time_ms),
@@ -73,7 +74,7 @@ VM_G1IncCollectionPause::VM_G1IncCollectionPause(uint           gc_count_before,
 }
 
 bool VM_G1IncCollectionPause::doit_prologue() {
-  bool res = VM_G1OperationWithAllocRequest::doit_prologue();
+  bool res = VM_GC_Operation::doit_prologue();
   if (!res) {
     if (_should_initiate_conc_mark) {
       // The prologue can fail for a couple of reasons. The first is that another GC
@@ -90,12 +91,15 @@ bool VM_G1IncCollectionPause::doit_prologue() {
 
 void VM_G1IncCollectionPause::doit() {
   G1CollectedHeap* g1h = G1CollectedHeap::heap();
-  assert(!_should_initiate_conc_mark || g1h->should_do_concurrent_full_gc(_gc_cause),
-      "only a GC locker, a System.gc(), stats update, whitebox, or a hum allocation induced GC should start a cycle");
+  assert(!_should_initiate_conc_mark ||
+  ((_gc_cause == GCCause::_gc_locker && GCLockerInvokesConcurrent) ||
+   (_gc_cause == GCCause::_java_lang_system_gc && ExplicitGCInvokesConcurrent) ||
+    _gc_cause == GCCause::_g1_humongous_allocation),
+         "only a GC locker, a System.gc() or a hum allocation induced GC should start a cycle");
 
   if (_word_size > 0) {
     // An allocation has been requested. So, try to do that first.
-    _result = g1h->attempt_allocation_at_safepoint(_word_size, allocation_context(),
+    _result = g1h->attempt_allocation_at_safepoint(_word_size,
                                      false /* expect_null_cur_alloc_region */);
     if (_result != NULL) {
       // If we can successfully allocate before we actually do the
@@ -148,7 +152,7 @@ void VM_G1IncCollectionPause::doit() {
     g1h->do_collection_pause_at_safepoint(_target_pause_time_ms);
   if (_pause_succeeded && _word_size > 0) {
     // An allocation had been requested.
-    _result = g1h->attempt_allocation_at_safepoint(_word_size, allocation_context(),
+    _result = g1h->attempt_allocation_at_safepoint(_word_size,
                                       true /* expect_null_cur_alloc_region */);
   } else {
     assert(_result == NULL, "invariant");
@@ -163,7 +167,7 @@ void VM_G1IncCollectionPause::doit() {
 }
 
 void VM_G1IncCollectionPause::doit_epilogue() {
-  VM_G1OperationWithAllocRequest::doit_epilogue();
+  VM_GC_Operation::doit_epilogue();
 
   // If the pause was initiated by a System.gc() and
   // +ExplicitGCInvokesConcurrent, we have to wait here for the cycle
@@ -207,12 +211,8 @@ void VM_CGC_Operation::acquire_pending_list_lock() {
   assert(_needs_pll, "don't call this otherwise");
   // The caller may block while communicating
   // with the SLT thread in order to acquire/release the PLL.
-  SurrogateLockerThread* slt = ConcurrentMarkThread::slt();
-  if (slt != NULL) {
-    slt->manipulatePLL(SurrogateLockerThread::acquirePLL);
-  } else {
-    SurrogateLockerThread::report_missing_slt();
-  }
+  ConcurrentMarkThread::slt()->
+    manipulatePLL(SurrogateLockerThread::acquirePLL);
 }
 
 void VM_CGC_Operation::release_and_notify_pending_list_lock() {
@@ -224,8 +224,9 @@ void VM_CGC_Operation::release_and_notify_pending_list_lock() {
 }
 
 void VM_CGC_Operation::doit() {
+  gclog_or_tty->date_stamp(G1Log::fine() && PrintGCDateStamps);
   TraceCPUTime tcpu(G1Log::finer(), true, gclog_or_tty);
-  GCTraceTime t(_printGCMessage, G1Log::fine(), true, G1CollectedHeap::heap()->gc_timer_cm(), G1CollectedHeap::heap()->concurrent_mark()->concurrent_gc_id());
+  GCTraceTime t(_printGCMessage, G1Log::fine(), true, G1CollectedHeap::heap()->gc_timer_cm());
   SharedHeap* sh = SharedHeap::heap();
   // This could go away if CollectedHeap gave access to _gc_is_active...
   if (sh != NULL) {

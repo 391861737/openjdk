@@ -25,7 +25,6 @@
 
 package jdk.nashorn.internal.runtime.arrays;
 
-import jdk.nashorn.internal.codegen.types.Type;
 import jdk.nashorn.internal.runtime.ScriptRuntime;
 import jdk.nashorn.internal.runtime.Undefined;
 import jdk.nashorn.internal.runtime.linker.Bootstrap;
@@ -68,16 +67,16 @@ abstract class ArrayFilter extends ArrayData {
     }
 
     @Override
-    public ArrayData shiftLeft(final int by) {
+    public void shiftLeft(final int by) {
         underlying.shiftLeft(by);
         setLength(underlying.length());
-        return this;
     }
 
     @Override
     public ArrayData shiftRight(final int by) {
         underlying = underlying.shiftRight(by);
         setLength(underlying.length());
+
         return this;
     }
 
@@ -85,6 +84,7 @@ abstract class ArrayFilter extends ArrayData {
     public ArrayData ensure(final long safeIndex) {
         underlying = underlying.ensure(safeIndex);
         setLength(underlying.length());
+
         return this;
     }
 
@@ -92,6 +92,7 @@ abstract class ArrayFilter extends ArrayData {
     public ArrayData shrink(final long newLength) {
         underlying = underlying.shrink(newLength);
         setLength(underlying.length());
+
         return this;
     }
 
@@ -99,6 +100,7 @@ abstract class ArrayFilter extends ArrayData {
     public ArrayData set(final int index, final Object value, final boolean strict) {
         underlying = underlying.set(index, value, strict);
         setLength(underlying.length());
+
         return this;
     }
 
@@ -106,6 +108,15 @@ abstract class ArrayFilter extends ArrayData {
     public ArrayData set(final int index, final int value, final boolean strict) {
         underlying = underlying.set(index, value, strict);
         setLength(underlying.length());
+
+        return this;
+    }
+
+    @Override
+    public ArrayData set(final int index, final long value, final boolean strict) {
+        underlying = underlying.set(index, value, strict);
+        setLength(underlying.length());
+
         return this;
     }
 
@@ -113,6 +124,7 @@ abstract class ArrayFilter extends ArrayData {
     public ArrayData set(final int index, final double value, final boolean strict) {
         underlying = underlying.set(index, value, strict);
         setLength(underlying.length());
+
         return this;
     }
 
@@ -129,28 +141,18 @@ abstract class ArrayFilter extends ArrayData {
     }
 
     @Override
-    public Type getOptimisticType() {
-        return underlying.getOptimisticType();
-    }
-
-    @Override
     public int getInt(final int index) {
         return underlying.getInt(index);
     }
 
     @Override
-    public int getIntOptimistic(final int index, final int programPoint) {
-        return underlying.getIntOptimistic(index, programPoint);
+    public long getLong(final int index) {
+        return underlying.getLong(index);
     }
 
     @Override
     public double getDouble(final int index) {
         return underlying.getDouble(index);
-    }
-
-    @Override
-    public double getDoubleOptimistic(final int index, final int programPoint) {
-        return underlying.getDoubleOptimistic(index, programPoint);
     }
 
     @Override
@@ -178,7 +180,7 @@ abstract class ArrayFilter extends ArrayData {
     }
 
     @Override
-    public ArrayData convert(final Class<?> type) {
+    protected ArrayData convert(final Class<?> type) {
         underlying = underlying.convert(type);
         setLength(underlying.length());
         return this;
@@ -188,6 +190,7 @@ abstract class ArrayFilter extends ArrayData {
     public Object pop() {
         final Object value = underlying.pop();
         setLength(underlying.length());
+
         return value;
     }
 

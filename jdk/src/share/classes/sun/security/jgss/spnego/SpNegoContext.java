@@ -523,6 +523,13 @@ public class SpNegoContext implements GSSContextSpi {
                     valid = false;
                 }
 
+                // get the mechanism token
+                byte[] mechToken = initToken.getMechToken();
+                if (mechToken == null) {
+                    throw new GSSException(GSSException.FAILURE, -1,
+                            "mechToken is missing");
+                }
+
                 /*
                  * Select the best match between the list of mechs
                  * that the initiator requested and the list that
@@ -538,26 +545,7 @@ public class SpNegoContext implements GSSContextSpi {
                 internal_mech = mech_wanted;
 
                 // get the token for mechanism
-                byte[] accept_token;
-
-                if (mechList[0].equals(mech_wanted) ||
-                        (GSSUtil.isKerberosMech(mechList[0]) &&
-                         GSSUtil.isKerberosMech(mech_wanted))) {
-                    // get the mechanism token
-                    if (DEBUG && !mech_wanted.equals(mechList[0])) {
-                        System.out.println("SpNegoContext.acceptSecContext: " +
-                                "negotiated mech adjusted to " + mechList[0]);
-                    }
-                    byte[] mechToken = initToken.getMechToken();
-                    if (mechToken == null) {
-                        throw new GSSException(GSSException.FAILURE, -1,
-                                "mechToken is missing");
-                    }
-                    accept_token = GSS_acceptSecContext(mechToken);
-                    mech_wanted = mechList[0];
-                } else {
-                    accept_token = null;
-                }
+                byte[] accept_token = GSS_acceptSecContext(mechToken);
 
                 // verify MIC
                 if (!GSSUtil.useMSInterop() && valid) {
@@ -606,27 +594,9 @@ public class SpNegoContext implements GSSContextSpi {
                 retVal = targToken.getEncoded();
 
             } else if (state == STATE_IN_PROCESS) {
-                // read data
-                byte[] token = new byte[is.available()];
-                SpNegoToken.readFully(is, token);
-                if (DEBUG) {
-                    System.out.println("SpNegoContext.acceptSecContext: " +
-                            "receiving token = " +
-                            SpNegoToken.getHexBytes(token));
-                }
-
-                // read the SPNEGO token
-                // token will be validated when parsing
-                NegTokenTarg inputToken = new NegTokenTarg(token);
-
-                if (DEBUG) {
-                    System.out.println("SpNegoContext.acceptSecContext: " +
-                            "received token of type = " +
-                            SpNegoToken.getTokenName(inputToken.getType()));
-                }
-
                 // read the token
-                byte[] client_token = inputToken.getResponseToken();
+                byte[] client_token = new byte[is.available()];
+                SpNegoToken.readFully(is, client_token);
                 byte[] accept_token = GSS_acceptSecContext(client_token);
                 if (accept_token == null) {
                     valid = false;
@@ -1085,7 +1055,7 @@ public class SpNegoContext implements GSSContextSpi {
      * This is only valid on the acceptor side of the context.
      * @return GSSCredentialSpi object for the delegated credential
      * @exception GSSException
-     * @see GSSContext#getCredDelegState
+     * @see GSSContext#getDelegCredState
      */
     public final GSSCredentialSpi getDelegCred() throws GSSException {
         if (state != STATE_IN_PROCESS && state != STATE_DONE)

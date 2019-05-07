@@ -23,7 +23,9 @@
 
 /* @test
  * @summary test access checking by java.lang.invoke.MethodHandles.Lookup
- * @compile AccessControlTest.java AccessControlTest_subpkg/Acquaintance_remote.java
+ * @library ../../../..
+ * @build test.java.lang.invoke.AccessControlTest
+ * @build test.java.lang.invoke.AccessControlTest_subpkg.Acquaintance_remote
  * @run testng/othervm test.java.lang.invoke.AccessControlTest
  */
 

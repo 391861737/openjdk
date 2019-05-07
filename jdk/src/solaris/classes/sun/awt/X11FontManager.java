@@ -1,28 +1,3 @@
-/*
- * Copyright (c) 2009, 2014, Oracle and/or its affiliates. All rights reserved.
- * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
- *
- * This code is free software; you can redistribute it and/or modify it
- * under the terms of the GNU General Public License version 2 only, as
- * published by the Free Software Foundation.  Oracle designates this
- * particular file as subject to the "Classpath" exception as provided
- * by Oracle in the LICENSE file that accompanied this code.
- *
- * This code is distributed in the hope that it will be useful, but WITHOUT
- * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
- * FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License
- * version 2 for more details (a copy is included in the LICENSE file that
- * accompanied this code).
- *
- * You should have received a copy of the GNU General Public License version
- * 2 along with this work; if not, write to the Free Software Foundation,
- * Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301 USA.
- *
- * Please contact Oracle, 500 Oracle Parkway, Redwood Shores, CA 94065 USA
- * or visit www.oracle.com if you need additional information or have any
- * questions.
- */
-
 package sun.awt;
 
 import java.awt.GraphicsEnvironment;
@@ -54,7 +29,7 @@ import sun.util.logging.PlatformLogger;
 /**
  * The X11 implementation of {@link FontManager}.
  */
-public final class X11FontManager extends FcFontManager {
+public class X11FontManager extends SunFontManager {
 
     // constants identifying XLFD and font ID fields
     private static final int FOUNDRY_FIELD = 1;
@@ -153,6 +128,10 @@ public final class X11FontManager extends FcFontManager {
       * Specifically this means MToolkit
       */
      private static String[] fontdirs = null;
+
+    private static String[] defaultPlatformFont = null;
+
+    private FontConfigManager fcManager = null;
 
     public static X11FontManager getInstance() {
         return (X11FontManager) SunFontManager.getInstance();
@@ -782,9 +761,54 @@ public final class X11FontManager extends FcFontManager {
                                       preferLocaleFonts, preferPropFonts);
     }
 
+    public synchronized native String getFontPathNative(boolean noType1Fonts);
+
     protected synchronized String getFontPath(boolean noType1Fonts) {
         isHeadless(); // make sure GE is inited, as its the X11 lock.
-        return getFontPathNative(noType1Fonts, true);
+        return getFontPathNative(noType1Fonts);
+    }
+
+    public String[] getDefaultPlatformFont() {
+        if (defaultPlatformFont != null) {
+            return defaultPlatformFont;
+        }
+        String[] info = new String[2];
+        getFontConfigManager().initFontConfigFonts(false);
+        FontConfigManager.FcCompFont[] fontConfigFonts =
+            getFontConfigManager().getFontConfigFonts();
+        for (int i=0; i<fontConfigFonts.length; i++) {
+            if ("sans".equals(fontConfigFonts[i].fcFamily) &&
+                0 == fontConfigFonts[i].style) {
+                info[0] = fontConfigFonts[i].firstFont.familyName;
+                info[1] = fontConfigFonts[i].firstFont.fontFile;
+                break;
+            }
+        }
+        /* Absolute last ditch attempt in the face of fontconfig problems.
+         * If we didn't match, pick the first, or just make something
+         * up so we don't NPE.
+         */
+        if (info[0] == null) {
+            if (fontConfigFonts.length > 0 &&
+                fontConfigFonts[0].firstFont.fontFile != null) {
+                info[0] = fontConfigFonts[0].firstFont.familyName;
+                info[1] = fontConfigFonts[0].firstFont.fontFile;
+            } else {
+                info[0] = "Dialog";
+                info[1] = "/dialog.ttf";
+            }
+        }
+        defaultPlatformFont = info;
+        return defaultPlatformFont;
+    }
+
+    public synchronized FontConfigManager getFontConfigManager() {
+
+        if (fcManager == null) {
+            fcManager = new FontConfigManager();
+        }
+
+        return fcManager;
     }
 
     @Override

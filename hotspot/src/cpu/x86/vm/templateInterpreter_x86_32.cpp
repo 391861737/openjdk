@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 1997, 2016, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 1997, 2013, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -713,7 +713,7 @@ address InterpreterGenerator::generate_accessor_entry(void) {
                     rdx,
                     Address::times_ptr, ConstantPoolCache::base_offset() + ConstantPoolCacheEntry::flags_offset()));
 
-    Label notByte, notBool, notShort, notChar;
+    Label notByte, notShort, notChar;
     const Address field_address (rax, rcx, Address::times_1);
 
     // Need to differentiate between igetfield, agetfield, bgetfield etc.
@@ -728,12 +728,6 @@ address InterpreterGenerator::generate_accessor_entry(void) {
     __ jmp(xreturn_path);
 
     __ bind(notByte);
-    __ cmpl(rdx, ztos);
-    __ jcc(Assembler::notEqual, notBool);
-    __ load_signed_byte(rax, field_address);
-    __ jmp(xreturn_path);
-
-    __ bind(notBool);
     __ cmpl(rdx, stos);
     __ jcc(Assembler::notEqual, notShort);
     __ load_signed_short(rax, field_address);
@@ -1289,11 +1283,11 @@ address InterpreterGenerator::generate_native_entry(bool synchronized) {
   // change thread state
   __ movl(Address(thread, JavaThread::thread_state_offset()), _thread_in_Java);
 
-  __ reset_last_Java_frame(thread, true);
+  __ reset_last_Java_frame(thread, true, true);
 
   // reset handle block
   __ movptr(t, Address(thread, JavaThread::active_handles_offset()));
-  __ movl(Address(t, JNIHandleBlock::top_offset_in_bytes()), NULL_WORD);
+  __ movptr(Address(t, JNIHandleBlock::top_offset_in_bytes()), NULL_WORD);
 
   // If result was an oop then unbox and save it in the frame
   { Label L;
@@ -1692,6 +1686,91 @@ int AbstractInterpreter::size_top_interpreter_activation(Method* method) {
   return overhead_size + method_stack + stub_code;
 }
 
+// asm based interpreter deoptimization helpers
+
+int AbstractInterpreter::layout_activation(Method* method,
+                                           int tempcount,
+                                           int popframe_extra_args,
+                                           int moncount,
+                                           int caller_actual_parameters,
+                                           int callee_param_count,
+                                           int callee_locals,
+                                           frame* caller,
+                                           frame* interpreter_frame,
+                                           bool is_top_frame,
+                                           bool is_bottom_frame) {
+  // Note: This calculation must exactly parallel the frame setup
+  // in AbstractInterpreterGenerator::generate_method_entry.
+  // If interpreter_frame!=NULL, set up the method, locals, and monitors.
+  // The frame interpreter_frame, if not NULL, is guaranteed to be the right size,
+  // as determined by a previous call to this method.
+  // It is also guaranteed to be walkable even though it is in a skeletal state
+  // NOTE: return size is in words not bytes
+
+  // fixed size of an interpreter frame:
+  int max_locals = method->max_locals() * Interpreter::stackElementWords;
+  int extra_locals = (method->max_locals() - method->size_of_parameters()) *
+                     Interpreter::stackElementWords;
+
+  int overhead = frame::sender_sp_offset - frame::interpreter_frame_initial_sp_offset;
+
+  // Our locals were accounted for by the caller (or last_frame_adjust on the transistion)
+  // Since the callee parameters already account for the callee's params we only need to account for
+  // the extra locals.
+
+
+  int size = overhead +
+         ((callee_locals - callee_param_count)*Interpreter::stackElementWords) +
+         (moncount*frame::interpreter_frame_monitor_size()) +
+         tempcount*Interpreter::stackElementWords + popframe_extra_args;
+
+  if (interpreter_frame != NULL) {
+#ifdef ASSERT
+    if (!EnableInvokeDynamic)
+      // @@@ FIXME: Should we correct interpreter_frame_sender_sp in the calling sequences?
+      // Probably, since deoptimization doesn't work yet.
+      assert(caller->unextended_sp() == interpreter_frame->interpreter_frame_sender_sp(), "Frame not properly walkable");
+    assert(caller->sp() == interpreter_frame->sender_sp(), "Frame not properly walkable(2)");
+#endif
+
+    interpreter_frame->interpreter_frame_set_method(method);
+    // NOTE the difference in using sender_sp and interpreter_frame_sender_sp
+    // interpreter_frame_sender_sp is the original sp of the caller (the unextended_sp)
+    // and sender_sp is fp+8
+    intptr_t* locals = interpreter_frame->sender_sp() + max_locals - 1;
+
+#ifdef ASSERT
+    if (caller->is_interpreted_frame()) {
+      assert(locals < caller->fp() + frame::interpreter_frame_initial_sp_offset, "bad placement");
+    }
+#endif
+
+    interpreter_frame->interpreter_frame_set_locals(locals);
+    BasicObjectLock* montop = interpreter_frame->interpreter_frame_monitor_begin();
+    BasicObjectLock* monbot = montop - moncount;
+    interpreter_frame->interpreter_frame_set_monitor_end(monbot);
+
+    // Set last_sp
+    intptr_t*  rsp = (intptr_t*) monbot  -
+                     tempcount*Interpreter::stackElementWords -
+                     popframe_extra_args;
+    interpreter_frame->interpreter_frame_set_last_sp(rsp);
+
+    // All frames but the initial (oldest) interpreter frame we fill in have a
+    // value for sender_sp that allows walking the stack but isn't
+    // truly correct. Correct the value here.
+
+    if (extra_locals != 0 &&
+        interpreter_frame->sender_sp() == interpreter_frame->interpreter_frame_sender_sp() ) {
+      interpreter_frame->set_interpreter_frame_sender_sp(caller->sp() + extra_locals);
+    }
+    *interpreter_frame->interpreter_frame_cache_addr() =
+      method->constants()->cache();
+  }
+  return size;
+}
+
+
 //------------------------------------------------------------------------------------------------------------------------
 // Exceptions
 
@@ -1819,7 +1898,7 @@ void TemplateInterpreterGenerator::generate_throw_exception() {
   __ set_last_Java_frame(thread, noreg, rbp, __ pc());
   __ super_call_VM_leaf(CAST_FROM_FN_PTR(address, InterpreterRuntime::popframe_move_outgoing_args), thread, rax, rbx);
   __ get_thread(thread);
-  __ reset_last_Java_frame(thread, true);
+  __ reset_last_Java_frame(thread, true, true);
   // Restore the last_sp and null it out
   __ movptr(rsp, Address(rbp, frame::interpreter_frame_last_sp_offset * wordSize));
   __ movptr(Address(rbp, frame::interpreter_frame_last_sp_offset * wordSize), NULL_WORD);

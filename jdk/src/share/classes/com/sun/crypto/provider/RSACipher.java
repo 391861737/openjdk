@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2003, 2015, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2003, 2013, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -39,8 +39,6 @@ import javax.crypto.spec.OAEPParameterSpec;
 
 import sun.security.rsa.*;
 import sun.security.jca.Providers;
-import sun.security.internal.spec.TlsRsaPremasterSecretParameterSpec;
-import sun.security.util.KeyUtil;
 
 /**
  * RSA cipher implementation. Supports RSA en/decryption and signing/verifying
@@ -93,8 +91,8 @@ public final class RSACipher extends CipherSpi {
     // padding object
     private RSAPadding padding;
 
-    // cipher parameter for OAEP padding and TLS RSA premaster secret
-    private AlgorithmParameterSpec spec = null;
+    // cipher parameter for OAEP padding
+    private OAEPParameterSpec spec = null;
 
     // buffer for the data
     private byte[] buffer;
@@ -111,9 +109,6 @@ public final class RSACipher extends CipherSpi {
 
     // hash algorithm for OAEP
     private String oaepHashAlgorithm = "SHA-1";
-
-    // the source of randomness
-    private SecureRandom random;
 
     public RSACipher() {
         paddingType = PAD_PKCS1;
@@ -180,7 +175,7 @@ public final class RSACipher extends CipherSpi {
 
     // see JCE spec
     protected AlgorithmParameters engineGetParameters() {
-        if (spec != null && spec instanceof OAEPParameterSpec) {
+        if (spec != null) {
             try {
                 AlgorithmParameters params =
                     AlgorithmParameters.getInstance("OAEP",
@@ -281,13 +276,8 @@ public final class RSACipher extends CipherSpi {
             buffer = new byte[n];
         } else if (paddingType == PAD_PKCS1) {
             if (params != null) {
-                if (!(params instanceof TlsRsaPremasterSecretParameterSpec)) {
-                    throw new InvalidAlgorithmParameterException(
-                            "Parameters not supported");
-                }
-
-                spec = params;
-                this.random = random;   // for TLS RSA premaster secret
+                throw new InvalidAlgorithmParameterException
+                ("Parameters not supported");
             }
             int blockType = (mode <= MODE_DECRYPT) ? RSAPadding.PAD_BLOCKTYPE_2
                                                    : RSAPadding.PAD_BLOCKTYPE_1;
@@ -303,18 +293,19 @@ public final class RSACipher extends CipherSpi {
                 throw new InvalidKeyException
                         ("OAEP cannot be used to sign or verify signatures");
             }
+            OAEPParameterSpec myParams;
             if (params != null) {
                 if (!(params instanceof OAEPParameterSpec)) {
                     throw new InvalidAlgorithmParameterException
                         ("Wrong Parameters for OAEP Padding");
                 }
-                spec = params;
+                myParams = (OAEPParameterSpec) params;
             } else {
-                spec = new OAEPParameterSpec(oaepHashAlgorithm, "MGF1",
+                myParams = new OAEPParameterSpec(oaepHashAlgorithm, "MGF1",
                     MGF1ParameterSpec.SHA1, PSource.PSpecified.DEFAULT);
             }
             padding = RSAPadding.getInstance(RSAPadding.PAD_OAEP_MGF1, n,
-                random, (OAEPParameterSpec)spec);
+                random, myParams);
             if (encrypt) {
                 int k = padding.getMaxDataSize();
                 buffer = new byte[k];
@@ -349,7 +340,7 @@ public final class RSACipher extends CipherSpi {
             switch (mode) {
             case MODE_SIGN:
                 data = padding.pad(buffer, 0, bufOfs);
-                return RSACore.rsa(data, privateKey, true);
+                return RSACore.rsa(data, privateKey);
             case MODE_VERIFY:
                 byte[] verifyBuffer = RSACore.convert(buffer, 0, bufOfs);
                 data = RSACore.rsa(verifyBuffer, publicKey);
@@ -359,7 +350,7 @@ public final class RSACipher extends CipherSpi {
                 return RSACore.rsa(data, publicKey);
             case MODE_DECRYPT:
                 byte[] decryptBuffer = RSACore.convert(buffer, 0, bufOfs);
-                data = RSACore.rsa(decryptBuffer, privateKey, false);
+                data = RSACore.rsa(decryptBuffer, privateKey);
                 return padding.unpad(data);
             default:
                 throw new AssertionError("Internal error");
@@ -429,40 +420,17 @@ public final class RSACipher extends CipherSpi {
         if (wrappedKey.length > buffer.length) {
             throw new InvalidKeyException("Key is too long for unwrapping");
         }
-
-        boolean isTlsRsaPremasterSecret =
-                algorithm.equals("TlsRsaPremasterSecret");
-        Exception failover = null;
-        byte[] encoded = null;
-
         update(wrappedKey, 0, wrappedKey.length);
         try {
-            encoded = doFinal();
+            byte[] encoded = doFinal();
+            return ConstructKeys.constructKey(encoded, algorithm, type);
         } catch (BadPaddingException e) {
-            if (isTlsRsaPremasterSecret) {
-                failover = e;
-            } else {
-                throw new InvalidKeyException("Unwrapping failed", e);
-            }
+            // should not occur
+            throw new InvalidKeyException("Unwrapping failed", e);
         } catch (IllegalBlockSizeException e) {
             // should not occur, handled with length check above
             throw new InvalidKeyException("Unwrapping failed", e);
         }
-
-        if (isTlsRsaPremasterSecret) {
-            if (!(spec instanceof TlsRsaPremasterSecretParameterSpec)) {
-                throw new IllegalStateException(
-                        "No TlsRsaPremasterSecretParameterSpec specified");
-            }
-
-            // polish the TLS premaster secret
-            encoded = KeyUtil.checkTlsPreMasterSecretKey(
-                ((TlsRsaPremasterSecretParameterSpec)spec).getClientVersion(),
-                ((TlsRsaPremasterSecretParameterSpec)spec).getServerVersion(),
-                random, encoded, (failover != null));
-        }
-
-        return ConstructKeys.constructKey(encoded, algorithm, type);
     }
 
     // see JCE spec
@@ -470,4 +438,5 @@ public final class RSACipher extends CipherSpi {
         RSAKey rsaKey = RSAKeyFactory.toRSAKey(key);
         return rsaKey.getModulus().bitLength();
     }
+
 }

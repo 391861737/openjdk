@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2003, 2016, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2003, 2013, Oracle and/or its affiliates. All rights reserved.
  */
 
 /*
@@ -242,14 +242,6 @@ public final class Constants {
      */
     public static final String JDK_GENERAL_ENTITY_SIZE_LIMIT =
             ORACLE_JAXP_PROPERTY_PREFIX + "maxGeneralEntitySizeLimit";
-
-    /**
-     * JDK node count limit in entities that limits the total number of nodes
-     * in all of entity references.
-     */
-    public static final String JDK_ENTITY_REPLACEMENT_LIMIT =
-            ORACLE_JAXP_PROPERTY_PREFIX + "entityReplacementLimit";
-
     /**
      * JDK maximum parameter entity size limit
      */
@@ -260,13 +252,6 @@ public final class Constants {
      */
     public static final String JDK_XML_NAME_LIMIT =
             ORACLE_JAXP_PROPERTY_PREFIX + "maxXMLNameLimit";
-
-    /**
-     * JDK maxElementDepth limit
-     */
-    public static final String JDK_MAX_ELEMENT_DEPTH =
-            ORACLE_JAXP_PROPERTY_PREFIX + "maxElementDepth";
-
     /**
      * JDK property to allow printing out information from the limit analyzer
      */
@@ -303,13 +288,6 @@ public final class Constants {
      * JDK maximum general entity size limit
      */
     public static final String SP_GENERAL_ENTITY_SIZE_LIMIT = "jdk.xml.maxGeneralEntitySizeLimit";
-
-    /**
-     * JDK node count limit in entities that limits the total number of nodes
-     * in all of entity references.
-     */
-    public static final String SP_ENTITY_REPLACEMENT_LIMIT = "jdk.xml.entityReplacementLimit";
-
     /**
      * JDK maximum parameter entity size limit
      */
@@ -318,11 +296,6 @@ public final class Constants {
      * JDK maximum XML name limit
      */
     public static final String SP_XML_NAME_LIMIT = "jdk.xml.maxXMLNameLimit";
-
-    /**
-     * JDK maxElementDepth limit
-     */
-    public static final String SP_MAX_ELEMENT_DEPTH = "jdk.xml.maxElementDepth";
 
     //legacy System Properties
     public final static String ENTITY_EXPANSION_LIMIT = "entityExpansionLimit";

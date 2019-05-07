@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 1997, 2014, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 1997, 2013, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -31,7 +31,6 @@
 #include "opto/node.hpp"
 #include "opto/regmask.hpp"
 
-class BiasedLockingCounters;
 class BufferBlob;
 class CodeBuffer;
 class JVMState;
@@ -53,7 +52,6 @@ class MachSpillCopyNode;
 class Matcher;
 class PhaseRegAlloc;
 class RegMask;
-class RTMLockingCounters;
 class State;
 
 //---------------------------MachOper------------------------------------------
@@ -102,15 +100,6 @@ public:
   }
   XMMRegister  as_XMMRegister(PhaseRegAlloc *ra_, const Node *node, int idx)   const {
     return ::as_XMMRegister(reg(ra_, node, idx));
-  }
-#endif
-  // CondRegister reg converter
-#if defined(PPC64)
-  ConditionRegister as_ConditionRegister(PhaseRegAlloc *ra_, const Node *node) const {
-    return ::as_ConditionRegister(reg(ra_, node));
-  }
-  ConditionRegister as_ConditionRegister(PhaseRegAlloc *ra_, const Node *node, int idx) const {
-    return ::as_ConditionRegister(reg(ra_, node, idx));
   }
 #endif
 
@@ -166,15 +155,7 @@ public:
   virtual void ext_format(PhaseRegAlloc *,const MachNode *node,int idx, outputStream *st) const=0;
 
   virtual void dump_spec(outputStream *st) const; // Print per-operand info
-
-  // Check whether o is a valid oper.
-  static bool notAnOper(const MachOper *o) {
-    if (o == NULL)                   return true;
-    if (((intptr_t)o & 1) != 0)      return true;
-    if (*(address*)o == badAddress)  return true;  // kill by Node::destruct
-    return false;
-  }
-#endif // !PRODUCT
+#endif
 };
 
 //------------------------------MachNode---------------------------------------
@@ -192,9 +173,6 @@ public:
   // Number of inputs which come before the first operand.
   // Generally at least 1, to skip the Control input
   virtual uint oper_input_base() const { return 1; }
-  // Position of constant base node in node's inputs. -1 if
-  // no constant base node input.
-  virtual uint mach_constant_base_node_input() const { return (uint)-1; }
 
   // Copy inputs and operands to new node of instruction.
   // Called from cisc_version() and short_branch_version().
@@ -210,21 +188,13 @@ public:
   bool may_be_short_branch() const { return (flags() & Flag_may_be_short_branch) != 0; }
 
   // Avoid back to back some instructions on some CPUs.
-  enum AvoidBackToBackFlag { AVOID_NONE = 0,
-                             AVOID_BEFORE = Flag_avoid_back_to_back_before,
-                             AVOID_AFTER = Flag_avoid_back_to_back_after,
-                             AVOID_BEFORE_AND_AFTER = AVOID_BEFORE | AVOID_AFTER };
-
-  bool avoid_back_to_back(AvoidBackToBackFlag flag_value) const {
-    return (flags() & flag_value) == flag_value;
-  }
+  bool avoid_back_to_back() const { return (flags() & Flag_avoid_back_to_back) != 0; }
 
   // instruction implemented with a call
   bool has_call() const { return (flags() & Flag_has_call) != 0; }
 
   // First index in _in[] corresponding to operand, or -1 if there is none
   int  operand_index(uint operand) const;
-  int  operand_index(const MachOper *oper) const;
 
   // Register class input is expected in
   virtual const RegMask &in_RegMask(uint) const;
@@ -250,12 +220,6 @@ public:
 
   // Emit bytes into cbuf
   virtual void  emit(CodeBuffer &cbuf, PhaseRegAlloc *ra_) const;
-  // Expand node after register allocation.
-  // Node is replaced by several nodes in the postalloc expand phase.
-  // Corresponding methods are generated for nodes if they specify
-  // postalloc_expand. See block.cpp for more documentation.
-  virtual bool requires_postalloc_expand() const { return false; }
-  virtual void postalloc_expand(GrowableArray <Node *> *nodes, PhaseRegAlloc *ra_);
   // Size of instruction in bytes
   virtual uint  size(PhaseRegAlloc *ra_) const;
   // Helper function that computes size by emitting code
@@ -271,9 +235,6 @@ public:
 
   // Return number of relocatable values contained in this instruction
   virtual int   reloc() const { return 0; }
-
-  // Return number of words used for double constants in this instruction
-  virtual int   ins_num_consts() const { return 0; }
 
   // Hash and compare over operands.  Used to do GVN on machine Nodes.
   virtual uint  hash() const;
@@ -331,9 +292,6 @@ public:
   // Get the pipeline info
   static const Pipeline *pipeline_class();
   virtual const Pipeline *pipeline() const;
-
-  // Returns true if this node is a check that can be implemented with a trap.
-  virtual bool is_TrapBasedCheckNode() const { return false; }
 
 #ifndef PRODUCT
   virtual const char *Name() const = 0; // Machine-specific name
@@ -398,9 +356,6 @@ public:
   virtual uint ideal_reg() const { return Op_RegP; }
   virtual uint oper_input_base() const { return 1; }
 
-  virtual bool requires_postalloc_expand() const;
-  virtual void postalloc_expand(GrowableArray <Node *> *nodes, PhaseRegAlloc *ra_);
-
   virtual void emit(CodeBuffer& cbuf, PhaseRegAlloc* ra_) const;
   virtual uint size(PhaseRegAlloc* ra_) const;
   virtual bool pinned() const { return UseRDPCForConstantTableBase; }
@@ -440,12 +395,10 @@ public:
   }
 
   // Input edge of MachConstantBaseNode.
-  virtual uint mach_constant_base_node_input() const { return req() - 1; }
+  uint mach_constant_base_node_input() const { return req() - 1; }
 
   int  constant_offset();
   int  constant_offset() const { return ((MachConstantNode*) this)->constant_offset(); }
-  // Unchecked version to avoid assertions in debug output.
-  int  constant_offset_unchecked() const;
 };
 
 //------------------------------MachUEPNode-----------------------------------
@@ -558,29 +511,6 @@ public:
 #endif
 };
 
-// MachMergeNode is similar to a PhiNode in a sense it merges multiple values,
-// however it doesn't have a control input and is more like a MergeMem.
-// It is inserted after the register allocation is done to ensure that nodes use single
-// definition of a multidef lrg in a block.
-class MachMergeNode : public MachIdealNode {
-public:
-  MachMergeNode(Node *n1) {
-    init_class_id(Class_MachMerge);
-    add_req(NULL);
-    add_req(n1);
-  }
-  virtual const RegMask &out_RegMask() const { return in(1)->out_RegMask(); }
-  virtual const RegMask &in_RegMask(uint idx) const { return in(1)->in_RegMask(idx); }
-  virtual const class Type *bottom_type() const { return in(1)->bottom_type(); }
-  virtual uint ideal_reg() const { return bottom_type()->ideal_reg(); }
-  virtual uint oper_input_base() const { return 1; }
-  virtual void emit(CodeBuffer &cbuf, PhaseRegAlloc *ra_) const { }
-  virtual uint size(PhaseRegAlloc *ra_) const { return 0; }
-#ifndef PRODUCT
-  virtual const char *Name() const { return "MachMerge"; }
-#endif
-};
-
 //------------------------------MachBranchNode--------------------------------
 // Abstract machine branch Node
 class MachBranchNode : public MachIdealNode {
@@ -690,9 +620,8 @@ public:
 class MachFastLockNode : public MachNode {
   virtual uint size_of() const { return sizeof(*this); } // Size is bigger
 public:
-  BiasedLockingCounters*        _counters;
-  RTMLockingCounters*       _rtm_counters; // RTM lock counters for inflated locks
-  RTMLockingCounters* _stack_rtm_counters; // RTM lock counters for stack locks
+  BiasedLockingCounters* _counters;
+
   MachFastLockNode() : MachNode() {}
 };
 
@@ -807,10 +736,6 @@ public:
 
   bool returns_long() const { return tf()->return_type() == T_LONG; }
   bool return_value_is_used() const;
-
-  // Similar to cousin class CallNode::returns_pointer
-  bool returns_pointer() const;
-
 #ifndef PRODUCT
   virtual void dump_spec(outputStream *st) const;
 #endif

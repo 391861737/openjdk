@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2013, 2016, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2013, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -23,40 +23,41 @@
 
 /*
  * @test
- * @bug 8013563 8028486
+ * @bug 8013563
  * @summary Tests that windows are removed from windows list
- * @library /javax/swing/regtesthelpers
- * @build Util
  * @run main/othervm -Xms32M -Xmx32M WindowsLeak
 */
 
-import java.awt.Frame;
-import java.awt.Robot;
-import java.awt.Window;
-import java.lang.ref.WeakReference;
-import java.util.Vector;
-
+import java.awt.*;
 import sun.awt.AppContext;
-import sun.java2d.Disposer;
+
+import java.lang.ref.WeakReference;
+
+import java.util.Vector;
 
 public class WindowsLeak {
 
-    private static volatile boolean disposerPhantomComplete;
-
-    public static void main(String[] args) throws Exception {
-        Robot r = new Robot();
-        for (int i = 0; i < 100; i++) {
+    public static void main(String[] args) {
+        for (int i = 0; i < 100; i++)
+        {
             Frame f = new Frame();
             f.pack();
             f.dispose();
         }
-        r.waitForIdle();
 
-        Disposer.addRecord(new Object(), () -> disposerPhantomComplete = true);
-
-        while (!disposerPhantomComplete) {
-            Util.generateOOME();
+        Vector garbage = new Vector();
+        while (true)
+        {
+            try
+            {
+                garbage.add(new byte[1000]);
+            }
+            catch (OutOfMemoryError e)
+            {
+                break;
+            }
         }
+        garbage = null;
 
         Vector<WeakReference<Window>> windowList =
                         (Vector<WeakReference<Window>>) AppContext.getAppContext().get(Window.class);

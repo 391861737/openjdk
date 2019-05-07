@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 1999, 2016, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 1999, 2013, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -383,19 +383,19 @@ public final class PKCS12KeyStore extends KeyStoreSpi {
 
             // decode secret key
             } else {
+                SecretKeyFactory sKeyFactory =
+                    SecretKeyFactory.getInstance(keyAlgo);
                 byte[] keyBytes = in.getOctetString();
                 SecretKeySpec secretKeySpec =
                     new SecretKeySpec(keyBytes, keyAlgo);
 
                 // Special handling required for PBE: needs a PBEKeySpec
                 if (keyAlgo.startsWith("PBE")) {
-                    SecretKeyFactory sKeyFactory =
-                        SecretKeyFactory.getInstance(keyAlgo);
                     KeySpec pbeKeySpec =
                         sKeyFactory.getKeySpec(secretKeySpec, PBEKeySpec.class);
                     key = sKeyFactory.generateSecret(pbeKeySpec);
                 } else {
-                    key = secretKeySpec;
+                    key = sKeyFactory.generateSecret(secretKeySpec);
                 }
 
                 if (debug != null) {
@@ -707,11 +707,6 @@ public final class PKCS12KeyStore extends KeyStoreSpi {
 
         entry.protectedPrivKey = key.clone();
         if (chain != null) {
-            // validate cert-chain
-            if ((chain.length > 1) && (!validateChain(chain))) {
-                throw new KeyStoreException("Certificate chain is "
-                        + "not valid");
-            }
             entry.chain = chain.clone();
             certificateCount += chain.length;
 
@@ -905,7 +900,7 @@ public final class PKCS12KeyStore extends KeyStoreSpi {
     private static ObjectIdentifier mapPBEAlgorithmToOID(String algorithm)
         throws NoSuchAlgorithmException {
         // Check for PBES2 algorithms
-        if (algorithm.toLowerCase(Locale.ENGLISH).startsWith("pbewithhmacsha")) {
+        if (algorithm.toLowerCase().startsWith("pbewithhmacsha")) {
             return pbes2_OID;
         }
         return AlgorithmId.get(algorithm).getOID();
@@ -1058,39 +1053,6 @@ public final class PKCS12KeyStore extends KeyStoreSpi {
     }
 
     /**
-     * Determines if the keystore {@code Entry} for the specified
-     * {@code alias} is an instance or subclass of the specified
-     * {@code entryClass}.
-     *
-     * @param alias the alias name
-     * @param entryClass the entry class
-     *
-     * @return true if the keystore {@code Entry} for the specified
-     *          {@code alias} is an instance or subclass of the
-     *          specified {@code entryClass}, false otherwise
-     *
-     * @since 1.5
-     */
-    @Override
-    public boolean
-        engineEntryInstanceOf(String alias,
-                              Class<? extends KeyStore.Entry> entryClass)
-    {
-        if (entryClass == KeyStore.TrustedCertificateEntry.class) {
-            return engineIsCertificateEntry(alias);
-        }
-
-        Entry entry = entries.get(alias.toLowerCase(Locale.ENGLISH));
-        if (entryClass == KeyStore.PrivateKeyEntry.class) {
-            return (entry != null && entry instanceof PrivateKeyEntry);
-        }
-        if (entryClass == KeyStore.SecretKeyEntry.class) {
-            return (entry != null && entry instanceof SecretKeyEntry);
-        }
-        return false;
-    }
-
-    /**
      * Returns the (alias) name of the first keystore entry whose certificate
      * matches the given certificate.
      *
@@ -1122,7 +1084,7 @@ public final class PKCS12KeyStore extends KeyStoreSpi {
             } else {
                 continue;
             }
-            if (certElem != null && certElem.equals(cert)) {
+            if (certElem.equals(cert)) {
                 return alias;
             }
         }
@@ -1486,12 +1448,7 @@ public final class PKCS12KeyStore extends KeyStoreSpi {
             if (!(issuerDN.equals(subjectDN)))
                 return false;
         }
-
-        // Check for loops in the chain. If there are repeated certs,
-        // the Set of certs in the chain will contain fewer certs than
-        // the chain
-        Set<Certificate> set = new HashSet<>(Arrays.asList(certChain));
-        return set.size() == certChain.length;
+        return true;
     }
 
 
@@ -1633,22 +1590,23 @@ public final class PKCS12KeyStore extends KeyStoreSpi {
             Entry entry = entries.get(alias);
 
             // certificate chain
-            Certificate[] certs;
+            int chainLen = 1;
+            Certificate[] certs = null;
 
             if (entry instanceof PrivateKeyEntry) {
                 PrivateKeyEntry keyEntry = (PrivateKeyEntry) entry;
-                if (keyEntry.chain != null) {
-                    certs = keyEntry.chain;
-                } else {
-                    certs = new Certificate[0];
-                }
+                    if (keyEntry.chain == null) {
+                        chainLen = 0;
+                    } else {
+                        chainLen = keyEntry.chain.length;
+                    }
+                certs = keyEntry.chain;
+
             } else if (entry instanceof CertEntry) {
-                certs = new Certificate[]{((CertEntry) entry).cert};
-            } else {
-                certs = new Certificate[0];
+               certs = new Certificate[]{((CertEntry) entry).cert};
             }
 
-            for (int i = 0; i < certs.length; i++) {
+            for (int i = 0; i < chainLen; i++) {
                 // create SafeBag of Type CertBag
                 DerOutputStream safeBag = new DerOutputStream();
                 safeBag.putOID(CertBag_OID);
@@ -1965,12 +1923,7 @@ public final class PKCS12KeyStore extends KeyStoreSpi {
                 safeContentsData = safeContents.getData();
             } else if (contentType.equals((Object)ContentInfo.ENCRYPTED_DATA_OID)) {
                 if (password == null) {
-
-                    if (debug != null) {
-                        debug.println("Warning: skipping PKCS#7 encryptedData" +
-                            " content-type - no password was supplied");
-                    }
-                    continue;
+                   continue;
                 }
 
                 if (debug != null) {
@@ -2012,9 +1965,8 @@ public final class PKCS12KeyStore extends KeyStoreSpi {
                             password = new char[1];
                             continue;
                         }
-                        throw new IOException("keystore password was incorrect",
-                            new UnrecoverableKeyException(
-                                "failed to decrypt safe contents entry: " + e));
+                        throw new IOException(
+                            "failed to decrypt safe contents entry: " + e, e);
                     }
                 }
             } else {
@@ -2050,8 +2002,8 @@ public final class PKCS12KeyStore extends KeyStoreSpi {
                         "(MAC algorithm: " + m.getAlgorithm() + ")");
                 }
 
-                if (!MessageDigest.isEqual(macData.getDigest(), macResult)) {
-                   throw new UnrecoverableKeyException("Failed PKCS12" +
+                if (!Arrays.equals(macData.getDigest(), macResult)) {
+                   throw new SecurityException("Failed PKCS12" +
                                         " integrity checking");
                 }
            } catch (Exception e) {
@@ -2070,24 +2022,7 @@ public final class PKCS12KeyStore extends KeyStoreSpi {
                 ArrayList<X509Certificate> chain =
                                 new ArrayList<X509Certificate>();
                 X509Certificate cert = findMatchedCertificate(entry);
-
-                mainloop:
                 while (cert != null) {
-                    // Check for loops in the certificate chain
-                    if (!chain.isEmpty()) {
-                        for (X509Certificate chainCert : chain) {
-                            if (cert.equals(chainCert)) {
-                                if (debug != null) {
-                                    debug.println("Loop detected in " +
-                                        "certificate chain. Skip adding " +
-                                        "repeated cert to chain. Subject: " +
-                                        cert.getSubjectX500Principal()
-                                            .toString());
-                                }
-                                break mainloop;
-                            }
-                        }
-                    }
                     chain.add(cert);
                     X500Principal issuerDN = cert.getIssuerX500Principal();
                     if (issuerDN.equals(cert.getSubjectX500Principal())) {

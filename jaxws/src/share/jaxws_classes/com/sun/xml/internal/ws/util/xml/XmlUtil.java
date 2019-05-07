@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 1997, 2017, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 1997, 2013, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -63,8 +63,6 @@ import java.io.InputStream;
 import java.io.OutputStreamWriter;
 import java.io.Writer;
 import java.net.URL;
-import java.security.AccessController;
-import java.security.PrivilegedAction;
 import java.util.ArrayList;
 import java.util.Enumeration;
 import java.util.Iterator;
@@ -84,26 +82,14 @@ public class XmlUtil {
     private final static String LEXICAL_HANDLER_PROPERTY =
         "http://xml.org/sax/properties/lexical-handler";
 
-    private static final String DISALLOW_DOCTYPE_DECL = "http://apache.org/xml/features/disallow-doctype-decl";
-
-    private static final String EXTERNAL_GE = "http://xml.org/sax/features/external-general-entities";
-
-    private static final String EXTERNAL_PE = "http://xml.org/sax/features/external-parameter-entities";
-
-    private static final String LOAD_EXTERNAL_DTD = "http://apache.org/xml/features/nonvalidating/load-external-dtd";
-
     private static final Logger LOGGER = Logger.getLogger(XmlUtil.class.getName());
 
-    private static final String DISABLE_XML_SECURITY = "com.sun.xml.internal.ws.disableXmlSecurity";
+    private static boolean XML_SECURITY_DISABLED;
 
-    private static boolean XML_SECURITY_DISABLED = AccessController.doPrivileged(
-            new PrivilegedAction<Boolean>() {
-                @Override
-                public Boolean run() {
-                    return Boolean.getBoolean(DISABLE_XML_SECURITY);
-                }
-            }
-    );
+    static {
+        String disableXmlSecurity = System.getProperty("com.sun.xml.internal.ws.disableXmlSecurity");
+        XML_SECURITY_DISABLED = disableXmlSecurity == null || !Boolean.valueOf(disableXmlSecurity);
+    }
 
     public static String getPrefix(String s) {
         int i = s.indexOf(':');
@@ -229,28 +215,20 @@ public class XmlUtil {
         }
     }
 
-    static final ContextClassloaderLocal<TransformerFactory> transformerFactory = new ContextClassloaderLocal<TransformerFactory>() {
-        @Override
-        protected TransformerFactory initialValue() throws Exception {
-            return TransformerFactory.newInstance();
-        }
-    };
+    static final TransformerFactory transformerFactory = newTransformerFactory();
 
-    static final ContextClassloaderLocal<SAXParserFactory> saxParserFactory = new ContextClassloaderLocal<SAXParserFactory>() {
-        @Override
-        protected SAXParserFactory initialValue() throws Exception {
-            SAXParserFactory factory = SAXParserFactory.newInstance();
-            factory.setNamespaceAware(true);
-            return factory;
-        }
-    };
+    static final SAXParserFactory saxParserFactory = newSAXParserFactory(true);
+
+    static {
+        saxParserFactory.setNamespaceAware(true);
+    }
 
     /**
      * Creates a new identity transformer.
      */
     public static Transformer newTransformer() {
         try {
-            return transformerFactory.get().newTransformer();
+            return transformerFactory.newTransformer();
         } catch (TransformerConfigurationException tex) {
             throw new IllegalStateException("Unable to create a JAXP transformer");
         }
@@ -265,9 +243,9 @@ public class XmlUtil {
             // work around a bug in JAXP in JDK6u4 and earlier where the namespace processing
             // is not turned on by default
             StreamSource ssrc = (StreamSource) src;
-            TransformerHandler th = ((SAXTransformerFactory) transformerFactory.get()).newTransformerHandler();
+            TransformerHandler th = ((SAXTransformerFactory) transformerFactory).newTransformerHandler();
             th.setResult(result);
-            XMLReader reader = saxParserFactory.get().newSAXParser().getXMLReader();
+            XMLReader reader = saxParserFactory.newSAXParser().getXMLReader();
             reader.setContentHandler(th);
             reader.setProperty(LEXICAL_HANDLER_PROPERTY, th);
             reader.parse(toInputSource(ssrc));
@@ -380,29 +358,15 @@ public class XmlUtil {
     };
 
     public static DocumentBuilderFactory newDocumentBuilderFactory() {
-        return newDocumentBuilderFactory(false);
+        return newDocumentBuilderFactory(true);
     }
 
-    public static DocumentBuilderFactory newDocumentBuilderFactory(boolean disableSecurity) {
+    public static DocumentBuilderFactory newDocumentBuilderFactory(boolean secureXmlProcessing) {
         DocumentBuilderFactory factory = DocumentBuilderFactory.newInstance();
-        String featureToSet = XMLConstants.FEATURE_SECURE_PROCESSING;
         try {
-            boolean securityOn = !isXMLSecurityDisabled(disableSecurity);
-            factory.setFeature(featureToSet, securityOn);
-            factory.setNamespaceAware(true);
-            if (securityOn) {
-                factory.setExpandEntityReferences(false);
-                featureToSet = DISALLOW_DOCTYPE_DECL;
-                factory.setFeature(featureToSet, true);
-                featureToSet = EXTERNAL_GE;
-                factory.setFeature(featureToSet, false);
-                featureToSet = EXTERNAL_PE;
-                factory.setFeature(featureToSet, false);
-                featureToSet = LOAD_EXTERNAL_DTD;
-                factory.setFeature(featureToSet, false);
-            }
+            factory.setFeature(XMLConstants.FEATURE_SECURE_PROCESSING, isXMLSecurityDisabled(secureXmlProcessing));
         } catch (ParserConfigurationException e) {
-            LOGGER.log(Level.WARNING, "Factory [{0}] doesn't support "+featureToSet+" feature!", new Object[] {factory.getClass().getName()} );
+            LOGGER.log(Level.WARNING, "Factory [{0}] doesn't support secure xml processing!", new Object[] { factory.getClass().getName() } );
         }
         return factory;
     }
@@ -421,25 +385,12 @@ public class XmlUtil {
         return newTransformerFactory(true);
     }
 
-    public static SAXParserFactory newSAXParserFactory(boolean disableSecurity) {
+    public static SAXParserFactory newSAXParserFactory(boolean secureXmlProcessingEnabled) {
         SAXParserFactory factory = SAXParserFactory.newInstance();
-        String featureToSet = XMLConstants.FEATURE_SECURE_PROCESSING;
         try {
-            boolean securityOn = !isXMLSecurityDisabled(disableSecurity);
-            factory.setFeature(featureToSet, securityOn);
-            factory.setNamespaceAware(true);
-            if (securityOn) {
-                featureToSet = DISALLOW_DOCTYPE_DECL;
-                factory.setFeature(featureToSet, true);
-                featureToSet = EXTERNAL_GE;
-                factory.setFeature(featureToSet, false);
-                featureToSet = EXTERNAL_PE;
-                factory.setFeature(featureToSet, false);
-                featureToSet = LOAD_EXTERNAL_DTD;
-                factory.setFeature(featureToSet, false);
-            }
-        } catch (ParserConfigurationException | SAXNotRecognizedException | SAXNotSupportedException e) {
-            LOGGER.log(Level.WARNING, "Factory [{0}] doesn't support "+featureToSet+" feature!", new Object[]{factory.getClass().getName()});
+            factory.setFeature(XMLConstants.FEATURE_SECURE_PROCESSING, isXMLSecurityDisabled(secureXmlProcessingEnabled));
+        } catch (Exception e) {
+            LOGGER.log(Level.WARNING, "Factory [{0}] doesn't support secure xml processing!", new Object[]{factory.getClass().getName()});
         }
         return factory;
     }

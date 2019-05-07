@@ -30,7 +30,7 @@
 //---------------------------------------------------------------------------------
 //
 //  Little Color Management System
-//  Copyright (c) 1998-2016 Marti Maria Saguer
+//  Copyright (c) 1998-2012 Marti Maria Saguer
 //
 // Permission is hereby granted, free of charge, to any person obtaining
 // a copy of this software and associated documentation files (the "Software"),
@@ -62,57 +62,32 @@
 static cmsInterpFunction DefaultInterpolatorsFactory(cmsUInt32Number nInputChannels, cmsUInt32Number nOutputChannels, cmsUInt32Number dwFlags);
 
 // This is the default factory
-_cmsInterpPluginChunkType _cmsInterpPluginChunk = { NULL };
-
-// The interpolation plug-in memory chunk allocator/dup
-void _cmsAllocInterpPluginChunk(struct _cmsContext_struct* ctx, const struct _cmsContext_struct* src)
-{
-    void* from;
-
-    _cmsAssert(ctx != NULL);
-
-    if (src != NULL) {
-        from = src ->chunks[InterpPlugin];
-    }
-    else {
-        static _cmsInterpPluginChunkType InterpPluginChunk = { NULL };
-
-        from = &InterpPluginChunk;
-    }
-
-    _cmsAssert(from != NULL);
-    ctx ->chunks[InterpPlugin] = _cmsSubAllocDup(ctx ->MemPool, from, sizeof(_cmsInterpPluginChunkType));
-}
+static cmsInterpFnFactory Interpolators = DefaultInterpolatorsFactory;
 
 
 // Main plug-in entry
-cmsBool  _cmsRegisterInterpPlugin(cmsContext ContextID, cmsPluginBase* Data)
+cmsBool  _cmsRegisterInterpPlugin(cmsPluginBase* Data)
 {
     cmsPluginInterpolation* Plugin = (cmsPluginInterpolation*) Data;
-    _cmsInterpPluginChunkType* ptr = (_cmsInterpPluginChunkType*) _cmsContextGetClientChunk(ContextID, InterpPlugin);
 
     if (Data == NULL) {
 
-        ptr ->Interpolators = NULL;
+        Interpolators = DefaultInterpolatorsFactory;
         return TRUE;
     }
 
     // Set replacement functions
-    ptr ->Interpolators = Plugin ->InterpolatorsFactory;
+    Interpolators = Plugin ->InterpolatorsFactory;
     return TRUE;
 }
 
 
 // Set the interpolation method
-cmsBool _cmsSetInterpolationRoutine(cmsContext ContextID, cmsInterpParams* p)
+
+cmsBool _cmsSetInterpolationRoutine(cmsInterpParams* p)
 {
-    _cmsInterpPluginChunkType* ptr = (_cmsInterpPluginChunkType*) _cmsContextGetClientChunk(ContextID, InterpPlugin);
-
-    p ->Interpolation.Lerp16 = NULL;
-
-   // Invoke factory, possibly in the Plug-in
-    if (ptr ->Interpolators != NULL)
-        p ->Interpolation = ptr->Interpolators(p -> nInputs, p ->nOutputs, p ->dwFlags);
+    // Invoke factory, possibly in the Plug-in
+    p ->Interpolation = Interpolators(p -> nInputs, p ->nOutputs, p ->dwFlags);
 
     // If unsupported by the plug-in, go for the LittleCMS default.
     // If happens only if an extern plug-in is being used
@@ -123,7 +98,6 @@ cmsBool _cmsSetInterpolationRoutine(cmsContext ContextID, cmsInterpParams* p)
     if (p ->Interpolation.Lerp16 == NULL) {
             return FALSE;
     }
-
     return TRUE;
 }
 
@@ -168,7 +142,7 @@ cmsInterpParams* _cmsComputeInterpParamsEx(cmsContext ContextID,
         p ->opta[i] = p ->opta[i-1] * nSamples[InputChan-i];
 
 
-    if (!_cmsSetInterpolationRoutine(ContextID, p)) {
+    if (!_cmsSetInterpolationRoutine(p)) {
          cmsSignalError(ContextID, cmsERROR_UNKNOWN_EXTENSION, "Unsupported interpolation (%d->%d channels)", InputChan, OutputChan);
         _cmsFree(ContextID, p);
         return NULL;
@@ -185,7 +159,7 @@ cmsInterpParams* _cmsComputeInterpParams(cmsContext ContextID, int nSamples, int
     int i;
     cmsUInt32Number Samples[MAX_INPUT_DIMENSIONS];
 
-    // Fill the auxiliary array
+    // Fill the auxiliar array
     for (i=0; i < MAX_INPUT_DIMENSIONS; i++)
         Samples[i] = nSamples;
 
@@ -244,7 +218,7 @@ void LinLerp1D(register const cmsUInt16Number Value[],
 // To prevent out of bounds indexing
 cmsINLINE cmsFloat32Number fclamp(cmsFloat32Number v)
 {
-    return v < 0.0f || v != v ? 0.0f : (v > 1.0f ? 1.0f : v);
+    return v < 0.0f ? 0.0f : (v > 1.0f ? 1.0f : v);
 }
 
 // Floating-point version of 1D interpolation
@@ -857,7 +831,7 @@ void Eval4Inputs(register const cmsUInt16Number Input[],
                      register cmsUInt16Number Output[],
                      register const cmsInterpParams* p16)
 {
-    const cmsUInt16Number* LutTable;
+    const cmsUInt16Number* LutTable = (cmsUInt16Number*) p16 -> Table;
     cmsS15Fixed16Number fk;
     cmsS15Fixed16Number k0, rk;
     int K0, K1;
@@ -958,7 +932,7 @@ void Eval4Inputs(register const cmsUInt16Number Input[],
 
                             Rest = c1 * rx + c2 * ry + c3 * rz;
 
-                            Tmp1[OutChan] = (cmsUInt16Number) ( c0 + ROUND_FIXED_TO_INT(_cmsToFixedDomain(Rest)));
+                            Tmp1[OutChan] = (cmsUInt16Number) c0 + ROUND_FIXED_TO_INT(_cmsToFixedDomain(Rest));
     }
 
 
@@ -1022,7 +996,7 @@ void Eval4Inputs(register const cmsUInt16Number Input[],
 
                             Rest = c1 * rx + c2 * ry + c3 * rz;
 
-                            Tmp2[OutChan] = (cmsUInt16Number) (c0 + ROUND_FIXED_TO_INT(_cmsToFixedDomain(Rest)));
+                            Tmp2[OutChan] = (cmsUInt16Number) c0 + ROUND_FIXED_TO_INT(_cmsToFixedDomain(Rest));
     }
 
 

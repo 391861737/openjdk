@@ -25,8 +25,8 @@
 
 package jdk.nashorn.internal.objects;
 
-import static jdk.nashorn.internal.lookup.Lookup.MH;
 import static jdk.nashorn.internal.runtime.ScriptRuntime.UNDEFINED;
+import static jdk.nashorn.internal.lookup.Lookup.MH;
 
 import java.lang.invoke.MethodHandle;
 import java.lang.invoke.MethodHandles;
@@ -60,9 +60,9 @@ public final class NativeStrictArguments extends ScriptObject {
         // In strict mode, the caller and callee properties should throw TypeError
         // Need to add properties directly to map since slots are assigned speculatively by newUserAccessors.
         final int flags = Property.NOT_ENUMERABLE | Property.NOT_CONFIGURABLE;
-        map = map.addPropertyNoHistory(map.newUserAccessors("caller", flags));
-        map = map.addPropertyNoHistory(map.newUserAccessors("callee", flags));
-        map$ = map;
+        map = map.addProperty(map.newUserAccessors("caller", flags));
+        map = map.addProperty(map.newUserAccessors("callee", flags));
+        map$ = map.setIsShared();
     }
 
     static PropertyMap getInitialMap() {
@@ -79,9 +79,8 @@ public final class NativeStrictArguments extends ScriptObject {
         final ScriptFunction func = Global.instance().getTypeErrorThrower();
         // We have to fill user accessor functions late as these are stored
         // in this object rather than in the PropertyMap of this object.
-        final int flags = Property.NOT_ENUMERABLE | Property.NOT_CONFIGURABLE;
-        initUserAccessors("caller", flags, func, func);
-        initUserAccessors("callee", flags, func, func);
+        setUserAccessors("caller", func, func);
+        setUserAccessors("callee", func, func);
 
         setArray(ArrayData.allocate(values));
         this.length = values.length;

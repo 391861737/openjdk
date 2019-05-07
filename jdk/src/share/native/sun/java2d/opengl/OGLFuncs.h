@@ -173,11 +173,6 @@ typedef void (GLAPIENTRY *glLinkProgramARBType)(GLhandleARB);
 typedef void (GLAPIENTRY *glDeleteObjectARBType)(GLhandleARB);
 
 /**
- * GL_NV_texture_barrier extension function typedef's
- */
-typedef void (GLAPIENTRY *glTextureBarrierNVType) (void);
-
-/**
  * REMIND: this caused an internal error in the MS compiler!?!?
  *
  *#define OGL_CHECK_FUNC_ERR(f) \
@@ -321,8 +316,7 @@ typedef void (GLAPIENTRY *glTextureBarrierNVType) (void);
     OGL_##action##_EXT_FUNC(glGetProgramivARB); \
     OGL_##action##_EXT_FUNC(glGetInfoLogARB); \
     OGL_##action##_EXT_FUNC(glGetObjectParameterivARB); \
-    OGL_##action##_EXT_FUNC(glDeleteObjectARB); \
-    OGL_##action##_EXT_FUNC(glTextureBarrierNV);
+    OGL_##action##_EXT_FUNC(glDeleteObjectARB);
 
 #define OGL_EXPRESS_ALL_FUNCS(action) \
     OGL_EXPRESS_BASE_FUNCS(action) \

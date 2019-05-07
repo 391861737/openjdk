@@ -57,7 +57,7 @@ public final class SecuritySupport {
         return securitySupport;
     }
 
-    public static ClassLoader getContextClassLoader() {
+    static ClassLoader getContextClassLoader() {
         return (ClassLoader) AccessController.doPrivileged(new PrivilegedAction() {
             public Object run() {
                 ClassLoader cl = null;

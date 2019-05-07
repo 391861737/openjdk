@@ -35,7 +35,7 @@ import javax.management.ObjectName;
  * @author Jaroslav Bachorik
  * @run clean MBeanFallbackTest
  * @run build MBeanFallbackTest
- * @run main/othervm -Djdk.jmx.mbeans.allowNonPublic=true MBeanFallbackTest
+ * @run main MBeanFallbackTest
  */
 public class MBeanFallbackTest {
     private static interface PrivateMBean {
@@ -51,6 +51,7 @@ public class MBeanFallbackTest {
     private static int failures = 0;
 
     public static void main(String[] args) throws Exception {
+        System.setProperty("jdk.jmx.mbeans.allowNonPublic", "true");
         testPrivate(PrivateMBean.class, new Private());
 
         if (failures == 0)

@@ -29,34 +29,31 @@
  * SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-import javax.script.Invocable;
-import javax.script.ScriptEngine;
-import javax.script.ScriptEngineManager;
+import javax.script.*;
 
-@SuppressWarnings("javadoc")
 public class RunnableImplObject {
-    public static void main(final String[] args) throws Exception {
-        final ScriptEngineManager manager = new ScriptEngineManager();
-        final ScriptEngine engine = manager.getEngineByName("nashorn");
+    public static void main(String[] args) throws Exception {
+        ScriptEngineManager manager = new ScriptEngineManager();
+        ScriptEngine engine = manager.getEngineByName("nashorn");
 
         // JavaScript code in a String
-        final String script = "var obj = new Object(); obj.run = function() { print('run method called'); }";
+        String script = "var obj = new Object(); obj.run = function() { print('run method called'); }";
 
         // evaluate script
         engine.eval(script);
 
         // get script object on which we want to implement the interface with
-        final Object obj = engine.get("obj");
+        Object obj = engine.get("obj");
 
-        final Invocable inv = (Invocable) engine;
+        Invocable inv = (Invocable) engine;
 
         // get Runnable interface object from engine. This interface methods
         // are implemented by script methods of object 'obj'
-        final Runnable r = inv.getInterface(obj, Runnable.class);
+        Runnable r = inv.getInterface(obj, Runnable.class);
 
         // start a new thread that runs the script implemented
         // runnable interface
-        final Thread th = new Thread(r);
+        Thread th = new Thread(r);
         th.start();
         th.join();
     }

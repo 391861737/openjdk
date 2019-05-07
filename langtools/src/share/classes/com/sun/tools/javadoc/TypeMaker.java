@@ -28,7 +28,6 @@ package com.sun.tools.javadoc;
 import com.sun.javadoc.*;
 import com.sun.tools.javac.code.Symbol;
 import com.sun.tools.javac.code.Symbol.ClassSymbol;
-import com.sun.tools.javac.code.Symbol.CompletionFailure;
 import com.sun.tools.javac.code.Type;
 import com.sun.tools.javac.code.Type.ArrayType;
 import com.sun.tools.javac.code.Type.ClassType;
@@ -57,21 +56,8 @@ public class TypeMaker {
         return getType(env, t, errorToClassDoc, true);
     }
 
-    public static com.sun.javadoc.Type getType(DocEnv env, Type t,
-            boolean errToClassDoc, boolean considerAnnotations) {
-        try {
-            return getTypeImpl(env, t, errToClassDoc, considerAnnotations);
-        } catch (CompletionFailure cf) {
-            /* Quietly ignore completion failures and try again - the type
-             * for which the CompletionFailure was thrown shouldn't be completed
-             * again by the completer that threw the CompletionFailure.
-             */
-            return getType(env, t, errToClassDoc, considerAnnotations);
-        }
-    }
-
     @SuppressWarnings("fallthrough")
-    private static com.sun.javadoc.Type getTypeImpl(DocEnv env, Type t,
+    public static com.sun.javadoc.Type getType(DocEnv env, Type t,
             boolean errToClassDoc, boolean considerAnnotations) {
         if (env.legacyDoclet) {
             t = env.types.erasure(t);

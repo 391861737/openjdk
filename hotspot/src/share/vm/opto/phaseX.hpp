@@ -92,8 +92,7 @@ public:
   }
 
   void   remove_useless_nodes(VectorSet &useful); // replace with sentinel
-  void   replace_with(NodeHash* nh);
-  void   check_no_speculative_types(); // Check no speculative part for type nodes in table
+  void replace_with(NodeHash* nh);
 
   Node  *sentinel() { return _sentinel; }
 
@@ -148,19 +147,9 @@ protected:
   Unique_Node_List _useful;   // Nodes reachable from root
                               // list is allocated from current resource area
 public:
-  PhaseRemoveUseless(PhaseGVN *gvn, Unique_Node_List *worklist, PhaseNumber phase_num = Remove_Useless);
+  PhaseRemoveUseless( PhaseGVN *gvn, Unique_Node_List *worklist );
 
   Unique_Node_List *get_useful() { return &_useful; }
-};
-
-//------------------------------PhaseRenumber----------------------------------
-// Phase that first performs a PhaseRemoveUseless, then it renumbers compiler
-// structures accordingly.
-class PhaseRenumberLive : public PhaseRemoveUseless {
-public:
-  PhaseRenumberLive(PhaseGVN* gvn,
-                    Unique_Node_List* worklist, Unique_Node_List* new_worklist,
-                    PhaseNumber phase_num = Remove_Useless_And_Renumber_Live);
 };
 
 
@@ -172,7 +161,7 @@ public:
 class PhaseTransform : public Phase {
 protected:
   Arena*     _arena;
-  Node_List  _nodes;           // Map old node indices to new nodes.
+  Node_Array _nodes;           // Map old node indices to new nodes.
   Type_Array _types;           // Map old node indices to Types.
 
   // ConNode caches:
@@ -197,13 +186,7 @@ public:
 
   Arena*      arena()   { return _arena; }
   Type_Array& types()   { return _types; }
-  void replace_types(Type_Array new_types) {
-    _types = new_types;
-  }
   // _nodes is used in varying ways by subclasses, which define local accessors
-  uint nodes_size() {
-    return _nodes.size();
-  }
 
 public:
   // Get a previously recorded type for the node n.
@@ -518,9 +501,6 @@ public:
                                         Deoptimization::DeoptReason reason);
 
   void remove_speculative_types();
-  void check_no_speculative_types() {
-    _table.check_no_speculative_types();
-  }
 
 #ifndef PRODUCT
 protected:

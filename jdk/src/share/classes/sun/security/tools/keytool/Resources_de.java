@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2000, 2016, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2000, 2013, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -72,7 +72,7 @@ public class Resources_de extends java.util.ListResourceBundle {
         {"Imports.entries.from.a.JDK.1.1.x.style.identity.database",
                 "Importiert Eintr\u00E4ge aus einer Identity-Datenbank im JDK 1.1.x-Stil"}, //-identitydb
         {"Imports.a.certificate.or.a.certificate.chain",
-                "Importiert ein Zertifikat oder eine Zertifikatskette"}, //-importcert
+                "Importiert ein Zertifikat oder eine Zertifikatkette"}, //-importcert
         {"Imports.a.password",
                 "Importiert ein Kennwort"}, //-importpass
         {"Imports.one.or.all.entries.from.another.keystore",
@@ -304,7 +304,7 @@ public class Resources_de extends java.util.ListResourceBundle {
                 "{0}, {1,date}, "},
         {"alias.", "{0}, "},
         {"Entry.type.type.", "Eintragstyp: {0}"},
-        {"Certificate.chain.length.", "Zertifikatskettenl\u00E4nge: "},
+        {"Certificate.chain.length.", "Zertifikatkettenl\u00E4nge: "},
         {"Certificate.i.1.", "Zertifikat[{0,number,integer}]:"},
         {"Certificate.fingerprint.SHA1.", "Zertifikat-Fingerprint (SHA1): "},
         {"Keystore.type.", "Keystore-Typ: "},
@@ -336,7 +336,7 @@ public class Resources_de extends java.util.ListResourceBundle {
         {"New.prompt.", "Neues {0}: "},
         {"Passwords.must.differ", "Kennw\u00F6rter m\u00FCssen sich unterscheiden"},
         {"Re.enter.new.prompt.", "Neues {0} erneut eingeben: "},
-        {"Re.enter.password.", "Geben Sie das Kennwort erneut ein: "},
+        {"Re.enter.passpword.", "Geben Sie das Kennwort erneut ein: "},
         {"Re.enter.new.password.", "Neues Kennwort erneut eingeben: "},
         {"They.don.t.match.Try.again", "Keine \u00DCbereinstimmung. Wiederholen Sie den Vorgang"},
         {"Enter.prompt.alias.name.", "{0}-Aliasnamen eingeben:  "},
@@ -367,7 +367,7 @@ public class Resources_de extends java.util.ListResourceBundle {
         {"Alias.alias.has.no.key",
                 "Alias <{0}> verf\u00FCgt \u00FCber keinen Schl\u00FCssel"},
         {"Alias.alias.references.an.entry.type.that.is.not.a.private.key.entry.The.keyclone.command.only.supports.cloning.of.private.key",
-                 "Alias <{0}> verweist auf einen Eintragstyp, der kein Private Key-Eintrag ist. Der Befehl -keyclone unterst\u00FCtzt nur das Klonen von Private Key-Eintr\u00E4gen"},
+                 "Alias <{0}> verweist auf einen Eintragstyp, der kein Private Key-Eintrag ist. Der Befehl -keyclone unterst\u00FCtzt nur das Clonen von Private Key-Eintr\u00E4gen"},
 
         {".WARNING.WARNING.WARNING.",
             "*****************  WARNING WARNING WARNING  *****************"},
@@ -388,9 +388,9 @@ public class Resources_de extends java.util.ListResourceBundle {
         {"Certificate.reply.does.not.contain.public.key.for.alias.",
                 "Zertifikatantwort enth\u00E4lt keinen Public Key f\u00FCr <{0}>"},
         {"Incomplete.certificate.chain.in.reply",
-                "Unvollst\u00E4ndige Zertifikatskette in Antwort"},
+                "Unvollst\u00E4ndige Zertifikatkette in Antwort"},
         {"Certificate.chain.in.reply.does.not.verify.",
-                "Zertifikatskette in Antwort verifiziert nicht: "},
+                "Zertifikatkette in Antwort verifiziert nicht: "},
         {"Top.level.certificate.in.reply.",
                 "Zertifikat der obersten Ebene in Antwort:\n"},
         {".is.not.trusted.", "... ist nicht vertrauensw\u00FCrdig. "},

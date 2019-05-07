@@ -17,6 +17,9 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+/*
+ * $Id: ErrorMessages_zh_CN.java /st_wptg_1.8.0.0.0jdk/2 2013/09/16 04:44:25 gmolloy Exp $
+ */
 
 package com.sun.org.apache.xalan.internal.xsltc.compiler.util;
 
@@ -596,9 +599,6 @@ public class ErrorMessages_zh_CN extends ListResourceBundle {
          */
         {ErrorMsg.JAXP_INVALID_ATTR_ERR,
         "TransformerFactory \u65E0\u6CD5\u8BC6\u522B\u5C5E\u6027 ''{0}''\u3002"},
-
-        {ErrorMsg.JAXP_INVALID_ATTR_VALUE_ERR,
-        "\u4E3A ''{0}'' \u5C5E\u6027\u6307\u5B9A\u7684\u503C\u4E0D\u6B63\u786E\u3002"},
 
         /*
          * Note to translators:  "setResult()" and "startDocument()" are Java

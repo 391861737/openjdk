@@ -30,7 +30,7 @@
 //---------------------------------------------------------------------------------
 //
 //  Little Color Management System
-//  Copyright (c) 1998-2016 Marti Maria Saguer
+//  Copyright (c) 1998-2011 Marti Maria Saguer
 //
 // Permission is hereby granted, free of charge, to any person obtaining
 // a copy of this software and associated documentation files (the "Software"),
@@ -52,7 +52,7 @@
 //
 //---------------------------------------------------------------------------------
 //
-// Version 2.8
+// Version 2.4
 //
 
 #ifndef _lcms2_H
@@ -84,9 +84,6 @@
 // Uncomment to get rid of the tables for "half" float support
 // #define CMS_NO_HALF_SUPPORT 1
 
-// Uncomment to get rid of pthreads/windows dependency
-// #define CMS_NO_PTHREADS  1
-
 // ********** End of configuration toggles ******************************
 
 // Needed for streams
@@ -104,7 +101,7 @@ extern "C" {
 #endif
 
 // Version/release
-#define LCMS_VERSION        2080
+#define LCMS_VERSION        2040
 
 // I will give the chance of redefining basic types for compilers that are not fully C99 compliant
 #ifndef CMS_BASIC_TYPES_ALREADY_DEFINED
@@ -202,45 +199,32 @@ typedef int                  cmsBool;
 #  define CMS_IS_WINDOWS_ 1
 #endif
 
-// Try to detect big endian platforms. This list can be endless, so primarily rely on the configure script
-// on Unix-like systems, and allow it to be set on the compiler command line using
-// -DCMS_USE_BIG_ENDIAN or something similar
-#ifdef CMS_USE_BIG_ENDIAN // set at compiler command line takes overall precedence
+// Try to detect big endian platforms. This list can be endless, so only some checks are performed over here.
+// you can pass this toggle to the compiler by using -DCMS_USE_BIG_ENDIAN or something similar
 
-#  if CMS_USE_BIG_ENDIAN == 0
-#    undef CMS_USE_BIG_ENDIAN
-#  endif
+#if defined(_HOST_BIG_ENDIAN) || defined(__BIG_ENDIAN__) || defined(WORDS_BIGENDIAN)
+#   define CMS_USE_BIG_ENDIAN      1
+#endif
 
-#else // CMS_USE_BIG_ENDIAN
+#if defined(__sgi__) || defined(__sgi) || defined(__powerpc__) || defined(sparc)
+#   define CMS_USE_BIG_ENDIAN      1
+#endif
 
-#  ifdef WORDS_BIGENDIAN // set by configure (or explicitly on compiler command line)
-#    define CMS_USE_BIG_ENDIAN 1
-#  else // WORDS_BIGENDIAN
-// Fall back to platform/compiler specific tests
-#    if defined(__sgi__) || defined(__sgi) || defined(sparc)
-#      define CMS_USE_BIG_ENDIAN      1
-#    endif
+#if defined(__ppc__) || defined(__s390__) || defined(__s390x__)
+#   define CMS_USE_BIG_ENDIAN   1
+#endif
 
-#    if defined(__s390__) || defined(__s390x__)
-#      define CMS_USE_BIG_ENDIAN   1
-#    endif
+#ifdef TARGET_CPU_PPC
+# if TARGET_CPU_PPC
+#   define CMS_USE_BIG_ENDIAN   1
+# endif
+#endif
 
-#    ifdef macintosh
-#      ifdef __BIG_ENDIAN__
-#        define CMS_USE_BIG_ENDIAN      1
-#      endif
-#      ifdef __LITTLE_ENDIAN__
-#        undef CMS_USE_BIG_ENDIAN
-#      endif
-#    endif
-#  endif  // WORDS_BIGENDIAN
-
-#  if defined(_HOST_BIG_ENDIAN) || defined(__BIG_ENDIAN__)
-#    define CMS_USE_BIG_ENDIAN      1
-#  endif
-
-#endif  // CMS_USE_BIG_ENDIAN
-
+#ifdef macintosh
+# ifdef __BIG_ENDIAN__
+#   define CMS_USE_BIG_ENDIAN      1
+# endif
+#endif
 
 // Calling convention -- this is hardly platform and compiler dependent
 #ifdef CMS_IS_WINDOWS_
@@ -249,7 +233,7 @@ typedef int                  cmsBool;
 #        define CMSEXPORT       __stdcall _export
 #        define CMSAPI
 #     else
-#        define CMSEXPORT      __stdcall
+#        define CMSEXPORT      _stdcall
 #        ifdef CMS_DLL_BUILD
 #            define CMSAPI    __declspec(dllexport)
 #        else
@@ -263,14 +247,6 @@ typedef int                  cmsBool;
 #else
 # define CMSEXPORT
 # define CMSAPI
-#endif
-
-#ifdef HasTHREADS
-# if HasTHREADS == 1
-#    undef CMS_NO_PTHREADS
-# else
-#    define CMS_NO_PTHREADS 1
-# endif
 #endif
 
 // Some common definitions
@@ -391,7 +367,6 @@ typedef enum {
     cmsSigPreview1Tag                       = 0x70726531,  // 'pre1'
     cmsSigPreview2Tag                       = 0x70726532,  // 'pre2'
     cmsSigProfileDescriptionTag             = 0x64657363,  // 'desc'
-    cmsSigProfileDescriptionMLTag           = 0x6473636d,  // 'dscm'
     cmsSigProfileSequenceDescTag            = 0x70736571,  // 'pseq'
     cmsSigProfileSequenceIdTag              = 0x70736964,  // 'psid'
     cmsSigPs2CRD0Tag                        = 0x70736430,  // 'psd0'
@@ -411,8 +386,7 @@ typedef enum {
     cmsSigViewingCondDescTag                = 0x76756564,  // 'vued'
     cmsSigViewingConditionsTag              = 0x76696577,  // 'view'
     cmsSigVcgtTag                           = 0x76636774,  // 'vcgt'
-    cmsSigMetaTag                           = 0x6D657461,  // 'meta'
-    cmsSigArgyllArtsTag                     = 0x61727473   // 'arts'
+    cmsSigMetaTag                           = 0x6D657461   // 'meta'
 
 } cmsTagSignature;
 
@@ -553,8 +527,7 @@ typedef enum {
     cmsSigLab2FloatPCS                  = 0x64326C20,  // 'd2l '
     cmsSigFloatPCS2Lab                  = 0x6C326420,  // 'l2d '
     cmsSigXYZ2FloatPCS                  = 0x64327820,  // 'd2x '
-    cmsSigFloatPCS2XYZ                  = 0x78326420,  // 'x2d '
-    cmsSigClipNegativesElemType         = 0x636c7020   // 'clp '
+    cmsSigFloatPCS2XYZ                  = 0x78326420   // 'x2d '
 
 } cmsStageSignature;
 
@@ -668,6 +641,7 @@ typedef struct {
 
 // Little CMS specific typedefs
 
+typedef void* cmsContext;              // Context identifier for multithreaded environments
 typedef void* cmsHANDLE ;              // Generic handle
 typedef void* cmsHPROFILE;             // Opaque typedefs to hide internals
 typedef void* cmsHTRANSFORM;
@@ -685,7 +659,7 @@ typedef void* cmsHTRANSFORM;
 //            T: Pixeltype
 //            F: Flavor  0=MinIsBlack(Chocolate) 1=MinIsWhite(Vanilla)
 //            P: Planar? 0=Chunky, 1=Planar
-//            X: swap 16 bps endianness?
+//            X: swap 16 bps endianess?
 //            S: Do swap? ie, BGR, KYMC
 //            E: Extra samples
 //            C: Channels (Samples per pixel)
@@ -928,7 +902,7 @@ typedef void* cmsHTRANSFORM;
 #define TYPE_ARGB_FLT         (FLOAT_SH(1)|COLORSPACE_SH(PT_RGB)|EXTRA_SH(1)|CHANNELS_SH(3)|BYTES_SH(4)|SWAPFIRST_SH(1))
 #define TYPE_BGR_FLT          (FLOAT_SH(1)|COLORSPACE_SH(PT_RGB)|CHANNELS_SH(3)|BYTES_SH(4)|DOSWAP_SH(1))
 #define TYPE_BGRA_FLT         (FLOAT_SH(1)|COLORSPACE_SH(PT_RGB)|EXTRA_SH(1)|CHANNELS_SH(3)|BYTES_SH(4)|DOSWAP_SH(1)|SWAPFIRST_SH(1))
-#define TYPE_ABGR_FLT         (FLOAT_SH(1)|COLORSPACE_SH(PT_RGB)|EXTRA_SH(1)|CHANNELS_SH(3)|BYTES_SH(4)|DOSWAP_SH(1))
+#define TYPE_ABGR_FLT         (FLOAT_SH(1)|COLORSPACE_SH(PT_RGB)|CHANNELS_SH(3)|BYTES_SH(4)|DOSWAP_SH(1))
 
 #define TYPE_CMYK_FLT         (FLOAT_SH(1)|COLORSPACE_SH(PT_CMYK)|CHANNELS_SH(4)|BYTES_SH(4))
 
@@ -1032,34 +1006,15 @@ typedef struct {
 
     } cmsICCViewingConditions;
 
-// Get LittleCMS version (for shared objects) -----------------------------------------------------------------------------
-
-CMSAPI int               CMSEXPORT cmsGetEncodedCMMversion(void);
-
 // Support of non-standard functions --------------------------------------------------------------------------------------
 
 CMSAPI int               CMSEXPORT cmsstrcasecmp(const char* s1, const char* s2);
 CMSAPI long int          CMSEXPORT cmsfilelength(FILE* f);
 
-
-// Context handling --------------------------------------------------------------------------------------------------------
-
-// Each context holds its owns globals and its own plug-ins. There is a global context with the id = 0 for lecacy compatibility
-// though using the global context is not recommended. Proper context handling makes lcms more thread-safe.
-
-typedef struct _cmsContext_struct* cmsContext;
-
-CMSAPI cmsContext       CMSEXPORT cmsCreateContext(void* Plugin, void* UserData);
-CMSAPI void             CMSEXPORT cmsDeleteContext(cmsContext ContexID);
-CMSAPI cmsContext       CMSEXPORT cmsDupContext(cmsContext ContextID, void* NewUserData);
-CMSAPI void*            CMSEXPORT cmsGetContextUserData(cmsContext ContextID);
-
-// Plug-In registering  --------------------------------------------------------------------------------------------------
+// Plug-In registering  ---------------------------------------------------------------------------------------------------
 
 CMSAPI cmsBool           CMSEXPORT cmsPlugin(void* Plugin);
-CMSAPI cmsBool           CMSEXPORT cmsPluginTHR(cmsContext ContextID, void* Plugin);
 CMSAPI void              CMSEXPORT cmsUnregisterPlugins(void);
-CMSAPI void              CMSEXPORT cmsUnregisterPluginsTHR(cmsContext ContextID);
 
 // Error logging ----------------------------------------------------------------------------------------------------------
 
@@ -1096,7 +1051,6 @@ typedef void  (* cmsLogErrorHandlerFunction)(cmsContext ContextID, cmsUInt32Numb
 
 // Allows user to set any specific logger
 CMSAPI void              CMSEXPORT cmsSetLogErrorHandler(cmsLogErrorHandlerFunction Fn);
-CMSAPI void              CMSEXPORT cmsSetLogErrorHandlerTHR(cmsContext ContextID, cmsLogErrorHandlerFunction Fn);
 
 // Conversions --------------------------------------------------------------------------------------------------------------
 
@@ -1236,7 +1190,7 @@ CMSAPI cmsBool           CMSEXPORT cmsPipelineSetSaveAs8bitsFlag(cmsPipeline* lu
 // Where to place/locate the stages in the pipeline chain
 typedef enum { cmsAT_BEGIN, cmsAT_END } cmsStageLoc;
 
-CMSAPI int               CMSEXPORT cmsPipelineInsertStage(cmsPipeline* lut, cmsStageLoc loc, cmsStage* mpe);
+CMSAPI void              CMSEXPORT cmsPipelineInsertStage(cmsPipeline* lut, cmsStageLoc loc, cmsStage* mpe);
 CMSAPI void              CMSEXPORT cmsPipelineUnlinkStage(cmsPipeline* lut, cmsStageLoc loc, cmsStage** mpe);
 
 // This function is quite useful to analyze the structure of a Pipeline and retrieve the Stage elements
@@ -1319,13 +1273,6 @@ CMSAPI cmsUInt32Number   CMSEXPORT cmsMLUgetWide(const cmsMLU* mlu,
 CMSAPI cmsBool           CMSEXPORT cmsMLUgetTranslation(const cmsMLU* mlu,
                                                          const char LanguageCode[3], const char CountryCode[3],
                                                          char ObtainedLanguage[3], char ObtainedCountry[3]);
-
-CMSAPI cmsUInt32Number   CMSEXPORT cmsMLUtranslationsCount(const cmsMLU* mlu);
-
-CMSAPI cmsBool           CMSEXPORT cmsMLUtranslationsCodes(const cmsMLU* mlu,
-                                                             cmsUInt32Number idx,
-                                                             char LanguageCode[3],
-                                                             char CountryCode[3]);
 
 // Undercolorremoval & black generation -------------------------------------------------------------------------------------
 
@@ -1414,7 +1361,7 @@ typedef struct {
 typedef struct {
 
     cmsUInt32Number n;
-    cmsContext      ContextID;
+    cmsContext     ContextID;
     cmsPSEQDESC*    seq;
 
 } cmsSEQ;
@@ -1477,7 +1424,6 @@ CMSAPI cmsUInt32Number   CMSEXPORT cmsGetHeaderRenderingIntent(cmsHPROFILE hProf
 CMSAPI void              CMSEXPORT cmsSetHeaderFlags(cmsHPROFILE hProfile, cmsUInt32Number Flags);
 CMSAPI cmsUInt32Number   CMSEXPORT cmsGetHeaderManufacturer(cmsHPROFILE hProfile);
 CMSAPI void              CMSEXPORT cmsSetHeaderManufacturer(cmsHPROFILE hProfile, cmsUInt32Number manufacturer);
-CMSAPI cmsUInt32Number   CMSEXPORT cmsGetHeaderCreator(cmsHPROFILE hProfile);
 CMSAPI cmsUInt32Number   CMSEXPORT cmsGetHeaderModel(cmsHPROFILE hProfile);
 CMSAPI void              CMSEXPORT cmsSetHeaderModel(cmsHPROFILE hProfile, cmsUInt32Number model);
 CMSAPI void              CMSEXPORT cmsSetHeaderAttributes(cmsHPROFILE hProfile, cmsUInt64Number Flags);
@@ -1514,7 +1460,7 @@ CMSAPI int                      CMSEXPORT _cmsLCMScolorSpace(cmsColorSpaceSignat
 
 CMSAPI cmsUInt32Number   CMSEXPORT cmsChannelsOf(cmsColorSpaceSignature ColorSpace);
 
-// Build a suitable formatter for the colorspace of this profile. nBytes=1 means 8 bits, nBytes=2 means 16 bits.
+// Build a suitable formatter for the colorspace of this profile
 CMSAPI cmsUInt32Number   CMSEXPORT cmsFormatterForColorspaceOfProfile(cmsHPROFILE hProfile, cmsUInt32Number nBytes, cmsBool lIsFloat);
 CMSAPI cmsUInt32Number   CMSEXPORT cmsFormatterForPCSOfProfile(cmsHPROFILE hProfile, cmsUInt32Number nBytes, cmsBool lIsFloat);
 
@@ -1543,7 +1489,6 @@ CMSAPI cmsIOHANDLER*     CMSEXPORT cmsOpenIOhandlerFromFile(cmsContext ContextID
 CMSAPI cmsIOHANDLER*     CMSEXPORT cmsOpenIOhandlerFromStream(cmsContext ContextID, FILE* Stream);
 CMSAPI cmsIOHANDLER*     CMSEXPORT cmsOpenIOhandlerFromMem(cmsContext ContextID, void *Buffer, cmsUInt32Number size, const char* AccessMode);
 CMSAPI cmsIOHANDLER*     CMSEXPORT cmsOpenIOhandlerFromNULL(cmsContext ContextID);
-CMSAPI cmsIOHANDLER*     CMSEXPORT cmsGetProfileIOhandler(cmsHPROFILE hProfile);
 CMSAPI cmsBool           CMSEXPORT cmsCloseIOhandler(cmsIOHANDLER* io);
 
 // MD5 message digest --------------------------------------------------------------------------------------------------
@@ -1559,7 +1504,6 @@ CMSAPI cmsHPROFILE      CMSEXPORT cmsOpenProfileFromStreamTHR(cmsContext Context
 CMSAPI cmsHPROFILE      CMSEXPORT cmsOpenProfileFromMem(const void * MemPtr, cmsUInt32Number dwSize);
 CMSAPI cmsHPROFILE      CMSEXPORT cmsOpenProfileFromMemTHR(cmsContext ContextID, const void * MemPtr, cmsUInt32Number dwSize);
 CMSAPI cmsHPROFILE      CMSEXPORT cmsOpenProfileFromIOhandlerTHR(cmsContext ContextID, cmsIOHANDLER* io);
-CMSAPI cmsHPROFILE      CMSEXPORT cmsOpenProfileFromIOhandler2THR(cmsContext ContextID, cmsIOHANDLER* io, cmsBool write);
 CMSAPI cmsBool          CMSEXPORT cmsCloseProfile(cmsHPROFILE hProfile);
 
 CMSAPI cmsBool          CMSEXPORT cmsSaveProfileToFile(cmsHPROFILE hProfile, const char* FileName);
@@ -1650,7 +1594,6 @@ CMSAPI cmsHPROFILE      CMSEXPORT cmsTransform2DeviceLink(cmsHTRANSFORM hTransfo
 
 // Call with NULL as parameters to get the intent count
 CMSAPI cmsUInt32Number  CMSEXPORT cmsGetSupportedIntents(cmsUInt32Number nMax, cmsUInt32Number* Codes, char** Descriptions);
-CMSAPI cmsUInt32Number  CMSEXPORT cmsGetSupportedIntentsTHR(cmsContext ContextID, cmsUInt32Number nMax, cmsUInt32Number* Codes, char** Descriptions);
 
 // Flags
 
@@ -1677,12 +1620,6 @@ CMSAPI cmsUInt32Number  CMSEXPORT cmsGetSupportedIntentsTHR(cmsContext ContextID
 #define cmsFLAGS_FORCE_CLUT               0x0002    // Force CLUT optimization
 #define cmsFLAGS_CLUT_POST_LINEARIZATION  0x0001    // create postlinearization tables if possible
 #define cmsFLAGS_CLUT_PRE_LINEARIZATION   0x0010    // create prelinearization tables if possible
-
-// Specific to unbounded mode
-#define cmsFLAGS_NONEGATIVES              0x8000    // Prevent negative numbers in floating point transforms
-
-// Copy alpha channels when transforming
-#define cmsFLAGS_COPY_ALPHA               0x04000000 // Alpha channels are copied on cmsDoTransform()
 
 // Fine-tune control over number of gridpoints
 #define cmsFLAGS_GRIDPOINTS(n)           (((n) & 0xFF) << 16)
@@ -1761,39 +1698,18 @@ CMSAPI void             CMSEXPORT cmsDoTransform(cmsHTRANSFORM Transform,
                                                  void * OutputBuffer,
                                                  cmsUInt32Number Size);
 
-CMSAPI void             CMSEXPORT cmsDoTransformStride(cmsHTRANSFORM Transform,   // Deprecated
+CMSAPI void             CMSEXPORT cmsDoTransformStride(cmsHTRANSFORM Transform,
                                                  const void * InputBuffer,
                                                  void * OutputBuffer,
                                                  cmsUInt32Number Size,
                                                  cmsUInt32Number Stride);
 
-CMSAPI void             CMSEXPORT cmsDoTransformLineStride(cmsHTRANSFORM  Transform,
-                                                 const void* InputBuffer,
-                                                 void* OutputBuffer,
-                                                 cmsUInt32Number PixelsPerLine,
-                                                 cmsUInt32Number LineCount,
-                                                 cmsUInt32Number BytesPerLineIn,
-                                                 cmsUInt32Number BytesPerLineOut,
-                                                 cmsUInt32Number BytesPerPlaneIn,
-                                                 cmsUInt32Number BytesPerPlaneOut);
 
-
-CMSAPI void             CMSEXPORT cmsSetAlarmCodes(const cmsUInt16Number NewAlarm[cmsMAXCHANNELS]);
+CMSAPI void             CMSEXPORT cmsSetAlarmCodes(cmsUInt16Number NewAlarm[cmsMAXCHANNELS]);
 CMSAPI void             CMSEXPORT cmsGetAlarmCodes(cmsUInt16Number NewAlarm[cmsMAXCHANNELS]);
-
-
-CMSAPI void             CMSEXPORT cmsSetAlarmCodesTHR(cmsContext ContextID,
-                                                          const cmsUInt16Number AlarmCodes[cmsMAXCHANNELS]);
-CMSAPI void             CMSEXPORT cmsGetAlarmCodesTHR(cmsContext ContextID,
-                                                          cmsUInt16Number AlarmCodes[cmsMAXCHANNELS]);
-
-
 
 // Adaptation state for absolute colorimetric intent
 CMSAPI cmsFloat64Number CMSEXPORT cmsSetAdaptationState(cmsFloat64Number d);
-CMSAPI cmsFloat64Number CMSEXPORT cmsSetAdaptationStateTHR(cmsContext ContextID, cmsFloat64Number d);
-
-
 
 // Grab the ContextID from an open transform. Returns NULL if a NULL transform is passed
 CMSAPI cmsContext       CMSEXPORT cmsGetTransformContextID(cmsHTRANSFORM hTransform);

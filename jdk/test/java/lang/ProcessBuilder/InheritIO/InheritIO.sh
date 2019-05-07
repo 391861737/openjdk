@@ -36,12 +36,9 @@ if [ "x${TESTJAVA}" = "x" ]; then
   exit 1
 fi
 
-if [ "x${COMPILEJAVA}" = "x" ]; then
-  COMPILEJAVA="${TESTJAVA}"
-fi
 
 JAVA="${TESTJAVA}/bin/java"
-JAVAC="${COMPILEJAVA}/bin/javac"
+JAVAC="${TESTJAVA}/bin/javac"
 
 cp -f ${TESTSRC}/InheritIO.java .
 

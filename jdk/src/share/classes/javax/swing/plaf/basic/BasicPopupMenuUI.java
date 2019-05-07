@@ -884,9 +884,7 @@ public class BasicPopupMenuUI extends PopupMenuUI {
                     processMouseEvent(me);
                 break;
             case MouseEvent.MOUSE_WHEEL:
-                if (isInPopup(src)
-                    || ((src instanceof JComboBox) && ((JComboBox) src).isPopupVisible())) {
-
+                if (isInPopup(src)) {
                     return;
                 }
                 cancelPopupMenu();

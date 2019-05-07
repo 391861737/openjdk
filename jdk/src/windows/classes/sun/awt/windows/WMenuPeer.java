@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 1996, 2016, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 1996, 2005, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -31,13 +31,10 @@ class WMenuPeer extends WMenuItemPeer implements MenuPeer {
 
     // MenuPeer implementation
 
-    @Override
     public native void addSeparator();
-    @Override
     public void addItem(MenuItem item) {
         WMenuItemPeer itemPeer = (WMenuItemPeer) WToolkit.targetToPeer(item);
     }
-    @Override
     public native void delItem(int index);
 
     // Toolkit & peer internals
@@ -51,12 +48,10 @@ class WMenuPeer extends WMenuItemPeer implements MenuPeer {
         if (parent instanceof MenuBar) {
             WMenuBarPeer mbPeer = (WMenuBarPeer) WToolkit.targetToPeer(parent);
             this.parent = mbPeer;
-            mbPeer.addChildPeer(this);
             createMenu(mbPeer);
         }
         else if (parent instanceof Menu) {
             this.parent = (WMenuPeer) WToolkit.targetToPeer(parent);
-            this.parent.addChildPeer(this);
             createSubMenu(this.parent);
         }
         else {

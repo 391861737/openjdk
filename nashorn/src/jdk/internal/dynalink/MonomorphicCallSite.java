@@ -99,17 +99,17 @@ public class MonomorphicCallSite extends AbstractRelinkableCallSite {
      * Creates a new call site with monomorphic inline caching strategy.
      * @param descriptor the descriptor for this call site
      */
-    public MonomorphicCallSite(final CallSiteDescriptor descriptor) {
+    public MonomorphicCallSite(CallSiteDescriptor descriptor) {
         super(descriptor);
     }
 
     @Override
-    public void relink(final GuardedInvocation guardedInvocation, final MethodHandle relink) {
+    public void relink(GuardedInvocation guardedInvocation, MethodHandle relink) {
         setTarget(guardedInvocation.compose(relink));
     }
 
     @Override
-    public void resetAndRelink(final GuardedInvocation guardedInvocation, final MethodHandle relink) {
+    public void resetAndRelink(GuardedInvocation guardedInvocation, MethodHandle relink) {
         relink(guardedInvocation, relink);
     }
 }

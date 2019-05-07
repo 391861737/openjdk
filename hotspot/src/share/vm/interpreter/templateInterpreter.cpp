@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 1997, 2016, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 1997, 2013, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -61,9 +61,8 @@ void TemplateInterpreter::initialize() {
 // Implementation of EntryPoint
 
 EntryPoint::EntryPoint() {
-  assert(number_of_states == 10, "check the code below");
+  assert(number_of_states == 9, "check the code below");
   _entry[btos] = NULL;
-  _entry[ztos] = NULL;
   _entry[ctos] = NULL;
   _entry[stos] = NULL;
   _entry[atos] = NULL;
@@ -75,10 +74,9 @@ EntryPoint::EntryPoint() {
 }
 
 
-EntryPoint::EntryPoint(address bentry, address zentry, address centry, address sentry, address aentry, address ientry, address lentry, address fentry, address dentry, address ventry) {
-  assert(number_of_states == 10, "check the code below");
+EntryPoint::EntryPoint(address bentry, address centry, address sentry, address aentry, address ientry, address lentry, address fentry, address dentry, address ventry) {
+  assert(number_of_states == 9, "check the code below");
   _entry[btos] = bentry;
-  _entry[ztos] = zentry;
   _entry[ctos] = centry;
   _entry[stos] = sentry;
   _entry[atos] = aentry;
@@ -106,7 +104,7 @@ void EntryPoint::print() {
   tty->print("[");
   for (int i = 0; i < number_of_states; i++) {
     if (i > 0) tty->print(", ");
-    tty->print(INTPTR_FORMAT, p2i(_entry[i]));
+    tty->print(INTPTR_FORMAT, _entry[i]);
   }
   tty->print("]");
 }
@@ -129,7 +127,6 @@ EntryPoint DispatchTable::entry(int i) const {
   return
     EntryPoint(
       _table[btos][i],
-      _table[ztos][i],
       _table[ctos][i],
       _table[stos][i],
       _table[atos][i],
@@ -144,9 +141,8 @@ EntryPoint DispatchTable::entry(int i) const {
 
 void DispatchTable::set_entry(int i, EntryPoint& entry) {
   assert(0 <= i && i < length, "index out of bounds");
-  assert(number_of_states == 10, "check the code below");
+  assert(number_of_states == 9, "check the code below");
   _table[btos][i] = entry.entry(btos);
-  _table[ztos][i] = entry.entry(ztos);
   _table[ctos][i] = entry.entry(ctos);
   _table[stos][i] = entry.entry(stos);
   _table[atos][i] = entry.entry(atos);
@@ -229,7 +225,6 @@ void TemplateInterpreterGenerator::generate_all() {
     Interpreter::_trace_code =
       EntryPoint(
         generate_trace_code(btos),
-        generate_trace_code(ztos),
         generate_trace_code(ctos),
         generate_trace_code(stos),
         generate_trace_code(atos),
@@ -250,7 +245,6 @@ void TemplateInterpreterGenerator::generate_all() {
           generate_return_entry_for(itos, i, index_size),
           generate_return_entry_for(itos, i, index_size),
           generate_return_entry_for(itos, i, index_size),
-          generate_return_entry_for(itos, i, index_size),
           generate_return_entry_for(atos, i, index_size),
           generate_return_entry_for(itos, i, index_size),
           generate_return_entry_for(ltos, i, index_size),
@@ -262,16 +256,13 @@ void TemplateInterpreterGenerator::generate_all() {
   }
 
   { CodeletMark cm(_masm, "invoke return entry points");
-    // These states are in order specified in TosState, except btos/ztos/ctos/stos are
-    // really the same as itos since there is no top of stack optimization for these types
-    const TosState states[] = {itos, itos, itos, itos, itos, ltos, ftos, dtos, atos, vtos, ilgl};
+    const TosState states[] = {itos, itos, itos, itos, ltos, ftos, dtos, atos, vtos};
     const int invoke_length = Bytecodes::length_for(Bytecodes::_invokestatic);
     const int invokeinterface_length = Bytecodes::length_for(Bytecodes::_invokeinterface);
     const int invokedynamic_length = Bytecodes::length_for(Bytecodes::_invokedynamic);
 
     for (int i = 0; i < Interpreter::number_of_return_addrs; i++) {
       TosState state = states[i];
-      assert(state != ilgl, "states array is wrong above");
       Interpreter::_invoke_return_entry[i] = generate_return_entry_for(state, invoke_length, sizeof(u2));
       Interpreter::_invokeinterface_return_entry[i] = generate_return_entry_for(state, invokeinterface_length, sizeof(u2));
       Interpreter::_invokedynamic_return_entry[i] = generate_return_entry_for(state, invokedynamic_length, sizeof(u4));
@@ -282,7 +273,6 @@ void TemplateInterpreterGenerator::generate_all() {
     Interpreter::_earlyret_entry =
       EntryPoint(
         generate_earlyret_entry_for(btos),
-        generate_earlyret_entry_for(ztos),
         generate_earlyret_entry_for(ctos),
         generate_earlyret_entry_for(stos),
         generate_earlyret_entry_for(atos),
@@ -298,7 +288,6 @@ void TemplateInterpreterGenerator::generate_all() {
     for (int i = 0; i < Interpreter::number_of_deopt_entries; i++) {
       Interpreter::_deopt_entry[i] =
         EntryPoint(
-          generate_deopt_entry_for(itos, i),
           generate_deopt_entry_for(itos, i),
           generate_deopt_entry_for(itos, i),
           generate_deopt_entry_for(itos, i),
@@ -329,7 +318,6 @@ void TemplateInterpreterGenerator::generate_all() {
     Interpreter::_continuation_entry =
       EntryPoint(
         generate_continuation_for(btos),
-        generate_continuation_for(ztos),
         generate_continuation_for(ctos),
         generate_continuation_for(stos),
         generate_continuation_for(atos),
@@ -345,7 +333,6 @@ void TemplateInterpreterGenerator::generate_all() {
     Interpreter::_safept_entry =
       EntryPoint(
         generate_safept_entry_for(btos, CAST_FROM_FN_PTR(address, InterpreterRuntime::at_safepoint)),
-        generate_safept_entry_for(ztos, CAST_FROM_FN_PTR(address, InterpreterRuntime::at_safepoint)),
         generate_safept_entry_for(ctos, CAST_FROM_FN_PTR(address, InterpreterRuntime::at_safepoint)),
         generate_safept_entry_for(stos, CAST_FROM_FN_PTR(address, InterpreterRuntime::at_safepoint)),
         generate_safept_entry_for(atos, CAST_FROM_FN_PTR(address, InterpreterRuntime::at_safepoint)),
@@ -449,7 +436,7 @@ void TemplateInterpreterGenerator::set_safepoints_for_all_bytes() {
 
 void TemplateInterpreterGenerator::set_unimplemented(int i) {
   address e = _unimplemented_bytecode;
-  EntryPoint entry(e, e, e, e, e, e, e, e, e, e);
+  EntryPoint entry(e, e, e, e, e, e, e, e, e);
   Interpreter::_normal_table.set_entry(i, entry);
   Interpreter::_wentry_point[i] = _unimplemented_bytecode;
 }
@@ -461,7 +448,6 @@ void TemplateInterpreterGenerator::set_entry_points(Bytecodes::Code code) {
   assert(_unimplemented_bytecode    != NULL, "should have been generated before");
   assert(_illegal_bytecode_sequence != NULL, "should have been generated before");
   address bep = _illegal_bytecode_sequence;
-  address zep = _illegal_bytecode_sequence;
   address cep = _illegal_bytecode_sequence;
   address sep = _illegal_bytecode_sequence;
   address aep = _illegal_bytecode_sequence;
@@ -483,7 +469,7 @@ void TemplateInterpreterGenerator::set_entry_points(Bytecodes::Code code) {
     set_wide_entry_point(t, wep);
   }
   // set entry points
-  EntryPoint entry(bep, zep, cep, sep, aep, iep, lep, fep, dep, vep);
+  EntryPoint entry(bep, cep, sep, aep, iep, lep, fep, dep, vep);
   Interpreter::_normal_table.set_entry(code, entry);
   Interpreter::_wentry_point[code] = wep;
 }
@@ -500,7 +486,6 @@ void TemplateInterpreterGenerator::set_short_entry_points(Template* t, address& 
   assert(t->is_valid(), "template must exist");
   switch (t->tos_in()) {
     case btos:
-    case ztos:
     case ctos:
     case stos:
       ShouldNotReachHere();  // btos/ctos/stos should use itos.
@@ -528,7 +513,7 @@ void TemplateInterpreterGenerator::generate_and_dispatch(Template* t, TosState t
   if (StopInterpreterAt > 0)                                     stop_interpreter_at();
   __ verify_FPU(1, t->tos_in());
 #endif // !PRODUCT
-  int step = 0;
+  int step;
   if (!t->does_dispatch()) {
     step = t->is_wide() ? Bytecodes::wide_length_for(t->bytecode()) : Bytecodes::length_for(t->bytecode());
     if (tos_out == ilgl) tos_out = t->tos_out();

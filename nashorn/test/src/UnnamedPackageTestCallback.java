@@ -23,14 +23,6 @@
  * questions.
  */
 
-/**
- * Interface for callbacks used by the test suite.
- */
 public interface UnnamedPackageTestCallback {
-    /**
-     * Call function
-     * @param s string argument
-     * @return string
-     */
     String call(String s);
 }

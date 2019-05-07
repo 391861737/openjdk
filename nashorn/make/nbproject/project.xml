@@ -98,27 +98,27 @@
                     <script>nbproject/nbjdk.xml</script>
                     <target>debug-nb</target>
                 </action>
-                <action name="run.single">
-                    <script>build.xml</script>
-                    <target>test</target>
+                <action name="debug.single">
+                    <script>nbproject/ide-file-targets.xml</script>
+                    <target>debug-selected-file-in-src</target>
                     <context>
-                        <property>test.class</property>
-                        <folder>../test/src</folder>
+                        <property>debug.class</property>
+                        <folder>test/src</folder>
                         <pattern>\.java$</pattern>
-                        <format>relative-path-noext</format>
+                        <format>java-name</format>
                         <arity>
                             <one-file-only/>
                         </arity>
                     </context>
                 </action>
-                <action name="debug.single">
+                <action name="run.single">
                     <script>nbproject/ide-file-targets.xml</script>
-                    <target>debug-selected-file-in-src</target>
+                    <target>run-selected-file-in-src</target>
                     <context>
-                        <property>test.class</property>
-                        <folder>../test/src</folder>
+                        <property>run.class</property>
+                        <folder>test/src</folder>
                         <pattern>\.java$</pattern>
-                        <format>relative-path-noext</format>
+                        <format>java-name</format>
                         <arity>
                             <one-file-only/>
                         </arity>

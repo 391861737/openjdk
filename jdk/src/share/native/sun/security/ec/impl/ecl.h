@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2007, 2017, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2007, 2011, Oracle and/or its affiliates. All rights reserved.
  * Use is subject to license terms.
  *
  * This library is free software; you can redistribute it and/or
@@ -33,7 +33,6 @@
  * Contributor(s):
  *   Douglas Stebila <douglas@stebila.ca>, Sun Microsystems Laboratories
  *
- * Last Modified Date from the Original Code: May 2017
  *********************************************************************** */
 
 #ifndef _ECL_H
@@ -71,8 +70,7 @@ void EC_FreeCurveParams(ECCurveParams * params);
  * of the group of points on the elliptic curve. Input and output values
  * are assumed to be NOT field-encoded. */
 mp_err ECPoint_mul(const ECGroup *group, const mp_int *k, const mp_int *px,
-                                   const mp_int *py, mp_int *qx, mp_int *qy,
-                                   int timing);
+                                   const mp_int *py, mp_int *qx, mp_int *qy);
 
 /* Elliptic curve scalar-point multiplication. Computes Q(x, y) = k1 * G +
  * k2 * P(x, y), where G is the generator (base point) of the group of
@@ -80,7 +78,7 @@ mp_err ECPoint_mul(const ECGroup *group, const mp_int *k, const mp_int *px,
  * be NOT field-encoded. */
 mp_err ECPoints_mul(const ECGroup *group, const mp_int *k1,
                                         const mp_int *k2, const mp_int *px, const mp_int *py,
-                                        mp_int *qx, mp_int *qy, int timing);
+                                        mp_int *qx, mp_int *qy);
 
 /* Validates an EC public key as described in Section 5.2.2 of X9.62.
  * Returns MP_YES if the public key is valid, MP_NO if the public key

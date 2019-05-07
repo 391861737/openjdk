@@ -29,16 +29,14 @@
  * SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-import javax.script.ScriptEngine;
-import javax.script.ScriptEngineManager;
+import javax.script.*;
 
-@SuppressWarnings("javadoc")
 public class EvalFile {
-    public static void main(final String[] args) throws Exception {
+    public static void main(String[] args) throws Exception {
         // create a script engine manager
-        final ScriptEngineManager factory = new ScriptEngineManager();
+        ScriptEngineManager factory = new ScriptEngineManager();
         // create JavaScript engine
-        final ScriptEngine engine = factory.getEngineByName("nashorn");
+        ScriptEngine engine = factory.getEngineByName("nashorn");
         // evaluate JavaScript code from given file - specified by first argument
         engine.eval(new java.io.FileReader(args[0]));
     }

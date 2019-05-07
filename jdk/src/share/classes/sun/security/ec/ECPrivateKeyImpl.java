@@ -69,7 +69,7 @@ public final class ECPrivateKeyImpl extends PKCS8Key implements ECPrivateKey {
     /**
      * Construct a key from its encoding. Called by the ECKeyFactory.
      */
-    public ECPrivateKeyImpl(byte[] encoded) throws InvalidKeyException {
+    ECPrivateKeyImpl(byte[] encoded) throws InvalidKeyException {
         decode(encoded);
     }
 
@@ -77,7 +77,7 @@ public final class ECPrivateKeyImpl extends PKCS8Key implements ECPrivateKey {
      * Construct a key from its components. Used by the
      * KeyFactory.
      */
-    public ECPrivateKeyImpl(BigInteger s, ECParameterSpec params)
+    ECPrivateKeyImpl(BigInteger s, ECParameterSpec params)
             throws InvalidKeyException {
         this.s = s;
         this.params = params;

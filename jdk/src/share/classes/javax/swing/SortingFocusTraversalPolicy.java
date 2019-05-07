@@ -30,11 +30,6 @@ import java.awt.Window;
 import java.util.*;
 import java.awt.FocusTraversalPolicy;
 import sun.util.logging.PlatformLogger;
-import java.lang.reflect.InvocationTargetException;
-import java.lang.reflect.Method;
-import sun.security.action.GetPropertyAction;
-import java.security.AccessController;
-import java.security.PrivilegedAction;
 
 /**
  * A FocusTraversalPolicy that determines traversal order by sorting the
@@ -94,34 +89,6 @@ public class SortingFocusTraversalPolicy
     final private int FORWARD_TRAVERSAL = 0;
     final private int BACKWARD_TRAVERSAL = 1;
 
-    /*
-     * When true (by default), the legacy merge-sort algo is used to sort an FTP cycle.
-     * When false, the default (tim-sort) algo is used, which may lead to an exception.
-     * See: JDK-8048887
-     */
-    private static final boolean legacySortingFTPEnabled;
-    private static final Method legacyMergeSortMethod;
-
-    static {
-        legacySortingFTPEnabled = "true".equals(AccessController.doPrivileged(
-            new GetPropertyAction("swing.legacySortingFTPEnabled", "true")));
-        legacyMergeSortMethod = legacySortingFTPEnabled ?
-            AccessController.doPrivileged(new PrivilegedAction<Method>() {
-                public Method run() {
-                    try {
-                        Class c = Class.forName("java.util.Arrays");
-                        Method m = c.getDeclaredMethod("legacyMergeSort", new Class[]{Object[].class, Comparator.class});
-                        m.setAccessible(true);
-                        return m;
-                    } catch (ClassNotFoundException | NoSuchMethodException e) {
-                        // using default sorting algo
-                        return null;
-                    }
-                }
-            }) :
-            null;
-    }
-
     /**
      * Constructs a SortingFocusTraversalPolicy without a Comparator.
      * Subclasses must set the Comparator using <code>setComparator</code>
@@ -166,30 +133,8 @@ public class SortingFocusTraversalPolicy
     private void enumerateAndSortCycle(Container focusCycleRoot, List<Component> cycle) {
         if (focusCycleRoot.isShowing()) {
             enumerateCycle(focusCycleRoot, cycle);
-            if (!legacySortingFTPEnabled ||
-                !legacySort(cycle, comparator))
-            {
-                Collections.sort(cycle, comparator);
-            }
+            Collections.sort(cycle, comparator);
         }
-    }
-
-    private boolean legacySort(List<Component> l, Comparator<? super Component> c) {
-        if (legacyMergeSortMethod == null)
-            return false;
-
-        Object[] a = l.toArray();
-        try {
-            legacyMergeSortMethod.invoke(null, a, c);
-        } catch (IllegalAccessException | InvocationTargetException e) {
-            return false;
-        }
-        ListIterator<Component> i = l.listIterator();
-        for (Object e : a) {
-            i.next();
-            i.set((Component)e);
-        }
-        return true;
     }
 
     private void enumerateCycle(Container container, List<Component> cycle) {
@@ -566,10 +511,7 @@ public class SortingFocusTraversalPolicy
             } else if (comp instanceof Container && comp != aContainer) {
                 Container cont = (Container)comp;
                 if (cont.isFocusTraversalPolicyProvider()) {
-                    Component retComp = cont.getFocusTraversalPolicy().getLastComponent(cont);
-                    if (retComp != null) {
-                        return retComp;
-                    }
+                    return cont.getFocusTraversalPolicy().getLastComponent(cont);
                 }
             }
         }

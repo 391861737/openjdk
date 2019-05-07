@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 1998, 2015, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 1998, 2011, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -277,6 +277,7 @@ public class ObjectReferenceImpl extends ValueImpl
     void validateMethodInvocation(Method method, int options)
                                          throws InvalidTypeException,
                                          InvocationException {
+
         /*
          * Method must be in this object's class, a superclass, or
          * implemented interface
@@ -285,19 +286,6 @@ public class ObjectReferenceImpl extends ValueImpl
         if (!declType.isAssignableFrom(this)) {
             throw new IllegalArgumentException("Invalid method");
         }
-
-        if (declType instanceof ClassTypeImpl) {
-            validateClassMethodInvocation(method, options);
-        } else if (declType instanceof InterfaceTypeImpl) {
-            validateIfaceMethodInvocation(method, options);
-        } else {
-            throw new InvalidTypeException();
-        }
-    }
-
-    void validateClassMethodInvocation(Method method, int options)
-                                         throws InvalidTypeException,
-                                         InvocationException {
 
         ClassTypeImpl clazz = invokableReferenceType(method);
 
@@ -311,8 +299,10 @@ public class ObjectReferenceImpl extends ValueImpl
         /*
          * For nonvirtual invokes, method must have a body
          */
-        if (isNonVirtual(options)) {
-            if (method.isAbstract()) {
+        if ((options & INVOKE_NONVIRTUAL) != 0) {
+            if (method.declaringType() instanceof InterfaceType) {
+                throw new IllegalArgumentException("Interface method");
+            } else if (method.isAbstract()) {
                 throw new IllegalArgumentException("Abstract method");
             }
         }
@@ -323,7 +313,7 @@ public class ObjectReferenceImpl extends ValueImpl
          * method argument types.
          */
         ClassTypeImpl invokedClass;
-        if (isNonVirtual(options)) {
+        if ((options & INVOKE_NONVIRTUAL) != 0) {
             // No overrides in non-virtual invokes
             invokedClass = clazz;
         } else {
@@ -334,23 +324,12 @@ public class ObjectReferenceImpl extends ValueImpl
              */
             Method invoker = clazz.concreteMethodByName(method.name(),
                                                         method.signature());
-            //  invoker is supposed to be non-null under normal circumstances
+            //  isAssignableFrom check above guarantees non-null
             invokedClass = (ClassTypeImpl)invoker.declaringType();
         }
         /* The above code is left over from previous versions.
          * We haven't had time to divine the intent.  jjh, 7/31/2003
          */
-    }
-
-    void validateIfaceMethodInvocation(Method method, int options)
-                                         throws InvalidTypeException,
-                                         InvocationException {
-        /*
-         * Only default methods allowed for nonvirtual invokes
-         */
-        if (isNonVirtual(options) && !method.isDefault()) {
-            throw new IllegalArgumentException("Not a default method");
-        }
     }
 
     PacketStream sendInvokeCommand(final ThreadReferenceImpl thread,
@@ -391,10 +370,7 @@ public class ObjectReferenceImpl extends ValueImpl
         ThreadReferenceImpl thread = (ThreadReferenceImpl)threadIntf;
 
         if (method.isStatic()) {
-            if (referenceType() instanceof InterfaceType) {
-                InterfaceType type = (InterfaceType)referenceType();
-                return type.invokeMethod(thread, method, origArguments, options);
-            } else if (referenceType() instanceof ClassType) {
+            if (referenceType() instanceof ClassType) {
                 ClassType type = (ClassType)referenceType();
                 return type.invokeMethod(thread, method, origArguments, options);
             } else {
@@ -623,9 +599,5 @@ public class ObjectReferenceImpl extends ValueImpl
 
     byte typeValueKey() {
         return JDWP.Tag.OBJECT;
-    }
-
-    private static boolean isNonVirtual(int options) {
-        return (options & INVOKE_NONVIRTUAL) != 0;
     }
 }

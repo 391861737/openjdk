@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2003, 2014, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2003, 2013, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -33,12 +33,9 @@
 #include "runtime/init.hpp"
 #include "runtime/thread.hpp"
 #include "runtime/vframe.hpp"
-#include "runtime/thread.inline.hpp"
 #include "runtime/vmThread.hpp"
 #include "runtime/vm_operations.hpp"
 #include "services/threadService.hpp"
-
-PRAGMA_FORMAT_MUTE_WARNINGS_FOR_GCC
 
 // TODO: we need to define a naming convention for perf counters
 // to distinguish counters for:
@@ -889,7 +886,7 @@ void DeadlockCycle::print_on(outputStream* st) const {
       st->print("  waiting to lock monitor " INTPTR_FORMAT, waitingToLockMonitor);
       oop obj = (oop)waitingToLockMonitor->object();
       if (obj != NULL) {
-        st->print(" (object "INTPTR_FORMAT ", a %s)", (address)obj,
+        st->print(" (object " INTPTR_FORMAT ", a %s)", (address)obj,
                    (InstanceKlass::cast(obj->klass()))->external_name());
 
         if (!currentThread->current_pending_monitor_is_from_java()) {

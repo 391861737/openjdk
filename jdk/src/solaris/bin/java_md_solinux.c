@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 1998, 2015, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 1998, 2013, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -41,11 +41,7 @@
 
 #define JVM_DLL "libjvm.so"
 #define JAVA_DLL "libjava.so"
-#ifdef AIX
-#define LD_LIBRARY_PATH "LIBPATH"
-#else
 #define LD_LIBRARY_PATH "LD_LIBRARY_PATH"
-#endif
 
 /* help jettison the LD_LIBRARY_PATH settings in the future */
 #ifndef SETENV_REQUIRED
@@ -290,11 +286,6 @@ RequiresSetenv(int wanted, const char *jvmpath) {
     char *llp;
     char *dmllp = NULL;
     char *p; /* a utility pointer */
-
-#ifdef AIX
-    /* We always have to set the LIBPATH on AIX because ld doesn't support $ORIGIN. */
-    return JNI_TRUE;
-#endif
 
     llp = getenv("LD_LIBRARY_PATH");
 #ifdef __solaris__
@@ -607,21 +598,16 @@ CreateExecutionEnvironment(int *pargc, char ***pargv,
              * If not on Solaris, assume only a single LD_LIBRARY_PATH
              * variable.
              */
-            runpath = getenv(LD_LIBRARY_PATH);
+            runpath = getenv("LD_LIBRARY_PATH");
 #endif /* __solaris__ */
 
             /* runpath contains current effective LD_LIBRARY_PATH setting */
 
             jvmpath = JLI_StringDup(jvmpath);
-            size_t new_runpath_size = ((runpath != NULL) ? JLI_StrLen(runpath) : 0) +
+            new_runpath = JLI_MemAlloc(((runpath != NULL) ? JLI_StrLen(runpath) : 0) +
                     2 * JLI_StrLen(jrepath) + 2 * JLI_StrLen(arch) +
-#ifdef AIX
-                    /* On AIX we additionally need 'jli' in the path because ld doesn't support $ORIGIN. */
-                    JLI_StrLen(jrepath) + JLI_StrLen(arch) + JLI_StrLen("/lib//jli:") +
-#endif
-                    JLI_StrLen(jvmpath) + 52;
-            new_runpath = JLI_MemAlloc(new_runpath_size);
-            newpath = new_runpath + JLI_StrLen(LD_LIBRARY_PATH "=");
+                    JLI_StrLen(jvmpath) + 52);
+            newpath = new_runpath + JLI_StrLen("LD_LIBRARY_PATH=");
 
 
             /*
@@ -633,12 +619,9 @@ CreateExecutionEnvironment(int *pargc, char ***pargv,
                 if (lastslash)
                     *lastslash = '\0';
 
-                sprintf(new_runpath, LD_LIBRARY_PATH "="
+                sprintf(new_runpath, "LD_LIBRARY_PATH="
                         "%s:"
                         "%s/lib/%s:"
-#ifdef AIX
-                        "%s/lib/%s/jli:" /* Needed on AIX because ld doesn't support $ORIGIN. */
-#endif
                         "%s/../lib/%s",
                         jvmpath,
 #ifdef DUAL_MODE
@@ -646,9 +629,6 @@ CreateExecutionEnvironment(int *pargc, char ***pargv,
                         jrepath, GetArchPath(wanted)
 #else /* !DUAL_MODE */
                         jrepath, arch,
-#ifdef AIX
-                        jrepath, arch,
-#endif
                         jrepath, arch
 #endif /* DUAL_MODE */
                         );
@@ -680,11 +660,6 @@ CreateExecutionEnvironment(int *pargc, char ***pargv,
              * loop of execv() because we test for the prefix, above.
              */
             if (runpath != 0) {
-                /* ensure storage for runpath + colon + NULL */
-                if ((JLI_StrLen(runpath) + 1 + 1) > new_runpath_size) {
-                    JLI_ReportErrorMessageSys(JRE_ERROR11);
-                    exit(1);
-                }
                 JLI_StrCat(new_runpath, ":");
                 JLI_StrCat(new_runpath, runpath);
             }
@@ -817,11 +792,7 @@ GetJREPath(char *path, jint pathsize, const char * arch, jboolean speculative)
             JLI_TraceLauncher("JRE path is %s\n", path);
             return JNI_TRUE;
         }
-        /* ensure storage for path + /jre + NULL */
-        if ((JLI_StrLen(path) + 4  + 1) > pathsize) {
-            JLI_TraceLauncher("Insufficient space to store JRE path\n");
-            return JNI_FALSE;
-        }
+
         /* Does the app ship a private JRE in <apphome>/jre directory? */
         JLI_Snprintf(libjava, sizeof(libjava), "%s/jre/lib/%s/" JAVA_DLL, path, arch);
         if (access(libjava, F_OK) == 0) {
@@ -1029,7 +1000,7 @@ void SplashFreeLibrary() {
 int
 ContinueInNewThread0(int (JNICALL *continuation)(void *), jlong stack_size, void * args) {
     int rslt;
-#ifndef __solaris__
+#ifdef __linux__
     pthread_t tid;
     pthread_attr_t attr;
     pthread_attr_init(&attr);
@@ -1054,7 +1025,7 @@ ContinueInNewThread0(int (JNICALL *continuation)(void *), jlong stack_size, void
     }
 
     pthread_attr_destroy(&attr);
-#else /* __solaris__ */
+#else /* ! __linux__ */
     thread_t tid;
     long flags = 0;
     if (thr_create(NULL, stack_size, (void *(*)(void *))continuation, args, flags, &tid) == 0) {
@@ -1065,7 +1036,7 @@ ContinueInNewThread0(int (JNICALL *continuation)(void *), jlong stack_size, void
       /* See above. Continue in current thread if thr_create() failed */
       rslt = continuation(args);
     }
-#endif /* !__solaris__ */
+#endif /* __linux__ */
     return rslt;
 }
 

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 1997, 2016, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 1997, 2013, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -26,9 +26,6 @@
 #include "classfile/classLoader.hpp"
 #include "classfile/classLoaderData.hpp"
 #include "classfile/javaClasses.hpp"
-#if INCLUDE_CDS
-#include "classfile/sharedClassUtil.hpp"
-#endif
 #include "classfile/symbolTable.hpp"
 #include "classfile/systemDictionary.hpp"
 #include "classfile/vmSymbols.hpp"
@@ -37,7 +34,6 @@
 #include "gc_interface/collectedHeap.inline.hpp"
 #include "interpreter/interpreter.hpp"
 #include "memory/cardTableModRefBS.hpp"
-#include "memory/filemap.hpp"
 #include "memory/gcLocker.inline.hpp"
 #include "memory/genCollectedHeap.hpp"
 #include "memory/genRemSet.hpp"
@@ -78,11 +74,9 @@
 #include "gc_implementation/concurrentMarkSweep/cmsAdaptiveSizePolicy.hpp"
 #include "gc_implementation/concurrentMarkSweep/cmsCollectorPolicy.hpp"
 #include "gc_implementation/g1/g1CollectedHeap.inline.hpp"
-#include "gc_implementation/g1/g1CollectorPolicy_ext.hpp"
+#include "gc_implementation/g1/g1CollectorPolicy.hpp"
 #include "gc_implementation/parallelScavenge/parallelScavengeHeap.hpp"
 #endif // INCLUDE_ALL_GCS
-
-PRAGMA_FORMAT_MUTE_WARNINGS_FOR_GCC
 
 // Known objects
 Klass* Universe::_boolArrayKlassObj                 = NULL;
@@ -114,23 +108,19 @@ oop Universe::_the_min_jint_string                   = NULL;
 LatestMethodCache* Universe::_finalizer_register_cache = NULL;
 LatestMethodCache* Universe::_loader_addClass_cache    = NULL;
 LatestMethodCache* Universe::_pd_implies_cache         = NULL;
-LatestMethodCache* Universe::_throw_illegal_access_error_cache = NULL;
 oop Universe::_out_of_memory_error_java_heap          = NULL;
 oop Universe::_out_of_memory_error_metaspace          = NULL;
 oop Universe::_out_of_memory_error_class_metaspace    = NULL;
 oop Universe::_out_of_memory_error_array_size         = NULL;
 oop Universe::_out_of_memory_error_gc_overhead_limit  = NULL;
-oop Universe::_out_of_memory_error_realloc_objects    = NULL;
 objArrayOop Universe::_preallocated_out_of_memory_error_array = NULL;
 volatile jint Universe::_preallocated_out_of_memory_error_avail_count = 0;
 bool Universe::_verify_in_progress                    = false;
-long Universe::verify_flags                           = Universe::Verify_All;
 oop Universe::_null_ptr_exception_instance            = NULL;
 oop Universe::_arithmetic_exception_instance          = NULL;
 oop Universe::_virtual_machine_error_instance         = NULL;
 oop Universe::_vm_exception                           = NULL;
-oop Universe::_allocation_context_notification_obj    = NULL;
-
+Method* Universe::_throw_illegal_access_error         = NULL;
 Array<int>* Universe::_the_empty_int_array            = NULL;
 Array<u2>* Universe::_the_empty_short_array           = NULL;
 Array<Klass*>* Universe::_the_empty_klass_array     = NULL;
@@ -192,7 +182,6 @@ void Universe::oops_do(OopClosure* f, bool do_all) {
   f->do_oop((oop*)&_out_of_memory_error_class_metaspace);
   f->do_oop((oop*)&_out_of_memory_error_array_size);
   f->do_oop((oop*)&_out_of_memory_error_gc_overhead_limit);
-  f->do_oop((oop*)&_out_of_memory_error_realloc_objects);
     f->do_oop((oop*)&_preallocated_out_of_memory_error_array);
   f->do_oop((oop*)&_null_ptr_exception_instance);
   f->do_oop((oop*)&_arithmetic_exception_instance);
@@ -200,7 +189,6 @@ void Universe::oops_do(OopClosure* f, bool do_all) {
   f->do_oop((oop*)&_main_thread_group);
   f->do_oop((oop*)&_system_thread_group);
   f->do_oop((oop*)&_vm_exception);
-  f->do_oop((oop*)&_allocation_context_notification_obj);
   debug_only(f->do_oop((oop*)&_fullgc_alot_dummy_array);)
 }
 
@@ -236,7 +224,6 @@ void Universe::serialize(SerializeClosure* f, bool do_all) {
   _finalizer_register_cache->serialize(f);
   _loader_addClass_cache->serialize(f);
   _pd_implies_cache->serialize(f);
-  _throw_illegal_access_error_cache->serialize(f);
 }
 
 void Universe::check_alignment(uintx size, uintx alignment, const char* name) {
@@ -249,9 +236,8 @@ void Universe::check_alignment(uintx size, uintx alignment, const char* name) {
 void initialize_basic_type_klass(Klass* k, TRAPS) {
   Klass* ok = SystemDictionary::Object_klass();
   if (UseSharedSpaces) {
-    ClassLoaderData* loader_data = ClassLoaderData::the_null_class_loader_data();
     assert(k->super() == ok, "u3");
-    k->restore_unshareable_info(loader_data, Handle(), CHECK);
+    k->restore_unshareable_info(CHECK);
   } else {
     k->initialize_supers(ok, CHECK);
   }
@@ -578,8 +564,7 @@ bool Universe::should_fill_in_stack_trace(Handle throwable) {
           (throwable() != Universe::_out_of_memory_error_metaspace)  &&
           (throwable() != Universe::_out_of_memory_error_class_metaspace)  &&
           (throwable() != Universe::_out_of_memory_error_array_size) &&
-          (throwable() != Universe::_out_of_memory_error_gc_overhead_limit) &&
-          (throwable() != Universe::_out_of_memory_error_realloc_objects));
+          (throwable() != Universe::_out_of_memory_error_gc_overhead_limit));
 }
 
 
@@ -647,6 +632,7 @@ jint universe_init() {
   guarantee(sizeof(oop) % sizeof(HeapWord) == 0,
             "oop size is not not a multiple of HeapWord size");
   TraceTime timer("Genesis", TraceStartupTime);
+  GC_locker::lock();  // do not allow gc during bootstrapping
   JavaClasses::compute_hard_coded_offsets();
 
   jint status = Universe::initialize_heap();
@@ -665,7 +651,6 @@ jint universe_init() {
   Universe::_finalizer_register_cache = new LatestMethodCache();
   Universe::_loader_addClass_cache    = new LatestMethodCache();
   Universe::_pd_implies_cache         = new LatestMethodCache();
-  Universe::_throw_illegal_access_error_cache = new LatestMethodCache();
 
   if (UseSharedSpaces) {
     // Read the data structures supporting the shared spaces (shared
@@ -679,13 +664,6 @@ jint universe_init() {
     SymbolTable::create_table();
     StringTable::create_table();
     ClassLoader::create_package_info_table();
-
-    if (DumpSharedSpaces) {
-      MetaspaceShared::prepare_for_dumping();
-    }
-  }
-  if (strlen(VerifySubSet) > 0) {
-    Universe::initialize_verify_flags();
   }
 
   return JNI_OK;
@@ -781,7 +759,7 @@ char* Universe::preferred_heap_base(size_t heap_size, size_t alignment, NARROW_O
       // the correct no-access prefix.
       // The final value will be set in initialize_heap() below.
       Universe::set_narrow_oop_base((address)UnscaledOopHeapMax);
-#if defined(_WIN64) || defined(AIX)
+#ifdef _WIN64
       if (UseLargePages) {
         // Cannot allocate guard pages for implicit checks in indexed
         // addressing mode when large pages are specified on windows.
@@ -807,7 +785,7 @@ jint Universe::initialize_heap() {
 
   } else if (UseG1GC) {
 #if INCLUDE_ALL_GCS
-    G1CollectorPolicyExt* g1p = new G1CollectorPolicyExt();
+    G1CollectorPolicy* g1p = new G1CollectorPolicy();
     g1p->initialize_all();
     G1CollectedHeap* g1h = new G1CollectedHeap(g1p);
     Universe::_collectedHeap = g1h;
@@ -838,8 +816,6 @@ jint Universe::initialize_heap() {
     Universe::_collectedHeap = new GenCollectedHeap(gc_policy);
   }
 
-  ThreadLocalAllocBuffer::set_max_size(Universe::heap()->max_tlab_size());
-
   jint status = Universe::heap()->initialize();
   if (status != JNI_OK) {
     return status;
@@ -853,17 +829,26 @@ jint Universe::initialize_heap() {
     // See needs_explicit_null_check.
     // Only set the heap base for compressed oops because it indicates
     // compressed oops for pstack code.
+    bool verbose = PrintCompressedOopsMode || (PrintMiscellaneous && Verbose);
+    if (verbose) {
+      tty->cr();
+      tty->print("heap address: " PTR_FORMAT ", size: " SIZE_FORMAT " MB",
+                 Universe::heap()->base(), Universe::heap()->reserved_region().byte_size()/M);
+    }
     if (((uint64_t)Universe::heap()->reserved_region().end() > OopEncodingHeapMax)) {
       // Can't reserve heap below 32Gb.
       // keep the Universe::narrow_oop_base() set in Universe::reserve_heap()
       Universe::set_narrow_oop_shift(LogMinObjAlignmentInBytes);
-#ifdef AIX
-      // There is no protected page before the heap. This assures all oops
-      // are decoded so that NULL is preserved, so this page will not be accessed.
-      Universe::set_narrow_oop_use_implicit_null_checks(false);
-#endif
+      if (verbose) {
+        tty->print(", %s: " PTR_FORMAT,
+            narrow_oop_mode_to_string(HeapBasedNarrowOop),
+            Universe::narrow_oop_base());
+      }
     } else {
       Universe::set_narrow_oop_base(0);
+      if (verbose) {
+        tty->print(", %s", narrow_oop_mode_to_string(ZeroBasedNarrowOop));
+      }
 #ifdef _WIN64
       if (!Universe::narrow_oop_use_implicit_null_checks()) {
         // Don't need guard page for implicit checks in indexed addressing
@@ -876,14 +861,17 @@ jint Universe::initialize_heap() {
         Universe::set_narrow_oop_shift(LogMinObjAlignmentInBytes);
       } else {
         Universe::set_narrow_oop_shift(0);
+        if (verbose) {
+          tty->print(", %s", narrow_oop_mode_to_string(UnscaledNarrowOop));
+        }
       }
     }
 
-    Universe::set_narrow_ptrs_base(Universe::narrow_oop_base());
-
-    if (PrintCompressedOopsMode || (PrintMiscellaneous && Verbose)) {
-      Universe::print_compressed_oops_mode();
+    if (verbose) {
+      tty->cr();
+      tty->cr();
     }
+    Universe::set_narrow_ptrs_base(Universe::narrow_oop_base());
   }
   // Universe::narrow_oop_base() is one page below the heap.
   assert((intptr_t)Universe::narrow_oop_base() <= (intptr_t)(Universe::heap()->base() -
@@ -904,29 +892,11 @@ jint Universe::initialize_heap() {
   return JNI_OK;
 }
 
-void Universe::print_compressed_oops_mode() {
-  tty->cr();
-  tty->print("heap address: " PTR_FORMAT ", size: " SIZE_FORMAT " MB",
-              Universe::heap()->base(), Universe::heap()->reserved_region().byte_size()/M);
-
-  tty->print(", Compressed Oops mode: %s", narrow_oop_mode_to_string(narrow_oop_mode()));
-
-  if (Universe::narrow_oop_base() != 0) {
-    tty->print(":" PTR_FORMAT, Universe::narrow_oop_base());
-  }
-
-  if (Universe::narrow_oop_shift() != 0) {
-    tty->print(", Oop shift amount: %d", Universe::narrow_oop_shift());
-  }
-
-  tty->cr();
-  tty->cr();
-}
 
 // Reserve the Java heap, which is now the same for all GCs.
 ReservedSpace Universe::reserve_heap(size_t heap_size, size_t alignment) {
   assert(alignment <= Arguments::conservative_max_heap_alignment(),
-      err_msg("actual alignment "SIZE_FORMAT" must be within maximum heap alignment "SIZE_FORMAT,
+      err_msg("actual alignment " SIZE_FORMAT" must be within maximum heap alignment " SIZE_FORMAT,
           alignment, Arguments::conservative_max_heap_alignment()));
   size_t total_reserved = align_size_up(heap_size, alignment);
   assert(!UseCompressedOops || (total_reserved <= (OopEncodingHeapMax - os::vm_page_size())),
@@ -991,11 +961,11 @@ void Universe::update_heap_info_at_gc() {
 const char* Universe::narrow_oop_mode_to_string(Universe::NARROW_OOP_MODE mode) {
   switch (mode) {
     case UnscaledNarrowOop:
-      return "32-bit";
+      return "32-bits Oops";
     case ZeroBasedNarrowOop:
-      return "Zero based";
+      return "zero based Compressed Oops";
     case HeapBasedNarrowOop:
-      return "Non-zero based";
+      return "Compressed Oops with base";
   }
 
   ShouldNotReachHere();
@@ -1054,7 +1024,6 @@ bool universe_post_init() {
     Universe::_out_of_memory_error_array_size = k_h->allocate_instance(CHECK_false);
     Universe::_out_of_memory_error_gc_overhead_limit =
       k_h->allocate_instance(CHECK_false);
-    Universe::_out_of_memory_error_realloc_objects = k_h->allocate_instance(CHECK_false);
 
     // Setup preallocated NullPointerException
     // (this is currently used for a cheap & dirty solution in compiler exception handling)
@@ -1093,9 +1062,6 @@ bool universe_post_init() {
 
     msg = java_lang_String::create_from_str("GC overhead limit exceeded", CHECK_false);
     java_lang_Throwable::set_message(Universe::_out_of_memory_error_gc_overhead_limit, msg());
-
-    msg = java_lang_String::create_from_str("Java heap space: failed reallocation of scalar replaced objects", CHECK_false);
-    java_lang_Throwable::set_message(Universe::_out_of_memory_error_realloc_objects, msg());
 
     msg = java_lang_String::create_from_str("/ by zero", CHECK_false);
     java_lang_Throwable::set_message(Universe::_arithmetic_exception_instance, msg());
@@ -1141,8 +1107,7 @@ bool universe_post_init() {
     tty->print_cr("Unable to link/verify Unsafe.throwIllegalAccessError method");
     return false; // initialization failed (cannot throw exception yet)
   }
-  Universe::_throw_illegal_access_error_cache->init(
-    SystemDictionary::misc_Unsafe_klass(), m);
+  Universe::_throw_illegal_access_error = m;
 
   // Setup method for registering loaded classes in class loader vector
   InstanceKlass::cast(SystemDictionary::ClassLoader_klass())->link_class(CHECK_false);
@@ -1168,7 +1133,7 @@ bool universe_post_init() {
       return false; // initialization failed
     }
     Universe::_pd_implies_cache->init(
-      SystemDictionary::ProtectionDomain_klass(), m);
+      SystemDictionary::ProtectionDomain_klass(), m);;
   }
 
   // The folowing is initializing converter functions for serialization in
@@ -1192,12 +1157,9 @@ bool universe_post_init() {
 
   MemoryService::add_metaspace_memory_pools();
 
+  GC_locker::unlock();  // allow gc after bootstrapping
+
   MemoryService::set_universe_heap(Universe::_collectedHeap);
-#if INCLUDE_CDS
-  if (UseSharedSpaces) {
-    SharedClassUtil::initialize(CHECK_false);
-  }
-#endif
   return true;
 }
 
@@ -1365,53 +1327,6 @@ void Universe::print_heap_after_gc(outputStream* st, bool ignore_extended) {
   st->print_cr("}");
 }
 
-void Universe::initialize_verify_flags() {
-  verify_flags = 0;
-  const char delimiter[] = " ,";
-
-  size_t length = strlen(VerifySubSet);
-  char* subset_list = NEW_C_HEAP_ARRAY(char, length + 1, mtInternal);
-  strncpy(subset_list, VerifySubSet, length + 1);
-
-  char* token = strtok(subset_list, delimiter);
-  while (token != NULL) {
-    if (strcmp(token, "threads") == 0) {
-      verify_flags |= Verify_Threads;
-    } else if (strcmp(token, "heap") == 0) {
-      verify_flags |= Verify_Heap;
-    } else if (strcmp(token, "symbol_table") == 0) {
-      verify_flags |= Verify_SymbolTable;
-    } else if (strcmp(token, "string_table") == 0) {
-      verify_flags |= Verify_StringTable;
-    } else if (strcmp(token, "codecache") == 0) {
-      verify_flags |= Verify_CodeCache;
-    } else if (strcmp(token, "dictionary") == 0) {
-      verify_flags |= Verify_SystemDictionary;
-    } else if (strcmp(token, "classloader_data_graph") == 0) {
-      verify_flags |= Verify_ClassLoaderDataGraph;
-    } else if (strcmp(token, "metaspace") == 0) {
-      verify_flags |= Verify_MetaspaceAux;
-    } else if (strcmp(token, "jni_handles") == 0) {
-      verify_flags |= Verify_JNIHandles;
-    } else if (strcmp(token, "c-heap") == 0) {
-      verify_flags |= Verify_CHeap;
-    } else if (strcmp(token, "codecache_oops") == 0) {
-      verify_flags |= Verify_CodeCacheOops;
-    } else {
-      vm_exit_during_initialization(err_msg("VerifySubSet: \'%s\' memory sub-system is unknown, please correct it", token));
-    }
-    token = strtok(NULL, delimiter);
-  }
-  FREE_C_HEAP_ARRAY(char, subset_list, mtInternal);
-}
-
-bool Universe::should_verify_subset(uint subset) {
-  if (verify_flags & subset) {
-    return true;
-  }
-  return false;
-}
-
 void Universe::verify(VerifyOption option, const char* prefix, bool silent) {
   // The use of _verify_in_progress is a temporary work around for
   // 6320749.  Don't bother with a creating a class to set and clear
@@ -1429,57 +1344,35 @@ void Universe::verify(VerifyOption option, const char* prefix, bool silent) {
   HandleMark hm;  // Handles created during verification can be zapped
   _verify_count++;
 
-  if (!silent) gclog_or_tty->print("%s", prefix);
+  if (!silent) gclog_or_tty->print(prefix);
   if (!silent) gclog_or_tty->print("[Verifying ");
-  if (should_verify_subset(Verify_Threads)) {
-    if (!silent) gclog_or_tty->print("Threads ");
-    Threads::verify();
-  }
-  if (should_verify_subset(Verify_Heap)) {
-    if (!silent) gclog_or_tty->print("Heap ");
-    heap()->verify(silent, option);
-  }
-  if (should_verify_subset(Verify_SymbolTable)) {
-    if (!silent) gclog_or_tty->print("SymbolTable ");
-    SymbolTable::verify();
-  }
-  if (should_verify_subset(Verify_StringTable)) {
-    if (!silent) gclog_or_tty->print("StringTable ");
-    StringTable::verify();
-  }
-  if (should_verify_subset(Verify_CodeCache)) {
+  if (!silent) gclog_or_tty->print("threads ");
+  Threads::verify();
+  if (!silent) gclog_or_tty->print("heap ");
+  heap()->verify(silent, option);
+  if (!silent) gclog_or_tty->print("syms ");
+  SymbolTable::verify();
+  if (!silent) gclog_or_tty->print("strs ");
+  StringTable::verify();
   {
     MutexLockerEx mu(CodeCache_lock, Mutex::_no_safepoint_check_flag);
-    if (!silent) gclog_or_tty->print("CodeCache ");
+    if (!silent) gclog_or_tty->print("zone ");
     CodeCache::verify();
   }
-  }
-  if (should_verify_subset(Verify_SystemDictionary)) {
-    if (!silent) gclog_or_tty->print("SystemDictionary ");
-    SystemDictionary::verify();
-  }
+  if (!silent) gclog_or_tty->print("dict ");
+  SystemDictionary::verify();
 #ifndef PRODUCT
-  if (should_verify_subset(Verify_ClassLoaderDataGraph)) {
-    if (!silent) gclog_or_tty->print("ClassLoaderDataGraph ");
-    ClassLoaderDataGraph::verify();
-  }
+  if (!silent) gclog_or_tty->print("cldg ");
+  ClassLoaderDataGraph::verify();
 #endif
-  if (should_verify_subset(Verify_MetaspaceAux)) {
-    if (!silent) gclog_or_tty->print("MetaspaceAux ");
-    MetaspaceAux::verify_free_chunks();
-  }
-  if (should_verify_subset(Verify_JNIHandles)) {
-    if (!silent) gclog_or_tty->print("JNIHandles ");
-    JNIHandles::verify();
-  }
-  if (should_verify_subset(Verify_CHeap)) {
-    if (!silent) gclog_or_tty->print("C-heap ");
-    os::check_heap();
-  }
-  if (should_verify_subset(Verify_CodeCacheOops)) {
-    if (!silent) gclog_or_tty->print("CodeCache Oops ");
-    CodeCache::verify_oops();
-  }
+  if (!silent) gclog_or_tty->print("metaspace chunks ");
+  MetaspaceAux::verify_free_chunks();
+  if (!silent) gclog_or_tty->print("hand ");
+  JNIHandles::verify();
+  if (!silent) gclog_or_tty->print("C-heap ");
+  os::check_heap();
+  if (!silent) gclog_or_tty->print("code cache ");
+  CodeCache::verify_oops();
   if (!silent) gclog_or_tty->print_cr("]");
 
   _verify_in_progress = false;

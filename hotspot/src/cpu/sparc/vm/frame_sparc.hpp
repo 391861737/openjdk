@@ -164,8 +164,6 @@
   enum unpatchable_t { unpatchable };
   frame(intptr_t* sp, unpatchable_t, address pc = NULL, CodeBlob* cb = NULL);
 
-  void init(intptr_t* sp, address pc, CodeBlob* cb);
-
   // Walk from sp outward looking for old_sp, and return old_sp's predecessor
   // (i.e. return the sp from the frame where old_sp is the fp).
   // Register windows are assumed to be flushed for the stack in question.
@@ -261,8 +259,8 @@
 
   // next two fns read and write Lmonitors value,
  private:
-  BasicObjectLock* interpreter_frame_monitors() const;
-  void interpreter_frame_set_monitors(BasicObjectLock* monitors);
+  BasicObjectLock* interpreter_frame_monitors()           const  { return *interpreter_frame_monitors_addr(); }
+  void interpreter_frame_set_monitors(BasicObjectLock* monitors) {        *interpreter_frame_monitors_addr() = monitors; }
 #else
  public:
   inline interpreterState get_interpreterState() const {

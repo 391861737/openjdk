@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 1997, 2014, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 1997, 2013, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -31,7 +31,6 @@
 #include "runtime/stubCodeGenerator.hpp"
 #include "utilities/copy.hpp"
 
-PRAGMA_FORMAT_MUTE_WARNINGS_FOR_GCC
 
 const RelocationHolder RelocationHolder::none; // its type is relocInfo::none
 
@@ -128,9 +127,9 @@ void RelocIterator::initialize(nmethod* nm, address begin, address limit) {
   if (nm == NULL && begin != NULL) {
     // allow nmethod to be deduced from beginning address
     CodeBlob* cb = CodeCache::find_blob(begin);
-    nm = (cb != NULL) ? cb->as_nmethod_or_null() : NULL;
+    nm = cb->as_nmethod_or_null();
   }
-  guarantee(nm != NULL, "must be able to deduce nmethod from other arguments");
+  assert(nm != NULL, "must be able to deduce nmethod from other arguments");
 
   _code    = nm;
   _current = nm->relocation_begin() - 1;
@@ -583,18 +582,6 @@ void static_stub_Relocation::unpack_data() {
   _static_call = address_from_scaled_offset(unpack_1_int(), base);
 }
 
-void trampoline_stub_Relocation::pack_data_to(CodeSection* dest ) {
-  short* p = (short*) dest->locs_end();
-  CodeSection* insts = dest->outer()->insts();
-  normalize_address(_owner, insts);
-  p = pack_1_int_to(p, scaled_offset(_owner, insts->start()));
-  dest->set_locs_end((relocInfo*) p);
-}
-
-void trampoline_stub_Relocation::unpack_data() {
-  address base = binding()->section_start(CodeBuffer::SECT_INSTS);
-  _owner = address_from_scaled_offset(unpack_1_int(), base);
-}
 
 void external_word_Relocation::pack_data_to(CodeSection* dest) {
   short* p = (short*) dest->locs_end();
@@ -824,25 +811,6 @@ address static_call_Relocation::static_stub() {
   return NULL;
 }
 
-// Finds the trampoline address for a call. If no trampoline stub is
-// found NULL is returned which can be handled by the caller.
-address trampoline_stub_Relocation::get_trampoline_for(address call, nmethod* code) {
-  // There are no relocations available when the code gets relocated
-  // because of CodeBuffer expansion.
-  if (code->relocation_size() == 0)
-    return NULL;
-
-  RelocIterator iter(code, call);
-  while (iter.next()) {
-    if (iter.type() == relocInfo::trampoline_stub_type) {
-      if (iter.trampoline_stub_reloc()->owner() == call) {
-        return iter.addr();
-      }
-    }
-  }
-
-  return NULL;
-}
 
 void static_stub_Relocation::clear_inline_cache() {
   // Call stub is only used when calling the interpreted code.
@@ -877,7 +845,11 @@ address external_word_Relocation::target() {
 void internal_word_Relocation::fix_relocation_after_move(const CodeBuffer* src, CodeBuffer* dest) {
   address target = _target;
   if (target == NULL) {
-    target = new_addr_for(this->target(), src, dest);
+    if (addr_in_const()) {
+      target = new_addr_for(*(address*)addr(), src, dest);
+    } else {
+      target = new_addr_for(pd_get_address_from_code(), src, dest);
+    }
   }
   set_value(target);
 }
@@ -886,11 +858,7 @@ void internal_word_Relocation::fix_relocation_after_move(const CodeBuffer* src, 
 address internal_word_Relocation::target() {
   address target = _target;
   if (target == NULL) {
-    if (addr_in_const()) {
-      target = *(address*)addr();
-    } else {
-      target = pd_get_address_from_code();
-    }
+    target = pd_get_address_from_code();
   }
   return target;
 }
@@ -1005,12 +973,6 @@ void RelocIterator::print_current() {
     {
       static_stub_Relocation* r = (static_stub_Relocation*) reloc();
       tty->print(" | [static_call=" INTPTR_FORMAT "]", r->static_call());
-      break;
-    }
-  case relocInfo::trampoline_stub_type:
-    {
-      trampoline_stub_Relocation* r = (trampoline_stub_Relocation*) reloc();
-      tty->print(" | [trampoline owner=" INTPTR_FORMAT "]", r->owner());
       break;
     }
   }

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 1996, 2016, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 1996, 2013, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -65,7 +65,7 @@ LPCTSTR AwtPopupMenu::GetClassName() {
 }
 
 /* Create a new AwtPopupMenu object and menu.   */
-AwtPopupMenu* AwtPopupMenu::Create(jobject self, jobject parent)
+AwtPopupMenu* AwtPopupMenu::Create(jobject self, AwtComponent* parent)
 {
     JNIEnv *env = (JNIEnv *)JNU_GetEnv(jvm, JNI_VERSION_1_2);
 
@@ -76,9 +76,6 @@ AwtPopupMenu* AwtPopupMenu::Create(jobject self, jobject parent)
         if (env->EnsureLocalCapacity(1) < 0) {
             return NULL;
         }
-
-        JNI_CHECK_NULL_GOTO(parent, "peer", done);
-        AwtComponent* awtParent = (AwtComponent*) JNI_GET_PDATA(parent);
 
         target = env->GetObjectField(self, AwtObject::targetID);
         JNI_CHECK_NULL_GOTO(target, "null target", done);
@@ -97,7 +94,7 @@ AwtPopupMenu* AwtPopupMenu::Create(jobject self, jobject parent)
         popupMenu->SetHMenu(hMenu);
 
         popupMenu->LinkObjects(env, self);
-        popupMenu->SetParent(awtParent);
+        popupMenu->SetParent(parent);
     } catch (...) {
         env->DeleteLocalRef(target);
         throw;
@@ -117,6 +114,7 @@ void AwtPopupMenu::Show(JNIEnv *env, jobject event, BOOL isTrayIconPopup)
      * as the event's target.
      */
     if (env->EnsureLocalCapacity(2) < 0) {
+        env->DeleteGlobalRef(event);
         return;
     }
     jobject origin = (env)->GetObjectField(event, AwtEvent::targetID);
@@ -157,6 +155,7 @@ void AwtPopupMenu::Show(JNIEnv *env, jobject event, BOOL isTrayIconPopup)
  done:
     env->DeleteLocalRef(origin);
     env->DeleteLocalRef(peerOrigin);
+    env->DeleteGlobalRef(event);
 }
 
 void AwtPopupMenu::_Show(void *param)
@@ -165,21 +164,29 @@ void AwtPopupMenu::_Show(void *param)
 
     static jclass popupMenuCls;
     if (popupMenuCls == NULL) {
-        jclass popupMenuClsLocal = env->FindClass("java/awt/PopupMenu");
-        if (popupMenuClsLocal != NULL) {
-            popupMenuCls = (jclass)env->NewGlobalRef(popupMenuClsLocal);
-            env->DeleteLocalRef(popupMenuClsLocal);
+        jclass popupMenuClsLocal =
+            env->FindClass("java/awt/PopupMenu");
+        if (!popupMenuClsLocal) {
+            /* exception already thrown */
+            ShowStruct *ss = (ShowStruct*)param;
+            if (ss->self != NULL) {
+                env->DeleteGlobalRef(ss->self);
+            }
+            delete ss;
+            return;
         }
+        popupMenuCls = (jclass)env->NewGlobalRef(popupMenuClsLocal);
+        env->DeleteLocalRef(popupMenuClsLocal);
     }
 
     static jfieldID isTrayIconPopupID;
-    if (popupMenuCls != NULL && isTrayIconPopupID == NULL) {
+    if (isTrayIconPopupID == NULL) {
         isTrayIconPopupID = env->GetFieldID(popupMenuCls, "isTrayIconPopup", "Z");
         DASSERT(isTrayIconPopupID);
     }
 
     ShowStruct *ss = (ShowStruct*)param;
-    if (ss->self != NULL && isTrayIconPopupID != NULL) {
+    if (ss->self != NULL) {
         PDATA pData = JNI_GET_PDATA(ss->self);
         if (pData) {
             AwtPopupMenu *p = (AwtPopupMenu *)pData;
@@ -188,17 +195,9 @@ void AwtPopupMenu::_Show(void *param)
             env->DeleteLocalRef(target);
             p->Show(env, ss->event, isTrayIconPopup);
         }
-    }
-    if (ss->self != NULL) {
         env->DeleteGlobalRef(ss->self);
     }
-    if (ss->event != NULL) {
-        env->DeleteGlobalRef(ss->event);
-    }
     delete ss;
-    if (isTrayIconPopupID == NULL) {
-        throw std::bad_alloc();
-    }
 }
 
 void AwtPopupMenu::AddItem(AwtMenuItem *item)
@@ -277,8 +276,12 @@ Java_sun_awt_windows_WPopupMenuPeer_createMenu(JNIEnv *env, jobject self,
 {
     TRY;
 
+    PDATA pData;
+    JNI_CHECK_PEER_RETURN(parent);
+    AwtComponent* awtParent = (AwtComponent *)pData;
     AwtToolkit::CreateComponent(
-        self, parent, (AwtToolkit::ComponentFactory)AwtPopupMenu::Create);
+        self, awtParent, (AwtToolkit::ComponentFactory)AwtPopupMenu::Create, FALSE);
+    JNI_CHECK_PEER_CREATION_RETURN(self);
 
     CATCH_BAD_ALLOC;
 }
@@ -300,7 +303,7 @@ Java_sun_awt_windows_WPopupMenuPeer__1show(JNIEnv *env, jobject self,
 
     // fix for 6268046: invoke the function without CriticalSection's synchronization
     AwtToolkit::GetInstance().InvokeFunction(AwtPopupMenu::_Show, ss);
-    // global ref and ss are deleted in _Show()
+    // global ref is deleted in _Show() and ss is deleted in Show()
 
     CATCH_BAD_ALLOC;
 }

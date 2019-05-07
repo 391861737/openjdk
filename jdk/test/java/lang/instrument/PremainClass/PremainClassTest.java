@@ -30,7 +30,7 @@ import jdk.testlibrary.Utils;
  * @bug 5055293
  * @summary Test non ascii characters in the Premain-Class attribute.
  * @library /lib/testlibrary
- * @build jdk.testlibrary.* DummyMain
+ * @run build DummyMain
  * @run main PremainClassTest
  */
 public class PremainClassTest {

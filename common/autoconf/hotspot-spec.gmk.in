@@ -1,5 +1,5 @@
 #
-# Copyright (c) 2011, 2016, Oracle and/or its affiliates. All rights reserved.
+# Copyright (c) 2011, 2013, Oracle and/or its affiliates. All rights reserved.
 # DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
 #
 # This code is free software; you can redistribute it and/or modify it
@@ -69,8 +69,8 @@ ISA_DIR=$(OPENJDK_TARGET_CPU_ISADIR)
 # Yet another name for arch used for an extra subdir below the jvm lib.
 # Uses i386 and amd64, instead of x86 and x86_64.
 LIBARCH=$(OPENJDK_TARGET_CPU_LEGACY_LIB)
-# Set the cpu architecture
-ARCH=$(OPENJDK_TARGET_CPU_ARCH)
+# Old name for OPENJDK_TARGET_CPU, uses i586 and amd64, instead of x86 and x86_64.
+ARCH=$(OPENJDK_TARGET_CPU_LEGACY)
 # Legacy setting for building for a 64 bit machine.
 # If yes then this expands to _LP64:=1
 @LP64@
@@ -91,11 +91,6 @@ LLVM_LDFLAGS=@LLVM_LDFLAGS@
 ALT_OUTPUTDIR=$(HOTSPOT_OUTPUTDIR)
 ALT_EXPORT_PATH=$(HOTSPOT_DIST)
 
-JVM_INTERPRETER:=@JVM_INTERPRETER@
-ifeq ($(JVM_INTERPRETER), cpp)
-  CC_INTERP=true
-endif
-
 HOTSPOT_MAKE_ARGS:=@HOTSPOT_MAKE_ARGS@ @STATIC_CXX_SETTING@
 # This is used from the libjvm build for C/C++ code.
 HOTSPOT_BUILD_JOBS:=$(JOBS)
@@ -109,15 +104,11 @@ LD:=@HOTSPOT_LD@
 MT:=@HOTSPOT_MT@
 RC:=@HOTSPOT_RC@
 
-EXTRA_CFLAGS=@LEGACY_EXTRA_CFLAGS@ $(NO_DELETE_NULL_POINTER_CHECKS_CFLAG) \
-				   $(NO_LIFETIME_DSE_CFLAG) $(CXXSTD_CXXFLAG)
+EXTRA_CFLAGS=@LEGACY_EXTRA_CFLAGS@
 EXTRA_CXXFLAGS=@LEGACY_EXTRA_CXXFLAGS@
 EXTRA_LDFLAGS=@LEGACY_EXTRA_LDFLAGS@
 
 USE_PRECOMPILED_HEADER=@USE_PRECOMPILED_HEADER@
-
-# Universal binaries on macosx, mirror MACOSX_UNIVERSAL
-ALT_MACOSX_UNIVERSAL=@MACOSX_UNIVERSAL@
 
 # Hotspot expects the variable FULL_DEBUG_SYMBOLS=1/0 to control debug symbols
 # creation.

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 1997, 2016, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 1997, 2013, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -36,7 +36,6 @@
 #include "oops/objArrayKlass.hpp"
 #include "oops/objArrayOop.hpp"
 #include "prims/jvm.h"
-#include "prims/jvmtiExport.hpp"
 #include "runtime/arguments.hpp"
 #include "runtime/handles.inline.hpp"
 #include "runtime/javaCalls.hpp"
@@ -483,7 +482,7 @@ static bool under_host_klass(InstanceKlass* ik, Klass* host_klass) {
     ik = InstanceKlass::cast(hc);
 
     // There's no way to make a host class loop short of patching memory.
-    // Therefore there cannot be a loop here unless there's another bug.
+    // Therefore there cannot be a loop here unles there's another bug.
     // Still, let's check for it.
     assert(--inf_loop_check > 0, "no host_klass loop");
   }
@@ -552,8 +551,7 @@ bool Reflection::verify_field_access(Klass* current_class,
   if (access.is_protected()) {
     if (!protected_restriction) {
       // See if current_class (or outermost host class) is a subclass of field_class
-      // An interface may not access protected members of j.l.Object
-      if (!host_class->is_interface() && host_class->is_subclass_of(field_class)) {
+      if (host_class->is_subclass_of(field_class)) {
         if (access.is_static() || // static fields are ok, see 6622385
             current_class == resolved_class ||
             field_class == resolved_class ||
@@ -943,11 +941,6 @@ oop Reflection::invoke(instanceKlassHandle klass, methodHandle reflected_method,
           // Method resolution threw an exception; wrap it in an InvocationTargetException
             oop resolution_exception = PENDING_EXCEPTION;
             CLEAR_PENDING_EXCEPTION;
-            // JVMTI has already reported the pending exception
-            // JVMTI internal flag reset is needed in order to report InvocationTargetException
-            if (THREAD->is_Java_thread()) {
-              JvmtiExport::clear_detected_exception((JavaThread*) THREAD);
-            }
             JavaCallArguments args(Handle(THREAD, resolution_exception));
             THROW_ARG_0(vmSymbols::java_lang_reflect_InvocationTargetException(),
                 vmSymbols::throwable_void_signature(),
@@ -1080,12 +1073,6 @@ oop Reflection::invoke(instanceKlassHandle klass, methodHandle reflected_method,
     // Method threw an exception; wrap it in an InvocationTargetException
     oop target_exception = PENDING_EXCEPTION;
     CLEAR_PENDING_EXCEPTION;
-    // JVMTI has already reported the pending exception
-    // JVMTI internal flag reset is needed in order to report InvocationTargetException
-    if (THREAD->is_Java_thread()) {
-      JvmtiExport::clear_detected_exception((JavaThread*) THREAD);
-    }
-
     JavaCallArguments args(Handle(THREAD, target_exception));
     THROW_ARG_0(vmSymbols::java_lang_reflect_InvocationTargetException(),
                 vmSymbols::throwable_void_signature(),
@@ -1101,7 +1088,7 @@ oop Reflection::invoke(instanceKlassHandle klass, methodHandle reflected_method,
 void Reflection::narrow(jvalue* value, BasicType narrow_type, TRAPS) {
   switch (narrow_type) {
     case T_BOOLEAN:
-     value->z = (jboolean) (value->i & 1);
+     value->z = (jboolean) value->i;
      return;
     case T_BYTE:
      value->b = (jbyte) value->i;

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2005, 2016, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2005, 2013, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -162,7 +162,10 @@ static jint jcmd(AttachOperation* op, outputStream* out) {
     java_lang_Throwable::print(PENDING_EXCEPTION, out);
     out->cr();
     CLEAR_PENDING_EXCEPTION;
-    return JNI_ERR;
+    // The exception has been printed on the output stream
+    // If the JVM returns JNI_ERR, the attachAPI throws a generic I/O
+    // exception and the content of the output stream is not processed.
+    // By returning JNI_OK, the exception will be displayed on the client side
   }
   return JNI_OK;
 }
@@ -271,29 +274,11 @@ static jint set_intx_flag(const char* name, AttachOperation* op, outputStream* o
 // set a uintx global flag using value from AttachOperation
 static jint set_uintx_flag(const char* name, AttachOperation* op, outputStream* out) {
   uintx value;
-
-  const char* arg1 = op->arg(1);
-  if (arg1 == NULL) {
-    out->print_cr("flag value must be specified");
-    return JNI_ERR;
-  }
-
-  int n = sscanf(arg1, UINTX_FORMAT, &value);
-  if (n != 1) {
-    out->print_cr("flag value must be an unsigned integer");
-    return JNI_ERR;
-  }
-
-  if (strncmp(name, "MaxHeapFreeRatio", 17) == 0) {
-    FormatBuffer<80> err_msg("%s", "");
-    if (!Arguments::verify_MaxHeapFreeRatio(err_msg, value)) {
-      out->print_cr("%s", err_msg.buffer());
-      return JNI_ERR;
-    }
-  } else if (strncmp(name, "MinHeapFreeRatio", 17) == 0) {
-    FormatBuffer<80> err_msg("%s", "");
-    if (!Arguments::verify_MinHeapFreeRatio(err_msg, value)) {
-      out->print_cr("%s", err_msg.buffer());
+  const char* arg1;
+  if ((arg1 = op->arg(1)) != NULL) {
+    int n = sscanf(arg1, UINTX_FORMAT, &value);
+    if (n != 1) {
+      out->print_cr("flag value must be an unsigned integer");
       return JNI_ERR;
     }
   }
@@ -382,7 +367,7 @@ static jint print_flag(AttachOperation* op, outputStream* out) {
   Flag* f = Flag::find_flag((char*)name, strlen(name));
   if (f) {
     f->print_as_flag(out);
-    out->cr();
+    out->print_cr("");
   } else {
     out->print_cr("no such flag '%s'", name);
   }

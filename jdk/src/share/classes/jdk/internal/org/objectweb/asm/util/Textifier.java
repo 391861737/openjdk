@@ -166,11 +166,6 @@ public class Textifier extends Printer {
      */
     protected Map<Label, String> labelNames;
 
-    /**
-     * Class access flags
-     */
-    private int access;
-
     private int valueNumber = 0;
 
     /**
@@ -250,7 +245,6 @@ public class Textifier extends Printer {
     public void visit(final int version, final int access, final String name,
             final String signature, final String superName,
             final String[] interfaces) {
-        this.access = access;
         int major = version & 0xFFFF;
         int minor = version >>> 16;
         buf.setLength(0);
@@ -443,7 +437,7 @@ public class Textifier extends Printer {
         }
 
         buf.append(tab);
-        appendAccess(access & ~Opcodes.ACC_VOLATILE);
+        appendAccess(access);
         if ((access & Opcodes.ACC_NATIVE) != 0) {
             buf.append("native ");
         }
@@ -452,11 +446,6 @@ public class Textifier extends Printer {
         }
         if ((access & Opcodes.ACC_BRIDGE) != 0) {
             buf.append("bridge ");
-        }
-        if ((this.access & Opcodes.ACC_INTERFACE) != 0
-                && (access & Opcodes.ACC_ABSTRACT) == 0
-                && (access & Opcodes.ACC_STATIC) == 0) {
-            buf.append("default ");
         }
 
         buf.append(name);
@@ -732,7 +721,7 @@ public class Textifier extends Printer {
         Textifier t = createTextifier();
         text.add(t.getText());
         text.add(visible ? ") // parameter " : ") // invisible, parameter ");
-        text.add(parameter);
+        text.add(new Integer(parameter));
         text.add("\n");
         return t;
     }
@@ -867,6 +856,7 @@ public class Textifier extends Printer {
         appendDescriptor(INTERNAL_NAME, owner);
         buf.append('.').append(name).append(' ');
         appendDescriptor(METHOD_DESCRIPTOR, desc);
+        buf.append(' ').append(itf ? "itf" : "");
         buf.append('\n');
         text.add(buf.toString());
     }
@@ -879,35 +869,26 @@ public class Textifier extends Printer {
         buf.append(name);
         appendDescriptor(METHOD_DESCRIPTOR, desc);
         buf.append(" [");
-        buf.append('\n');
-        buf.append(tab3);
         appendHandle(bsm);
-        buf.append('\n');
         buf.append(tab3).append("// arguments:");
         if (bsmArgs.length == 0) {
             buf.append(" none");
         } else {
-            buf.append('\n');
+            buf.append('\n').append(tab3);
             for (int i = 0; i < bsmArgs.length; i++) {
-                buf.append(tab3);
                 Object cst = bsmArgs[i];
                 if (cst instanceof String) {
                     Printer.appendString(buf, (String) cst);
                 } else if (cst instanceof Type) {
-                    Type type = (Type) cst;
-                    if(type.getSort() == Type.METHOD){
-                        appendDescriptor(METHOD_DESCRIPTOR, type.getDescriptor());
-                    } else {
-                        buf.append(type.getDescriptor()).append(".class");
-                    }
+                    buf.append(((Type) cst).getDescriptor()).append(".class");
                 } else if (cst instanceof Handle) {
                     appendHandle((Handle) cst);
                 } else {
                     buf.append(cst);
                 }
-                buf.append(", \n");
+                buf.append(", ");
             }
-            buf.setLength(buf.length() - 3);
+            buf.setLength(buf.length() - 2);
         }
         buf.append('\n');
         buf.append(tab2).append("]\n");
@@ -1253,10 +1234,10 @@ public class Textifier extends Printer {
      *            a handle, non null.
      */
     protected void appendHandle(final Handle h) {
+        buf.append('\n').append(tab3);
         int tag = h.getTag();
         buf.append("// handle kind 0x").append(Integer.toHexString(tag))
                 .append(" : ");
-        boolean isMethodHandle = false;
         switch (tag) {
         case Opcodes.H_GETFIELD:
             buf.append("GETFIELD");
@@ -1272,23 +1253,18 @@ public class Textifier extends Printer {
             break;
         case Opcodes.H_INVOKEINTERFACE:
             buf.append("INVOKEINTERFACE");
-            isMethodHandle = true;
             break;
         case Opcodes.H_INVOKESPECIAL:
             buf.append("INVOKESPECIAL");
-            isMethodHandle = true;
             break;
         case Opcodes.H_INVOKESTATIC:
             buf.append("INVOKESTATIC");
-            isMethodHandle = true;
             break;
         case Opcodes.H_INVOKEVIRTUAL:
             buf.append("INVOKEVIRTUAL");
-            isMethodHandle = true;
             break;
         case Opcodes.H_NEWINVOKESPECIAL:
             buf.append("NEWINVOKESPECIAL");
-            isMethodHandle = true;
             break;
         }
         buf.append('\n');
@@ -1296,13 +1272,9 @@ public class Textifier extends Printer {
         appendDescriptor(INTERNAL_NAME, h.getOwner());
         buf.append('.');
         buf.append(h.getName());
-        if(!isMethodHandle){
-            buf.append('(');
-        }
+        buf.append('(');
         appendDescriptor(HANDLE_DESCRIPTOR, h.getDesc());
-        if(!isMethodHandle){
-            buf.append(')');
-        }
+        buf.append(')').append('\n');
     }
 
     /**

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2005, 2014, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2005, 2013, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -281,7 +281,9 @@ SplashCreateWindow(Splash * splash) {
 /* for changing the visible shape of a window to an nonrectangular form */
 void
 SplashUpdateShape(Splash * splash) {
-    if (splash->currentFrame < 0 || !shapeSupported || !splash->maskRequired) {
+    if (!shapeSupported)
+        return;
+    if (!splash->maskRequired) {
         return;
     }
     XShapeCombineRectangles(splash->display, splash->window, ShapeClip, 0, 0,
@@ -322,10 +324,6 @@ ByteOrderToX(int byteOrder) {
 
 void
 SplashRedrawWindow(Splash * splash) {
-    if (splash->currentFrame < 0) {
-        return;
-    }
-
     XImage *ximage;
 
     // making this method redraw a part of the image does not make
@@ -795,12 +793,4 @@ SplashUpdate(Splash * splash) {
 void
 SplashReconfigure(Splash * splash) {
     sendctl(splash, SPLASHCTL_RECONFIGURE);
-}
-
-SPLASHEXPORT char*
-SplashGetScaledImageName(const char* jarName, const char* fileName,
-                           float *scaleFactor)
-{
-    *scaleFactor = 1;
-    return NULL;
 }

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2003, 2016, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2003, 2013, Oracle and/or its affiliates. All rights reserved.
  * Copyright 2007, 2008, 2009, 2010, 2011 Red Hat, Inc.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
@@ -40,7 +40,6 @@
 #include "runtime/deoptimization.hpp"
 #include "runtime/frame.inline.hpp"
 #include "runtime/interfaceSupport.hpp"
-#include "runtime/orderAccess.inline.hpp"
 #include "runtime/sharedRuntime.hpp"
 #include "runtime/stubRoutines.hpp"
 #include "runtime/synchronizer.hpp"
@@ -80,30 +79,6 @@ int CppInterpreter::normal_entry(Method* method, intptr_t UNUSED, TRAPS) {
   // No deoptimized frames on the stack
   return 0;
 }
-
-intptr_t narrow(BasicType type, intptr_t result) {
-  // mask integer result to narrower return type.
-  switch (type) {
-    case T_BOOLEAN:
-      return result&1;
-    case T_BYTE:
-      return (intptr_t)(jbyte)result;
-    case T_CHAR:
-      return (intptr_t)(uintptr_t)(jchar)result;
-    case T_SHORT:
-      return (intptr_t)(jshort)result;
-    case T_OBJECT:  // nothing to do fall through
-    case T_ARRAY:
-    case T_LONG:
-    case T_INT:
-    case T_FLOAT:
-    case T_DOUBLE:
-    case T_VOID:
-      return result;
-    default  : ShouldNotReachHere();
-  }
-}
-
 
 void CppInterpreter::main_loop(int recurse, TRAPS) {
   JavaThread *thread = (JavaThread *) THREAD;
@@ -184,7 +159,7 @@ void CppInterpreter::main_loop(int recurse, TRAPS) {
     }
     else if (istate->msg() == BytecodeInterpreter::return_from_method) {
       // Copy the result into the caller's frame
-      result_slots = type2size[method->result_type()];
+      result_slots = type2size[result_type_of(method)];
       assert(result_slots >= 0 && result_slots <= 2, "what?");
       result = istate->stack() + result_slots;
       break;
@@ -218,21 +193,8 @@ void CppInterpreter::main_loop(int recurse, TRAPS) {
   stack->set_sp(stack->sp() + method->max_locals());
 
   // Push our result
-  for (int i = 0; i < result_slots; i++) {
-    // Adjust result to smaller
-    union {
-      intptr_t res;
-      jint res_jint;
-    };
-    res = result[-i];
-    if (result_slots == 1) {
-      BasicType t = method->result_type();
-      if (is_subword_type(t)) {
-        res_jint = (jint)narrow(t, res_jint);
-      }
-    }
-    stack->push(res);
-  }
+  for (int i = 0; i < result_slots; i++)
+    stack->push(result[-i]);
 }
 
 int CppInterpreter::native_entry(Method* method, intptr_t UNUSED, TRAPS) {
@@ -258,7 +220,7 @@ int CppInterpreter::native_entry(Method* method, intptr_t UNUSED, TRAPS) {
     }
     InvocationCounter *counter = mcs->invocation_counter();
     counter->increment();
-    if (counter->reached_InvocationLimit(mcs->backedge_counter())) {
+    if (counter->reached_InvocationLimit()) {
       CALL_VM_NOCHECK(
         InterpreterRuntime::frequency_counter_overflow(thread, NULL));
       if (HAS_PENDING_EXCEPTION)
@@ -443,7 +405,7 @@ int CppInterpreter::native_entry(Method* method, intptr_t UNUSED, TRAPS) {
 
   // Push our result
   if (!HAS_PENDING_EXCEPTION) {
-    BasicType type = method->result_type();
+    BasicType type = result_type_of(method);
     stack->set_sp(stack->sp() - type2size[type]);
 
     switch (type) {
@@ -565,7 +527,6 @@ int CppInterpreter::accessor_entry(Method* method, intptr_t UNUSED, TRAPS) {
       break;
 
     case btos:
-    case ztos:
       SET_LOCALS_INT(object->byte_field_acquire(entry->f2_as_index()), 0);
       break;
 
@@ -604,7 +565,6 @@ int CppInterpreter::accessor_entry(Method* method, intptr_t UNUSED, TRAPS) {
       break;
 
     case btos:
-    case ztos:
       SET_LOCALS_INT(object->byte_field(entry->f2_as_index()), 0);
       break;
 
@@ -769,7 +729,7 @@ InterpreterFrame *InterpreterFrame::build(Method* const method, TRAPS) {
     if (method->is_static())
       object = method->constants()->pool_holder()->java_mirror();
     else
-      object = (oop) (void*)locals[0];
+      object = (oop) locals[0];
     monitor->set_obj(object);
   }
 
@@ -801,6 +761,26 @@ int AbstractInterpreter::BasicType_as_index(BasicType type) {
   assert(0 <= i && i < AbstractInterpreter::number_of_result_handlers,
          "index out of bounds");
   return i;
+}
+
+BasicType CppInterpreter::result_type_of(Method* method) {
+  BasicType t;
+  switch (method->result_index()) {
+    case 0 : t = T_BOOLEAN; break;
+    case 1 : t = T_CHAR;    break;
+    case 2 : t = T_BYTE;    break;
+    case 3 : t = T_SHORT;   break;
+    case 4 : t = T_INT;     break;
+    case 5 : t = T_LONG;    break;
+    case 6 : t = T_VOID;    break;
+    case 7 : t = T_FLOAT;   break;
+    case 8 : t = T_DOUBLE;  break;
+    case 9 : t = T_OBJECT;  break;
+    default: ShouldNotReachHere();
+  }
+  assert(AbstractInterpreter::BasicType_as_index(t) == method->result_index(),
+         "out of step with AbstractInterpreter::BasicType_as_index");
+  return t;
 }
 
 address InterpreterGenerator::generate_empty_entry() {
@@ -936,32 +916,17 @@ InterpreterFrame *InterpreterFrame::build(int size, TRAPS) {
   return (InterpreterFrame *) fp;
 }
 
-int AbstractInterpreter::size_activation(int       max_stack,
-                                         int       tempcount,
-                                         int       extra_args,
-                                         int       moncount,
-                                         int       callee_param_count,
-                                         int       callee_locals,
-                                         bool      is_top_frame) {
-  int header_words        = InterpreterFrame::header_words;
-  int monitor_words       = moncount * frame::interpreter_frame_monitor_size();
-  int stack_words         = is_top_frame ? max_stack : tempcount;
-  int callee_extra_locals = callee_locals - callee_param_count;
-
-  return header_words + monitor_words + stack_words + callee_extra_locals;
-}
-
-void AbstractInterpreter::layout_activation(Method* method,
-                                            int       tempcount,
-                                            int       popframe_extra_args,
-                                            int       moncount,
-                                            int       caller_actual_parameters,
-                                            int       callee_param_count,
-                                            int       callee_locals,
-                                            frame*    caller,
-                                            frame*    interpreter_frame,
-                                            bool      is_top_frame,
-                                            bool      is_bottom_frame) {
+int AbstractInterpreter::layout_activation(Method* method,
+                                           int       tempcount,
+                                           int       popframe_extra_args,
+                                           int       moncount,
+                                           int       caller_actual_parameters,
+                                           int       callee_param_count,
+                                           int       callee_locals,
+                                           frame*    caller,
+                                           frame*    interpreter_frame,
+                                           bool      is_top_frame,
+                                           bool      is_bottom_frame) {
   assert(popframe_extra_args == 0, "what to do?");
   assert(!is_top_frame || (!callee_locals && !callee_param_count),
          "top frame should have no caller");
@@ -970,31 +935,39 @@ void AbstractInterpreter::layout_activation(Method* method,
   // does (the full InterpreterFrame::build, that is, not the
   // one that creates empty frames for the deoptimizer).
   //
-  // interpreter_frame will be filled in.  It's size is determined by
-  // a previous call to the size_activation() method,
+  // If interpreter_frame is not NULL then it will be filled in.
+  // It's size is determined by a previous call to this method,
+  // so it should be correct.
   //
   // Note that tempcount is the current size of the expression
   // stack.  For top most frames we will allocate a full sized
   // expression stack and not the trimmed version that non-top
   // frames have.
 
+  int header_words        = InterpreterFrame::header_words;
   int monitor_words       = moncount * frame::interpreter_frame_monitor_size();
-  intptr_t *locals        = interpreter_frame->fp() + method->max_locals();
-  interpreterState istate = interpreter_frame->get_interpreterState();
-  intptr_t *monitor_base  = (intptr_t*) istate;
-  intptr_t *stack_base    = monitor_base - monitor_words;
-  intptr_t *stack         = stack_base - tempcount - 1;
+  int stack_words         = is_top_frame ? method->max_stack() : tempcount;
+  int callee_extra_locals = callee_locals - callee_param_count;
 
-  BytecodeInterpreter::layout_interpreterState(istate,
-                                               caller,
-                                               NULL,
-                                               method,
-                                               locals,
-                                               stack,
-                                               stack_base,
-                                               monitor_base,
-                                               NULL,
-                                               is_top_frame);
+  if (interpreter_frame) {
+    intptr_t *locals        = interpreter_frame->fp() + method->max_locals();
+    interpreterState istate = interpreter_frame->get_interpreterState();
+    intptr_t *monitor_base  = (intptr_t*) istate;
+    intptr_t *stack_base    = monitor_base - monitor_words;
+    intptr_t *stack         = stack_base - tempcount - 1;
+
+    BytecodeInterpreter::layout_interpreterState(istate,
+                                                 caller,
+                                                 NULL,
+                                                 method,
+                                                 locals,
+                                                 stack,
+                                                 stack_base,
+                                                 monitor_base,
+                                                 NULL,
+                                                 is_top_frame);
+  }
+  return header_words + monitor_words + stack_words + callee_extra_locals;
 }
 
 void BytecodeInterpreter::layout_interpreterState(interpreterState istate,

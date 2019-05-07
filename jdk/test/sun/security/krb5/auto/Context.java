@@ -23,7 +23,6 @@
 
 import com.sun.security.auth.module.Krb5LoginModule;
 import java.security.Key;
-import java.lang.reflect.InvocationTargetException;
 import java.security.PrivilegedActionException;
 import java.security.PrivilegedExceptionAction;
 import java.util.Arrays;
@@ -582,12 +581,7 @@ public class Context {
             out.name = name + " as " + out.cred.getName().toString();
             return out;
         } catch (PrivilegedActionException pae) {
-            Exception e = pae.getException();
-            if (e instanceof InvocationTargetException) {
-                throw (Exception)((InvocationTargetException) e).getTargetException();
-            } else {
-                throw e;
-            }
+            throw pae.getException();
         }
     }
 

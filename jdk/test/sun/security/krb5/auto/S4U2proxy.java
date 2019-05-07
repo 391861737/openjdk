@@ -23,7 +23,7 @@
 
 /*
  * @test
- * @bug 6355584 8044215
+ * @bug 6355584
  * @summary Introduce constrained Kerberos delegation
  * @compile -XDignore.symbol.file S4U2proxy.java
  * @run main/othervm S4U2proxy krb5
@@ -69,10 +69,6 @@ public class S4U2proxy {
         Context p = s.delegated();
 
         p.startAsClient(OneKDC.BACKEND, mech);
-
-        // 8044215: requestCredDeleg is useless and harmless
-        p.x().requestCredDeleg(true);
-
         b.startAsServer(mech);
         Context.handshake(p, b);
 

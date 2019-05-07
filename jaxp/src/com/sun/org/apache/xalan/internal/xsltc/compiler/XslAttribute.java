@@ -1,13 +1,13 @@
 /*
- * Copyright (c) 2015, Oracle and/or its affiliates. All rights reserved.
+ * reserved comment block
+ * DO NOT REMOVE OR ALTER!
  */
 /*
- * Licensed to the Apache Software Foundation (ASF) under one or more
- * contributor license agreements.  See the NOTICE file distributed with
- * this work for additional information regarding copyright ownership.
- * The ASF licenses this file to You under the Apache License, Version 2.0
- * (the "License"); you may not use this file except in compliance with
- * the License.  You may obtain a copy of the License at
+ * Copyright 2001-2004 The Apache Software Foundation.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
@@ -22,6 +22,8 @@
  */
 
 package com.sun.org.apache.xalan.internal.xsltc.compiler;
+
+import java.util.Vector;
 
 import com.sun.org.apache.bcel.internal.generic.ALOAD;
 import com.sun.org.apache.bcel.internal.generic.ASTORE;
@@ -38,10 +40,10 @@ import com.sun.org.apache.xalan.internal.xsltc.compiler.util.MethodGenerator;
 import com.sun.org.apache.xalan.internal.xsltc.compiler.util.Type;
 import com.sun.org.apache.xalan.internal.xsltc.compiler.util.TypeCheckError;
 import com.sun.org.apache.xalan.internal.xsltc.compiler.util.Util;
+
 import com.sun.org.apache.xml.internal.serializer.ElemDesc;
 import com.sun.org.apache.xml.internal.serializer.SerializationHandler;
 import com.sun.org.apache.xml.internal.utils.XML11Char;
-import java.util.List;
 
 /**
  * @author Jacek Ambroziak
@@ -101,9 +103,9 @@ final class XslAttribute extends Instruction {
 
         // Ignore attribute if preceeded by some other type of element
         final SyntaxTreeNode parent = getParent();
-        final List<SyntaxTreeNode> siblings = parent.getContents();
+        final Vector siblings = parent.getContents();
         for (int i = 0; i < parent.elementCount(); i++) {
-            SyntaxTreeNode item = siblings.get(i);
+            SyntaxTreeNode item = (SyntaxTreeNode)siblings.elementAt(i);
             if (item == this) break;
 
             // These three objects result in one or more attribute output

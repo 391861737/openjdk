@@ -111,70 +111,65 @@ Java_sun_nio_fs_WindowsNativeDispatcher_initIDs(JNIEnv* env, jclass this)
     HMODULE h;
 
     clazz = (*env)->FindClass(env, "sun/nio/fs/WindowsNativeDispatcher$FirstFile");
-    CHECK_NULL(clazz);
+    if (clazz == NULL) {
+        return;
+    }
     findFirst_handle = (*env)->GetFieldID(env, clazz, "handle", "J");
-    CHECK_NULL(findFirst_handle);
     findFirst_name = (*env)->GetFieldID(env, clazz, "name", "Ljava/lang/String;");
-    CHECK_NULL(findFirst_name);
     findFirst_attributes = (*env)->GetFieldID(env, clazz, "attributes", "I");
-    CHECK_NULL(findFirst_attributes);
 
     clazz = (*env)->FindClass(env, "sun/nio/fs/WindowsNativeDispatcher$FirstStream");
-    CHECK_NULL(clazz);
+    if (clazz == NULL) {
+        return;
+    }
     findStream_handle = (*env)->GetFieldID(env, clazz, "handle", "J");
-    CHECK_NULL(findStream_handle);
     findStream_name = (*env)->GetFieldID(env, clazz, "name", "Ljava/lang/String;");
-    CHECK_NULL(findStream_name);
 
     clazz = (*env)->FindClass(env, "sun/nio/fs/WindowsNativeDispatcher$VolumeInformation");
-    CHECK_NULL(clazz);
+    if (clazz == NULL) {
+        return;
+    }
     volumeInfo_fsName = (*env)->GetFieldID(env, clazz, "fileSystemName", "Ljava/lang/String;");
-    CHECK_NULL(volumeInfo_fsName);
     volumeInfo_volName = (*env)->GetFieldID(env, clazz, "volumeName", "Ljava/lang/String;");
-    CHECK_NULL(volumeInfo_volName);
     volumeInfo_volSN = (*env)->GetFieldID(env, clazz, "volumeSerialNumber", "I");
-    CHECK_NULL(volumeInfo_volSN);
     volumeInfo_flags = (*env)->GetFieldID(env, clazz, "flags", "I");
-    CHECK_NULL(volumeInfo_flags);
 
     clazz = (*env)->FindClass(env, "sun/nio/fs/WindowsNativeDispatcher$DiskFreeSpace");
-    CHECK_NULL(clazz);
+    if (clazz == NULL) {
+        return;
+    }
     diskSpace_bytesAvailable = (*env)->GetFieldID(env, clazz, "freeBytesAvailable", "J");
-    CHECK_NULL(diskSpace_bytesAvailable);
     diskSpace_totalBytes = (*env)->GetFieldID(env, clazz, "totalNumberOfBytes", "J");
-    CHECK_NULL(diskSpace_totalBytes);
     diskSpace_totalFree = (*env)->GetFieldID(env, clazz, "totalNumberOfFreeBytes", "J");
-    CHECK_NULL(diskSpace_totalFree);
 
     clazz = (*env)->FindClass(env, "sun/nio/fs/WindowsNativeDispatcher$Account");
-    CHECK_NULL(clazz);
+    if (clazz == NULL) {
+        return;
+    }
     account_domain = (*env)->GetFieldID(env, clazz, "domain", "Ljava/lang/String;");
-    CHECK_NULL(account_domain);
     account_name = (*env)->GetFieldID(env, clazz, "name", "Ljava/lang/String;");
-    CHECK_NULL(account_name);
     account_use = (*env)->GetFieldID(env, clazz, "use", "I");
-    CHECK_NULL(account_use);
 
     clazz = (*env)->FindClass(env, "sun/nio/fs/WindowsNativeDispatcher$AclInformation");
-    CHECK_NULL(clazz);
+    if (clazz == NULL) {
+        return;
+    }
     aclInfo_aceCount = (*env)->GetFieldID(env, clazz, "aceCount", "I");
-    CHECK_NULL(aclInfo_aceCount);
 
     clazz = (*env)->FindClass(env, "sun/nio/fs/WindowsNativeDispatcher$CompletionStatus");
-    CHECK_NULL(clazz);
+    if (clazz == NULL) {
+        return;
+    }
     completionStatus_error = (*env)->GetFieldID(env, clazz, "error", "I");
-    CHECK_NULL(completionStatus_error);
     completionStatus_bytesTransferred = (*env)->GetFieldID(env, clazz, "bytesTransferred", "I");
-    CHECK_NULL(completionStatus_bytesTransferred);
     completionStatus_completionKey = (*env)->GetFieldID(env, clazz, "completionKey", "J");
-    CHECK_NULL(completionStatus_completionKey);
 
     clazz = (*env)->FindClass(env, "sun/nio/fs/WindowsNativeDispatcher$BackupResult");
-    CHECK_NULL(clazz);
+    if (clazz == NULL) {
+        return;
+    }
     backupResult_bytesTransferred = (*env)->GetFieldID(env, clazz, "bytesTransferred", "I");
-    CHECK_NULL(backupResult_bytesTransferred);
     backupResult_context = (*env)->GetFieldID(env, clazz, "context", "J");
-    CHECK_NULL(backupResult_context);
 
     // get handle to kernel32
     if (GetModuleHandleExW((GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS |
@@ -193,17 +188,6 @@ Java_sun_nio_fs_WindowsNativeDispatcher_initIDs(JNIEnv* env, jclass this)
         GetFinalPathNameByHandle_func =
             (GetFinalPathNameByHandleProc)GetProcAddress(h, "GetFinalPathNameByHandleW");
     }
-}
-
-JNIEXPORT jlong JNICALL
-Java_sun_nio_fs_WindowsNativeDispatcher_CreateEvent(JNIEnv* env, jclass this,
-    jboolean bManualReset, jboolean bInitialState)
-{
-    HANDLE hEvent = CreateEventW(NULL, bManualReset, bInitialState, NULL);
-    if (hEvent == NULL) {
-        throwWindowsException(env, GetLastError());
-    }
-    return ptr_to_jlong(hEvent);
 }
 
 JNIEXPORT jstring JNICALL
@@ -1134,13 +1118,11 @@ Java_sun_nio_fs_WindowsNativeDispatcher_GetFullPathName0(JNIEnv *env,
                     JNU_ThrowInternalError(env, "GetFullPathNameW failed");
                 }
                 free(lpBuf);
-            } else {
-                JNU_ThrowOutOfMemoryError(env, "native memory allocation failure");
             }
         }
-    } else {
-        throwWindowsException(env, GetLastError());
     }
+    if (len == 0)
+        throwWindowsException(env, GetLastError());
 
     return rv;
 }
@@ -1175,13 +1157,13 @@ Java_sun_nio_fs_WindowsNativeDispatcher_GetFinalPathNameByHandle(JNIEnv* env,
                     JNU_ThrowInternalError(env, "GetFinalPathNameByHandleW failed");
                 }
                 free(lpBuf);
-            } else {
-                JNU_ThrowOutOfMemoryError(env, "native memory allocation failure");
             }
         }
-    } else {
-        throwWindowsException(env, GetLastError());
     }
+
+    if (len == 0)
+        throwWindowsException(env, GetLastError());
+
     return rv;
 }
 
@@ -1241,38 +1223,23 @@ Java_sun_nio_fs_WindowsNativeDispatcher_PostQueuedCompletionStatus(JNIEnv* env, 
 }
 
 JNIEXPORT void JNICALL
-Java_sun_nio_fs_WindowsNativeDispatcher_CancelIo(JNIEnv* env, jclass this, jlong hFile) {
-    if (CancelIo((HANDLE)jlong_to_ptr(hFile)) == 0) {
-        throwWindowsException(env, GetLastError());
-    }
-}
-
-JNIEXPORT jint JNICALL
-Java_sun_nio_fs_WindowsNativeDispatcher_GetOverlappedResult(JNIEnv *env, jclass this,
-    jlong hFile, jlong lpOverlapped)
-{
-    BOOL res;
-    DWORD bytesTransferred = -1;
-
-    res = GetOverlappedResult((HANDLE)jlong_to_ptr(hFile),
-                              (LPOVERLAPPED)jlong_to_ptr(lpOverlapped),
-                              &bytesTransferred,
-                              TRUE);
-    if (res == 0) {
-        throwWindowsException(env, GetLastError());
-    }
-
-    return (jint)bytesTransferred;
-}
-
-JNIEXPORT void JNICALL
 Java_sun_nio_fs_WindowsNativeDispatcher_ReadDirectoryChangesW(JNIEnv* env, jclass this,
     jlong hDirectory, jlong bufferAddress, jint bufferLength, jboolean watchSubTree, jint filter,
     jlong bytesReturnedAddress, jlong pOverlapped)
 {
     BOOL res;
     BOOL subtree = (watchSubTree == JNI_TRUE) ? TRUE : FALSE;
-    LPOVERLAPPED ov = (LPOVERLAPPED)jlong_to_ptr(pOverlapped);
+
+    /* Any unused members of [OVERLAPPED] structure should always be initialized to zero
+       before the structure is used in a function call.
+       Otherwise, the function may fail and return ERROR_INVALID_PARAMETER.
+       http://msdn.microsoft.com/en-us/library/windows/desktop/ms684342%28v=vs.85%29.aspx
+
+       The [Offset] and [OffsetHigh] members of this structure are not used.
+       http://msdn.microsoft.com/en-us/library/windows/desktop/aa365465%28v=vs.85%29.aspx
+
+       [hEvent] should be zero, other fields are the return values. */
+    ZeroMemory((LPOVERLAPPED)jlong_to_ptr(pOverlapped), sizeof(OVERLAPPED));
 
     res = ReadDirectoryChangesW((HANDLE)jlong_to_ptr(hDirectory),
                                 (LPVOID)jlong_to_ptr(bufferAddress),

@@ -27,7 +27,7 @@
  * @key regression
  * @summary Regression test for attach issue where stale pid files in /tmp lead to connection issues
  * @library /testlibrary
- * @build com.oracle.java.testlibrary.* AttachWithStalePidFileTarget
+ * @compile AttachWithStalePidFileTarget.java
  * @run main AttachWithStalePidFile
  */
 

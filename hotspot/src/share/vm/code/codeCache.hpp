@@ -134,6 +134,10 @@ class CodeCache : AllStatic {
   // to) any unmarked codeBlobs in the cache.  Sets "marked_for_unloading"
   // to "true" iff some code got unloaded.
   static void do_unloading(BoolObjectClosure* is_alive, bool unloading_occurred);
+  static void oops_do(OopClosure* f) {
+    CodeBlobToOopClosure oopc(f, /*do_marking=*/ false);
+    blobs_do(&oopc);
+  }
   static void asserted_non_scavengable_nmethods_do(CodeBlobClosure* f = NULL) PRODUCT_RETURN;
   static void scavenge_root_nmethods_do(CodeBlobClosure* f);
 
@@ -168,9 +172,6 @@ class CodeCache : AllStatic {
   static void set_needs_cache_clean(bool v)      { _needs_cache_clean = v;    }
   static void clear_inline_caches();             // clear all inline caches
 
-  static void verify_clean_inline_caches();
-  static void verify_icholder_relocations();
-
   // Deoptimization
   static int  mark_for_deoptimization(DepChange& changes);
 #ifdef HOTSWAP
@@ -179,6 +180,7 @@ class CodeCache : AllStatic {
 
   static void mark_all_nmethods_for_deoptimization();
   static int  mark_for_deoptimization(Method* dependee);
+  static void make_marked_nmethods_zombies();
   static void make_marked_nmethods_not_entrant();
 
     // tells how many nmethods have dependencies

@@ -43,11 +43,9 @@ Node *PhaseIdealLoop::split_thru_phi( Node *n, Node *region, int policy ) {
     return NULL;
   }
 
-  // Splitting range check CastIIs through a loop induction Phi can
-  // cause new Phis to be created that are left unrelated to the loop
-  // induction Phi and prevent optimizations (vectorization)
-  if (n->Opcode() == Op_CastII && n->as_CastII()->has_range_check() &&
-      region->is_CountedLoop() && n->in(1) == region->as_CountedLoop()->phi()) {
+  if (n->is_MathExact()) {
+    // MathExact has projections that are not correctly handled in the code
+    // below.
     return NULL;
   }
 
@@ -247,13 +245,8 @@ void PhaseIdealLoop::dominated_by( Node *prevdom, Node *iff, bool flip, bool exc
   ProjNode* dp_proj  = dp->as_Proj();
   ProjNode* unc_proj = iff->as_If()->proj_out(1 - dp_proj->_con)->as_Proj();
   if (exclude_loop_predicate &&
-      (unc_proj->is_uncommon_trap_proj(Deoptimization::Reason_predicate) ||
-       unc_proj->is_uncommon_trap_proj(Deoptimization::Reason_range_check))) {
-    // If this is a range check (IfNode::is_range_check), do not
-    // reorder because Compile::allow_range_check_smearing might have
-    // changed the check.
+      unc_proj->is_uncommon_trap_proj(Deoptimization::Reason_predicate))
     return; // Let IGVN transformation change control dependence.
-  }
 
   IdealLoopTree *old_loop = get_loop(dp);
 
@@ -747,7 +740,7 @@ static bool merge_point_too_heavy(Compile* C, Node* region) {
   for (DUIterator_Fast imax, i = region->fast_outs(imax); i < imax; i++) {
     weight += region->fast_out(i)->outcnt();
   }
-  int nodes_left = C->max_node_limit() - C->live_nodes();
+  int nodes_left = MaxNodeLimit - C->live_nodes();
   if (weight * 8 > nodes_left) {
 #ifndef PRODUCT
     if (PrintOpto)
@@ -780,9 +773,6 @@ static bool merge_point_safe(Node* region) {
 #ifdef _LP64
         if (m->Opcode() == Op_ConvI2L)
           return false;
-        if (m->is_CastII() && m->isa_CastII()->has_range_check()) {
-          return false;
-        }
 #endif
       }
     }
@@ -912,23 +902,23 @@ void PhaseIdealLoop::split_if_with_blocks_post( Node *n ) {
   int n_op = n->Opcode();
 
   // Check for an IF being dominated by another IF same test
-  if (n_op == Op_If) {
+  if( n_op == Op_If ) {
     Node *bol = n->in(1);
     uint max = bol->outcnt();
     // Check for same test used more than once?
-    if (max > 1 && bol->is_Bool()) {
+    if( n_op == Op_If && max > 1 && bol->is_Bool() ) {
       // Search up IDOMs to see if this IF is dominated.
       Node *cutoff = get_ctrl(bol);
 
       // Now search up IDOMs till cutoff, looking for a dominating test
       Node *prevdom = n;
       Node *dom = idom(prevdom);
-      while (dom != cutoff) {
-        if (dom->req() > 1 && dom->in(1) == bol && prevdom->in(0) == dom) {
+      while( dom != cutoff ) {
+        if( dom->req() > 1 && dom->in(1) == bol && prevdom->in(0) == dom ) {
           // Replace the dominated test with an obvious true or false.
           // Place it on the IGVN worklist for later cleanup.
           C->set_major_progress();
-          dominated_by(prevdom, n, false, true);
+          dominated_by( prevdom, n, false, true );
 #ifndef PRODUCT
           if( VerifyLoopOptimizations ) verify();
 #endif
@@ -1125,8 +1115,8 @@ BoolNode *PhaseIdealLoop::clone_iff( PhiNode *phi, IdealLoopTree *loop ) {
     Node *n2 = phi->in(i)->in(1)->in(2);
     phi1->set_req( i, n1 );
     phi2->set_req( i, n2 );
-    phi1->set_type( phi1->type()->meet_speculative(n1->bottom_type()));
-    phi2->set_type( phi2->type()->meet_speculative(n2->bottom_type()));
+    phi1->set_type( phi1->type()->meet(n1->bottom_type()) );
+    phi2->set_type( phi2->type()->meet(n2->bottom_type()) );
   }
   // See if these Phis have been made before.
   // Register with optimizer
@@ -1199,8 +1189,8 @@ CmpNode *PhaseIdealLoop::clone_bool( PhiNode *phi, IdealLoopTree *loop ) {
     }
     phi1->set_req( j, n1 );
     phi2->set_req( j, n2 );
-    phi1->set_type(phi1->type()->meet_speculative(n1->bottom_type()));
-    phi2->set_type(phi2->type()->meet_speculative(n2->bottom_type()));
+    phi1->set_type( phi1->type()->meet(n1->bottom_type()) );
+    phi2->set_type( phi2->type()->meet(n2->bottom_type()) );
   }
 
   // See if these Phis have been made before.
@@ -1417,8 +1407,7 @@ void PhaseIdealLoop::clone_loop( IdealLoopTree *loop, Node_List &old_new, int dd
         // loop.  Happens if people set a loop-exit flag; then test the flag
         // in the loop to break the loop, then test is again outside of the
         // loop to determine which way the loop exited.
-        // Loop predicate If node connects to Bool node through Opaque1 node.
-        if (use->is_If() || use->is_CMove() || C->is_predicate_opaq(use)) {
+        if( use->is_If() || use->is_CMove() ) {
           // Since this code is highly unlikely, we lazily build the worklist
           // of such Nodes to go split.
           if( !split_if_set )
@@ -2373,7 +2362,8 @@ bool PhaseIdealLoop::partial_peel( IdealLoopTree *loop, Node_List &old_new ) {
         opc == Op_Catch     ||
         opc == Op_CatchProj ||
         opc == Op_Jump      ||
-        opc == Op_JumpProj) {
+        opc == Op_JumpProj  ||
+        opc == Op_FlagsProj) {
 #if !defined(PRODUCT)
       if (TracePartialPeeling) {
         tty->print_cr("\nExit control too complex: lp: %d", head->_idx);
@@ -2715,7 +2705,6 @@ bool PhaseIdealLoop::partial_peel( IdealLoopTree *loop, Node_List &old_new ) {
   // Inhibit more partial peeling on this loop
   new_head_clone->set_partial_peel_loop();
   C->set_major_progress();
-  loop->record_for_igvn();
 
 #if !defined(PRODUCT)
   if (TracePartialPeeling) {
@@ -2785,11 +2774,11 @@ void PhaseIdealLoop::reorg_offsets(IdealLoopTree *loop) {
       // Hit!  Refactor use to use the post-incremented tripcounter.
       // Compute a post-increment tripcounter.
       Node *opaq = new (C) Opaque2Node( C, cle->incr() );
-      register_new_node(opaq, exit);
+      register_new_node( opaq, u_ctrl );
       Node *neg_stride = _igvn.intcon(-cle->stride_con());
       set_ctrl(neg_stride, C->root());
       Node *post = new (C) AddINode( opaq, neg_stride);
-      register_new_node(post, exit);
+      register_new_node( post, u_ctrl );
       _igvn.rehash_node_delayed(use);
       for (uint j = 1; j < use->req(); j++) {
         if (use->in(j) == phi)

@@ -188,9 +188,8 @@ public class CorbaTransportManagerImpl
             for (Object cc : outboundConnectionCaches.values()) {
                 ((ConnectionCache)cc).close() ;
             }
-            for (Object icc : inboundConnectionCaches.values()) {
-                ((ConnectionCache)icc).close() ;
-                unregisterAcceptor(((InboundConnectionCache)icc).getAcceptor());
+            for (Object cc : inboundConnectionCaches.values()) {
+                ((ConnectionCache)cc).close() ;
             }
             getSelector(0).close();
         } finally {

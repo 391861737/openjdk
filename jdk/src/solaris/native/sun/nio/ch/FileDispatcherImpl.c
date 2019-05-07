@@ -34,10 +34,6 @@
 #include <fcntl.h>
 #include <sys/uio.h>
 #include <unistd.h>
-#if defined(__linux__)
-#include <linux/fs.h>
-#include <sys/ioctl.h>
-#endif
 #include "nio.h"
 #include "nio_util.h"
 
@@ -151,19 +147,6 @@ Java_sun_nio_ch_FileDispatcherImpl_force0(JNIEnv *env, jobject this,
     if (md == JNI_FALSE) {
         result = fdatasync(fd);
     } else {
-#ifdef _AIX
-        /* On AIX, calling fsync on a file descriptor that is opened only for
-         * reading results in an error ("EBADF: The FileDescriptor parameter is
-         * not a valid file descriptor open for writing.").
-         * However, at this point it is not possibly anymore to read the
-         * 'writable' attribute of the corresponding file channel so we have to
-         * use 'fcntl'.
-         */
-        int getfl = fcntl(fd, F_GETFL);
-        if (getfl >= 0 && (getfl & O_ACCMODE) == O_RDONLY) {
-            return 0;
-        }
-#endif
         result = fsync(fd);
     }
     return handle(env, result, "Force failed");
@@ -181,21 +164,10 @@ Java_sun_nio_ch_FileDispatcherImpl_truncate0(JNIEnv *env, jobject this,
 JNIEXPORT jlong JNICALL
 Java_sun_nio_ch_FileDispatcherImpl_size0(JNIEnv *env, jobject this, jobject fdo)
 {
-    jint fd = fdval(env, fdo);
     struct stat64 fbuf;
 
-    if (fstat64(fd, &fbuf) < 0)
+    if (fstat64(fdval(env, fdo), &fbuf) < 0)
         return handle(env, -1, "Size failed");
-
-#ifdef BLKGETSIZE64
-    if (S_ISBLK(fbuf.st_mode)) {
-        uint64_t size;
-        if (ioctl(fd, BLKGETSIZE64, &size) < 0)
-            return handle(env, -1, "Size failed");
-        return (jlong)size;
-    }
-#endif
-
     return fbuf.st_size;
 }
 

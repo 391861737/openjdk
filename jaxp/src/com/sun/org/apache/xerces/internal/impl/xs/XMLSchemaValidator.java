@@ -1,15 +1,15 @@
 /*
- * Copyright (c) 2015, Oracle and/or its affiliates. All rights reserved.
+ * reserved comment block
+ * DO NOT REMOVE OR ALTER!
  */
 /*
- * Licensed to the Apache Software Foundation (ASF) under one or more
- * contributor license agreements.  See the NOTICE file distributed with
- * this work for additional information regarding copyright ownership.
- * The ASF licenses this file to You under the Apache License, Version 2.0
- * (the "License"); you may not use this file except in compliance with
- * the License.  You may obtain a copy of the License at
+ * Copyright 1999-2005 The Apache Software Foundation.
  *
- *     http://www.apache.org/licenses/LICENSE-2.0
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
@@ -20,6 +20,16 @@
 
 package com.sun.org.apache.xerces.internal.impl.xs;
 
+import java.io.IOException;
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.Hashtable;
+import java.util.Iterator;
+import java.util.Map;
+import java.util.Stack;
+import java.util.Vector;
+import java.util.ArrayList;
+import javax.xml.XMLConstants;
 import com.sun.org.apache.xerces.internal.impl.Constants;
 import com.sun.org.apache.xerces.internal.impl.RevalidationHandler;
 import com.sun.org.apache.xerces.internal.impl.XMLEntityManager;
@@ -41,14 +51,13 @@ import com.sun.org.apache.xerces.internal.impl.xs.identity.XPathMatcher;
 import com.sun.org.apache.xerces.internal.impl.xs.models.CMBuilder;
 import com.sun.org.apache.xerces.internal.impl.xs.models.CMNodeFactory;
 import com.sun.org.apache.xerces.internal.impl.xs.models.XSCMValidator;
-import com.sun.org.apache.xerces.internal.parsers.XMLParser;
 import com.sun.org.apache.xerces.internal.util.AugmentationsImpl;
 import com.sun.org.apache.xerces.internal.util.IntStack;
 import com.sun.org.apache.xerces.internal.util.SymbolTable;
-import com.sun.org.apache.xerces.internal.util.URI.MalformedURIException;
 import com.sun.org.apache.xerces.internal.util.XMLAttributesImpl;
 import com.sun.org.apache.xerces.internal.util.XMLChar;
 import com.sun.org.apache.xerces.internal.util.XMLSymbols;
+import com.sun.org.apache.xerces.internal.util.URI.MalformedURIException;
 import com.sun.org.apache.xerces.internal.xni.Augmentations;
 import com.sun.org.apache.xerces.internal.xni.NamespaceContext;
 import com.sun.org.apache.xerces.internal.xni.QName;
@@ -74,13 +83,7 @@ import com.sun.org.apache.xerces.internal.xs.StringList;
 import com.sun.org.apache.xerces.internal.xs.XSConstants;
 import com.sun.org.apache.xerces.internal.xs.XSObjectList;
 import com.sun.org.apache.xerces.internal.xs.XSTypeDefinition;
-import java.io.IOException;
-import java.util.ArrayList;
-import java.util.Collections;
-import java.util.HashMap;
-import java.util.Map;
-import java.util.Stack;
-import java.util.Vector;
+import com.sun.org.apache.xerces.internal.parsers.XMLParser;
 
 /**
  * The XML Schema validator. The validator implements a document
@@ -305,6 +308,9 @@ public class XMLSchemaValidator
     protected static final int ID_CONSTRAINT_NUM = 1;
 
     //
+    private static final Hashtable EMPTY_TABLE = new Hashtable();
+
+    //
     // Data
     //
 
@@ -489,7 +495,7 @@ public class XMLSchemaValidator
 
     /** Schema Grammar Description passed,  to give a chance to application to supply the Grammar */
     protected final XSDDescription fXSDDescription = new XSDDescription();
-    protected final Map<String, XMLSchemaLoader.LocationArray> fLocationPairs = new HashMap<>();
+    protected final Hashtable fLocationPairs = new Hashtable();
 
 
     // handlers
@@ -2352,7 +2358,8 @@ public class XMLSchemaValidator
             }
         }
         if (nsLocation != null) {
-            XMLSchemaLoader.LocationArray la = fLocationPairs.get(XMLSymbols.EMPTY_STRING);
+            XMLSchemaLoader.LocationArray la =
+                ((XMLSchemaLoader.LocationArray) fLocationPairs.get(XMLSymbols.EMPTY_STRING));
             if (la == null) {
                 la = new XMLSchemaLoader.LocationArray();
                 fLocationPairs.put(XMLSymbols.EMPTY_STRING, la);
@@ -2407,11 +2414,11 @@ public class XMLSchemaValidator
                 fXSDDescription.setBaseSystemId(fLocator.getExpandedSystemId());
             }
 
-            Map<String, XMLSchemaLoader.LocationArray> locationPairs = fLocationPairs;
-            XMLSchemaLoader.LocationArray locationArray =
+            Hashtable locationPairs = fLocationPairs;
+            Object locationArray =
                 locationPairs.get(namespace == null ? XMLSymbols.EMPTY_STRING : namespace);
             if (locationArray != null) {
-                String[] temp = locationArray.getLocationArray();
+                String[] temp = ((XMLSchemaLoader.LocationArray) locationArray).getLocationArray();
                 if (temp.length != 0) {
                     setLocationHints(fXSDDescription, temp, grammar);
                 }
@@ -2421,7 +2428,7 @@ public class XMLSchemaValidator
                 boolean toParseSchema = true;
                 if (grammar != null) {
                      // use location hints instead
-                    locationPairs = Collections.emptyMap();
+                    locationPairs = EMPTY_TABLE;
                 }
 
                 // try to parse the grammar using location hints from that namespace..
@@ -3681,7 +3688,7 @@ public class XMLSchemaValidator
 
         protected void checkDuplicateValues() {
             // no-op
-        } // duplicateValue(Map)
+        } // duplicateValue(Hashtable)
 
         /** Returns a string of the specified values. */
         protected String toString(Object[] values) {
@@ -3854,7 +3861,7 @@ public class XMLSchemaValidator
                 String cName = fIdentityConstraint.getIdentityConstraintName();
                 reportSchemaError(code, new Object[] { value, eName, cName });
             }
-        } // duplicateValue(Map)
+        } // duplicateValue(Hashtable)
 
     } // class UniqueValueStore
 
@@ -3891,7 +3898,7 @@ public class XMLSchemaValidator
                 String cName = fIdentityConstraint.getIdentityConstraintName();
                 reportSchemaError(code, new Object[] { value, eName, cName });
             }
-        } // duplicateValue(Map)
+        } // duplicateValue(Hashtable)
 
     } // class KeyValueStore
 
@@ -3983,15 +3990,14 @@ public class XMLSchemaValidator
 
         /**
          * Values stores associated to specific identity constraints.
-         * This map maps IdentityConstraints and
+         * This hashtable maps IdentityConstraints and
          * the 0-based element on which their selectors first matched to
          * a corresponding ValueStore.  This should take care
          * of all cases, including where ID constraints with
          * descendant-or-self axes occur on recursively-defined
          * elements.
          */
-        protected final Map<LocalIDKey, ValueStoreBase>
-                fIdentityConstraint2ValueStoreMap = new HashMap<>();
+        protected final Hashtable fIdentityConstraint2ValueStoreMap = new Hashtable();
 
         // sketch of algorithm:
         // - when a constraint is first encountered, its
@@ -4004,7 +4010,7 @@ public class XMLSchemaValidator
         // The fGlobalIDMapStack has the following structure:
         // - validation always occurs against the fGlobalIDConstraintMap
         // (which comprises all the "eligible" id constraints);
-        // When an endElement is found, this Map is merged with the one
+        // When an endElement is found, this Hashtable is merged with the one
         // below in the stack.
         // When a start tag is encountered, we create a new
         // fGlobalIDConstraintMap.
@@ -4012,10 +4018,8 @@ public class XMLSchemaValidator
         // the preceding siblings' eligible id constraints;
         // the fGlobalIDConstraintMap contains descendants+self.
         // keyrefs can only match descendants+self.
-        protected final Stack<Map<IdentityConstraint, ValueStoreBase>>
-                fGlobalMapStack = new Stack<>();
-        protected final Map<IdentityConstraint, ValueStoreBase>
-                fGlobalIDConstraintMap = new HashMap<>();
+        protected final Stack fGlobalMapStack = new Stack();
+        protected final Hashtable fGlobalIDConstraintMap = new Hashtable();
 
         //
         // Constructors
@@ -4042,8 +4046,7 @@ public class XMLSchemaValidator
         public void startElement() {
             // only clone the hashtable when there are elements
             if (fGlobalIDConstraintMap.size() > 0)
-                fGlobalMapStack.push((Map<IdentityConstraint, ValueStoreBase>)
-                        ((HashMap)fGlobalIDConstraintMap).clone());
+                fGlobalMapStack.push(fGlobalIDConstraintMap.clone());
             else
                 fGlobalMapStack.push(null);
             fGlobalIDConstraintMap.clear();
@@ -4056,17 +4059,19 @@ public class XMLSchemaValidator
             if (fGlobalMapStack.isEmpty()) {
                 return; // must be an invalid doc!
             }
-            Map<IdentityConstraint, ValueStoreBase> oldMap = fGlobalMapStack.pop();
+            Hashtable oldMap = (Hashtable) fGlobalMapStack.pop();
             // return if there is no element
             if (oldMap == null) {
                 return;
             }
 
-            for (Map.Entry<IdentityConstraint, ValueStoreBase> entry : oldMap.entrySet()) {
-                IdentityConstraint id = entry.getKey();
-                ValueStoreBase oldVal = entry.getValue();
+            Iterator entries = oldMap.entrySet().iterator();
+            while (entries.hasNext()) {
+                Map.Entry entry = (Map.Entry) entries.next();
+                IdentityConstraint id = (IdentityConstraint) entry.getKey();
+                ValueStoreBase oldVal = (ValueStoreBase) entry.getValue();
                 if (oldVal != null) {
-                    ValueStoreBase currVal = fGlobalIDConstraintMap.get(id);
+                    ValueStoreBase currVal = (ValueStoreBase) fGlobalIDConstraintMap.get(id);
                     if (currVal == null) {
                         fGlobalIDConstraintMap.put(id, oldVal);
                     }
@@ -4140,25 +4145,26 @@ public class XMLSchemaValidator
         public ValueStoreBase getValueStoreFor(IdentityConstraint id, int initialDepth) {
             fLocalId.fDepth = initialDepth;
             fLocalId.fId = id;
-            return fIdentityConstraint2ValueStoreMap.get(fLocalId);
+            return (ValueStoreBase) fIdentityConstraint2ValueStoreMap.get(fLocalId);
         } // getValueStoreFor(IdentityConstraint, int):ValueStoreBase
 
         /** Returns the global value store associated to the specified IdentityConstraint. */
         public ValueStoreBase getGlobalValueStoreFor(IdentityConstraint id) {
-            return fGlobalIDConstraintMap.get(id);
+            return (ValueStoreBase) fGlobalIDConstraintMap.get(id);
         } // getValueStoreFor(IdentityConstraint):ValueStoreBase
 
         // This method takes the contents of the (local) ValueStore
         // associated with id and moves them into the global
-        // map, if id is a <unique> or a <key>.
+        // hashtable, if id is a <unique> or a <key>.
         // If it's a <keyRef>, then we leave it for later.
         public void transplant(IdentityConstraint id, int initialDepth) {
             fLocalId.fDepth = initialDepth;
             fLocalId.fId = id;
-            ValueStoreBase newVals = fIdentityConstraint2ValueStoreMap.get(fLocalId);
+            ValueStoreBase newVals =
+                (ValueStoreBase) fIdentityConstraint2ValueStoreMap.get(fLocalId);
             if (id.getCategory() == IdentityConstraint.IC_KEYREF)
                 return;
-            ValueStoreBase currVals = fGlobalIDConstraintMap.get(id);
+            ValueStoreBase currVals = (ValueStoreBase) fGlobalIDConstraintMap.get(id);
             if (currVals != null) {
                 currVals.append(newVals);
                 fGlobalIDConstraintMap.put(id, currVals);
@@ -4199,7 +4205,7 @@ public class XMLSchemaValidator
     } // class ValueStoreCache
 
     // the purpose of this class is to enable IdentityConstraint,int
-    // pairs to be used easily as keys in Maps.
+    // pairs to be used easily as keys in Hashtables.
     protected class LocalIDKey {
 
         public IdentityConstraint fId;

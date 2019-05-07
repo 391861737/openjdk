@@ -64,8 +64,12 @@ public final class DataPropertyDescriptor extends ScriptObject implements Proper
     // initialized by nasgen
     private static PropertyMap $nasgenmap$;
 
+    static PropertyMap getInitialMap() {
+        return $nasgenmap$;
+    }
+
     DataPropertyDescriptor(final boolean configurable, final boolean enumerable, final boolean writable, final Object value, final Global global) {
-        super(global.getObjectPrototype(), $nasgenmap$);
+        super(global.getObjectPrototype(), global.getDataPropertyDescriptorMap());
         this.configurable = configurable;
         this.enumerable   = enumerable;
         this.writable     = writable;
@@ -168,19 +172,6 @@ public final class DataPropertyDescriptor extends ScriptObject implements Proper
     }
 
     @Override
-    public boolean hasAndEquals(final PropertyDescriptor otherDesc) {
-        if (! (otherDesc instanceof DataPropertyDescriptor)) {
-            return false;
-        }
-
-        final DataPropertyDescriptor other = (DataPropertyDescriptor)otherDesc;
-        return (!has(CONFIGURABLE) || sameValue(configurable, other.configurable)) &&
-               (!has(ENUMERABLE) || sameValue(enumerable, other.enumerable)) &&
-               (!has(WRITABLE) || sameValue(writable, other.writable)) &&
-               (!has(VALUE) || sameValue(value, other.value));
-    }
-
-    @Override
     public boolean equals(final Object obj) {
         if (this == obj) {
             return true;
@@ -194,11 +185,6 @@ public final class DataPropertyDescriptor extends ScriptObject implements Proper
                sameValue(enumerable, other.enumerable) &&
                sameValue(writable, other.writable) &&
                sameValue(value, other.value);
-    }
-
-    @Override
-    public String toString() {
-        return '[' + getClass().getSimpleName() + " {configurable=" + configurable + " enumerable=" + enumerable + " writable=" + writable + " value=" + value + "}]";
     }
 
     @Override

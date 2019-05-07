@@ -30,7 +30,7 @@ import java.util.Comparator;
 /**
  * Class histogram element for IR / Java object instrumentation
  */
-public final class ClassHistogramElement {
+public class ClassHistogramElement {
     /**
      * Instance comparator
      */

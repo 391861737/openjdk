@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 1997, 2014, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 1997, 2013, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -28,8 +28,6 @@
 #include "interpreter/interpreterRuntime.hpp"
 #include "memory/allocation.inline.hpp"
 #include "prims/methodHandles.hpp"
-
-PRAGMA_FORMAT_MUTE_WARNINGS_FOR_GCC
 
 #define __ _masm->
 
@@ -373,7 +371,7 @@ void MethodHandles::generate_method_handle_dispatch(MacroAssembler* _masm,
     //  member_reg - MemberName that was the trailing argument
     //  temp1_recv_klass - klass of stacked receiver, if needed
     //  rsi/r13 - interpreter linkage (if interpreted)
-    //  rcx, rdx, rsi, rdi, r8 - compiler arguments (if compiled)
+    //  rcx, rdx, rsi, rdi, r8, r8 - compiler arguments (if compiled)
 
     Label L_incompatible_class_change_error;
     switch (iid) {
@@ -483,7 +481,7 @@ void trace_method_handle_stub(const char* adaptername,
   bool has_mh = (strstr(adaptername, "/static") == NULL &&
                  strstr(adaptername, "linkTo") == NULL);    // static linkers don't have MH
   const char* mh_reg_name = has_mh ? "rcx_mh" : "rcx";
-  tty->print_cr("MH %s %s="PTR_FORMAT" sp="PTR_FORMAT,
+  tty->print_cr("MH %s %s=" PTR_FORMAT" sp=" PTR_FORMAT,
                 adaptername, mh_reg_name,
                 (void *)mh, entry_sp);
 

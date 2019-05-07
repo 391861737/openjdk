@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2003, 2016, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2003, 2013, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -53,7 +53,6 @@ private:
   DictionaryEntry* get_entry(int index, unsigned int hash,
                              Symbol* name, ClassLoaderData* loader_data);
 
-protected:
   DictionaryEntry* bucket(int i) {
     return (DictionaryEntry*)Hashtable<Klass*, mtClass>::bucket(i);
   }
@@ -66,8 +65,6 @@ protected:
   void add_entry(int index, DictionaryEntry* new_entry) {
     Hashtable<Klass*, mtClass>::add_entry(index, (HashtableEntry<Klass*, mtClass>*)new_entry);
   }
-
-  static size_t entry_size();
 
 public:
   Dictionary(int table_size);
@@ -92,7 +89,6 @@ public:
   // GC support
   void oops_do(OopClosure* f);
   void always_strong_oops_do(OopClosure* blk);
-  void roots_oops_do(OopClosure* strong, OopClosure* weak);
 
   void always_strong_classes_do(KlassClosure* closure);
 
@@ -103,7 +99,6 @@ public:
   void methods_do(void f(Method*));
 
   void unlink(BoolObjectClosure* is_alive);
-  void remove_classes_in_error_state();
 
   // Classes loaded by the bootstrap loader are always strongly reachable.
   // If we're not doing class unloading, all classes are strongly reachable.
@@ -112,8 +107,9 @@ public:
     return (loader_data->is_the_null_class_loader_data() || !ClassUnloading);
   }
 
-  // Unload (that is, break root links to) all unmarked classes and loaders.
-  void do_unloading();
+  // Unload (that is, break root links to) all unmarked classes and
+  // loaders.  Returns "true" iff something was unloaded.
+  bool do_unloading();
 
   // Protection domains
   Klass* find(int index, unsigned int hash, Symbol* name,
@@ -130,7 +126,9 @@ public:
 
   ProtectionDomainCacheEntry* cache_get(oop protection_domain);
 
-  void print(bool details = true);
+#ifndef PRODUCT
+  void print();
+#endif
   void verify();
 };
 
@@ -220,7 +218,6 @@ public:
   // GC support
   void oops_do(OopClosure* f);
   void always_strong_oops_do(OopClosure* f);
-  void roots_oops_do(OopClosure* strong, OopClosure* weak);
 
   static uint bucket_size();
 
@@ -373,7 +370,7 @@ class SymbolPropertyEntry : public HashtableEntry<Symbol*, mtSymbol> {
 
   void print_on(outputStream* st) const {
     symbol()->print_value_on(st);
-    st->print("/mode="INTX_FORMAT, symbol_mode());
+    st->print("/mode=" INTX_FORMAT, symbol_mode());
     st->print(" -> ");
     bool printed = false;
     if (method() != NULL) {
@@ -382,7 +379,7 @@ class SymbolPropertyEntry : public HashtableEntry<Symbol*, mtSymbol> {
     }
     if (method_type() != NULL) {
       if (printed)  st->print(" and ");
-      st->print(INTPTR_FORMAT, p2i((void *)method_type()));
+      st->print(INTPTR_FORMAT, (void *)method_type());
       printed = true;
     }
     st->print_cr(printed ? "" : "(empty)");

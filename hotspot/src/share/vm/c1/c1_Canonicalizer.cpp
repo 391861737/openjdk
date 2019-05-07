@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 1999, 2016, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 1999, 2013, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -265,8 +265,7 @@ void Canonicalizer::do_StoreIndexed   (StoreIndexed*    x) {
     // limit this optimization to current block
     if (value != NULL && in_current_block(conv)) {
       set_canonical(new StoreIndexed(x->array(), x->index(), x->length(),
-                                     x->elt_type(), value, x->state_before(),
-                                     x->check_boolean()));
+                                     x->elt_type(), value, x->state_before()));
       return;
     }
   }
@@ -328,7 +327,7 @@ void Canonicalizer::do_ShiftOp        (ShiftOp*         x) {
   if (t2->is_constant()) {
     switch (t2->tag()) {
       case intTag   : if (t2->as_IntConstant()->value() == 0)  set_canonical(x->x()); return;
-      case longTag  : if (t2->as_LongConstant()->value() == (jlong)0)  set_canonical(x->x()); return;
+      case longTag  : if (t2->as_IntConstant()->value() == 0)  set_canonical(x->x()); return;
       default       : ShouldNotReachHere();
     }
   }
@@ -640,7 +639,7 @@ void Canonicalizer::do_If(If* x) {
 
   if (l == r && !lt->is_float_kind()) {
     // pattern: If (a cond a) => simplify to Goto
-    BlockBegin* sux = NULL;
+    BlockBegin* sux;
     switch (x->cond()) {
     case If::eql: sux = x->sux_for(true);  break;
     case If::neq: sux = x->sux_for(false); break;
@@ -648,7 +647,6 @@ void Canonicalizer::do_If(If* x) {
     case If::leq: sux = x->sux_for(true);  break;
     case If::gtr: sux = x->sux_for(false); break;
     case If::geq: sux = x->sux_for(true);  break;
-    default: ShouldNotReachHere();
     }
     // If is a safepoint then the debug information should come from the state_before of the If.
     set_canonical(new Goto(sux, x->state_before(), is_safepoint(x, sux)));
@@ -686,7 +684,7 @@ void Canonicalizer::do_If(If* x) {
       } else {
         // two successors differ and two successors are the same => simplify to: If (x cmp y)
         // determine new condition & successors
-        If::Condition cond = If::eql;
+        If::Condition cond;
         BlockBegin* tsux = NULL;
         BlockBegin* fsux = NULL;
              if (lss_sux == eql_sux) { cond = If::leq; tsux = lss_sux; fsux = gtr_sux; }
@@ -810,41 +808,28 @@ void Canonicalizer::do_ExceptionObject(ExceptionObject* x) {}
 
 static bool match_index_and_scale(Instruction*  instr,
                                   Instruction** index,
-                                  int*          log2_scale) {
-  // Skip conversion ops. This works only on 32bit because of the implicit l2i that the
-  // unsafe performs.
-#ifndef _LP64
+                                  int*          log2_scale,
+                                  Instruction** instr_to_unpin) {
+  *instr_to_unpin = NULL;
+
+  // Skip conversion ops
   Convert* convert = instr->as_Convert();
-  if (convert != NULL && convert->op() == Bytecodes::_i2l) {
-    assert(convert->value()->type() == intType, "invalid input type");
+  if (convert != NULL) {
     instr = convert->value();
   }
-#endif
 
   ShiftOp* shift = instr->as_ShiftOp();
   if (shift != NULL) {
-    if (shift->op() == Bytecodes::_lshl) {
-      assert(shift->x()->type() == longType, "invalid input type");
-    } else {
-#ifndef _LP64
-      if (shift->op() == Bytecodes::_ishl) {
-        assert(shift->x()->type() == intType, "invalid input type");
-      } else {
-        return false;
-      }
-#else
-      return false;
-#endif
+    if (shift->is_pinned()) {
+      *instr_to_unpin = shift;
     }
-
-
     // Constant shift value?
     Constant* con = shift->y()->as_Constant();
     if (con == NULL) return false;
     // Well-known type and value?
     IntConstant* val = con->type()->as_IntConstant();
-    assert(val != NULL, "Should be an int constant");
-
+    if (val == NULL) return false;
+    if (shift->x()->type() != intType) return false;
     *index = shift->x();
     int tmp_scale = val->value();
     if (tmp_scale >= 0 && tmp_scale < 4) {
@@ -857,42 +842,31 @@ static bool match_index_and_scale(Instruction*  instr,
 
   ArithmeticOp* arith = instr->as_ArithmeticOp();
   if (arith != NULL) {
-    // See if either arg is a known constant
-    Constant* con = arith->x()->as_Constant();
-    if (con != NULL) {
-      *index = arith->y();
-    } else {
-      con = arith->y()->as_Constant();
-      if (con == NULL) return false;
-      *index = arith->x();
+    if (arith->is_pinned()) {
+      *instr_to_unpin = arith;
     }
-    long const_value;
     // Check for integer multiply
-    if (arith->op() == Bytecodes::_lmul) {
-      assert((*index)->type() == longType, "invalid input type");
-      LongConstant* val = con->type()->as_LongConstant();
-      assert(val != NULL, "expecting a long constant");
-      const_value = val->value();
-    } else {
-#ifndef _LP64
-      if (arith->op() == Bytecodes::_imul) {
-        assert((*index)->type() == intType, "invalid input type");
-        IntConstant* val = con->type()->as_IntConstant();
-        assert(val != NULL, "expecting an int constant");
-        const_value = val->value();
+    if (arith->op() == Bytecodes::_imul) {
+      // See if either arg is a known constant
+      Constant* con = arith->x()->as_Constant();
+      if (con != NULL) {
+        *index = arith->y();
       } else {
-        return false;
+        con = arith->y()->as_Constant();
+        if (con == NULL) return false;
+        *index = arith->x();
       }
-#else
-      return false;
-#endif
-    }
-    switch (const_value) {
-    case 1: *log2_scale = 0; return true;
-    case 2: *log2_scale = 1; return true;
-    case 4: *log2_scale = 2; return true;
-    case 8: *log2_scale = 3; return true;
-    default:            return false;
+      if ((*index)->type() != intType) return false;
+      // Well-known type and value?
+      IntConstant* val = con->type()->as_IntConstant();
+      if (val == NULL) return false;
+      switch (val->value()) {
+      case 1: *log2_scale = 0; return true;
+      case 2: *log2_scale = 1; return true;
+      case 4: *log2_scale = 2; return true;
+      case 8: *log2_scale = 3; return true;
+      default:            return false;
+      }
     }
   }
 
@@ -905,37 +879,29 @@ static bool match(UnsafeRawOp* x,
                   Instruction** base,
                   Instruction** index,
                   int*          log2_scale) {
+  Instruction* instr_to_unpin = NULL;
   ArithmeticOp* root = x->base()->as_ArithmeticOp();
   if (root == NULL) return false;
   // Limit ourselves to addition for now
   if (root->op() != Bytecodes::_ladd) return false;
-
-  bool match_found = false;
   // Try to find shift or scale op
-  if (match_index_and_scale(root->y(), index, log2_scale)) {
+  if (match_index_and_scale(root->y(), index, log2_scale, &instr_to_unpin)) {
     *base = root->x();
-    match_found = true;
-  } else if (match_index_and_scale(root->x(), index, log2_scale)) {
+  } else if (match_index_and_scale(root->x(), index, log2_scale, &instr_to_unpin)) {
     *base = root->y();
-    match_found = true;
-  } else if (NOT_LP64(root->y()->as_Convert() != NULL) LP64_ONLY(false)) {
-    // Skipping i2l works only on 32bit because of the implicit l2i that the unsafe performs.
-    // 64bit needs a real sign-extending conversion.
+  } else if (root->y()->as_Convert() != NULL) {
     Convert* convert = root->y()->as_Convert();
-    if (convert->op() == Bytecodes::_i2l) {
-      assert(convert->value()->type() == intType, "should be an int");
+    if (convert->op() == Bytecodes::_i2l && convert->value()->type() == intType) {
       // pick base and index, setting scale at 1
       *base  = root->x();
       *index = convert->value();
       *log2_scale = 0;
-      match_found = true;
+    } else {
+      return false;
     }
-  }
-  // The default solution
-  if (!match_found) {
-    *base = root->x();
-    *index = root->y();
-    *log2_scale = 0;
+  } else {
+    // doesn't match any expected sequences
+    return false;
   }
 
   // If the value is pinned then it will be always be computed so

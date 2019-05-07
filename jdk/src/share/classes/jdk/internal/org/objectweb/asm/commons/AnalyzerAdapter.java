@@ -240,7 +240,6 @@ public class AnalyzerAdapter extends MethodVisitor {
                 locals.add(types[i].getInternalName());
             }
         }
-        maxLocals = locals.size();
     }
 
     @Override
@@ -520,12 +519,12 @@ public class AnalyzerAdapter extends MethodVisitor {
     // ------------------------------------------------------------------------
 
     private Object get(final int local) {
-        maxLocals = Math.max(maxLocals, local + 1);
+        maxLocals = Math.max(maxLocals, local);
         return local < locals.size() ? locals.get(local) : Opcodes.TOP;
     }
 
     private void set(final int local, final Object type) {
-        maxLocals = Math.max(maxLocals, local + 1);
+        maxLocals = Math.max(maxLocals, local);
         while (local >= locals.size()) {
             locals.add(Opcodes.TOP);
         }

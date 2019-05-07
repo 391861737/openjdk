@@ -322,6 +322,19 @@ class LinuxWatchService
                         bytesRead = 0;
                     }
 
+                    // process any pending requests
+                    if ((nReady > 1) || (nReady == 1 && bytesRead == 0)) {
+                        try {
+                            read(socketpair[0], address, BUFFER_SIZE);
+                            boolean shutdown = processRequests();
+                            if (shutdown)
+                                break;
+                        } catch (UnixException x) {
+                            if (x.errno() != UnixConstants.EAGAIN)
+                                throw x;
+                        }
+                    }
+
                     // iterate over buffer to decode events
                     int offset = 0;
                     while (offset < bytesRead) {
@@ -355,19 +368,6 @@ class LinuxWatchService
                         processEvent(wd, mask, name);
 
                         offset += (SIZEOF_INOTIFY_EVENT + len);
-                    }
-
-                    // process any pending requests
-                    if ((nReady > 1) || (nReady == 1 && bytesRead == 0)) {
-                        try {
-                            read(socketpair[0], address, BUFFER_SIZE);
-                            boolean shutdown = processRequests();
-                            if (shutdown)
-                                break;
-                        } catch (UnixException x) {
-                            if (x.errno() != UnixConstants.EAGAIN)
-                                throw x;
-                        }
                     }
                 }
             } catch (UnixException x) {

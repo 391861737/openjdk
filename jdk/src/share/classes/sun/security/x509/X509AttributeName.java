@@ -47,7 +47,7 @@ public class X509AttributeName {
      */
     public X509AttributeName(String name) {
         int i = name.indexOf(SEPARATOR);
-        if (i < 0) {
+        if (i == (-1)) {
             prefix = name;
         } else {
             prefix = name.substring(0, i);

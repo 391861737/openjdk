@@ -34,11 +34,8 @@ import java.util.StringTokenizer;
 import java.util.Random;
 
 import sun.net.www.HeaderParser;
-import sun.net.NetProperties;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
-import java.security.PrivilegedAction;
-import java.security.AccessController;
 import static sun.net.www.protocol.http.HttpURLConnection.HTTP_CONNECT;
 
 /**
@@ -53,23 +50,6 @@ class DigestAuthentication extends AuthenticationInfo {
     private static final long serialVersionUID = 100L;
 
     private String authMethod;
-
-    private final static String compatPropName = "http.auth.digest." +
-                "quoteParameters";
-
-    // true if http.auth.digest.quoteParameters Net property is true
-    private static final boolean delimCompatFlag;
-
-    static {
-        Boolean b = AccessController.doPrivileged(
-            new PrivilegedAction<Boolean>() {
-                public Boolean run() {
-                    return NetProperties.getBoolean(compatPropName);
-                }
-            }
-        );
-        delimCompatFlag = (b == null) ? false : b.booleanValue();
-    }
 
     // Authentication parameters defined in RFC2617.
     // One instance of these may be shared among several DigestAuthentication
@@ -377,34 +357,24 @@ class DigestAuthentication extends AuthenticationInfo {
             ncfield = "\", nc=" + ncstring;
         }
 
-        String algoS, qopS;
-
-        if (delimCompatFlag) {
-            // Put quotes around these String value parameters
-            algoS = ", algorithm=\"" + algorithm + "\"";
-            qopS = ", qop=\"auth\"";
-        } else {
-            // Don't put quotes around them, per the RFC
-            algoS = ", algorithm=" + algorithm;
-            qopS = ", qop=auth";
-        }
-
         String value = authMethod
                         + " username=\"" + pw.getUserName()
                         + "\", realm=\"" + realm
                         + "\", nonce=\"" + nonce
                         + ncfield
                         + ", uri=\"" + uri
-                        + "\", response=\"" + response + "\""
-                        + algoS;
+                        + "\", response=\"" + response
+                        + "\", algorithm=" + algorithm;
         if (opaque != null) {
-            value += ", opaque=\"" + opaque + "\"";
+            value = value + ", opaque=\"" + opaque;
+            value = value + "\"";
         }
         if (cnonce != null) {
-            value += ", cnonce=\"" + cnonce + "\"";
+            value = value + ", cnonce=\"" + cnonce;
+            value = value + "\"";
         }
         if (qop) {
-            value += qopS;
+            value = value + ", qop=auth";
         }
         return value;
     }

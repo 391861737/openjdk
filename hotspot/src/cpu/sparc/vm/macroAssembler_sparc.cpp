@@ -3531,7 +3531,7 @@ void MacroAssembler::bang_stack_size(Register Rsize, Register Rtsp,
   // was post-decremented.)  Skip this address by starting at i=1, and
   // touch a few more pages below.  N.B.  It is important to touch all
   // the way down to and including i=StackShadowPages.
-  for (int i = 1; i < StackShadowPages; i++) {
+  for (int i = 1; i <= StackShadowPages; i++) {
     set((-i*offset)+STACK_BIAS, Rscratch);
     st(G0, Rtsp, Rscratch);
   }
@@ -4261,7 +4261,6 @@ void MacroAssembler::bis_zeroing(Register to, Register count, Register temp, Lab
   assert(UseBlockZeroing && VM_Version::has_block_zeroing(), "only works with BIS zeroing");
   Register end = count;
   int cache_line_size = VM_Version::prefetch_data_size();
-  assert(cache_line_size > 0, "cache line size should be known for this code");
   // Minimum count when BIS zeroing can be used since
   // it needs membar which is expensive.
   int block_zero_size  = MAX2(cache_line_size*3, (int)BlockZeroingLowLimit);

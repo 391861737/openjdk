@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 1997, 2017, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 1997, 2013, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -68,7 +68,6 @@
   template(G1CollectFull)                         \
   template(G1CollectForAllocation)                \
   template(G1IncCollectionPause)                  \
-  template(DestroyAllocationContext)              \
   template(EnableBiasedLocking)                   \
   template(RevokeBias)                            \
   template(BulkRevokeBias)                        \
@@ -95,8 +94,6 @@
   template(JFRCheckpoint)                         \
   template(Exit)                                  \
   template(LinuxDllLoad)                          \
-  template(RotateGCLog)                           \
-  template(WhiteBoxOperation)                     \
 
 class VM_Operation: public CHeapObj<mtInternal> {
  public:
@@ -183,7 +180,7 @@ class VM_Operation: public CHeapObj<mtInternal> {
   static const char* mode_to_string(Mode mode);
 
   // Debugging
-  virtual void print_on_error(outputStream* st) const;
+  void print_on_error(outputStream* st) const;
   const char* name() const { return _names[type()]; }
   static const char* name(int type) {
     assert(type >= 0 && type < VMOp_Terminating, "invalid VM operation type");
@@ -398,17 +395,6 @@ class VM_Exit: public VM_Operation {
   }
   VMOp_Type type() const { return VMOp_Exit; }
   void doit();
-};
-
-
-class VM_RotateGCLog: public VM_Operation {
- private:
-  outputStream* _out;
-
- public:
-  VM_RotateGCLog(outputStream* st) : _out(st) {}
-  VMOp_Type type() const { return VMOp_RotateGCLog; }
-  void doit() { gclog_or_tty->rotate_log(true, _out); }
 };
 
 #endif // SHARE_VM_RUNTIME_VM_OPERATIONS_HPP

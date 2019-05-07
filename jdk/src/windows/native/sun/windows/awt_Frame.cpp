@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 1996, 2016, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 1996, 2013, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -82,15 +82,6 @@ struct BlockedThreadStruct {
     HHOOK mouseHook;
     HHOOK modalHook;
 };
-
-
-// Communication with plugin control
-
-// The value must be the same as in AxControl.h
-#define WM_AX_REQUEST_FOCUS_TO_EMBEDDER (WM_USER + 197)
-
-static bool SetFocusToPluginControl(HWND hwndPlugin);
-
 /************************************************************************
  * AwtFrame fields
  */
@@ -102,7 +93,6 @@ jmethodID AwtFrame::getExtendedStateMID;
 jmethodID AwtFrame::setExtendedStateMID;
 
 jmethodID AwtFrame::activateEmbeddingTopLevelMID;
-jfieldID AwtFrame::isEmbeddedInIEID;
 
 Hashtable AwtFrame::sm_BlockedThreads("AWTBlockedThreads");
 
@@ -114,7 +104,6 @@ AwtFrame::AwtFrame() {
     m_parentWnd = NULL;
     menuBar = NULL;
     m_isEmbedded = FALSE;
-    m_isEmbeddedInIE = FALSE;
     m_isLightweight = FALSE;
     m_ignoreWmSize = FALSE;
     m_isMenuDropped = FALSE;
@@ -156,7 +145,7 @@ AwtFrame* AwtFrame::Create(jobject self, jobject parent)
 
     PDATA pData;
     HWND hwndParent = NULL;
-    AwtFrame* frame = NULL;
+    AwtFrame* frame;
     jclass cls = NULL;
     jclass inputMethodWindowCls = NULL;
     jobject target = NULL;
@@ -184,11 +173,8 @@ AwtFrame* AwtFrame::Create(jobject self, jobject parent)
             BOOL isEmbeddedInstance = FALSE;
             BOOL isEmbedded = FALSE;
             cls = env->FindClass("sun/awt/EmbeddedFrame");
-
             if (cls) {
                 isEmbeddedInstance = env->IsInstanceOf(target, cls);
-            } else {
-                throw std::bad_alloc();
             }
             INT_PTR handle;
             if (isEmbeddedInstance) {
@@ -203,20 +189,11 @@ AwtFrame* AwtFrame::Create(jobject self, jobject parent)
             cls = env->FindClass("sun/awt/LightweightFrame");
             if (cls) {
                 isLightweight = env->IsInstanceOf(target, cls);
-            } else {
-                throw std::bad_alloc();
             }
             frame->m_isLightweight = isLightweight;
 
             if (isEmbedded) {
                 hwndParent = (HWND)handle;
-
-                // JDK-8056915: Handle focus communication between plugin and frame
-                frame->m_isEmbeddedInIE = IsEmbeddedInIE(hwndParent);
-                if (frame->m_isEmbeddedInIE) {
-                    env->SetBooleanField(target, isEmbeddedInIEID, JNI_TRUE);
-                }
-
                 RECT rect;
                 ::GetClientRect(hwndParent, &rect);
                 //Fix for 6328675: SWT_AWT.new_Frame doesn't occupy client area under JDK6
@@ -283,11 +260,7 @@ AwtFrame* AwtFrame::Create(jobject self, jobject parent)
 
                // for input method windows, use minimal decorations
                inputMethodWindowCls = env->FindClass("sun/awt/im/InputMethodWindow");
-               if (inputMethodWindowCls == NULL) {
-                   throw std::bad_alloc();
-               }
-
-               if (env->IsInstanceOf(target, inputMethodWindowCls)) {
+               if ((inputMethodWindowCls != NULL) && env->IsInstanceOf(target, inputMethodWindowCls)) {
                    //for below-the-spot composition window, use no decoration
                    if (env->GetBooleanField(target, AwtFrame::undecoratedID) == JNI_TRUE){
                         exStyle = 0;
@@ -356,21 +329,6 @@ done:
     return frame;
 }
 
-/*
- * Returns true if the frame is embedded into Internet Explorer.
- * The function checks the class name of the parent window of the embedded frame.
- */
-BOOL AwtFrame::IsEmbeddedInIE(HWND hwndParent)
-{
-    const char *pluginClass = "Java Plug-in Control Window";
-    #define PARENT_CLASS_BUFFER_SIZE 64
-    char parentClass[PARENT_CLASS_BUFFER_SIZE];
-
-    return (::GetClassNameA(hwndParent, parentClass, PARENT_CLASS_BUFFER_SIZE) > 0)
-           && (strncmp(parentClass, pluginClass, PARENT_CLASS_BUFFER_SIZE) == 0);
-}
-
-
 LRESULT AwtFrame::ProxyWindowProc(UINT message, WPARAM wParam, LPARAM lParam, MsgRouting &mr)
 {
     LRESULT retValue = 0L;
@@ -384,8 +342,6 @@ LRESULT AwtFrame::ProxyWindowProc(UINT message, WPARAM wParam, LPARAM lParam, Ms
         case WM_IME_STARTCOMPOSITION:
         case WM_IME_ENDCOMPOSITION:
         case WM_IME_COMPOSITION:
-        case WM_IME_SETCONTEXT:
-        case WM_IME_NOTIFY:
         case WM_IME_CONTROL:
         case WM_IME_COMPOSITIONFULL:
         case WM_IME_SELECT:
@@ -484,10 +440,7 @@ MsgRouting AwtFrame::WmShowWindow(BOOL show, UINT status)
             if (fgProcessID != ::GetCurrentProcessId()) {
                 AwtWindow* window = (AwtWindow*)GetComponent(GetHWnd());
 
-                if (window != NULL &&
-                    window->IsFocusableWindow() &&
-                    window->IsAutoRequestFocus() &&
-                    !::IsWindowVisible(GetHWnd()) && // the window is really showing
+                if (window != NULL && window->IsFocusableWindow() && window->IsAutoRequestFocus() &&
                     !::IsWindow(GetModalBlocker(GetHWnd())))
                 {
                     // When the Java process is not allowed to set the foreground window
@@ -996,9 +949,7 @@ MsgRouting AwtFrame::WmActivate(UINT nState, BOOL fMinimized, HWND opposite)
         AwtComponent::SetFocusedWindow(GetHWnd());
 
     } else {
-        if (::IsWindow(AwtWindow::GetModalBlocker(opposite))) {
-            return mrConsume;
-        } else {
+        if (!::IsWindow(AwtWindow::GetModalBlocker(opposite))) {
             // If deactivation happens because of press on grabbing
             // window - this is nonsense, since grabbing window is
             // assumed to have focus and watch for deactivation.  But
@@ -1077,19 +1028,6 @@ BOOL AwtFrame::AwtSetActiveWindow(BOOL isMouseEventCause, UINT hittest)
     if (IsLightweightFrame()) {
         return TRUE;
     }
-    if (isMouseEventCause && IsEmbeddedFrame() && m_isEmbeddedInIE) {
-        HWND hwndProxy = GetProxyFocusOwner();
-        // Do nothing if this frame is focused already
-        if (::GetFocus() != hwndProxy) {
-            // Fix for JDK-8056915:
-            // If window activated with mouse, set focus to plugin control window
-            // first to preserve focus owner inside browser window
-            if (SetFocusToPluginControl(::GetParent(GetHWnd()))) {
-                return TRUE;
-            }
-            // Plugin control window is already focused, so do normal processing
-        }
-    }
     return AwtWindow::AwtSetActiveWindow(isMouseEventCause);
 }
 
@@ -1116,19 +1054,11 @@ AwtMenuBar* AwtFrame::GetMenuBar()
 
 void AwtFrame::SetMenuBar(AwtMenuBar* mb)
 {
-    if (menuBar) {
-        menuBar->SetFrame(NULL);
-    }
     menuBar = mb;
     if (mb == NULL) {
         // Remove existing menu bar, if any.
         ::SetMenu(GetHWnd(), NULL);
     } else {
-        AwtFrame* oldFrame = menuBar->GetFrame();
-        if (oldFrame && oldFrame != this) {
-            oldFrame->SetMenuBar(NULL);
-        }
-        menuBar->SetFrame(this);
         if (menuBar->GetHMenu() != NULL) {
             ::SetMenu(GetHWnd(), menuBar->GetHMenu());
         }
@@ -1679,10 +1609,9 @@ Java_sun_awt_windows_WFramePeer_initIDs(JNIEnv *env, jclass cls)
     TRY;
 
     AwtFrame::setExtendedStateMID = env->GetMethodID(cls, "setExtendedState", "(I)V");
-    DASSERT(AwtFrame::setExtendedStateMID);
-    CHECK_NULL(AwtFrame::setExtendedStateMID);
-
     AwtFrame::getExtendedStateMID = env->GetMethodID(cls, "getExtendedState", "()I");
+
+    DASSERT(AwtFrame::setExtendedStateMID);
     DASSERT(AwtFrame::getExtendedStateMID);
 
     CATCH_BAD_ALLOC;
@@ -1856,6 +1785,35 @@ Java_sun_awt_windows_WFramePeer_pSetIMMOption(JNIEnv *env, jobject self,
 
 
 /************************************************************************
+ * EmbeddedFrame native methods
+ */
+
+extern "C" {
+
+/*
+ * Class:     sun_awt_EmbeddedFrame
+ * Method:    setPeer
+ * Signature: (Ljava/awt/peer/ComponentPeer;)V
+ */
+JNIEXPORT void JNICALL
+Java_sun_awt_EmbeddedFrame_setPeer(JNIEnv *env, jobject self, jobject lpeer)
+{
+    TRY;
+
+    jclass cls;
+    jfieldID fid;
+
+    cls = env->GetObjectClass(self);
+    fid = env->GetFieldID(cls, "peer", "Ljava/awt/peer/ComponentPeer;");
+    env->SetObjectField(self, fid, lpeer);
+
+    CATCH_BAD_ALLOC;
+}
+
+} /* extern "C" */
+
+
+/************************************************************************
  * WEmbeddedFrame native methods
  */
 
@@ -1873,14 +1831,9 @@ Java_sun_awt_windows_WEmbeddedFrame_initIDs(JNIEnv *env, jclass cls)
 
     AwtFrame::handleID = env->GetFieldID(cls, "handle", "J");
     DASSERT(AwtFrame::handleID != NULL);
-    CHECK_NULL(AwtFrame::handleID);
 
     AwtFrame::activateEmbeddingTopLevelMID = env->GetMethodID(cls, "activateEmbeddingTopLevel", "()V");
     DASSERT(AwtFrame::activateEmbeddingTopLevelMID != NULL);
-    CHECK_NULL(AwtFrame::activateEmbeddingTopLevelMID);
-
-    AwtFrame::isEmbeddedInIEID = env->GetFieldID(cls, "isEmbeddedInIE", "Z");
-    DASSERT(AwtFrame::isEmbeddedInIEID != NULL);
 
     CATCH_BAD_ALLOC;
 }
@@ -1975,20 +1928,3 @@ Java_sun_awt_windows_WFramePeer_synthesizeWmActivate(JNIEnv *env, jobject self, 
 }
 
 } /* extern "C" */
-
-static bool SetFocusToPluginControl(HWND hwndPlugin)
-{
-    HWND hwndFocus = ::GetFocus();
-
-    if (hwndFocus == hwndPlugin) {
-        return false;
-    }
-
-    ::SetFocus(hwndPlugin);
-    DWORD dwError = ::GetLastError();
-    if (dwError != ERROR_SUCCESS) {
-        // If direct call failed, use a special message to set focus
-        return (::SendMessage(hwndPlugin, WM_AX_REQUEST_FOCUS_TO_EMBEDDER, 0, 0) == 0);
-    }
-    return true;
-}

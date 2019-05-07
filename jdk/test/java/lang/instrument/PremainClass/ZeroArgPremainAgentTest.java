@@ -30,7 +30,7 @@ import jdk.testlibrary.Utils;
  * @bug 6289149
  * @summary test when the agent's class has a zero arg premain() function.
  * @library /lib/testlibrary
- * @build jdk.testlibrary.* DummyMain
+ * @run build DummyMain
  * @run shell ../MakeJAR3.sh ZeroArgPremainAgent
  * @run main ZeroArgPremainAgentTest
  */

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 1999, 2015, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 1999, 2013, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -241,16 +241,12 @@ public class Scope {
         listeners = listeners.prepend(sl);
     }
 
-    /** Remove symbol from this scope.
+    /** Remove symbol from this scope.  Used when an inner class
+     *  attribute tells us that the class isn't a package member.
      */
-    public void remove(final Symbol sym) {
+    public void remove(Symbol sym) {
         Assert.check(shared == 0);
-        Entry e = lookup(sym.name, new Filter<Symbol>() {
-            @Override
-            public boolean accepts(Symbol candidate) {
-                return candidate == sym;
-            }
-        });
+        Entry e = lookup(sym.name);
         if (e.scope == null) return;
 
         // remove e from table and shadowed list;

@@ -162,9 +162,6 @@ Java_java_net_PlainSocketImpl_initProto(JNIEnv *env, jclass cls) {
     IO_fd_fdID = NET_GetFileDescriptorID(env);
     CHECK_NULL(IO_fd_fdID);
 
-    initInetAddressIDs(env);
-    JNU_CHECK_EXCEPTION(env);
-
     /* Create the marker fd used for dup2 */
     marker_fd = getMarkerFD();
 }
@@ -711,6 +708,7 @@ Java_java_net_PlainSocketImpl_socketAccept(JNIEnv *env, jobject this,
         } else {
             ret = NET_Timeout(fd, timeout);
         }
+
         if (ret == 0) {
             JNU_ThrowByName(env, JNU_JAVANETPKG "SocketTimeoutException",
                             "Accept timed out");
@@ -718,8 +716,6 @@ Java_java_net_PlainSocketImpl_socketAccept(JNIEnv *env, jobject this,
         } else if (ret == JVM_IO_ERR) {
             if (errno == EBADF) {
                JNU_ThrowByName(env, JNU_JAVANETPKG "SocketException", "Socket closed");
-            } else if (errno == ENOMEM) {
-               JNU_ThrowOutOfMemoryError(env, "NET_Timeout native heap allocation failed");
             } else {
                NET_ThrowByNameWithLastError(env, JNU_JAVANETPKG "SocketException", "Accept failed");
             }
@@ -888,11 +884,11 @@ Java_java_net_PlainSocketImpl_socketShutdown(JNIEnv *env, jobject this,
 
 /*
  * Class:     java_net_PlainSocketImpl
- * Method:    socketSetOption0
+ * Method:    socketSetOption
  * Signature: (IZLjava/lang/Object;)V
  */
 JNIEXPORT void JNICALL
-Java_java_net_PlainSocketImpl_socketSetOption0(JNIEnv *env, jobject this,
+Java_java_net_PlainSocketImpl_socketSetOption(JNIEnv *env, jobject this,
                                               jint cmd, jboolean on,
                                               jobject value) {
     int fd;
@@ -967,7 +963,7 @@ Java_java_net_PlainSocketImpl_socketSetOption0(JNIEnv *env, jobject this,
     }
 
     if (NET_SetSockOpt(fd, level, optname, (const void *)&optval, optlen) < 0) {
-#if defined(__solaris__) || defined(_AIX)
+#ifdef __solaris__
         if (errno == EINVAL) {
             // On Solaris setsockopt will set errno to EINVAL if the socket
             // is closed. The default error message is then confusing

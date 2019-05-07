@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 1997, 2016, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 1997, 2013, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -142,7 +142,7 @@ class LinkResolver: AllStatic {
   static void linktime_resolve_virtual_method   (methodHandle &resolved_method, KlassHandle resolved_klass, Symbol* method_name, Symbol* method_signature,KlassHandle current_klass, bool check_access, TRAPS);
   static void linktime_resolve_interface_method (methodHandle& resolved_method, KlassHandle resolved_klass, Symbol* method_name, Symbol* method_signature, KlassHandle current_klass, bool check_access, TRAPS);
 
-  static void runtime_resolve_special_method    (CallInfo& result, methodHandle resolved_method, KlassHandle resolved_klass, KlassHandle current_klass, Handle recv, bool check_access, TRAPS);
+  static void runtime_resolve_special_method    (CallInfo& result, methodHandle resolved_method, KlassHandle resolved_klass, KlassHandle current_klass, bool check_access, TRAPS);
   static void runtime_resolve_virtual_method    (CallInfo& result, methodHandle resolved_method, KlassHandle resolved_klass, Handle recv, KlassHandle recv_klass, bool check_null_and_abstract, TRAPS);
   static void runtime_resolve_interface_method  (CallInfo& result, methodHandle resolved_method, KlassHandle resolved_klass, Handle recv, KlassHandle recv_klass, bool check_null_and_abstract, TRAPS);
 
@@ -173,7 +173,7 @@ class LinkResolver: AllStatic {
   //   resolved_klass = specified class (i.e., static receiver class)
   //   current_klass  = sending method holder (i.e., class containing the method containing the call being resolved)
   static void resolve_static_call   (CallInfo& result,              KlassHandle& resolved_klass, Symbol* method_name, Symbol* method_signature, KlassHandle current_klass, bool check_access, bool initialize_klass, TRAPS);
-  static void resolve_special_call  (CallInfo& result, Handle recv, KlassHandle resolved_klass, Symbol* method_name, Symbol* method_signature, KlassHandle current_klass, bool check_access, TRAPS);
+  static void resolve_special_call  (CallInfo& result,              KlassHandle resolved_klass, Symbol* method_name, Symbol* method_signature, KlassHandle current_klass, bool check_access, TRAPS);
   static void resolve_virtual_call  (CallInfo& result, Handle recv, KlassHandle recv_klass, KlassHandle resolved_klass, Symbol* method_name, Symbol* method_signature, KlassHandle current_klass, bool check_access, bool check_null_and_abstract, TRAPS);
   static void resolve_interface_call(CallInfo& result, Handle recv, KlassHandle recv_klass, KlassHandle resolved_klass, Symbol* method_name, Symbol* method_signature, KlassHandle current_klass, bool check_access, bool check_null_and_abstract, TRAPS);
   static void resolve_handle_call   (CallInfo& result,                                      KlassHandle resolved_klass, Symbol* method_name, Symbol* method_signature, KlassHandle current_klass, TRAPS);
@@ -181,10 +181,10 @@ class LinkResolver: AllStatic {
 
   // same as above for compile-time resolution; but returns null handle instead of throwing an exception on error
   // also, does not initialize klass (i.e., no side effects)
-  static methodHandle resolve_virtual_call_or_null  (KlassHandle receiver_klass, KlassHandle resolved_klass, Symbol* method_name, Symbol* method_signature, KlassHandle current_klass, bool check_access = true);
-  static methodHandle resolve_interface_call_or_null(KlassHandle receiver_klass, KlassHandle resolved_klass, Symbol* method_name, Symbol* method_signature, KlassHandle current_klass, bool check_access = true);
-  static methodHandle resolve_static_call_or_null   (KlassHandle resolved_klass, Symbol* method_name, Symbol* method_signature, KlassHandle current_klass, bool check_access = true);
-  static methodHandle resolve_special_call_or_null  (KlassHandle resolved_klass, Symbol* method_name, Symbol* method_signature, KlassHandle current_klass, bool check_access = true);
+  static methodHandle resolve_virtual_call_or_null  (KlassHandle receiver_klass, KlassHandle resolved_klass, Symbol* method_name, Symbol* method_signature, KlassHandle current_klass);
+  static methodHandle resolve_interface_call_or_null(KlassHandle receiver_klass, KlassHandle resolved_klass, Symbol* method_name, Symbol* method_signature, KlassHandle current_klass);
+  static methodHandle resolve_static_call_or_null   (KlassHandle resolved_klass, Symbol* method_name, Symbol* method_signature, KlassHandle current_klass);
+  static methodHandle resolve_special_call_or_null  (KlassHandle resolved_klass, Symbol* method_name, Symbol* method_signature, KlassHandle current_klass);
   static int vtable_index_of_interface_method(KlassHandle klass, methodHandle resolved_method);
 
   // same as above for compile-time resolution; returns vtable_index if current_klass if linked
@@ -196,7 +196,7 @@ class LinkResolver: AllStatic {
 
   // runtime resolving from constant pool
   static void resolve_invokestatic   (CallInfo& result,              constantPoolHandle pool, int index, TRAPS);
-  static void resolve_invokespecial  (CallInfo& result, Handle recv, constantPoolHandle pool, int index, TRAPS);
+  static void resolve_invokespecial  (CallInfo& result,              constantPoolHandle pool, int index, TRAPS);
   static void resolve_invokevirtual  (CallInfo& result, Handle recv, constantPoolHandle pool, int index, TRAPS);
   static void resolve_invokeinterface(CallInfo& result, Handle recv, constantPoolHandle pool, int index, TRAPS);
   static void resolve_invokedynamic  (CallInfo& result,              constantPoolHandle pool, int index, TRAPS);

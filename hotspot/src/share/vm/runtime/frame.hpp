@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 1997, 2015, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 1997, 2013, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -31,20 +31,25 @@
 #include "runtime/registerMap.hpp"
 #include "utilities/top.hpp"
 #ifdef COMPILER2
-#if defined ADGLOBALS_MD_HPP
-# include ADGLOBALS_MD_HPP
-#elif defined TARGET_ARCH_MODEL_x86_32
+#ifdef TARGET_ARCH_MODEL_x86_32
 # include "adfiles/adGlobals_x86_32.hpp"
-#elif defined TARGET_ARCH_MODEL_x86_64
-# include "adfiles/adGlobals_x86_64.hpp"
-#elif defined TARGET_ARCH_MODEL_sparc
-# include "adfiles/adGlobals_sparc.hpp"
-#elif defined TARGET_ARCH_MODEL_zero
-# include "adfiles/adGlobals_zero.hpp"
-#elif defined TARGET_ARCH_MODEL_ppc_64
-# include "adfiles/adGlobals_ppc_64.hpp"
 #endif
-#endif // COMPILER2
+#ifdef TARGET_ARCH_MODEL_x86_64
+# include "adfiles/adGlobals_x86_64.hpp"
+#endif
+#ifdef TARGET_ARCH_MODEL_sparc
+# include "adfiles/adGlobals_sparc.hpp"
+#endif
+#ifdef TARGET_ARCH_MODEL_zero
+# include "adfiles/adGlobals_zero.hpp"
+#endif
+#ifdef TARGET_ARCH_MODEL_arm
+# include "adfiles/adGlobals_arm.hpp"
+#endif
+#ifdef TARGET_ARCH_MODEL_ppc
+# include "adfiles/adGlobals_ppc.hpp"
+#endif
+#endif
 #ifdef ZERO
 #ifdef TARGET_ARCH_zero
 # include "stack_zero.hpp"
@@ -82,15 +87,6 @@ class frame VALUE_OBJ_CLASS_SPEC {
  public:
   // Constructors
   frame();
-
-#ifndef PRODUCT
-  // This is a generic constructor which is only used by pns() in debug.cpp.
-  // pns (i.e. print native stack) uses this constructor to create a starting
-  // frame for stack walking. The implementation of this constructor is platform
-  // dependent (i.e. SPARC doesn't need an 'fp' argument an will ignore it) but
-  // we want to keep the signature generic because pns() is shared code.
-  frame(void* sp, void* fp, void* pc);
-#endif
 
   // Accessors
 
@@ -315,9 +311,6 @@ class frame VALUE_OBJ_CLASS_SPEC {
   void interpreter_frame_set_monitor_end(BasicObjectLock* value);
 #endif // CC_INTERP
 
-  // Address of the temp oop in the frame. Needed as GC root.
-  oop* interpreter_frame_temp_oop_addr() const;
-
   // BasicObjectLocks:
   //
   // interpreter_frame_monitor_begin is higher in memory than interpreter_frame_monitor_end
@@ -354,6 +347,9 @@ class frame VALUE_OBJ_CLASS_SPEC {
   void interpreter_frame_set_method(Method* method);
   Method** interpreter_frame_method_addr() const;
   ConstantPoolCache** interpreter_frame_cache_addr() const;
+#ifdef PPC
+  oop* interpreter_frame_mirror_addr() const;
+#endif
 
  public:
   // Entry frames
@@ -420,19 +416,19 @@ class frame VALUE_OBJ_CLASS_SPEC {
 
   // Oops-do's
   void oops_compiled_arguments_do(Symbol* signature, bool has_receiver, bool has_appendix, const RegisterMap* reg_map, OopClosure* f);
-  void oops_interpreted_do(OopClosure* f, CLDClosure* cld_f, const RegisterMap* map, bool query_oop_map_cache = true);
+  void oops_interpreted_do(OopClosure* f, CLDToOopClosure* cld_f, const RegisterMap* map, bool query_oop_map_cache = true);
 
  private:
   void oops_interpreted_arguments_do(Symbol* signature, bool has_receiver, OopClosure* f);
 
   // Iteration of oops
-  void oops_do_internal(OopClosure* f, CLDClosure* cld_f, CodeBlobClosure* cf, RegisterMap* map, bool use_interpreter_oop_map_cache);
+  void oops_do_internal(OopClosure* f, CLDToOopClosure* cld_f, CodeBlobClosure* cf, RegisterMap* map, bool use_interpreter_oop_map_cache);
   void oops_entry_do(OopClosure* f, const RegisterMap* map);
   void oops_code_blob_do(OopClosure* f, CodeBlobClosure* cf, const RegisterMap* map);
   int adjust_offset(Method* method, int index); // helper for above fn
  public:
   // Memory management
-  void oops_do(OopClosure* f, CLDClosure* cld_f, CodeBlobClosure* cf, RegisterMap* map) { oops_do_internal(f, cld_f, cf, map, true); }
+  void oops_do(OopClosure* f, CLDToOopClosure* cld_f, CodeBlobClosure* cf, RegisterMap* map) { oops_do_internal(f, cld_f, cf, map, true); }
   void nmethods_do(CodeBlobClosure* cf);
 
   // RedefineClasses support for finding live interpreted methods on the stack

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2003, 2015, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2003, 2013, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -28,7 +28,6 @@
 #include <winsock2.h>           /* needed for htonl */
 #include <iprtrmib.h>
 #include <assert.h>
-#include <limits.h>
 
 #include "java_net_NetworkInterface.h"
 #include "jni_util.h"
@@ -71,7 +70,7 @@ void printnifs (netif *netifPP, char *str) {
 
 #endif
 
-static int bufsize = 4096;
+static int bufsize = 1024;
 
 /*
  * return an array of IP_ADAPTER_ADDRESSES containing one element
@@ -95,12 +94,7 @@ static int getAdapters (JNIEnv *env, IP_ADAPTER_ADDRESSES **adapters) {
     ret = GetAdaptersAddresses(AF_UNSPEC, flags, NULL, adapterInfo, &len);
 
     if (ret == ERROR_BUFFER_OVERFLOW) {
-        IP_ADAPTER_ADDRESSES * newAdapterInfo = NULL;
-        if (len  < (ULONG_MAX - bufsize)) {
-            len = len + bufsize;
-        }
-        newAdapterInfo =
-                (IP_ADAPTER_ADDRESSES *) realloc (adapterInfo, len);
+        IP_ADAPTER_ADDRESSES * newAdapterInfo = (IP_ADAPTER_ADDRESSES *) realloc (adapterInfo, len);
         if (newAdapterInfo == NULL) {
             free(adapterInfo);
             JNU_ThrowByName(env, "java/lang/OutOfMemoryError", "Native heap allocation failure");
@@ -109,6 +103,7 @@ static int getAdapters (JNIEnv *env, IP_ADAPTER_ADDRESSES **adapters) {
 
         adapterInfo = newAdapterInfo;
 
+        bufsize = len;
         ret = GetAdaptersAddresses(AF_UNSPEC, flags, NULL, adapterInfo, &len);
     }
 
@@ -142,12 +137,7 @@ IP_ADAPTER_ADDRESSES *getAdapter (JNIEnv *env,  jint index) {
     flags |= GAA_FLAG_INCLUDE_PREFIX;
     val = GetAdaptersAddresses(AF_UNSPEC, flags, NULL, adapterInfo, &len);
     if (val == ERROR_BUFFER_OVERFLOW) {
-        IP_ADAPTER_ADDRESSES * newAdapterInfo = NULL;
-        if (len  < (ULONG_MAX - bufsize)) {
-            len = len + bufsize;
-        }
-        newAdapterInfo =
-                (IP_ADAPTER_ADDRESSES *) realloc (adapterInfo, len);
+        IP_ADAPTER_ADDRESSES * newAdapterInfo = (IP_ADAPTER_ADDRESSES *) realloc (adapterInfo, len);
         if (newAdapterInfo == NULL) {
             free(adapterInfo);
             JNU_ThrowByName(env, "java/lang/OutOfMemoryError", "Native heap allocation failure");
@@ -156,6 +146,7 @@ IP_ADAPTER_ADDRESSES *getAdapter (JNIEnv *env,  jint index) {
 
         adapterInfo = newAdapterInfo;
 
+        bufsize = len;
         val = GetAdaptersAddresses(AF_UNSPEC, flags, NULL, adapterInfo, &len);
     }
 
@@ -489,20 +480,14 @@ static jobject createNetworkInterfaceXP(JNIEnv *env, netif *ifs)
      * Create a NetworkInterface object and populate it
      */
     netifObj = (*env)->NewObject(env, ni_class, ni_ctor);
-    if (netifObj == NULL) {
-        return NULL;
-    }
     name = (*env)->NewStringUTF(env, ifs->name);
-    if (name == NULL) {
-        return NULL;
-    }
     if (ifs->dNameIsUnicode) {
         displayName = (*env)->NewString(env, (PWCHAR)ifs->displayName,
                                         (jsize)wcslen ((PWCHAR)ifs->displayName));
     } else {
         displayName = (*env)->NewStringUTF(env, ifs->displayName);
     }
-    if (displayName == NULL) {
+    if (netifObj == NULL || name == NULL || displayName == NULL) {
         return NULL;
     }
     (*env)->SetObjectField(env, netifObj, ni_nameID, name);
@@ -519,7 +504,7 @@ static jobject createNetworkInterfaceXP(JNIEnv *env, netif *ifs)
         }
     }
 
-    addrArr = (*env)->NewObjectArray(env, netaddrCount, ia_class, NULL);
+    addrArr = (*env)->NewObjectArray(env, netaddrCount, ni_iacls, NULL);
     if (addrArr == NULL) {
         return NULL;
     }
@@ -537,7 +522,7 @@ static jobject createNetworkInterfaceXP(JNIEnv *env, netif *ifs)
         jobject iaObj, ia2Obj;
         jobject ibObj = NULL;
         if (addrs->addr.him.sa_family == AF_INET) {
-            iaObj = (*env)->NewObject(env, ia4_class, ia4_ctrID);
+            iaObj = (*env)->NewObject(env, ni_ia4cls, ni_ia4Ctor);
             if (iaObj == NULL) {
                 return NULL;
             }
@@ -551,7 +536,7 @@ static jobject createNetworkInterfaceXP(JNIEnv *env, netif *ifs)
               return NULL;
             }
             (*env)->SetObjectField(env, ibObj, ni_ibaddressID, iaObj);
-            ia2Obj = (*env)->NewObject(env, ia4_class, ia4_ctrID);
+            ia2Obj = (*env)->NewObject(env, ni_ia4cls, ni_ia4Ctor);
             if (ia2Obj == NULL) {
               free_netaddr(netaddrP);
               return NULL;
@@ -562,28 +547,26 @@ static jobject createNetworkInterfaceXP(JNIEnv *env, netif *ifs)
             (*env)->SetObjectArrayElement(env, bindsArr, bind_index++, ibObj);
         } else /* AF_INET6 */ {
             int scope;
-            int ret;
-            iaObj = (*env)->NewObject(env, ia6_class, ia6_ctrID);
-            if (iaObj == NULL) {
-                return NULL;
+            iaObj = (*env)->NewObject(env, ni_ia6cls, ni_ia6ctrID);
+            if (iaObj) {
+                int ret = setInet6Address_ipaddress(env, iaObj, (jbyte *)&(addrs->addr.him6.sin6_addr.s6_addr));
+                if (ret == JNI_FALSE) {
+                    return NULL;
+                }
+                scope = addrs->addr.him6.sin6_scope_id;
+                if (scope != 0) { /* zero is default value, no need to set */
+                    setInet6Address_scopeid(env, iaObj, scope);
+                    setInet6Address_scopeifname(env, iaObj, netifObj);
+                }
+                ibObj = (*env)->NewObject(env, ni_ibcls, ni_ibctrID);
+                if (ibObj == NULL) {
+                  free_netaddr(netaddrP);
+                  return NULL;
+                }
+                (*env)->SetObjectField(env, ibObj, ni_ibaddressID, iaObj);
+                (*env)->SetShortField(env, ibObj, ni_ibmaskID, addrs->mask);
+                (*env)->SetObjectArrayElement(env, bindsArr, bind_index++, ibObj);
             }
-            ret = setInet6Address_ipaddress(env, iaObj, (jbyte *)&(addrs->addr.him6.sin6_addr.s6_addr));
-            if (ret == JNI_FALSE) {
-                return NULL;
-            }
-            scope = addrs->addr.him6.sin6_scope_id;
-            if (scope != 0) { /* zero is default value, no need to set */
-                setInet6Address_scopeid(env, iaObj, scope);
-                setInet6Address_scopeifname(env, iaObj, netifObj);
-            }
-            ibObj = (*env)->NewObject(env, ni_ibcls, ni_ibctrID);
-            if (ibObj == NULL) {
-              free_netaddr(netaddrP);
-              return NULL;
-            }
-            (*env)->SetObjectField(env, ibObj, ni_ibaddressID, iaObj);
-            (*env)->SetShortField(env, ibObj, ni_ibmaskID, addrs->mask);
-            (*env)->SetObjectArrayElement(env, bindsArr, bind_index++, ibObj);
         }
         (*env)->SetObjectArrayElement(env, addrArr, addr_index, iaObj);
         addrs = addrs->next;

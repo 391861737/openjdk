@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2000, 2015, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2000, 2013, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -142,10 +142,15 @@ LIR_Address::Scale LIR_Address::scale(BasicType type) {
 
 
 #ifndef PRODUCT
-void LIR_Address::verify0() const {
+void LIR_Address::verify() const {
 #if defined(SPARC) || defined(PPC)
   assert(scale() == times_1, "Scaled addressing mode not available on SPARC/PPC and should not be used");
   assert(disp() == 0 || index()->is_illegal(), "can't have both");
+#endif
+#ifdef ARM
+  assert(disp() == 0 || index()->is_illegal(), "can't have both");
+  // Note: offsets higher than 4096 must not be rejected here. They can
+  // be handled by the back-end or will be rejected if not.
 #endif
 #ifdef _LP64
   assert(base()->is_cpu_register(), "wrong base operand");
@@ -454,7 +459,7 @@ void LIR_OpRTCall::verify() const {
 //-------------------visits--------------------------
 
 // complete rework of LIR instruction visitor.
-// The virtual call for each instruction type is replaced by a big
+// The virtual calls for each instruction type is replaced by a big
 // switch that adds the operands for each instruction
 
 void LIR_OpVisitState::visit(LIR_Op* op) {
@@ -823,8 +828,7 @@ void LIR_OpVisitState::visit(LIR_Op* op) {
       }
 
       if (opJavaCall->_info)                     do_info(opJavaCall->_info);
-      if (FrameMap::method_handle_invoke_SP_save_opr() != LIR_OprFact::illegalOpr &&
-          opJavaCall->is_method_handle_invoke()) {
+      if (opJavaCall->is_method_handle_invoke()) {
         opJavaCall->_method_handle_invoke_SP_save_opr = FrameMap::method_handle_invoke_SP_save_opr();
         do_temp(opJavaCall->_method_handle_invoke_SP_save_opr);
       }
@@ -1079,7 +1083,7 @@ void LIR_OpLabel::emit_code(LIR_Assembler* masm) {
 
 void LIR_OpArrayCopy::emit_code(LIR_Assembler* masm) {
   masm->emit_arraycopy(this);
-  masm->append_code_stub(stub());
+  masm->emit_code_stub(stub());
 }
 
 void LIR_OpUpdateCRC32::emit_code(LIR_Assembler* masm) {
@@ -1096,20 +1100,20 @@ void LIR_Op1::emit_code(LIR_Assembler* masm) {
 
 void LIR_OpAllocObj::emit_code(LIR_Assembler* masm) {
   masm->emit_alloc_obj(this);
-  masm->append_code_stub(stub());
+  masm->emit_code_stub(stub());
 }
 
 void LIR_OpBranch::emit_code(LIR_Assembler* masm) {
   masm->emit_opBranch(this);
   if (stub()) {
-    masm->append_code_stub(stub());
+    masm->emit_code_stub(stub());
   }
 }
 
 void LIR_OpConvert::emit_code(LIR_Assembler* masm) {
   masm->emit_opConvert(this);
   if (stub() != NULL) {
-    masm->append_code_stub(stub());
+    masm->emit_code_stub(stub());
   }
 }
 
@@ -1119,13 +1123,13 @@ void LIR_Op2::emit_code(LIR_Assembler* masm) {
 
 void LIR_OpAllocArray::emit_code(LIR_Assembler* masm) {
   masm->emit_alloc_array(this);
-  masm->append_code_stub(stub());
+  masm->emit_code_stub(stub());
 }
 
 void LIR_OpTypeCheck::emit_code(LIR_Assembler* masm) {
   masm->emit_opTypeCheck(this);
   if (stub()) {
-    masm->append_code_stub(stub());
+    masm->emit_code_stub(stub());
   }
 }
 
@@ -1140,7 +1144,7 @@ void LIR_Op3::emit_code(LIR_Assembler* masm) {
 void LIR_OpLock::emit_code(LIR_Assembler* masm) {
   masm->emit_lock(this);
   if (stub()) {
-    masm->append_code_stub(stub());
+    masm->emit_code_stub(stub());
   }
 }
 
@@ -1516,17 +1520,6 @@ void LIR_List::store_check(LIR_Opr object, LIR_Opr array, LIR_Opr tmp1, LIR_Opr 
   append(c);
 }
 
-void LIR_List::null_check(LIR_Opr opr, CodeEmitInfo* info, bool deoptimize_on_null) {
-  if (deoptimize_on_null) {
-    // Emit an explicit null check and deoptimize if opr is null
-    CodeStub* deopt = new DeoptimizeStub(info);
-    cmp(lir_cond_equal, opr, LIR_OprFact::oopConst(NULL));
-    branch(lir_cond_equal, T_OBJECT, deopt);
-  } else {
-    // Emit an implicit null check
-    append(new LIR_Op1(lir_null_check, opr, info));
-  }
-}
 
 void LIR_List::cas_long(LIR_Opr addr, LIR_Opr cmp_value, LIR_Opr new_value,
                         LIR_Opr t1, LIR_Opr t2, LIR_Opr result) {
@@ -1570,15 +1563,15 @@ void LIR_OprDesc::print(outputStream* out) const {
   } else if (is_virtual()) {
     out->print("R%d", vreg_number());
   } else if (is_single_cpu()) {
-    out->print("%s", as_register()->name());
+    out->print(as_register()->name());
   } else if (is_double_cpu()) {
-    out->print("%s", as_register_hi()->name());
-    out->print("%s", as_register_lo()->name());
+    out->print(as_register_hi()->name());
+    out->print(as_register_lo()->name());
 #if defined(X86)
   } else if (is_single_xmm()) {
-    out->print("%s", as_xmm_float_reg()->name());
+    out->print(as_xmm_float_reg()->name());
   } else if (is_double_xmm()) {
-    out->print("%s", as_xmm_double_reg()->name());
+    out->print(as_xmm_double_reg()->name());
   } else if (is_single_fpu()) {
     out->print("fpu%d", fpu_regnr());
   } else if (is_double_fpu()) {
@@ -1590,9 +1583,9 @@ void LIR_OprDesc::print(outputStream* out) const {
     out->print("d%d", fpu_regnrLo() >> 1);
 #else
   } else if (is_single_fpu()) {
-    out->print("%s", as_float_reg()->name());
+    out->print(as_float_reg()->name());
   } else if (is_double_fpu()) {
-    out->print("%s", as_double_reg()->name());
+    out->print(as_double_reg()->name());
 #endif
 
   } else if (is_illegal()) {
@@ -1618,9 +1611,9 @@ void LIR_Const::print_value_on(outputStream* out) const {
     case T_LONG:   out->print("lng:" JLONG_FORMAT, as_jlong()); break;
     case T_FLOAT:  out->print("flt:%f",   as_jfloat());         break;
     case T_DOUBLE: out->print("dbl:%f",   as_jdouble());        break;
-    case T_OBJECT: out->print("obj:" INTPTR_FORMAT, p2i(as_jobject()));        break;
-    case T_METADATA: out->print("metadata:" INTPTR_FORMAT, p2i(as_metadata()));break;
-    default:       out->print("%3d:0x" UINT64_FORMAT_X, type(), (uint64_t)as_jlong()); break;
+    case T_OBJECT: out->print("obj:0x%x", as_jobject());        break;
+    case T_METADATA: out->print("metadata:0x%x", as_metadata());break;
+    default:       out->print("%3d:0x%x",type(), as_jdouble()); break;
   }
 }
 
@@ -1636,7 +1629,7 @@ void LIR_Address::print_value_on(outputStream* out) const {
     case times_8: out->print(" * 8"); break;
     }
   }
-  out->print(" Disp: " INTX_FORMAT, _disp);
+  out->print(" Disp: %d", _disp);
 }
 
 // debug output of block header without InstructionPrinter
@@ -1651,7 +1644,7 @@ static void print_block(BlockBegin* x) {
   if (x->is_set(BlockBegin::osr_entry_flag))               tty->print("osr ");
   if (x->is_set(BlockBegin::exception_entry_flag))         tty->print("ex ");
   if (x->is_set(BlockBegin::subroutine_entry_flag))        tty->print("jsr ");
-  if (x->is_set(BlockBegin::backward_branch_target_flag))  tty->print("bb ");
+  if (x->is_set(BlockBegin::backward_branch_target_flag))  tty->print(" BB ");
   if (x->is_set(BlockBegin::linear_scan_loop_header_flag)) tty->print("lh ");
   if (x->is_set(BlockBegin::linear_scan_loop_end_flag))    tty->print("le ");
 
@@ -1710,7 +1703,7 @@ void LIR_Op::print_on(outputStream* out) const {
   } else {
     out->print("     ");
   }
-  out->print("%s ", name());
+  out->print(name()); out->print(" ");
   print_instr(out);
   if (info() != NULL) out->print(" [bci:%d]", info()->stack()->bci());
 #ifdef ASSERT
@@ -1840,7 +1833,7 @@ const char * LIR_Op::name() const {
 // LIR_OpJavaCall
 void LIR_OpJavaCall::print_instr(outputStream* out) const {
   out->print("call: ");
-  out->print("[addr: " INTPTR_FORMAT "]", p2i(address()));
+  out->print("[addr: 0x%x]", address());
   if (receiver()->is_valid()) {
     out->print(" [recv: ");   receiver()->print(out);   out->print("]");
   }
@@ -1851,7 +1844,7 @@ void LIR_OpJavaCall::print_instr(outputStream* out) const {
 
 // LIR_OpLabel
 void LIR_OpLabel::print_instr(outputStream* out) const {
-  out->print("[label:" INTPTR_FORMAT "]", p2i(_label));
+  out->print("[label:0x%x]", _label);
 }
 
 // LIR_OpArrayCopy
@@ -1918,7 +1911,7 @@ void LIR_Op1::print_instr(outputStream* out) const {
 // LIR_Op1
 void LIR_OpRTCall::print_instr(outputStream* out) const {
   intx a = (intx)addr();
-  out->print("%s", Runtime1::name_for_address(addr()));
+  out->print(Runtime1::name_for_address(addr()));
   out->print(" ");
   tmp()->print(out);
 }
@@ -1941,10 +1934,10 @@ void LIR_OpBranch::print_instr(outputStream* out) const {
   } else if (stub() != NULL) {
     out->print("[");
     stub()->print_name(out);
-    out->print(": " INTPTR_FORMAT "]", p2i(stub()));
+    out->print(": 0x%x]", stub());
     if (stub()->info() != NULL) out->print(" [bci:%d]", stub()->info()->stack()->bci());
   } else {
-    out->print("[label:" INTPTR_FORMAT "] ", p2i(label()));
+    out->print("[label:0x%x] ", label());
   }
   if (ublock() != NULL) {
     out->print("unordered: [B%d] ", ublock()->block_id());
@@ -2011,7 +2004,7 @@ void LIR_OpAllocObj::print_instr(outputStream* out) const {
   tmp4()->print(out);                       out->print(" ");
   out->print("[hdr:%d]", header_size()); out->print(" ");
   out->print("[obj:%d]", object_size()); out->print(" ");
-  out->print("[lbl:" INTPTR_FORMAT "]", p2i(stub()->entry()));
+  out->print("[lbl:0x%x]", stub()->entry());
 }
 
 void LIR_OpRoundFP::print_instr(outputStream* out) const {
@@ -2044,7 +2037,7 @@ void LIR_OpAllocArray::print_instr(outputStream* out) const {
   tmp3()->print(out);                    out->print(" ");
   tmp4()->print(out);                    out->print(" ");
   out->print("[type:0x%x]", type());     out->print(" ");
-  out->print("[label:" INTPTR_FORMAT "]", p2i(stub()->entry()));
+  out->print("[label:0x%x]", stub()->entry());
 }
 
 
@@ -2081,7 +2074,7 @@ void LIR_OpLock::print_instr(outputStream* out) const {
   if (_scratch->is_valid()) {
     _scratch->print(out);  out->print(" ");
   }
-  out->print("[lbl:" INTPTR_FORMAT "]", p2i(stub()->entry()));
+  out->print("[lbl:0x%x]", stub()->entry());
 }
 
 #ifdef ASSERT
@@ -2089,7 +2082,7 @@ void LIR_OpAssert::print_instr(outputStream* out) const {
   print_condition(out, condition()); out->print(" ");
   in_opr1()->print(out);             out->print(" ");
   in_opr2()->print(out);             out->print(", \"");
-  out->print("%s", msg());          out->print("\"");
+  out->print(msg());                 out->print("\"");
 }
 #endif
 

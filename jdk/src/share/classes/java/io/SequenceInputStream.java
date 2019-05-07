@@ -135,7 +135,7 @@ class SequenceInputStream extends InputStream {
      * @since   JDK1.1
      */
     public int available() throws IOException {
-        if (in == null) {
+        if(in == null) {
             return 0; // no way to signal EOF from available()
         }
         return in.available();
@@ -160,14 +160,15 @@ class SequenceInputStream extends InputStream {
      * @exception  IOException  if an I/O error occurs.
      */
     public int read() throws IOException {
-        while (in != null) {
-            int c = in.read();
-            if (c != -1) {
-                return c;
-            }
-            nextStream();
+        if (in == null) {
+            return -1;
         }
-        return -1;
+        int c = in.read();
+        if (c == -1) {
+            nextStream();
+            return read();
+        }
+        return c;
     }
 
     /**
@@ -203,14 +204,13 @@ class SequenceInputStream extends InputStream {
         } else if (len == 0) {
             return 0;
         }
-        do {
-            int n = in.read(b, off, len);
-            if (n > 0) {
-                return n;
-            }
+
+        int n = in.read(b, off, len);
+        if (n <= 0) {
             nextStream();
-        } while (in != null);
-        return -1;
+            return read(b, off, len);
+        }
+        return n;
     }
 
     /**

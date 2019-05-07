@@ -17,6 +17,9 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+/*
+ * $Id: ErrorMessages.java,v 1.2.4.1 2005/09/15 09:59:41 pvedula Exp $
+ */
 
 package com.sun.org.apache.xalan.internal.xsltc.compiler.util;
 
@@ -598,9 +601,6 @@ public class ErrorMessages extends ListResourceBundle {
          */
         {ErrorMsg.JAXP_INVALID_ATTR_ERR,
         "TransformerFactory does not recognise attribute ''{0}''."},
-
-        {ErrorMsg.JAXP_INVALID_ATTR_VALUE_ERR,
-        "Incorrect value specified for ''{0}'' attribute."},
 
         /*
          * Note to translators:  "setResult()" and "startDocument()" are Java

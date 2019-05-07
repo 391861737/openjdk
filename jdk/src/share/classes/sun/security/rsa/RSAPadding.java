@@ -25,9 +25,11 @@
 
 package sun.security.rsa;
 
+import java.math.BigInteger;
 import java.util.*;
 
 import java.security.*;
+import java.security.interfaces.*;
 import java.security.spec.*;
 
 import javax.crypto.BadPaddingException;
@@ -39,40 +41,20 @@ import sun.security.jca.JCAUtil;
 /**
  * RSA padding and unpadding.
  *
- * The various PKCS#1 versions can be found in the EMC/RSA Labs
- * web site, which is currently:
- *
- *     http://www.emc.com/emc-plus/rsa-labs/index.htm
- *
- * or in the IETF RFCs derived from the above PKCS#1 standards.
- *
- *     RFC 2313: v1.5
- *     RFC 2437: v2.0
- *     RFC 3447: v2.1
- *
- * The format of PKCS#1 v1.5 padding is:
- *
+ * Format of PKCS#1 v1.5 padding is:
  *   0x00 | BT | PS...PS | 0x00 | data...data
- *
  * where BT is the blocktype (1 or 2). The length of the entire string
  * must be the same as the size of the modulus (i.e. 128 byte for a 1024 bit
  * key). Per spec, the padding string must be at least 8 bytes long. That
  * leaves up to (length of key in bytes) - 11 bytes for the data.
  *
- * OAEP padding was introduced in PKCS#1 v2.0 and is a bit more complicated
- * and has a number of options. We support:
- *
+ * OAEP padding is a bit more complicated and has a number of options.
+ * We support:
  *   . arbitrary hash functions ('Hash' in the specification), MessageDigest
  *     implementation must be available
  *   . MGF1 as the mask generation function
  *   . the empty string as the default value for label L and whatever
  *     specified in javax.crypto.spec.OAEPParameterSpec
- *
- * The algorithms (representations) are forwards-compatible: that is,
- * the algorithm described in previous releases are in later releases.
- * However, additional comments/checks/clarifications were added to the
- * later versions based on real-world experience (e.g. stricter v1.5
- * format checking.)
  *
  * Note: RSA keys should be at least 512 bits long
  *
@@ -174,8 +156,7 @@ public final class RSAPadding {
                         throw new InvalidAlgorithmParameterException
                             ("Unsupported MGF algo: " + mgfName);
                     }
-                    mgfMdName = ((MGF1ParameterSpec)spec.getMGFParameters())
-                            .getDigestAlgorithm();
+                    mgfMdName = ((MGF1ParameterSpec)spec.getMGFParameters()).getDigestAlgorithm();
                     PSource pSrc = spec.getPSource();
                     String pSrcAlgo = pSrc.getAlgorithm();
                     if (!pSrcAlgo.equalsIgnoreCase("PSpecified")) {
@@ -217,7 +198,7 @@ public final class RSAPadding {
      */
     private static byte[] getInitialHash(MessageDigest md,
         byte[] digestInput) {
-        byte[] result;
+        byte[] result = null;
         if ((digestInput == null) || (digestInput.length == 0)) {
             String digestName = md.getAlgorithm();
             result = emptyHashes.get(digestName);
@@ -232,8 +213,8 @@ public final class RSAPadding {
     }
 
     /**
-     * Return the maximum size of the plaintext data that can be processed
-     * using this object.
+     * Return the maximum size of the plaintext data that can be processed using
+     * this object.
      */
     public int getMaxDataSize() {
         return maxDataSize;
@@ -281,7 +262,7 @@ public final class RSAPadding {
      */
     public byte[] unpad(byte[] padded) throws BadPaddingException {
         if (padded.length != paddedSize) {
-            throw new BadPaddingException("Decryption error");
+            throw new BadPaddingException("Padded length must be " + paddedSize);
         }
         switch (type) {
         case PAD_NONE:
@@ -301,8 +282,7 @@ public final class RSAPadding {
      */
     private byte[] padV15(byte[] data) throws BadPaddingException {
         byte[] padded = new byte[paddedSize];
-        System.arraycopy(data, 0, padded, paddedSize - data.length,
-            data.length);
+        System.arraycopy(data, 0, padded, paddedSize - data.length, data.length);
         int psSize = paddedSize - 3 - data.length;
         int k = 0;
         padded[k++] = 0;
@@ -337,53 +317,55 @@ public final class RSAPadding {
     }
 
     /**
-     * PKCS#1 v1.5 unpadding (blocktype 1 (signature) and 2 (encryption)).
+     * PKCS#1 v1.5 unpadding (blocktype 1 and 2).
      *
      * Note that we want to make it a constant-time operation
      */
     private byte[] unpadV15(byte[] padded) throws BadPaddingException {
         int k = 0;
-        boolean bp = false;
+        BadPaddingException bpe = null;
 
         if (padded[k++] != 0) {
-            bp = true;
+            bpe = new BadPaddingException("Data must start with zero");
         }
-        if (padded[k++] != type) {
-            bp = true;
+        if (padded[k++] != type && bpe == null) {
+            bpe = new BadPaddingException("Blocktype mismatch: " + padded[1]);
         }
         int p = 0;
         while (k < padded.length) {
             int b = padded[k++] & 0xff;
-            if ((b == 0) && (p == 0)) {
+            if (b == 0 && p == 0) {
                 p = k;
             }
-            if ((k == padded.length) && (p == 0)) {
-                bp = true;
+            if (k == padded.length && p == 0 && bpe == null) {
+                bpe = new BadPaddingException("Padding string not terminated");
             }
             if ((type == PAD_BLOCKTYPE_1) && (b != 0xff) &&
-                    (p == 0)) {
-                bp = true;
+                    p == 0 && bpe == null) {
+                bpe = new BadPaddingException("Padding byte not 0xff: " + b);
             }
         }
         int n = padded.length - p;
-        if (n > maxDataSize) {
-            bp = true;
+        if (n > maxDataSize && bpe == null) {
+            bpe = new BadPaddingException("Padding string too short");
         }
 
         // copy useless padding array for a constant-time method
+        //
+        // Is it necessary?
         byte[] padding = new byte[p];
         System.arraycopy(padded, 0, padding, 0, p);
 
         byte[] data = new byte[n];
         System.arraycopy(padded, p, data, 0, n);
 
-        BadPaddingException bpe = new BadPaddingException("Decryption error");
-
-        if (bp) {
-            throw bpe;
+        if (bpe == null) {
+            bpe = new BadPaddingException("Unused exception");
         } else {
-            return data;
+            throw bpe;
         }
+
+        return data;
     }
 
     /**
@@ -442,11 +424,10 @@ public final class RSAPadding {
      */
     private byte[] unpadOAEP(byte[] padded) throws BadPaddingException {
         byte[] EM = padded;
-        boolean bp = false;
         int hLen = lHash.length;
 
         if (EM[0] != 0) {
-            bp = true;
+            throw new BadPaddingException("Data must start with zero");
         }
 
         int seedStart = 1;
@@ -461,48 +442,29 @@ public final class RSAPadding {
         // verify lHash == lHash'
         for (int i = 0; i < hLen; i++) {
             if (lHash[i] != EM[dbStart + i]) {
-                bp = true;
+                throw new BadPaddingException("lHash mismatch");
             }
         }
 
-        int padStart = dbStart + hLen;
-        int onePos = -1;
-
-        for (int i = padStart; i < EM.length; i++) {
-            int value = EM[i];
-            if (onePos == -1) {
-                if (value == 0x00) {
-                    // continue;
-                } else if (value == 0x01) {
-                    onePos = i;
-                } else {  // Anything other than {0,1} is bad.
-                    bp = true;
-                }
+        // skip over padding (0x00 bytes)
+        int i = dbStart + hLen;
+        while (EM[i] == 0) {
+            i++;
+            if (i >= EM.length) {
+                throw new BadPaddingException("Padding string not terminated");
             }
         }
 
-        // We either ran off the rails or found something other than 0/1.
-        if (onePos == -1) {
-            bp = true;
-            onePos = EM.length - 1;  // Don't inadvertently return any data.
+        if (EM[i++] != 1) {
+            throw new BadPaddingException
+                ("Padding string not terminated by 0x01 byte");
         }
 
-        int mStart = onePos + 1;
+        int mLen = EM.length - i;
+        byte[] m = new byte[mLen];
+        System.arraycopy(EM, i, m, 0, mLen);
 
-        // copy useless padding array for a constant-time method
-        byte [] tmp = new byte[mStart - padStart];
-        System.arraycopy(EM, padStart, tmp, 0, tmp.length);
-
-        byte [] m = new byte[EM.length - mStart];
-        System.arraycopy(EM, mStart, m, 0, m.length);
-
-        BadPaddingException bpe = new BadPaddingException("Decryption error");
-
-        if (bp) {
-            throw bpe;
-        } else {
-            return m;
-        }
+        return m;
     }
 
     /**
@@ -537,4 +499,5 @@ public final class RSAPadding {
             }
         }
     }
+
 }

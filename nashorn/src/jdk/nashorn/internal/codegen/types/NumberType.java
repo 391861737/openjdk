@@ -39,14 +39,13 @@ import static jdk.internal.org.objectweb.asm.Opcodes.DRETURN;
 import static jdk.internal.org.objectweb.asm.Opcodes.DSTORE;
 import static jdk.internal.org.objectweb.asm.Opcodes.DSUB;
 import static jdk.nashorn.internal.codegen.CompilerConstants.staticCallNoLookup;
-import static jdk.nashorn.internal.runtime.JSType.UNDEFINED_DOUBLE;
 
 import jdk.internal.org.objectweb.asm.MethodVisitor;
 import jdk.nashorn.internal.codegen.CompilerConstants;
+import jdk.nashorn.internal.codegen.ObjectClassGenerator;
 import jdk.nashorn.internal.runtime.JSType;
 
 class NumberType extends NumericType {
-    private static final long serialVersionUID = 1L;
 
     private static final CompilerConstants.Call VALUE_OF = staticCallNoLookup(Double.class, "valueOf", Double.class, double.class);
 
@@ -62,11 +61,6 @@ class NumberType extends NumericType {
     @Override
     public Class<?> getBoxedType() {
         return Double.class;
-    }
-
-    @Override
-    public char getBytecodeStackType() {
-        return 'D';
     }
 
     @Override
@@ -90,13 +84,7 @@ class NumberType extends NumericType {
 
     @Override
     public Type loadUndefined(final MethodVisitor method) {
-        method.visitLdcInsn(UNDEFINED_DOUBLE);
-        return NUMBER;
-    }
-
-    @Override
-    public Type loadForcedInitializer(final MethodVisitor method) {
-        method.visitInsn(DCONST_0);
+        method.visitLdcInsn(ObjectClassGenerator.UNDEFINED_DOUBLE);
         return NUMBER;
     }
 
@@ -124,54 +112,54 @@ class NumberType extends NumericType {
         }
 
         if (to.isInteger()) {
-            invokestatic(method, JSType.TO_INT32_D);
+            invokeStatic(method, JSType.TO_INT32_D);
         } else if (to.isLong()) {
-            invokestatic(method, JSType.TO_LONG_D);
+            invokeStatic(method, JSType.TO_INT64_D);
         } else if (to.isBoolean()) {
-            invokestatic(method, JSType.TO_BOOLEAN_D);
+            invokeStatic(method, JSType.TO_BOOLEAN_D);
         } else if (to.isString()) {
-            invokestatic(method, JSType.TO_STRING_D);
+            invokeStatic(method, JSType.TO_STRING_D);
         } else if (to.isObject()) {
-            invokestatic(method, VALUE_OF);
+            invokeStatic(method, VALUE_OF);
         } else {
-            throw new UnsupportedOperationException("Illegal conversion " + this + " -> " + to);
+            assert false : "Illegal conversion " + this + " -> " + to;
         }
 
         return to;
     }
 
     @Override
-    public Type add(final MethodVisitor method, final int programPoint) {
+    public Type add(final MethodVisitor method) {
         method.visitInsn(DADD);
         return NUMBER;
     }
 
     @Override
-    public Type sub(final MethodVisitor method, final int programPoint) {
+    public Type sub(final MethodVisitor method) {
         method.visitInsn(DSUB);
         return NUMBER;
     }
 
     @Override
-    public Type mul(final MethodVisitor method, final int programPoint) {
+    public Type mul(final MethodVisitor method) {
         method.visitInsn(DMUL);
         return NUMBER;
     }
 
     @Override
-    public Type div(final MethodVisitor method, final int programPoint) {
+    public Type div(final MethodVisitor method) {
         method.visitInsn(DDIV);
         return NUMBER;
     }
 
     @Override
-    public Type rem(final MethodVisitor method, final int programPoint) {
+    public Type rem(final MethodVisitor method) {
         method.visitInsn(DREM);
         return NUMBER;
     }
 
     @Override
-    public Type neg(final MethodVisitor method, final int programPoint) {
+    public Type neg(final MethodVisitor method) {
         method.visitInsn(DNEG);
         return NUMBER;
     }

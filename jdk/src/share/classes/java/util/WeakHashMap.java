@@ -759,21 +759,21 @@ public class WeakHashMap<K,V>
 
     private abstract class HashIterator<T> implements Iterator<T> {
         private int index;
-        private Entry<K,V> entry;
-        private Entry<K,V> lastReturned;
+        private Entry<K,V> entry = null;
+        private Entry<K,V> lastReturned = null;
         private int expectedModCount = modCount;
 
         /**
          * Strong reference needed to avoid disappearance of key
          * between hasNext and next
          */
-        private Object nextKey;
+        private Object nextKey = null;
 
         /**
          * Strong reference needed to avoid disappearance of key
          * between nextEntry() and any use of the entry
          */
-        private Object currentKey;
+        private Object currentKey = null;
 
         HashIterator() {
             index = isEmpty() ? 0 : table.length;
@@ -848,7 +848,7 @@ public class WeakHashMap<K,V>
 
     // Views
 
-    private transient Set<Map.Entry<K,V>> entrySet;
+    private transient Set<Map.Entry<K,V>> entrySet = null;
 
     /**
      * Returns a {@link Set} view of the keys contained in this map.
@@ -865,11 +865,7 @@ public class WeakHashMap<K,V>
      */
     public Set<K> keySet() {
         Set<K> ks = keySet;
-        if (ks == null) {
-            ks = new KeySet();
-            keySet = ks;
-        }
-        return ks;
+        return (ks != null ? ks : (keySet = new KeySet()));
     }
 
     private class KeySet extends AbstractSet<K> {
@@ -918,11 +914,7 @@ public class WeakHashMap<K,V>
      */
     public Collection<V> values() {
         Collection<V> vs = values;
-        if (vs == null) {
-            vs = new Values();
-            values = vs;
-        }
-        return vs;
+        return (vs != null) ? vs : (values = new Values());
     }
 
     private class Values extends AbstractCollection<V> {

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 1996, 2014, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 1996, 2007, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -27,7 +27,7 @@ package sun.awt.windows;
 import java.nio.charset.*;
 import sun.awt.AWTCharset;
 
-final class WDefaultFontCharset extends AWTCharset
+public class WDefaultFontCharset extends AWTCharset
 {
     static {
        initIDs();
@@ -36,24 +36,22 @@ final class WDefaultFontCharset extends AWTCharset
     // Name for Windows FontSet.
     private String fontName;
 
-    WDefaultFontCharset(String name){
+    public WDefaultFontCharset(String name){
         super("WDefaultFontCharset", Charset.forName("windows-1252"));
         fontName = name;
     }
 
-    @Override
     public CharsetEncoder newEncoder() {
         return new Encoder();
     }
 
     private class Encoder extends AWTCharset.Encoder {
-        @Override
         public boolean canEncode(char c){
             return canConvert(c);
         }
     }
 
-    private synchronized native boolean canConvert(char ch);
+    public synchronized native boolean canConvert(char ch);
 
     /**
      * Initialize JNI field and method IDs

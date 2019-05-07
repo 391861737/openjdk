@@ -47,8 +47,6 @@ JNIEXPORT void JNICALL Java_java_net_DualStackPlainSocketImpl_initIDs
     isa_class = (*env)->NewGlobalRef(env, cls);
     isa_ctorID = (*env)->GetMethodID(env, cls, "<init>",
                                      "(Ljava/net/InetAddress;I)V");
-    CHECK_NULL(isa_ctorID);
-    initInetAddressIDs(env);
 
     // implement read timeout with select.
     isRcvTimeoutSupported = 0;
@@ -296,8 +294,6 @@ JNIEXPORT jint JNICALL Java_java_net_DualStackPlainSocketImpl_accept0
         return -1;
     }
 
-    SetHandleInformation((HANDLE)(UINT_PTR)newfd, HANDLE_FLAG_INHERIT, 0);
-
     ia = NET_SockaddrToInetAddress(env, (struct sockaddr *)&sa, &port);
     isa = (*env)->NewObject(env, isa_class, isa_ctorID, ia, port);
     (*env)->SetObjectArrayElement(env, isaa, 0, isa);
@@ -371,8 +367,8 @@ JNIEXPORT void JNICALL Java_java_net_DualStackPlainSocketImpl_shutdown0
 JNIEXPORT void JNICALL Java_java_net_DualStackPlainSocketImpl_setIntOption
   (JNIEnv *env, jclass clazz, jint fd, jint cmd, jint value) {
 
-    int level = 0, opt = 0;
-    struct linger linger = {0, 0};
+    int level, opt;
+    struct linger linger;
     char *parg;
     int arglen;
 
@@ -411,9 +407,9 @@ JNIEXPORT void JNICALL Java_java_net_DualStackPlainSocketImpl_setIntOption
 JNIEXPORT jint JNICALL Java_java_net_DualStackPlainSocketImpl_getIntOption
   (JNIEnv *env, jclass clazz, jint fd, jint cmd) {
 
-    int level = 0, opt = 0;
+    int level, opt;
     int result=0;
-    struct linger linger = {0, 0};
+    struct linger linger;
     char *arg;
     int arglen;
 

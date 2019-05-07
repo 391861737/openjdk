@@ -38,6 +38,7 @@ import static jdk.nashorn.internal.tools.nasgen.StringConstants.DEFAULT_INIT_DES
 import static jdk.nashorn.internal.tools.nasgen.StringConstants.INIT;
 import static jdk.nashorn.internal.tools.nasgen.StringConstants.OBJECT_DESC;
 import static jdk.nashorn.internal.tools.nasgen.StringConstants.SCRIPTOBJECT_TYPE;
+
 import java.io.BufferedInputStream;
 import java.io.FileInputStream;
 import java.io.FileOutputStream;
@@ -65,6 +66,7 @@ import jdk.nashorn.internal.tools.nasgen.MemberInfo.Kind;
  * 2) add "Map" type static field named "$map".
  * 3) add static initializer block to initialize map.
  */
+
 public class ScriptClassInstrumentor extends ClassVisitor {
     private final ScriptClassInfo scriptClassInfo;
     private final int memberCount;
@@ -144,16 +146,16 @@ public class ScriptClassInstrumentor extends ClassVisitor {
                 // call $clinit$ just before return from <clinit>
                 if (isStaticInit && opcode == RETURN) {
                     super.visitMethodInsn(INVOKESTATIC, scriptClassInfo.getJavaName(),
-                            $CLINIT$, DEFAULT_INIT_DESC, false);
+                            $CLINIT$, DEFAULT_INIT_DESC);
                 }
                 super.visitInsn(opcode);
             }
 
             @Override
-            public void visitMethodInsn(final int opcode, final String owner, final String name, final String desc, final boolean itf) {
+            public void visitMethodInsn(final int opcode, final String owner, final String name, final String desc) {
                 if (isConstructor && opcode == INVOKESPECIAL &&
                         INIT.equals(name) && SCRIPTOBJECT_TYPE.equals(owner)) {
-                    super.visitMethodInsn(opcode, owner, name, desc, false);
+                    super.visitMethodInsn(opcode, owner, name, desc);
 
                     if (memberCount > 0) {
                         // initialize @Property fields if needed
@@ -164,7 +166,7 @@ public class ScriptClassInstrumentor extends ClassVisitor {
                                 super.visitTypeInsn(NEW, clazz);
                                 super.visitInsn(DUP);
                                 super.visitMethodInsn(INVOKESPECIAL, clazz,
-                                    INIT, DEFAULT_INIT_DESC, false);
+                                    INIT, DEFAULT_INIT_DESC);
                                 super.visitFieldInsn(PUTFIELD, scriptClassInfo.getJavaName(),
                                     memInfo.getJavaName(), memInfo.getJavaDesc());
                             }
@@ -178,7 +180,7 @@ public class ScriptClassInstrumentor extends ClassVisitor {
                         }
                     }
                 } else {
-                    super.visitMethodInsn(opcode, owner, name, desc, itf);
+                    super.visitMethodInsn(opcode, owner, name, desc);
                 }
             }
 
@@ -266,7 +268,7 @@ public class ScriptClassInstrumentor extends ClassVisitor {
      */
     public static void main(final String[] args) throws IOException {
         if (args.length != 1) {
-            System.err.println("Usage: " + ScriptClassInstrumentor.class.getName() + " <class>");
+            System.err.println("Usage: " + ScriptClassInfoCollector.class.getName() + " <class>");
             System.exit(1);
         }
 

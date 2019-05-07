@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 1997, 2014, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 1997, 2013, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -36,14 +36,10 @@
 #ifdef TARGET_OS_FAMILY_windows
 # include "os_windows.inline.hpp"
 #endif
-#ifdef TARGET_OS_FAMILY_aix
-# include "os_aix.inline.hpp"
-#endif
 #ifdef TARGET_OS_FAMILY_bsd
 # include "os_bsd.inline.hpp"
 #endif
 
-PRAGMA_FORMAT_MUTE_WARNINGS_FOR_GCC
 
 // ReservedSpace
 
@@ -52,22 +48,12 @@ ReservedSpace::ReservedSpace() : _base(NULL), _size(0), _noaccess_prefix(0),
     _alignment(0), _special(false), _executable(false) {
 }
 
-ReservedSpace::ReservedSpace(size_t size, size_t preferred_page_size) {
-  bool has_preferred_page_size = preferred_page_size != 0;
-  // Want to use large pages where possible and pad with small pages.
-  size_t page_size = has_preferred_page_size ? preferred_page_size : os::page_size_for_region_unaligned(size, 1);
+ReservedSpace::ReservedSpace(size_t size) {
+  size_t page_size = os::page_size_for_region(size, size, 1);
   bool large_pages = page_size != (size_t)os::vm_page_size();
-  size_t alignment;
-  if (large_pages && has_preferred_page_size) {
-    alignment = MAX2(page_size, (size_t)os::vm_allocation_granularity());
-    // ReservedSpace initialization requires size to be aligned to the given
-    // alignment. Align the size up.
-    size = align_size_up(size, alignment);
-  } else {
-    // Don't force the alignment to be large page aligned,
-    // since that will waste memory.
-    alignment = os::vm_allocation_granularity();
-  }
+  // Don't force the alignment to be large page aligned,
+  // since that will waste memory.
+  size_t alignment = os::vm_allocation_granularity();
   initialize(size, alignment, large_pages, NULL, 0, false);
 }
 
@@ -382,7 +368,7 @@ VirtualSpace::VirtualSpace() {
 
 
 bool VirtualSpace::initialize(ReservedSpace rs, size_t committed_size) {
-  const size_t max_commit_granularity = os::page_size_for_region_unaligned(rs.size(), 1);
+  const size_t max_commit_granularity = os::page_size_for_region(rs.size(), rs.size(), 1);
   return initialize_with_granularity(rs, committed_size, max_commit_granularity);
 }
 
@@ -640,7 +626,19 @@ bool VirtualSpace::expand_by(size_t bytes, bool pre_touch) {
   }
 
   if (pre_touch || AlwaysPreTouch) {
-    os::pretouch_memory(previous_high, unaligned_new_high);
+    int vm_ps = os::vm_page_size();
+    for (char* curr = previous_high;
+         curr < unaligned_new_high;
+         curr += vm_ps) {
+      // Note the use of a write here; originally we tried just a read, but
+      // since the value read was unused, the optimizer removed the read.
+      // If we ever have a concurrent touchahead thread, we'll want to use
+      // a read, to avoid the potential of overwriting data (if a mutator
+      // thread beats the touchahead thread to a page).  There are various
+      // ways of making sure this read is not optimized away: for example,
+      // generating the code for a read procedure at runtime.
+      *curr = 0;
+    }
   }
 
   _high += bytes;
@@ -1005,7 +1003,7 @@ class TestVirtualSpace : AllStatic {
     case Disable:
       return vs.initialize_with_granularity(rs, 0, os::vm_page_size());
     case Commit:
-      return vs.initialize_with_granularity(rs, 0, os::page_size_for_region_unaligned(rs.size(), 1));
+      return vs.initialize_with_granularity(rs, 0, os::page_size_for_region(rs.size(), rs.size(), 1));
     }
   }
 

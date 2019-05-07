@@ -28,22 +28,22 @@ package jdk.nashorn.internal.codegen;
 import static jdk.nashorn.internal.codegen.CompilerConstants.SCOPE;
 
 import java.util.List;
-import jdk.nashorn.internal.codegen.types.Type;
-import jdk.nashorn.internal.runtime.JSType;
+import jdk.nashorn.internal.ir.Symbol;
 import jdk.nashorn.internal.runtime.PropertyMap;
-import jdk.nashorn.internal.runtime.ScriptObject;
 
 /**
  * Base class for object creation code generation.
- * @param <T> value type
  */
-public abstract class ObjectCreator<T> implements CodeGenerator.SplitLiteralCreator {
+public abstract class ObjectCreator {
 
-    /** List of keys & symbols to initiate in this ObjectCreator */
-    final List<MapTuple<T>> tuples;
+    /** List of keys to initiate in this ObjectCreator */
+    protected final List<String>  keys;
+
+    /** List of symbols to initiate in this ObjectCreator */
+    protected final List<Symbol>  symbols;
 
     /** Code generator */
-    final CodeGenerator codegen;
+    protected final CodeGenerator codegen;
 
     /** Property map */
     protected PropertyMap   propertyMap;
@@ -55,13 +55,15 @@ public abstract class ObjectCreator<T> implements CodeGenerator.SplitLiteralCrea
      * Constructor
      *
      * @param codegen      the code generator
-     * @param tuples       key,symbol,value (optional) tuples
+     * @param keys         the keys
+     * @param symbols      the symbols corresponding to keys, same index
      * @param isScope      is this object scope
      * @param hasArguments does the created object have an "arguments" property
      */
-    ObjectCreator(final CodeGenerator codegen, final List<MapTuple<T>> tuples, final boolean isScope, final boolean hasArguments) {
+    protected ObjectCreator(final CodeGenerator codegen, final List<String> keys, final List<Symbol> symbols, final boolean isScope, final boolean hasArguments) {
         this.codegen       = codegen;
-        this.tuples        = tuples;
+        this.keys          = keys;
+        this.symbols       = symbols;
         this.isScope       = isScope;
         this.hasArguments  = hasArguments;
     }
@@ -70,23 +72,7 @@ public abstract class ObjectCreator<T> implements CodeGenerator.SplitLiteralCrea
      * Generate code for making the object.
      * @param method Script method.
      */
-    public void makeObject(final MethodEmitter method) {
-        createObject(method);
-        // We need to store the object in a temporary slot as populateRange expects to load the
-        // object from a slot (as it is also invoked within split methods). Note that this also
-        // helps optimistic continuations to handle the stack in case an optimistic assumption
-        // fails during initialization (see JDK-8079269).
-        final int objectSlot = method.getUsedSlotsWithLiveTemporaries();
-        final Type objectType = method.peekType();
-        method.storeTemp(objectType, objectSlot);
-        populateRange(method, objectType, objectSlot, 0, tuples.size());
-    }
-
-    /**
-     * Generate code for creating and initializing the object.
-     * @param method the method emitter
-     */
-    protected abstract void createObject(final MethodEmitter method);
+    protected abstract void makeObject(final MethodEmitter method);
 
     /**
      * Construct the property map appropriate for the object.
@@ -99,8 +85,8 @@ public abstract class ObjectCreator<T> implements CodeGenerator.SplitLiteralCrea
      * @param clazz type of MapCreator
      * @return map creator instantiated by type
      */
-    protected MapCreator<?> newMapCreator(final Class<? extends ScriptObject> clazz) {
-        return new MapCreator<>(clazz, tuples);
+    protected MapCreator newMapCreator(final Class<?> clazz) {
+        return new MapCreator(clazz, keys, symbols);
     }
 
     /**
@@ -121,10 +107,6 @@ public abstract class ObjectCreator<T> implements CodeGenerator.SplitLiteralCrea
         return method;
     }
 
-    PropertyMap getMap() {
-        return propertyMap;
-    }
-
     /**
      * Is this a scope object
      * @return true if scope
@@ -139,33 +121,5 @@ public abstract class ObjectCreator<T> implements CodeGenerator.SplitLiteralCrea
      */
     protected boolean hasArguments() {
         return hasArguments;
-    }
-
-    /**
-     * Get the class of objects created by this ObjectCreator
-     * @return class of created object
-     */
-    abstract protected Class<? extends ScriptObject> getAllocatorClass();
-
-    /**
-     * Technique for loading an initial value. Defined by anonymous subclasses in code gen.
-     *
-     * @param value Value to load.
-     * @param type the type of the value to load
-     */
-    protected abstract void loadValue(T value, Type type);
-
-    MethodEmitter loadTuple(final MethodEmitter method, final MapTuple<T> tuple, final boolean pack) {
-        loadValue(tuple.value, tuple.type);
-        if (!codegen.useDualFields() || !tuple.isPrimitive()) {
-            method.convert(Type.OBJECT);
-        } else if (pack) {
-            method.pack();
-        }
-        return method;
-    }
-
-    MethodEmitter loadIndex(final MethodEmitter method, final long index) {
-        return JSType.isRepresentableAsInt(index) ? method.load((int) index) : method.load((double) index);
     }
 }

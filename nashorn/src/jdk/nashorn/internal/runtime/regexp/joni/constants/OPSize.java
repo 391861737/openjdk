@@ -19,7 +19,6 @@
  */
 package jdk.nashorn.internal.runtime.regexp.joni.constants;
 
-@SuppressWarnings("javadoc")
 public interface OPSize {
 
     // this might be helpful for potential byte[] migration

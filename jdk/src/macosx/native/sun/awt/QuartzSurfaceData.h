@@ -44,8 +44,6 @@ enum SDRenderType
     SD_Fill,
     SD_EOFill,
     SD_Shade,
-    SD_LinearGradient,
-    SD_RadialGradient,
     SD_Pattern,
     SD_Image,
     SD_Text,
@@ -66,17 +64,6 @@ struct _stateShadingInfo
     CGFloat    offset; // of the cycle from the start (used by the cyclic gradient)
 };
 typedef struct _stateShadingInfo StateShadingInfo;
-
-struct _stateGradientInfo
-{
-    CGPoint    start;
-    CGPoint    end;
-    CGFloat  radius;
-    CGFloat* colordata;
-    CGFloat* fractionsdata;
-    jint     fractionsLength;
-};
-typedef struct _stateGradientInfo StateGradientInfo;
 
 struct _statePatternInfo
 {
@@ -135,7 +122,6 @@ struct _QuartzSDOps
                                                 // its callees.
 
     StateShadingInfo*        shadingInfo;        // tracks shading and its parameters
-    StateGradientInfo*       gradientInfo;       // tracks gradient and its parameters
     StatePatternInfo*        patternInfo;        // tracks pattern and its parameters
     StateGraphicsInfo        graphicsStateInfo;    // tracks other graphics state
 

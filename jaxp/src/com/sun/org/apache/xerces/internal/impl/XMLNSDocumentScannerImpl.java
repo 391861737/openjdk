@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2003, 2017, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2003, 2013, Oracle and/or its affiliates. All rights reserved.
  */
 
 /*
@@ -25,6 +25,8 @@ import com.sun.org.apache.xerces.internal.xni.XMLString;
 import com.sun.org.apache.xerces.internal.impl.dtd.XMLDTDValidatorFilter;
 import com.sun.org.apache.xerces.internal.impl.msg.XMLMessageFormatter;
 import com.sun.org.apache.xerces.internal.util.XMLAttributesImpl;
+import com.sun.org.apache.xerces.internal.util.XMLAttributesIteratorImpl;
+import com.sun.org.apache.xerces.internal.util.XMLStringBuffer;
 import com.sun.org.apache.xerces.internal.util.XMLSymbols;
 import com.sun.org.apache.xerces.internal.xni.NamespaceContext;
 import com.sun.org.apache.xerces.internal.xni.QName;
@@ -32,9 +34,12 @@ import com.sun.org.apache.xerces.internal.xni.XNIException;
 import com.sun.org.apache.xerces.internal.xni.parser.XMLComponentManager;
 import com.sun.org.apache.xerces.internal.xni.parser.XMLConfigurationException;
 import com.sun.org.apache.xerces.internal.xni.XMLDocumentHandler;
+import com.sun.org.apache.xerces.internal.xni.XMLAttributes;
 import com.sun.org.apache.xerces.internal.xni.parser.XMLDocumentSource;
-import com.sun.org.apache.xerces.internal.utils.XMLSecurityManager;
+import com.sun.org.apache.xerces.internal.util.XMLAttributesImpl;
 
+import javax.xml.stream.XMLInputFactory;
+import javax.xml.stream.XMLStreamConstants;
 import javax.xml.stream.events.XMLEvent;
 
 /**
@@ -190,9 +195,9 @@ public class XMLNSDocumentScannerImpl
             // There are two variables,fNamespaces and fBindNamespaces
             //StAX uses XMLNSDocumentScannerImpl so this distinction needs to be maintained
             if (fNamespaces) {
-                fEntityScanner.scanQName(fElementQName, NameType.ELEMENTSTART);
+                fEntityScanner.scanQName(fElementQName);
             } else {
-                String name = fEntityScanner.scanName(NameType.ELEMENTSTART);
+                String name = fEntityScanner.scanName();
                 fElementQName.setValues(null, name, name, null);
             }
 
@@ -215,7 +220,6 @@ public class XMLNSDocumentScannerImpl
         fCurrentElement = fElementQName;
 
         String rawname = fElementQName.rawname;
-        checkDepth(rawname);
         if (fBindNamespaces) {
             fNamespaceContext.pushContext();
             if (fScannerState == SCANNER_STATE_ROOT_ELEMENT) {
@@ -405,11 +409,11 @@ public class XMLNSDocumentScannerImpl
         if (DEBUG_START_END_ELEMENT) System.out.println(this.getClass().toString() +">>> scanAttribute()");
 
         // name
-        fEntityScanner.scanQName(fAttributeQName, NameType.ATTRIBUTENAME);
+        fEntityScanner.scanQName(fAttributeQName);
 
         // equals
         fEntityScanner.skipSpaces();
-        if (!fEntityScanner.skipChar('=', NameType.ATTRIBUTE)) {
+        if (!fEntityScanner.skipChar('=')) {
             reportFatalError("EqRequiredInAttribute",
                     new Object[]{fCurrentElement.rawname,fAttributeQName.rawname});
         }
@@ -431,37 +435,24 @@ public class XMLNSDocumentScannerImpl
         //since scanAttributeValue doesn't use attIndex parameter therefore we
         //can safely add the attribute later..
         XMLString tmpStr = getString();
-
-        /**
-         * Determine whether this is a namespace declaration that will be subject
-         * to the name limit check in the scanAttributeValue operation.
-         * Namespace declaration format: xmlns="..." or xmlns:prefix="..."
-         * Note that prefix:xmlns="..." isn't a namespace.
-         */
-        String localpart = fAttributeQName.localpart;
-        String prefix = fAttributeQName.prefix != null
-                ? fAttributeQName.prefix : XMLSymbols.EMPTY_STRING;
-        boolean isNSDecl = fBindNamespaces & (prefix == XMLSymbols.PREFIX_XMLNS ||
-                    prefix == XMLSymbols.EMPTY_STRING && localpart == XMLSymbols.PREFIX_XMLNS);
-
-        scanAttributeValue(tmpStr, fTempString2, fAttributeQName.rawname, attributes,
-                attrIndex, isVC, fCurrentElement.rawname, isNSDecl);
+        scanAttributeValue(tmpStr, fTempString2,
+                fAttributeQName.rawname, attributes,
+                attrIndex, isVC);
 
         String value = null;
         //fTempString.toString();
 
         // record namespace declarations if any.
         if (fBindNamespaces) {
-            if (isNSDecl) {
-                //check the length of URI
-                if (tmpStr.length > fXMLNameLimit) {
-                    fErrorReporter.reportError(XMLMessageFormatter.XML_DOMAIN,
-                            "MaxXMLNameLimit",
-                            new Object[]{new String(tmpStr.ch,tmpStr.offset,tmpStr.length),
-                            tmpStr.length, fXMLNameLimit,
-                            fSecurityManager.getStateLiteral(XMLSecurityManager.Limit.MAX_NAME_LIMIT)},
-                            XMLErrorReporter.SEVERITY_FATAL_ERROR);
-                }
+
+            String localpart = fAttributeQName.localpart;
+            String prefix = fAttributeQName.prefix != null
+                    ? fAttributeQName.prefix : XMLSymbols.EMPTY_STRING;
+            // when it's of form xmlns="..." or xmlns:prefix="...",
+            // it's a namespace declaration. but prefix:xmlns="..." isn't.
+            if (prefix == XMLSymbols.PREFIX_XMLNS ||
+                    prefix == XMLSymbols.EMPTY_STRING && localpart == XMLSymbols.PREFIX_XMLNS) {
+
                 // get the internalized value of this attribute
                 String uri = fSymbolTable.addSymbol(tmpStr.ch,tmpStr.offset,tmpStr.length);
                 value = uri;

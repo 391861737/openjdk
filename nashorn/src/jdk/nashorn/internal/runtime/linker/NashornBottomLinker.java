@@ -27,11 +27,12 @@ package jdk.nashorn.internal.runtime.linker;
 
 import static jdk.nashorn.internal.lookup.Lookup.MH;
 import static jdk.nashorn.internal.runtime.ECMAErrors.typeError;
-import static jdk.nashorn.internal.runtime.JSType.GET_UNDEFINED;
-import static jdk.nashorn.internal.runtime.JSType.TYPE_OBJECT_INDEX;
 import static jdk.nashorn.internal.runtime.ScriptRuntime.UNDEFINED;
 
 import java.lang.invoke.MethodHandle;
+import java.lang.invoke.MethodType;
+import java.lang.reflect.Method;
+import java.lang.reflect.Modifier;
 import java.util.HashMap;
 import java.util.Map;
 import jdk.internal.dynalink.CallSiteDescriptor;
@@ -43,10 +44,9 @@ import jdk.internal.dynalink.linker.GuardingTypeConverterFactory;
 import jdk.internal.dynalink.linker.LinkRequest;
 import jdk.internal.dynalink.linker.LinkerServices;
 import jdk.internal.dynalink.support.Guards;
-import jdk.nashorn.internal.codegen.types.Type;
+import jdk.nashorn.internal.runtime.Context;
 import jdk.nashorn.internal.runtime.JSType;
 import jdk.nashorn.internal.runtime.ScriptRuntime;
-import jdk.nashorn.internal.runtime.UnwarrantedOptimismException;
 
 /**
  * Nashorn bottom linker; used as a last-resort catch-all linker for all linking requests that fall through all other
@@ -88,46 +88,46 @@ final class NashornBottomLinker implements GuardingDynamicLinker, GuardingTypeCo
         final String operator = desc.getFirstOperator();
         switch (operator) {
         case "new":
-            if(BeansLinker.isDynamicConstructor(self)) {
-                throw typeError("no.constructor.matches.args", ScriptRuntime.safeToString(self));
-            }
             if(BeansLinker.isDynamicMethod(self)) {
                 throw typeError("method.not.constructor", ScriptRuntime.safeToString(self));
             }
-            throw typeError("not.a.function", desc.getFunctionErrorMessage(self));
+            throw typeError("not.a.function", ScriptRuntime.safeToString(self));
         case "call":
-            if(BeansLinker.isDynamicConstructor(self)) {
-                throw typeError("constructor.requires.new", ScriptRuntime.safeToString(self));
+            // Support dyn:call on any object that supports some @FunctionalInterface
+            // annotated interface. This way Java method, constructor references or
+            // implementations of java.util.function.* interfaces can be called as though
+            // those are script functions.
+            final Method m = getFunctionalInterfaceMethod(self.getClass());
+            if (m != null) {
+                final MethodType callType = desc.getMethodType();
+                // 'callee' and 'thiz' passed from script + actual arguments
+                if (callType.parameterCount() != m.getParameterCount() + 2) {
+                    throw typeError("no.method.matches.args", ScriptRuntime.safeToString(self));
+                }
+                return new GuardedInvocation(
+                        // drop 'thiz' passed from the script.
+                        MH.dropArguments(desc.getLookup().unreflect(m), 1, callType.parameterType(1)),
+                        Guards.getInstanceOfGuard(m.getDeclaringClass())).asType(callType);
             }
             if(BeansLinker.isDynamicMethod(self)) {
                 throw typeError("no.method.matches.args", ScriptRuntime.safeToString(self));
             }
-            throw typeError("not.a.function", desc.getFunctionErrorMessage(self));
+            throw typeError("not.a.function", ScriptRuntime.safeToString(self));
         case "callMethod":
-            throw typeError("no.such.function", getArgument(linkRequest), ScriptRuntime.safeToString(self));
         case "getMethod":
-            // evaluate to undefined, later on Undefined will take care of throwing TypeError
-            return getInvocation(MH.dropArguments(GET_UNDEFINED.get(TYPE_OBJECT_INDEX), 0, Object.class), self, linkerServices, desc);
+            throw typeError("no.such.function", getArgument(linkRequest), ScriptRuntime.safeToString(self));
         case "getProp":
         case "getElem":
-            if(NashornCallSiteDescriptor.isOptimistic(desc)) {
-                throw new UnwarrantedOptimismException(UNDEFINED, NashornCallSiteDescriptor.getProgramPoint(desc), Type.OBJECT);
-            }
             if (desc.getOperand() != null) {
                 return getInvocation(EMPTY_PROP_GETTER, self, linkerServices, desc);
             }
             return getInvocation(EMPTY_ELEM_GETTER, self, linkerServices, desc);
         case "setProp":
-        case "setElem": {
-            final boolean strict = NashornCallSiteDescriptor.isStrict(desc);
-            if (strict) {
-                throw typeError("cant.set.property", getArgument(linkRequest), ScriptRuntime.safeToString(self));
-            }
+        case "setElem":
             if (desc.getOperand() != null) {
                 return getInvocation(EMPTY_PROP_SETTER, self, linkerServices, desc);
             }
             return getInvocation(EMPTY_ELEM_SETTER, self, linkerServices, desc);
-        }
         default:
             break;
         }
@@ -141,9 +141,8 @@ final class NashornBottomLinker implements GuardingDynamicLinker, GuardingTypeCo
     }
 
     /**
-     * Main part of the implementation of {@link GuardingTypeConverterFactory#convertToType} that doesn't
-     * care about adapting the method signature; that's done by the invoking method. Returns conversion
-     * from Object to String/number/boolean (JS primitive types).
+     * Main part of the implementation of {@link GuardingTypeConverterFactory#convertToType(Class, Class)} that doesn't
+     * care about adapting the method signature; that's done by the invoking method. Returns conversion from Object to String/number/boolean (JS primitive types).
      * @param sourceType the source type
      * @param targetType the target type
      * @return a guarded invocation that converts from the source type to the target type.
@@ -152,14 +151,14 @@ final class NashornBottomLinker implements GuardingDynamicLinker, GuardingTypeCo
     private static GuardedInvocation convertToTypeNoCast(final Class<?> sourceType, final Class<?> targetType) throws Exception {
         final MethodHandle mh = CONVERTERS.get(targetType);
         if (mh != null) {
-            return new GuardedInvocation(mh);
+            return new GuardedInvocation(mh, null);
         }
 
         return null;
     }
 
     private static GuardedInvocation getInvocation(final MethodHandle handle, final Object self, final LinkerServices linkerServices, final CallSiteDescriptor desc) {
-        return Bootstrap.asTypeSafeReturn(new GuardedInvocation(handle, Guards.getClassGuard(self.getClass())), linkerServices, desc);
+        return Bootstrap.asType(new GuardedInvocation(handle, Guards.getClassGuard(self.getClass())), linkerServices, desc);
     }
 
     // Used solely in an assertion to figure out if the object we get here is something we in fact expect. Objects
@@ -205,5 +204,45 @@ final class NashornBottomLinker implements GuardingDynamicLinker, GuardingTypeCo
             return desc.getNameToken(2);
         }
         return ScriptRuntime.safeToString(linkRequest.getArguments()[1]);
+    }
+
+    // cache of @FunctionalInterface method of implementor classes
+    private static final ClassValue<Method> FUNCTIONAL_IFACE_METHOD = new ClassValue<Method>() {
+        @Override
+        protected Method computeValue(final Class<?> type) {
+            return findFunctionalInterfaceMethod(type);
+        }
+
+        private Method findFunctionalInterfaceMethod(final Class<?> clazz) {
+            if (clazz == null) {
+                return null;
+            }
+
+            for (Class<?> iface : clazz.getInterfaces()) {
+                // check accessiblity up-front
+                if (! Context.isAccessibleClass(iface)) {
+                    continue;
+                }
+
+                // check for @FunctionalInterface
+                if (iface.isAnnotationPresent(FunctionalInterface.class)) {
+                    // return the first abstract method
+                    for (final Method m : iface.getMethods()) {
+                        if (Modifier.isAbstract(m.getModifiers())) {
+                            return m;
+                        }
+                    }
+                }
+            }
+
+            // did not find here, try super class
+            return findFunctionalInterfaceMethod(clazz.getSuperclass());
+        }
+    };
+
+    // Returns @FunctionalInterface annotated interface's single abstract
+    // method. If not found, returns null.
+    static Method getFunctionalInterfaceMethod(final Class<?> clazz) {
+        return FUNCTIONAL_IFACE_METHOD.get(clazz);
     }
 }

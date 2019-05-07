@@ -76,7 +76,6 @@ import static java.time.temporal.ChronoField.EPOCH_DAY;
 import static java.time.temporal.ChronoField.ERA;
 import static java.time.temporal.ChronoField.HOUR_OF_AMPM;
 import static java.time.temporal.ChronoField.HOUR_OF_DAY;
-import static java.time.temporal.ChronoField.INSTANT_SECONDS;
 import static java.time.temporal.ChronoField.MICRO_OF_DAY;
 import static java.time.temporal.ChronoField.MICRO_OF_SECOND;
 import static java.time.temporal.ChronoField.MILLI_OF_DAY;
@@ -91,28 +90,25 @@ import static java.time.temporal.ChronoField.SECOND_OF_DAY;
 import static java.time.temporal.ChronoField.SECOND_OF_MINUTE;
 import static java.time.temporal.ChronoField.YEAR;
 import static java.time.temporal.ChronoField.YEAR_OF_ERA;
+import static java.time.temporal.ChronoUnit.DAYS;
+import static java.time.temporal.ChronoUnit.FOREVER;
+import static java.time.temporal.ChronoUnit.NANOS;
 import static org.testng.Assert.assertEquals;
 import static org.testng.Assert.fail;
 
-import java.time.Instant;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.LocalTime;
 import java.time.Period;
 import java.time.ZoneId;
-import java.time.ZoneOffset;
 import java.time.ZonedDateTime;
-import java.time.chrono.ChronoLocalDate;
-import java.time.chrono.ChronoLocalDateTime;
-import java.time.chrono.ChronoZonedDateTime;
-import java.time.chrono.IsoChronology;
-import java.time.chrono.MinguoChronology;
-import java.time.chrono.MinguoDate;
+import java.time.chrono.Chronology;
 import java.time.chrono.ThaiBuddhistChronology;
 import java.time.format.DateTimeFormatter;
 import java.time.format.DateTimeFormatterBuilder;
 import java.time.format.DateTimeParseException;
 import java.time.format.ResolverStyle;
+import java.time.temporal.ChronoUnit;
 import java.time.temporal.IsoFields;
 import java.time.temporal.Temporal;
 import java.time.temporal.TemporalAccessor;
@@ -132,9 +128,6 @@ import org.testng.annotations.Test;
 public class TCKDateTimeParseResolver {
     // TODO: tests with weird TenporalField implementations
     // TODO: tests with non-ISO chronologies
-
-    private static final ZoneId EUROPE_ATHENS = ZoneId.of("Europe/Athens");
-    private static final ZoneId EUROPE_PARIS = ZoneId.of("Europe/Paris");
 
     //-----------------------------------------------------------------------
     @DataProvider(name="resolveOneNoChange")
@@ -893,371 +886,205 @@ public class TCKDateTimeParseResolver {
     }
 
     //-----------------------------------------------------------------------
-    // SPEC: DateTimeFormatter.withChronology()
-    @Test
-    public void test_withChronology_noOverride() {
-        DateTimeFormatter f = new DateTimeFormatterBuilder().parseDefaulting(EPOCH_DAY, 2).toFormatter();
-        TemporalAccessor accessor = f.parse("");
-        assertEquals(accessor.query(TemporalQueries.localDate()), LocalDate.of(1970, 1, 3));
-        assertEquals(accessor.query(TemporalQueries.localTime()), null);
-        assertEquals(accessor.query(TemporalQueries.chronology()), IsoChronology.INSTANCE);
-    }
-
-    @Test
-    public void test_withChronology_override() {
-        DateTimeFormatter f = new DateTimeFormatterBuilder().parseDefaulting(EPOCH_DAY, 2).toFormatter();
-        f = f.withChronology(MinguoChronology.INSTANCE);
-        TemporalAccessor accessor = f.parse("");
-        assertEquals(accessor.query(TemporalQueries.localDate()), LocalDate.of(1970, 1, 3));
-        assertEquals(accessor.query(TemporalQueries.localTime()), null);
-        assertEquals(accessor.query(TemporalQueries.chronology()), MinguoChronology.INSTANCE);
-    }
-
-    @Test
-    public void test_withChronology_parsedChronology_noOverride() {
-        DateTimeFormatter f = new DateTimeFormatterBuilder().parseDefaulting(EPOCH_DAY, 2).appendChronologyId().toFormatter();
-        TemporalAccessor accessor = f.parse("ThaiBuddhist");
-        assertEquals(accessor.query(TemporalQueries.localDate()), LocalDate.of(1970, 1, 3));
-        assertEquals(accessor.query(TemporalQueries.localTime()), null);
-        assertEquals(accessor.query(TemporalQueries.chronology()), ThaiBuddhistChronology.INSTANCE);
-    }
-
-    @Test
-    public void test_withChronology_parsedChronology_override() {
-        DateTimeFormatter f = new DateTimeFormatterBuilder().parseDefaulting(EPOCH_DAY, 2).appendChronologyId().toFormatter();
-        f = f.withChronology(MinguoChronology.INSTANCE);
-        TemporalAccessor accessor = f.parse("ThaiBuddhist");
-        assertEquals(accessor.query(TemporalQueries.localDate()), LocalDate.of(1970, 1, 3));
-        assertEquals(accessor.query(TemporalQueries.localTime()), null);
-        assertEquals(accessor.query(TemporalQueries.chronology()), ThaiBuddhistChronology.INSTANCE);
-    }
-
-    //-----------------------------------------------------------------------
-    // SPEC: DateTimeFormatter.withZone()
-    @Test
-    public void test_withZone_noOverride() {
-        DateTimeFormatter f = new DateTimeFormatterBuilder().parseDefaulting(EPOCH_DAY, 2).toFormatter();
-        TemporalAccessor accessor = f.parse("");
-        assertEquals(accessor.query(TemporalQueries.localDate()), LocalDate.of(1970, 1, 3));
-        assertEquals(accessor.query(TemporalQueries.localTime()), null);
-        assertEquals(accessor.query(TemporalQueries.zoneId()), null);
-    }
-
-    @Test
-    public void test_withZone_override() {
-        DateTimeFormatter f = new DateTimeFormatterBuilder().parseDefaulting(EPOCH_DAY, 2).toFormatter();
-        f = f.withZone(EUROPE_ATHENS);
-        TemporalAccessor accessor = f.parse("");
-        assertEquals(accessor.query(TemporalQueries.localDate()), LocalDate.of(1970, 1, 3));
-        assertEquals(accessor.query(TemporalQueries.localTime()), null);
-        assertEquals(accessor.query(TemporalQueries.zoneId()), EUROPE_ATHENS);
-    }
-
-    @Test
-    public void test_withZone_parsedZone_noOverride() {
-        DateTimeFormatter f = new DateTimeFormatterBuilder().parseDefaulting(EPOCH_DAY, 2).appendZoneId().toFormatter();
-        TemporalAccessor accessor = f.parse("Europe/Paris");
-        assertEquals(accessor.query(TemporalQueries.localDate()), LocalDate.of(1970, 1, 3));
-        assertEquals(accessor.query(TemporalQueries.localTime()), null);
-        assertEquals(accessor.query(TemporalQueries.zoneId()), EUROPE_PARIS);
-    }
-
-    @Test
-    public void test_withZone_parsedZone_override() {
-        DateTimeFormatter f = new DateTimeFormatterBuilder().parseDefaulting(EPOCH_DAY, 2).appendZoneId().toFormatter();
-        f = f.withZone(EUROPE_ATHENS);
-        TemporalAccessor accessor = f.parse("Europe/Paris");
-        assertEquals(accessor.query(TemporalQueries.localDate()), LocalDate.of(1970, 1, 3));
-        assertEquals(accessor.query(TemporalQueries.localTime()), null);
-        assertEquals(accessor.query(TemporalQueries.zoneId()), EUROPE_PARIS);
-    }
-
-    //-----------------------------------------------------------------------
     @Test
     public void test_fieldResolvesToLocalTime() {
-        LocalTime lt = LocalTime.of(12, 30, 40);
-        DateTimeFormatter f = new DateTimeFormatterBuilder().appendValue(new ResolvingField(lt)).toFormatter();
+        TemporalField field = new TemporalField() {
+            @Override
+            public TemporalUnit getBaseUnit() {
+                throw new UnsupportedOperationException();
+            }
+            @Override
+            public TemporalUnit getRangeUnit() {
+                throw new UnsupportedOperationException();
+            }
+            @Override
+            public ValueRange range() {
+                throw new UnsupportedOperationException();
+            }
+            @Override
+            public boolean isDateBased() {
+                throw new UnsupportedOperationException();
+            }
+            @Override
+            public boolean isTimeBased() {
+                throw new UnsupportedOperationException();
+            }
+            @Override
+            public boolean isSupportedBy(TemporalAccessor temporal) {
+                throw new UnsupportedOperationException();
+            }
+            @Override
+            public ValueRange rangeRefinedBy(TemporalAccessor temporal) {
+                throw new UnsupportedOperationException();
+            }
+            @Override
+            public long getFrom(TemporalAccessor temporal) {
+                throw new UnsupportedOperationException();
+            }
+            @Override
+            public <R extends Temporal> R adjustInto(R temporal, long newValue) {
+                throw new UnsupportedOperationException();
+            }
+            @Override
+            public TemporalAccessor resolve(
+                    Map<TemporalField, Long> fieldValues, TemporalAccessor partialTemporal, ResolverStyle resolverStyle) {
+                return LocalTime.MIDNIGHT.plusNanos(fieldValues.remove(this));
+            }
+        };
+        DateTimeFormatter f = new DateTimeFormatterBuilder().appendValue(field).toFormatter();
         TemporalAccessor accessor = f.parse("1234567890");
         assertEquals(accessor.query(TemporalQueries.localDate()), null);
-        assertEquals(accessor.query(TemporalQueries.localTime()), lt);
-    }
-
-    //-------------------------------------------------------------------------
-    @Test
-    public void test_fieldResolvesToChronoLocalDate_noOverrideChrono_matches() {
-        LocalDate ldt = LocalDate.of(2010, 6, 30);
-        DateTimeFormatter f = new DateTimeFormatterBuilder().appendValue(new ResolvingField(ldt)).toFormatter();
-        TemporalAccessor accessor = f.parse("1234567890");
-        assertEquals(accessor.query(TemporalQueries.localDate()), LocalDate.of(2010, 6, 30));
-        assertEquals(accessor.query(TemporalQueries.localTime()), null);
-        assertEquals(accessor.query(TemporalQueries.chronology()), IsoChronology.INSTANCE);
+        assertEquals(accessor.query(TemporalQueries.localTime()), LocalTime.of(0, 0, 1, 234_567_890));
     }
 
     @Test
-    public void test_fieldResolvesToChronoLocalDate_overrideChrono_matches() {
-        MinguoDate mdt = MinguoDate.of(100, 6, 30);
-        DateTimeFormatter f = new DateTimeFormatterBuilder().appendValue(new ResolvingField(mdt)).toFormatter();
-        f = f.withChronology(MinguoChronology.INSTANCE);
-        TemporalAccessor accessor = f.parse("1234567890");
-        assertEquals(accessor.query(TemporalQueries.localDate()), LocalDate.from(mdt));
-        assertEquals(accessor.query(TemporalQueries.localTime()), null);
-        assertEquals(accessor.query(TemporalQueries.chronology()), MinguoChronology.INSTANCE);
-    }
-
-    @Test(expectedExceptions = DateTimeParseException.class)
-    public void test_fieldResolvesToChronoLocalDate_noOverrideChrono_wrongChrono() {
-        ChronoLocalDate cld = ThaiBuddhistChronology.INSTANCE.dateNow();
-        DateTimeFormatter f = new DateTimeFormatterBuilder().appendValue(new ResolvingField(cld)).toFormatter();
-        f.parse("1234567890");
-    }
-
-    @Test(expectedExceptions = DateTimeParseException.class)
-    public void test_fieldResolvesToChronoLocalDate_overrideChrono_wrongChrono() {
-        ChronoLocalDate cld = ThaiBuddhistChronology.INSTANCE.dateNow();
-        DateTimeFormatter f = new DateTimeFormatterBuilder().appendValue(new ResolvingField(cld)).toFormatter();
-        f = f.withChronology(MinguoChronology.INSTANCE);
-        f.parse("1234567890");
-    }
-
-    //-------------------------------------------------------------------------
-    @Test
-    public void test_fieldResolvesToChronoLocalDateTime_noOverrideChrono_matches() {
-        LocalDateTime ldt = LocalDateTime.of(2010, 6, 30, 12, 30);
-        DateTimeFormatter f = new DateTimeFormatterBuilder().appendValue(new ResolvingField(ldt)).toFormatter();
-        TemporalAccessor accessor = f.parse("1234567890");
-        assertEquals(accessor.query(TemporalQueries.localDate()), LocalDate.of(2010, 6, 30));
-        assertEquals(accessor.query(TemporalQueries.localTime()), LocalTime.of(12, 30));
-        assertEquals(accessor.query(TemporalQueries.chronology()), IsoChronology.INSTANCE);
-    }
-
-    @Test
-    public void test_fieldResolvesToChronoLocalDateTime_overrideChrono_matches() {
-        MinguoDate mdt = MinguoDate.of(100, 6, 30);
-        DateTimeFormatter f = new DateTimeFormatterBuilder().appendValue(new ResolvingField(mdt.atTime(LocalTime.NOON))).toFormatter();
-        f = f.withChronology(MinguoChronology.INSTANCE);
-        TemporalAccessor accessor = f.parse("1234567890");
-        assertEquals(accessor.query(TemporalQueries.localDate()), LocalDate.from(mdt));
-        assertEquals(accessor.query(TemporalQueries.localTime()), LocalTime.NOON);
-        assertEquals(accessor.query(TemporalQueries.chronology()), MinguoChronology.INSTANCE);
-    }
-
-    @Test(expectedExceptions = DateTimeParseException.class)
-    public void test_fieldResolvesToChronoLocalDateTime_noOverrideChrono_wrongChrono() {
-        ChronoLocalDateTime<?> cldt = ThaiBuddhistChronology.INSTANCE.dateNow().atTime(LocalTime.NOON);
-        DateTimeFormatter f = new DateTimeFormatterBuilder().appendValue(new ResolvingField(cldt)).toFormatter();
-        f.parse("1234567890");
-    }
-
-    @Test(expectedExceptions = DateTimeParseException.class)
-    public void test_fieldResolvesToChronoLocalDateTime_overrideChrono_wrongChrono() {
-        ChronoLocalDateTime<?> cldt = ThaiBuddhistChronology.INSTANCE.dateNow().atTime(LocalTime.NOON);
-        DateTimeFormatter f = new DateTimeFormatterBuilder().appendValue(new ResolvingField(cldt)).toFormatter();
-        f = f.withChronology(MinguoChronology.INSTANCE);
-        f.parse("1234567890");
-    }
-
-    //-------------------------------------------------------------------------
-    @Test
-    public void test_fieldResolvesToChronoZonedDateTime_noOverrideChrono_matches() {
-        ZonedDateTime zdt = ZonedDateTime.of(2010, 6, 30, 12, 30, 0, 0, EUROPE_PARIS);
-        DateTimeFormatter f = new DateTimeFormatterBuilder().appendValue(new ResolvingField(zdt)).toFormatter();
+    public void test_fieldResolvesToChronoLocalDateTime() {
+        TemporalField field = new TemporalField() {
+            @Override
+            public TemporalUnit getBaseUnit() {
+                throw new UnsupportedOperationException();
+            }
+            @Override
+            public TemporalUnit getRangeUnit() {
+                throw new UnsupportedOperationException();
+            }
+            @Override
+            public ValueRange range() {
+                throw new UnsupportedOperationException();
+            }
+            @Override
+            public boolean isDateBased() {
+                throw new UnsupportedOperationException();
+            }
+            @Override
+            public boolean isTimeBased() {
+                throw new UnsupportedOperationException();
+            }
+            @Override
+            public boolean isSupportedBy(TemporalAccessor temporal) {
+                throw new UnsupportedOperationException();
+            }
+            @Override
+            public ValueRange rangeRefinedBy(TemporalAccessor temporal) {
+                throw new UnsupportedOperationException();
+            }
+            @Override
+            public long getFrom(TemporalAccessor temporal) {
+                throw new UnsupportedOperationException();
+            }
+            @Override
+            public <R extends Temporal> R adjustInto(R temporal, long newValue) {
+                throw new UnsupportedOperationException();
+            }
+            @Override
+            public TemporalAccessor resolve(
+                    Map<TemporalField, Long> fieldValues, TemporalAccessor partialTemporal, ResolverStyle resolverStyle) {
+                fieldValues.remove(this);
+                return LocalDateTime.of(2010, 6, 30, 12, 30);
+            }
+        };
+        DateTimeFormatter f = new DateTimeFormatterBuilder().appendValue(field).toFormatter();
         TemporalAccessor accessor = f.parse("1234567890");
         assertEquals(accessor.query(TemporalQueries.localDate()), LocalDate.of(2010, 6, 30));
         assertEquals(accessor.query(TemporalQueries.localTime()), LocalTime.of(12, 30));
-        assertEquals(accessor.query(TemporalQueries.chronology()), IsoChronology.INSTANCE);
-        assertEquals(accessor.query(TemporalQueries.zoneId()), EUROPE_PARIS);
-    }
-
-    @Test
-    public void test_fieldResolvesToChronoZonedDateTime_overrideChrono_matches() {
-        MinguoDate mdt = MinguoDate.of(100, 6, 30);
-        ChronoZonedDateTime<MinguoDate> mzdt = mdt.atTime(LocalTime.NOON).atZone(EUROPE_PARIS);
-        DateTimeFormatter f = new DateTimeFormatterBuilder().appendValue(new ResolvingField(mzdt)).toFormatter();
-        f = f.withChronology(MinguoChronology.INSTANCE);
-        TemporalAccessor accessor = f.parse("1234567890");
-        assertEquals(accessor.query(TemporalQueries.localDate()), LocalDate.from(mdt));
-        assertEquals(accessor.query(TemporalQueries.localTime()), LocalTime.NOON);
-        assertEquals(accessor.query(TemporalQueries.chronology()), MinguoChronology.INSTANCE);
-        assertEquals(accessor.query(TemporalQueries.zoneId()), EUROPE_PARIS);
     }
 
     @Test(expectedExceptions = DateTimeParseException.class)
-    public void test_fieldResolvesToChronoZonedDateTime_noOverrideChrono_wrongChrono() {
-        ChronoZonedDateTime<?> cldt = ThaiBuddhistChronology.INSTANCE.dateNow().atTime(LocalTime.NOON).atZone(EUROPE_PARIS);
-        DateTimeFormatter f = new DateTimeFormatterBuilder().appendValue(new ResolvingField(cldt)).toFormatter();
+    public void test_fieldResolvesWrongChrono() {
+        TemporalField field = new TemporalField() {
+            @Override
+            public TemporalUnit getBaseUnit() {
+                throw new UnsupportedOperationException();
+            }
+            @Override
+            public TemporalUnit getRangeUnit() {
+                throw new UnsupportedOperationException();
+            }
+            @Override
+            public ValueRange range() {
+                throw new UnsupportedOperationException();
+            }
+            @Override
+            public boolean isDateBased() {
+                throw new UnsupportedOperationException();
+            }
+            @Override
+            public boolean isTimeBased() {
+                throw new UnsupportedOperationException();
+            }
+            @Override
+            public boolean isSupportedBy(TemporalAccessor temporal) {
+                throw new UnsupportedOperationException();
+            }
+            @Override
+            public ValueRange rangeRefinedBy(TemporalAccessor temporal) {
+                throw new UnsupportedOperationException();
+            }
+            @Override
+            public long getFrom(TemporalAccessor temporal) {
+                throw new UnsupportedOperationException();
+            }
+            @Override
+            public <R extends Temporal> R adjustInto(R temporal, long newValue) {
+                throw new UnsupportedOperationException();
+            }
+            @Override
+            public TemporalAccessor resolve(
+                    Map<TemporalField, Long> fieldValues, TemporalAccessor partialTemporal, ResolverStyle resolverStyle) {
+                return ThaiBuddhistChronology.INSTANCE.dateNow();
+            }
+        };
+        DateTimeFormatter f = new DateTimeFormatterBuilder().appendValue(field).toFormatter();
         f.parse("1234567890");
     }
 
     @Test(expectedExceptions = DateTimeParseException.class)
-    public void test_fieldResolvesToChronoZonedDateTime_overrideChrono_wrongChrono() {
-        ChronoZonedDateTime<?> cldt = ThaiBuddhistChronology.INSTANCE.dateNow().atTime(LocalTime.NOON).atZone(EUROPE_PARIS);
-        DateTimeFormatter f = new DateTimeFormatterBuilder().appendValue(new ResolvingField(cldt)).toFormatter();
-        f = f.withChronology(MinguoChronology.INSTANCE);
+    public void test_fieldResolvesWrongZone() {
+        TemporalField field = new TemporalField() {
+            @Override
+            public TemporalUnit getBaseUnit() {
+                throw new UnsupportedOperationException();
+            }
+            @Override
+            public TemporalUnit getRangeUnit() {
+                throw new UnsupportedOperationException();
+            }
+            @Override
+            public ValueRange range() {
+                throw new UnsupportedOperationException();
+            }
+            @Override
+            public boolean isDateBased() {
+                throw new UnsupportedOperationException();
+            }
+            @Override
+            public boolean isTimeBased() {
+                throw new UnsupportedOperationException();
+            }
+            @Override
+            public boolean isSupportedBy(TemporalAccessor temporal) {
+                throw new UnsupportedOperationException();
+            }
+            @Override
+            public ValueRange rangeRefinedBy(TemporalAccessor temporal) {
+                throw new UnsupportedOperationException();
+            }
+            @Override
+            public long getFrom(TemporalAccessor temporal) {
+                throw new UnsupportedOperationException();
+            }
+            @Override
+            public <R extends Temporal> R adjustInto(R temporal, long newValue) {
+                throw new UnsupportedOperationException();
+            }
+            @Override
+            public TemporalAccessor resolve(
+                    Map<TemporalField, Long> fieldValues, TemporalAccessor partialTemporal, ResolverStyle resolverStyle) {
+                return ZonedDateTime.of(2010, 6, 30, 12, 30, 0, 0, ZoneId.of("Europe/Paris"));
+            }
+        };
+        DateTimeFormatter f = new DateTimeFormatterBuilder().appendValue(field).toFormatter().withZone(ZoneId.of("Europe/London"));
         f.parse("1234567890");
-    }
-
-    @Test
-    public void test_fieldResolvesToChronoZonedDateTime_overrideZone_matches() {
-        ZonedDateTime zdt = ZonedDateTime.of(2010, 6, 30, 12, 30, 0, 0, EUROPE_PARIS);
-        DateTimeFormatter f = new DateTimeFormatterBuilder().appendValue(new ResolvingField(zdt)).toFormatter();
-        f = f.withZone(EUROPE_PARIS);
-        assertEquals(f.parse("1234567890", ZonedDateTime::from), zdt);
-    }
-
-    @Test(expectedExceptions = DateTimeParseException.class)
-    public void test_fieldResolvesToChronoZonedDateTime_overrideZone_wrongZone() {
-        ZonedDateTime zdt = ZonedDateTime.of(2010, 6, 30, 12, 30, 0, 0, EUROPE_PARIS);
-        DateTimeFormatter f = new DateTimeFormatterBuilder().appendValue(new ResolvingField(zdt)).toFormatter();
-        f = f.withZone(ZoneId.of("Europe/London"));
-        f.parse("1234567890");
-    }
-
-    //-------------------------------------------------------------------------
-    private static class ResolvingField implements TemporalField {
-        private final TemporalAccessor resolvedValue;
-        ResolvingField(TemporalAccessor resolvedValue) {
-            this.resolvedValue = resolvedValue;
-        }
-        @Override
-        public TemporalUnit getBaseUnit() {
-            throw new UnsupportedOperationException();
-        }
-        @Override
-        public TemporalUnit getRangeUnit() {
-            throw new UnsupportedOperationException();
-        }
-        @Override
-        public ValueRange range() {
-            throw new UnsupportedOperationException();
-        }
-        @Override
-        public boolean isDateBased() {
-            throw new UnsupportedOperationException();
-        }
-        @Override
-        public boolean isTimeBased() {
-            throw new UnsupportedOperationException();
-        }
-        @Override
-        public boolean isSupportedBy(TemporalAccessor temporal) {
-            throw new UnsupportedOperationException();
-        }
-        @Override
-        public ValueRange rangeRefinedBy(TemporalAccessor temporal) {
-            throw new UnsupportedOperationException();
-        }
-        @Override
-        public long getFrom(TemporalAccessor temporal) {
-            throw new UnsupportedOperationException();
-        }
-        @Override
-        public <R extends Temporal> R adjustInto(R temporal, long newValue) {
-            throw new UnsupportedOperationException();
-        }
-        @Override
-        public TemporalAccessor resolve(
-                Map<TemporalField, Long> fieldValues, TemporalAccessor partialTemporal, ResolverStyle resolverStyle) {
-            fieldValues.remove(this);
-            return resolvedValue;
-        }
-    };
-
-    //-------------------------------------------------------------------------
-    // SPEC: ChronoField.INSTANT_SECONDS
-    @Test
-    public void test_parse_fromField_InstantSeconds() {
-        DateTimeFormatter fmt = new DateTimeFormatterBuilder()
-            .appendValue(INSTANT_SECONDS).toFormatter();
-        TemporalAccessor acc = fmt.parse("86402");
-        Instant expected = Instant.ofEpochSecond(86402);
-        assertEquals(acc.isSupported(INSTANT_SECONDS), true);
-        assertEquals(acc.isSupported(NANO_OF_SECOND), true);
-        assertEquals(acc.isSupported(MICRO_OF_SECOND), true);
-        assertEquals(acc.isSupported(MILLI_OF_SECOND), true);
-        assertEquals(acc.getLong(INSTANT_SECONDS), 86402L);
-        assertEquals(acc.getLong(NANO_OF_SECOND), 0L);
-        assertEquals(acc.getLong(MICRO_OF_SECOND), 0L);
-        assertEquals(acc.getLong(MILLI_OF_SECOND), 0L);
-        assertEquals(Instant.from(acc), expected);
-    }
-
-    @Test
-    public void test_parse_fromField_InstantSeconds_NanoOfSecond() {
-        DateTimeFormatter fmt = new DateTimeFormatterBuilder()
-            .appendValue(INSTANT_SECONDS).appendLiteral('.').appendValue(NANO_OF_SECOND).toFormatter();
-        TemporalAccessor acc = fmt.parse("86402.123456789");
-        Instant expected = Instant.ofEpochSecond(86402, 123456789);
-        assertEquals(acc.isSupported(INSTANT_SECONDS), true);
-        assertEquals(acc.isSupported(NANO_OF_SECOND), true);
-        assertEquals(acc.isSupported(MICRO_OF_SECOND), true);
-        assertEquals(acc.isSupported(MILLI_OF_SECOND), true);
-        assertEquals(acc.getLong(INSTANT_SECONDS), 86402L);
-        assertEquals(acc.getLong(NANO_OF_SECOND), 123456789L);
-        assertEquals(acc.getLong(MICRO_OF_SECOND), 123456L);
-        assertEquals(acc.getLong(MILLI_OF_SECOND), 123L);
-        assertEquals(Instant.from(acc), expected);
-    }
-
-    // SPEC: ChronoField.SECOND_OF_DAY
-    @Test
-    public void test_parse_fromField_SecondOfDay() {
-        DateTimeFormatter fmt = new DateTimeFormatterBuilder()
-            .appendValue(SECOND_OF_DAY).toFormatter();
-        TemporalAccessor acc = fmt.parse("864");
-        assertEquals(acc.isSupported(SECOND_OF_DAY), true);
-        assertEquals(acc.isSupported(NANO_OF_SECOND), true);
-        assertEquals(acc.isSupported(MICRO_OF_SECOND), true);
-        assertEquals(acc.isSupported(MILLI_OF_SECOND), true);
-        assertEquals(acc.getLong(SECOND_OF_DAY), 864L);
-        assertEquals(acc.getLong(NANO_OF_SECOND), 0L);
-        assertEquals(acc.getLong(MICRO_OF_SECOND), 0L);
-        assertEquals(acc.getLong(MILLI_OF_SECOND), 0L);
-    }
-
-    @Test
-    public void test_parse_fromField_SecondOfDay_NanoOfSecond() {
-        DateTimeFormatter fmt = new DateTimeFormatterBuilder()
-            .appendValue(SECOND_OF_DAY).appendLiteral('.').appendValue(NANO_OF_SECOND).toFormatter();
-        TemporalAccessor acc = fmt.parse("864.123456789");
-        assertEquals(acc.isSupported(SECOND_OF_DAY), true);
-        assertEquals(acc.isSupported(NANO_OF_SECOND), true);
-        assertEquals(acc.isSupported(MICRO_OF_SECOND), true);
-        assertEquals(acc.isSupported(MILLI_OF_SECOND), true);
-        assertEquals(acc.getLong(SECOND_OF_DAY), 864L);
-        assertEquals(acc.getLong(NANO_OF_SECOND), 123456789L);
-        assertEquals(acc.getLong(MICRO_OF_SECOND), 123456L);
-        assertEquals(acc.getLong(MILLI_OF_SECOND), 123L);
-    }
-
-    // SPEC: ChronoField.SECOND_OF_MINUTE
-    @Test
-    public void test_parse_fromField_SecondOfMinute() {
-        DateTimeFormatter fmt = new DateTimeFormatterBuilder()
-            .appendValue(SECOND_OF_MINUTE).toFormatter();
-        TemporalAccessor acc = fmt.parse("32");
-        assertEquals(acc.isSupported(SECOND_OF_MINUTE), true);
-        assertEquals(acc.isSupported(NANO_OF_SECOND), true);
-        assertEquals(acc.isSupported(MICRO_OF_SECOND), true);
-        assertEquals(acc.isSupported(MILLI_OF_SECOND), true);
-        assertEquals(acc.getLong(SECOND_OF_MINUTE), 32L);
-        assertEquals(acc.getLong(NANO_OF_SECOND), 0L);
-        assertEquals(acc.getLong(MICRO_OF_SECOND), 0L);
-        assertEquals(acc.getLong(MILLI_OF_SECOND), 0L);
-    }
-
-    @Test
-    public void test_parse_fromField_SecondOfMinute_NanoOfSecond() {
-        DateTimeFormatter fmt = new DateTimeFormatterBuilder()
-            .appendValue(SECOND_OF_MINUTE).appendLiteral('.').appendValue(NANO_OF_SECOND).toFormatter();
-        TemporalAccessor acc = fmt.parse("32.123456789");
-        assertEquals(acc.isSupported(SECOND_OF_MINUTE), true);
-        assertEquals(acc.isSupported(NANO_OF_SECOND), true);
-        assertEquals(acc.isSupported(MICRO_OF_SECOND), true);
-        assertEquals(acc.isSupported(MILLI_OF_SECOND), true);
-        assertEquals(acc.getLong(SECOND_OF_MINUTE), 32L);
-        assertEquals(acc.getLong(NANO_OF_SECOND), 123456789L);
-        assertEquals(acc.getLong(MICRO_OF_SECOND), 123456L);
-        assertEquals(acc.getLong(MILLI_OF_SECOND), 123L);
     }
 
 }

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 1997, 2014, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 1997, 2013, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -32,7 +32,6 @@
 #include "oops/typeArrayKlass.hpp"
 #include "runtime/signature.hpp"
 
-PRAGMA_FORMAT_MUTE_WARNINGS_FOR_GCC
 
 // Implementation of SignatureIterator
 
@@ -225,49 +224,7 @@ void SignatureIterator::iterate_returntype() {
   _index = 0;
   expect('(');
   Symbol* sig = _signature;
-  // Need to skip over each type in the signature's argument list until a
-  // closing ')' is found., then get the return type.  We cannot just scan
-  // for the first ')' because ')' is a legal character in a type name.
-  while (sig->byte_at(_index) != ')') {
-    switch(sig->byte_at(_index)) {
-      case 'B':
-      case 'C':
-      case 'D':
-      case 'F':
-      case 'I':
-      case 'J':
-      case 'S':
-      case 'Z':
-      case 'V':
-        {
-          _index++;
-        }
-        break;
-      case 'L':
-        {
-          while (sig->byte_at(_index++) != ';') ;
-        }
-        break;
-      case '[':
-        {
-          int begin = ++_index;
-          skip_optional_size();
-          while (sig->byte_at(_index) == '[') {
-            _index++;
-            skip_optional_size();
-          }
-          if (sig->byte_at(_index) == 'L') {
-            while (sig->byte_at(_index++) != ';') ;
-          } else {
-            _index++;
-          }
-        }
-        break;
-      default:
-        ShouldNotReachHere();
-        break;
-    }
-  }
+  while (sig->byte_at(_index) != ')') _index++;
   expect(')');
   // Parse return type
   _parameter_index = -1;

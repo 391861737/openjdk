@@ -27,11 +27,9 @@
 #include <string.h>
 #include <signal.h>
 #include <errno.h>
-#include <elf.h>
 #include <sys/types.h>
 #include <sys/wait.h>
 #include <sys/ptrace.h>
-#include <sys/uio.h>
 #include "libproc_impl.h"
 
 #if defined(x86_64) && !defined(amd64)
@@ -140,15 +138,6 @@ static bool process_get_lwp_regs(struct ps_prochandle* ph, pid_t pid, struct use
    return false;
  }
  return true;
-#elif defined(PTRACE_GETREGSET)
- struct iovec iov;
- iov.iov_base = user;
- iov.iov_len = sizeof(*user);
- if (ptrace(PTRACE_GETREGSET, pid, NT_PRSTATUS, (void*) &iov) < 0) {
-   print_debug("ptrace(PTRACE_GETREGSET, ...) failed for lwp %d\n", pid);
-   return false;
- }
- return true;
 #else
  print_debug("ptrace(PTRACE_GETREGS, ...) not supported\n");
  return false;
@@ -215,12 +204,9 @@ static bool ptrace_waitpid(pid_t pid) {
 }
 
 // attach to a process/thread specified by "pid"
-static bool ptrace_attach(pid_t pid, char* err_buf, size_t err_buf_len) {
+static bool ptrace_attach(pid_t pid) {
   if (ptrace(PTRACE_ATTACH, pid, NULL, NULL) < 0) {
-    char buf[200];
-    char* msg = strerror_r(errno, buf, sizeof(buf));
-    snprintf(err_buf, err_buf_len, "ptrace(PTRACE_ATTACH, ..) failed for %d: %s", pid, msg);
-    print_debug("%s\n", err_buf);
+    print_debug("ptrace(PTRACE_ATTACH, ..) failed for %d\n", pid);
     return false;
   } else {
     return ptrace_waitpid(pid);
@@ -342,17 +328,16 @@ static ps_prochandle_ops process_ops = {
 };
 
 // attach to the process. One and only one exposed stuff
-struct ps_prochandle* Pgrab(pid_t pid, char* err_buf, size_t err_buf_len) {
+struct ps_prochandle* Pgrab(pid_t pid) {
   struct ps_prochandle* ph = NULL;
   thread_info* thr = NULL;
 
   if ( (ph = (struct ps_prochandle*) calloc(1, sizeof(struct ps_prochandle))) == NULL) {
-     snprintf(err_buf, err_buf_len, "can't allocate memory for ps_prochandle");
-     print_debug("%s\n", err_buf);
+     print_debug("can't allocate memory for ps_prochandle\n");
      return NULL;
   }
 
-  if (ptrace_attach(pid, err_buf, err_buf_len) != true) {
+  if (ptrace_attach(pid) != true) {
      free(ph);
      return NULL;
   }
@@ -375,7 +360,7 @@ struct ps_prochandle* Pgrab(pid_t pid, char* err_buf, size_t err_buf_len) {
   thr = ph->threads;
   while (thr) {
      // don't attach to the main thread again
-    if (ph->pid != thr->lwp_id && ptrace_attach(thr->lwp_id, err_buf, err_buf_len) != true) {
+     if (ph->pid != thr->lwp_id && ptrace_attach(thr->lwp_id) != true) {
         // even if one attach fails, we get return NULL
         Prelease(ph);
         return NULL;

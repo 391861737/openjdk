@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 1998, 2014, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 1998, 2013, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -1986,72 +1986,57 @@ class Parser implements DTDConstants {
         while (true) {
             int i = 0;
             while (!insideComment && i < SCRIPT_END_TAG.length
-                    && (SCRIPT_END_TAG[i] == ch
-                    || SCRIPT_END_TAG_UPPER_CASE[i] == ch)) {
+                       && (SCRIPT_END_TAG[i] == ch
+                           || SCRIPT_END_TAG_UPPER_CASE[i] == ch)) {
                 charsToAdd[i] = (char) ch;
                 ch = readCh();
                 i++;
             }
             if (i == SCRIPT_END_TAG.length) {
+
+                /*  '</script>' tag detected */
+                /* Here, ch == the first character after </script> */
                 return;
-            }
+            } else {
 
-            if (!insideComment && i == 1 && charsToAdd[0] == START_COMMENT.charAt(0)) {
-                // it isn't end script tag, but may be it's start comment tag?
-                while (i < START_COMMENT.length()
-                        && START_COMMENT.charAt(i) == ch) {
-                    charsToAdd[i] = (char) ch;
-                    ch = readCh();
-                    i++;
-                }
-                if (i == START_COMMENT.length()) {
-                    insideComment = true;
-                }
-            }
-            if (insideComment) {
-                while (i < END_COMMENT.length()
-                        && END_COMMENT.charAt(i) == ch) {
-                    charsToAdd[i] = (char) ch;
-                    ch = readCh();
-                    i++;
-                }
-                if (i == END_COMMENT.length()) {
-                    insideComment = false;
-                }
-            }
-
-            /* To account for extra read()'s that happened */
-            if (i > 0) {
+                /* To account for extra read()'s that happened */
                 for (int j = 0; j < i; j++) {
                     addString(charsToAdd[j]);
                 }
-                continue;
-            }
-            switch (ch) {
-            case -1:
-                error("eof.script");
-                return;
-            case '\n':
-                ln++;
-                ch = readCh();
-                lfCount++;
-                addString('\n');
-                break;
-            case '\r':
-                ln++;
-                if ((ch = readCh()) == '\n') {
+
+                switch (ch) {
+                case -1:
+                    error("eof.script");
+                    return;
+                case '\n':
+                    ln++;
                     ch = readCh();
-                    crlfCount++;
-                } else {
-                    crCount++;
-                }
-                addString('\n');
-                break;
-            default:
-                addString(ch);
-                ch = readCh();
-                break;
-            } // switch
+                    lfCount++;
+                    addString('\n');
+                    break;
+                case '\r':
+                    ln++;
+                    if ((ch = readCh()) == '\n') {
+                        ch = readCh();
+                        crlfCount++;
+                    } else {
+                        crCount++;
+                    }
+                    addString('\n');
+                    break;
+                default:
+                    addString(ch);
+                    String str = new String(getChars(0, strpos));
+                    if (!insideComment && str.endsWith(START_COMMENT)) {
+                        insideComment = true;
+                    }
+                    if (insideComment && str.endsWith(END_COMMENT)) {
+                        insideComment = false;
+                    }
+                    ch = readCh();
+                    break;
+                } // switch
+            }
         } // while
     }
 
@@ -2104,13 +2089,6 @@ class Parser implements DTDConstants {
                         // null end tag.
                         endTag(false);
                         continue;
-                    } else if (textpos == 0) {
-                        if (!legalElementContext(dtd.pcdata)) {
-                            error("unexpected.pcdata");
-                        }
-                        if (last.breaksFlow()) {
-                            space = false;
-                        }
                     }
                     break;
 

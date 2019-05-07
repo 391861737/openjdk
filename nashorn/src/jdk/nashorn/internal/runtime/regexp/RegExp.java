@@ -25,10 +25,11 @@
 
 package jdk.nashorn.internal.runtime.regexp;
 
-import java.util.regex.MatchResult;
 import jdk.nashorn.internal.runtime.BitVector;
 import jdk.nashorn.internal.runtime.ECMAErrors;
 import jdk.nashorn.internal.runtime.ParserException;
+
+import java.util.regex.MatchResult;
 
 /**
  * This is the base class for representing a parsed regular expression.

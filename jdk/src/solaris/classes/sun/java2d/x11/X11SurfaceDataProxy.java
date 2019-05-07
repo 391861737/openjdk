@@ -102,13 +102,10 @@ public abstract class X11SurfaceDataProxy extends SurfaceDataProxy
                                            int w, int h)
     {
         if (cachedData == null) {
-            try {
-                // Bitmask will be created lazily during the blit phase
-                cachedData = X11SurfaceData.createData(x11gc, w, h,
-                                                       x11gc.getColorModel(),
-                                                       null, 0, getTransparency());
-           } catch (OutOfMemoryError oome) {
-           }
+            // Bitmask will be created lazily during the blit phase
+            cachedData = X11SurfaceData.createData(x11gc, w, h,
+                                                   x11gc.getColorModel(),
+                                                   null, 0, getTransparency());
         }
         return cachedData;
     }

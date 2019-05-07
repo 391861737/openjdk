@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2003, 2015, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2003, 2010, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -27,19 +27,21 @@
  * @summary Basic unit test of ThreadMXBean.getAllThreadIds()
  * @author  Alexei Guibadoulline and Mandy Chung
  *
+ * @run build Barrier
  * @run main/othervm AllThreadIds
  */
 
 import java.lang.management.*;
-import java.util.concurrent.Phaser;
+import java.util.*;
 
 public class AllThreadIds {
     final static int DAEMON_THREADS = 20;
     final static int USER_THREADS = 5;
     final static int ALL_THREADS = DAEMON_THREADS + USER_THREADS;
-    private static final boolean live[] = new boolean[ALL_THREADS];
-    private static final Thread allThreads[] = new Thread[ALL_THREADS];
-    private static final ThreadMXBean mbean = ManagementFactory.getThreadMXBean();
+    private static volatile boolean live[] = new boolean[ALL_THREADS];
+    private static Thread allThreads[] = new Thread[ALL_THREADS];
+    private static ThreadMXBean mbean
+        = ManagementFactory.getThreadMXBean();
     private static boolean testFailed = false;
     private static boolean trace = false;
 
@@ -50,7 +52,8 @@ public class AllThreadIds {
     private static int curLiveThreadCount = 0;
     private static int curPeakThreadCount = 0;
 
-    private static final Phaser startupCheck = new Phaser(ALL_THREADS + 1);
+    // barrier for threads communication
+    private static Barrier barrier = new Barrier(ALL_THREADS);
 
     private static void printThreadList() {
         if (!trace) return;
@@ -121,15 +124,18 @@ public class AllThreadIds {
         curPeakThreadCount = mbean.getPeakThreadCount();
         checkThreadCount(0, 0);
 
+
         // Start all threads and wait to be sure they all are alive
+        barrier.set(ALL_THREADS);
         for (int i = 0; i < ALL_THREADS; i++) {
-            setLive(i, true);
+            live[i] = true;
             allThreads[i] = new MyThread(i);
-            allThreads[i].setDaemon(i < DAEMON_THREADS);
+            allThreads[i].setDaemon( (i < DAEMON_THREADS) ? true : false);
             allThreads[i].start();
         }
         // wait until all threads are started.
-        startupCheck.arriveAndAwaitAdvance();
+        barrier.await();
+
 
         checkThreadCount(ALL_THREADS, 0);
         printThreadList();
@@ -167,14 +173,15 @@ public class AllThreadIds {
 
         // Stop daemon threads, wait to be sure they all are dead, and check
         // that they disappeared from getAllThreadIds() list
+        barrier.set(DAEMON_THREADS);
         for (int i = 0; i < DAEMON_THREADS; i++) {
-            setLive(i, false);
+            live[i] = false;
         }
+        // wait until daemon threads are terminated.
+        barrier.await();
 
-        // make sure the daemon threads are completely dead
-        joinDaemonThreads();
-
-        // and check the reported thread count
+        // give chance to threads to terminate
+        pause();
         checkThreadCount(0, DAEMON_THREADS);
 
         // Check mbean now
@@ -183,11 +190,11 @@ public class AllThreadIds {
         for (int i = 0; i < ALL_THREADS; i++) {
             long expectedId = allThreads[i].getId();
             boolean found = false;
-            boolean alive = (i >= DAEMON_THREADS);
+            boolean live = (i >= DAEMON_THREADS);
 
             if (trace) {
                 System.out.print("Looking for thread with id " + expectedId +
-                    (alive ? " expected alive." : " expected terminated."));
+                    (live ? " expected alive." : " expected terminated."));
             }
             for (int j = 0; j < list.length; j++) {
                 if (expectedId == list[j]) {
@@ -196,11 +203,11 @@ public class AllThreadIds {
                 }
             }
 
-            if (alive != found) {
+            if (live != found) {
                 testFailed = true;
             }
             if (trace) {
-                if (alive != found) {
+                if (live != found) {
                     System.out.println(" TEST FAILED.");
                 } else {
                     System.out.println();
@@ -209,44 +216,21 @@ public class AllThreadIds {
         }
 
         // Stop all threads and wait to be sure they all are dead
+        barrier.set(ALL_THREADS - DAEMON_THREADS);
         for (int i = DAEMON_THREADS; i < ALL_THREADS; i++) {
-            setLive(i, false);
+            live[i] = false;
         }
+        // wait until daemon threads are terminated .
+        barrier.await();
 
-        // make sure the non-daemon threads are completely dead
-        joinNonDaemonThreads();
-
-        // and check the thread count
+        // give chance to threads to terminate
+        pause();
         checkThreadCount(0, ALL_THREADS - DAEMON_THREADS);
 
         if (testFailed)
             throw new RuntimeException("TEST FAILED.");
 
         System.out.println("Test passed.");
-    }
-
-    private static void joinDaemonThreads() throws InterruptedException {
-        for (int i = 0; i < DAEMON_THREADS; i++) {
-            allThreads[i].join();
-        }
-    }
-
-    private static void joinNonDaemonThreads() throws InterruptedException {
-        for (int i = DAEMON_THREADS; i < ALL_THREADS; i++) {
-            allThreads[i].join();
-        }
-    }
-
-    private static void setLive(int i, boolean val) {
-        synchronized(live) {
-            live[i] = val;
-        }
-    }
-
-    private static boolean isLive(int i) {
-        synchronized(live) {
-            return live[i];
-        }
     }
 
     // The MyThread thread lives as long as correspondent live[i] value is true
@@ -259,8 +243,8 @@ public class AllThreadIds {
 
         public void run() {
             // signal started
-            startupCheck.arrive();
-            while (isLive(id)) {
+            barrier.signal();
+            while (live[id]) {
                 try {
                     sleep(100);
                 } catch (InterruptedException e) {
@@ -269,6 +253,23 @@ public class AllThreadIds {
                     testFailed = true;
                 }
             }
+            // signal about to exit
+            barrier.signal();
         }
     }
+
+    private static Object pauseObj = new Object();
+    private static void pause() {
+        // Enter lock a without blocking
+        synchronized (pauseObj) {
+            try {
+                // may need to tune this timeout for different platforms
+                pauseObj.wait(50);
+            } catch (Exception e) {
+                System.err.println("Unexpected exception.");
+                e.printStackTrace(System.err);
+            }
+        }
+    }
+
 }

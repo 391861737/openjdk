@@ -1,5 +1,5 @@
 #
-# Copyright (c) 2006, 2015, Oracle and/or its affiliates. All rights reserved.
+# Copyright (c) 2006, 2013, Oracle and/or its affiliates. All rights reserved.
 # DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
 #
 # This code is free software; you can redistribute it and/or modify it
@@ -33,11 +33,6 @@ SLASH_JAVA ?= /java
 # ARCH can be set explicitly in spec.gmk
 ifndef ARCH
   ARCH := $(shell uname -m)
-  # Fold little endian PowerPC64 into big-endian (if ARCH is set in
-  # hotspot-spec.gmk, this will be done by the configure script).
-  ifeq ($(ARCH),ppc64le)
-    ARCH := ppc64
-  endif
 endif
 
 PATH_SEP ?= :
@@ -69,7 +64,7 @@ ifeq ($(ARCH), ia64)
 endif
 
 # sparc
-ifneq (,$(findstring $(ARCH), sparc))
+ifeq ($(ARCH), sparc64)
   ifeq ($(ARCH_DATA_MODEL), 64)
     ARCH_DATA_MODEL  = 64
     MAKE_ARGS        += LP64=1
@@ -83,35 +78,46 @@ ifneq (,$(findstring $(ARCH), sparc))
   HS_ARCH            = sparc
 endif
 
-# i686/i586 and amd64/x86_64
-ifneq (,$(findstring $(ARCH), amd64 x86_64 i686 i586))
+# amd64/x86_64
+ifneq (,$(findstring $(ARCH), amd64 x86_64))
   ifeq ($(ARCH_DATA_MODEL), 64)
     ARCH_DATA_MODEL = 64
     MAKE_ARGS       += LP64=1
     PLATFORM        = linux-amd64
     VM_PLATFORM     = linux_amd64
+    HS_ARCH         = x86
   else
     ARCH_DATA_MODEL = 32
     PLATFORM        = linux-i586
     VM_PLATFORM     = linux_i486
+    HS_ARCH         = x86
+    # We have to reset ARCH to i686 since SRCARCH relies on it
+    ARCH            = i686
   endif
-  HS_ARCH           = x86
+endif
+
+# i686/i586 ie 32-bit x86
+ifneq (,$(findstring $(ARCH), i686 i586))
+  ARCH_DATA_MODEL  = 32
+  PLATFORM         = linux-i586
+  VM_PLATFORM      = linux_i486
+  HS_ARCH          = x86
+endif
+
+# ARM
+ifeq ($(ARCH), arm)
+  ARCH_DATA_MODEL  = 32
+  PLATFORM         = linux-arm
+  VM_PLATFORM      = linux_arm
+  HS_ARCH          = arm
 endif
 
 # PPC
-# Notice: after 8046471 ARCH will be 'ppc' for top-level ppc64 builds but
-# 'ppc64' for HotSpot-only ppc64 builds. Need to detect both variants here!
-ifneq (,$(findstring $(ARCH), ppc ppc64))
-  ifeq ($(ARCH_DATA_MODEL), 64)
-    MAKE_ARGS        += LP64=1
-    PLATFORM         = linux-ppc64
-    VM_PLATFORM      = linux_ppc64
-  else
-    ARCH_DATA_MODEL  = 32
-    PLATFORM         = linux-ppc
-    VM_PLATFORM      = linux_ppc
-  endif
-  HS_ARCH = ppc
+ifeq ($(ARCH), ppc)
+  ARCH_DATA_MODEL  = 32
+  PLATFORM         = linux-ppc
+  VM_PLATFORM      = linux_ppc
+  HS_ARCH          = ppc
 endif
 
 # On 32 bit linux we build server and client, on 64 bit just server.
@@ -249,7 +255,7 @@ EXPORT_SERVER_DIR = $(EXPORT_JRE_LIB_ARCH_DIR)/server
 EXPORT_CLIENT_DIR = $(EXPORT_JRE_LIB_ARCH_DIR)/client
 EXPORT_MINIMAL_DIR = $(EXPORT_JRE_LIB_ARCH_DIR)/minimal
 
-ifeq ($(findstring true, $(JVM_VARIANT_SERVER) $(JVM_VARIANT_ZERO) $(JVM_VARIANT_ZEROSHARK) $(JVM_VARIANT_CORE)), true)
+ifeq ($(findstring true, $(JVM_VARIANT_SERVER) $(JVM_VARIANT_ZERO) $(JVM_VARIANT_ZEROSHARK)), true)
   EXPORT_LIST += $(EXPORT_SERVER_DIR)/Xusage.txt
   EXPORT_LIST += $(EXPORT_SERVER_DIR)/libjvm.$(LIBRARY_SUFFIX)
   ifeq ($(ENABLE_FULL_DEBUG_SYMBOLS),1)

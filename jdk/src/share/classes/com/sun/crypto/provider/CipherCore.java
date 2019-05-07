@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2002, 2016, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2002, 2013, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -124,7 +124,7 @@ final class CipherCore {
     private static final int PCBC_MODE = 4;
     private static final int CTR_MODE = 5;
     private static final int CTS_MODE = 6;
-    static final int GCM_MODE = 7;
+    private static final int GCM_MODE = 7;
 
     /*
      * variables used for performing the GCM (key+iv) uniqueness check.
@@ -196,7 +196,7 @@ final class CipherCore {
             cipher = new CounterMode(rawImpl);
             unitBytes = 1;
             padding = null;
-        }  else if (modeUpperCase.equals("GCM")) {
+        }  else if (modeUpperCase.startsWith("GCM")) {
             // can only be used for block ciphers w/ 128-bit block size
             if (blockSize != 16) {
                 throw new NoSuchAlgorithmException
@@ -221,15 +221,6 @@ final class CipherCore {
             throw new NoSuchAlgorithmException("Cipher mode: " + mode
                                                + " not found");
         }
-    }
-
-    /**
-     * Returns the mode of this cipher.
-     *
-     * @return the parsed cipher mode
-     */
-    int getMode() {
-        return cipherMode;
     }
 
     private static int getNumOfUnit(String mode, int offset, int blockSize)
@@ -577,7 +568,7 @@ final class CipherCore {
                 // check key+iv for encryption in GCM mode
                 requireReinit =
                     Arrays.equals(ivBytes, lastEncIv) &&
-                    MessageDigest.isEqual(keyBytes, lastEncKey);
+                    Arrays.equals(keyBytes, lastEncKey);
                 if (requireReinit) {
                     throw new InvalidAlgorithmParameterException
                         ("Cannot reuse iv for GCM encryption");
@@ -717,7 +708,7 @@ final class CipherCore {
             len -= blockSize;
         }
         // do not count the trailing bytes which do not make up a unit
-        len = (len > 0 ? (len - (len % unitBytes)) : 0);
+        len = (len > 0 ? (len - (len%unitBytes)) : 0);
 
         // check output buffer capacity
         if ((output == null) ||
@@ -729,15 +720,6 @@ final class CipherCore {
 
         int outLen = 0;
         if (len != 0) { // there is some work to do
-            if ((input == output)
-                 && (outputOffset < (inputOffset + inputLen))
-                 && (inputOffset < (outputOffset + buffer.length))) {
-                // copy 'input' out to avoid its content being
-                // overwritten prematurely.
-                input = Arrays.copyOfRange(input, inputOffset,
-                    inputOffset + inputLen);
-                inputOffset = 0;
-            }
             if (len <= buffered) {
                 // all to-be-processed data are from 'buffer'
                 if (decrypting) {
@@ -750,40 +732,37 @@ final class CipherCore {
                     System.arraycopy(buffer, len, buffer, 0, buffered);
                 }
             } else { // len > buffered
-                int inputConsumed = len - buffered;
-                int temp;
-                if (buffered > 0) {
-                    int bufferCapacity = buffer.length - buffered;
-                    if (bufferCapacity != 0) {
-                        temp = Math.min(bufferCapacity, inputConsumed);
-                        if (unitBytes != blockSize) {
-                            temp -= ((buffered + temp) % unitBytes);
-                        }
-                        System.arraycopy(input, inputOffset, buffer, buffered, temp);
-                        inputOffset += temp;
-                        inputConsumed -= temp;
-                        inputLen -= temp;
-                        buffered += temp;
-                    }
-                    // process 'buffer'
+                if ((input != output) && (buffered == 0)) {
+                    // all to-be-processed data are from 'input'
+                    // however, note that if 'input' and 'output' are the same,
+                    // then they can't be passed directly to the underlying cipher
+                    // engine operations as data may be overwritten before they
+                    // are read.
                     if (decrypting) {
-                         outLen = cipher.decrypt(buffer, 0, buffered, output, outputOffset);
+                        outLen = cipher.decrypt(input, inputOffset, len, output, outputOffset);
                     } else {
-                         outLen = cipher.encrypt(buffer, 0, buffered, output, outputOffset);
+                        outLen = cipher.encrypt(input, inputOffset, len, output, outputOffset);
                     }
-                    outputOffset += outLen;
-                    buffered = 0;
-                }
-                if (inputConsumed > 0) { // still has input to process
+                    inputOffset += len;
+                    inputLen -= len;
+                } else {
+                    // assemble the data using both 'buffer' and 'input'
+                    byte[] in = new byte[len];
+                    int inConsumed = len - buffered;
+                    if (buffered != 0) {
+                        System.arraycopy(buffer, 0, in, 0, buffered);
+                        buffered = 0;
+                    }
+                    if (inConsumed != 0) {
+                        System.arraycopy(input, inputOffset, in, len - inConsumed, inConsumed);
+                        inputOffset += inConsumed;
+                        inputLen -= inConsumed;
+                    }
                     if (decrypting) {
-                        outLen += cipher.decrypt(input, inputOffset, inputConsumed,
-                            output, outputOffset);
+                        outLen = cipher.decrypt(in, 0, len, output, outputOffset);
                     } else {
-                        outLen += cipher.encrypt(input, inputOffset, inputConsumed,
-                            output, outputOffset);
+                        outLen = cipher.encrypt(in, 0, len, output, outputOffset);
                     }
-                    inputOffset += inputConsumed;
-                    inputLen -= inputConsumed;
                 }
             }
             // Let's keep track of how many bytes are needed to make
@@ -946,10 +925,8 @@ final class CipherCore {
         byte[] finalBuf = input;
         int finalOffset = inputOffset;
         int finalBufLen = inputLen;
-        if ((buffered != 0) || (!decrypting && padding != null) ||
-            ((input == output)
-              && (outputOffset < (inputOffset + inputLen))
-              && (inputOffset < (outputOffset + buffer.length)))) {
+        if ((input == output) || (buffered != 0) ||
+            (!decrypting && padding != null)) {
             if (decrypting || padding == null) {
                 paddingLen = 0;
             }

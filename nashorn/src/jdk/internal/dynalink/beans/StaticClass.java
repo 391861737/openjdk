@@ -84,7 +84,6 @@
 package jdk.internal.dynalink.beans;
 
 import java.io.Serializable;
-import java.util.Objects;
 
 /**
  * Object that represents the static facet of a class (its static methods, properties, and fields, as well as
@@ -97,7 +96,7 @@ import java.util.Objects;
 public class StaticClass implements Serializable {
     private static final ClassValue<StaticClass> staticClasses = new ClassValue<StaticClass>() {
         @Override
-        protected StaticClass computeValue(final Class<?> type) {
+        protected StaticClass computeValue(Class<?> type) {
             return new StaticClass(type);
         }
     };
@@ -106,8 +105,9 @@ public class StaticClass implements Serializable {
 
     private final Class<?> clazz;
 
-    /*private*/ StaticClass(final Class<?> clazz) {
-        this.clazz = Objects.requireNonNull(clazz);
+    /*private*/ StaticClass(Class<?> clazz) {
+        clazz.getClass(); // NPE check
+        this.clazz = clazz;
     }
 
     /**
@@ -115,7 +115,7 @@ public class StaticClass implements Serializable {
      * @param clazz the class for which the static facet is requested.
      * @return the {@link StaticClass} instance representing the specified class.
      */
-    public static StaticClass forClass(final Class<?> clazz) {
+    public static StaticClass forClass(Class<?> clazz) {
         return staticClasses.get(clazz);
     }
 

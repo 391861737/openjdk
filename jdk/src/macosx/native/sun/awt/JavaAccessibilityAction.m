@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2011, 2016, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2011, 2012, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -35,9 +35,9 @@
 {
     self = [super init];
     if (self) {
-        fAccessibleAction = JNFNewWeakGlobalRef(env, accessibleAction);
+        fAccessibleAction = JNFNewGlobalRef(env, accessibleAction);
         fIndex = index;
-        fComponent = JNFNewWeakGlobalRef(env, component);
+        fComponent = JNFNewGlobalRef(env, component);
     }
     return self;
 }
@@ -46,13 +46,26 @@
 {
     JNIEnv *env = [ThreadUtilities getJNIEnvUncached];
 
-    JNFDeleteWeakGlobalRef(env, fAccessibleAction);
+    JNFDeleteGlobalRef(env, fAccessibleAction);
     fAccessibleAction = NULL;
 
-    JNFDeleteWeakGlobalRef(env, fComponent);
+    JNFDeleteGlobalRef(env, fComponent);
     fComponent = NULL;
 
     [super dealloc];
+}
+
+- (void)finalize
+{
+    JNIEnv *env = [ThreadUtilities getJNIEnvUncached];
+
+    JNFDeleteGlobalRef(env, fAccessibleAction);
+    fAccessibleAction = NULL;
+
+    JNFDeleteGlobalRef(env, fComponent);
+    fComponent = NULL;
+
+    [super finalize];
 }
 
 
@@ -62,22 +75,7 @@
 
     JNIEnv* env = [ThreadUtilities getJNIEnv];
 
-    jobject fCompLocal = (*env)->NewLocalRef(env, fComponent);
-    if ((*env)->IsSameObject(env, fCompLocal, NULL)) {
-        return nil;
-    }
-    NSString *str = nil;
-    jstring jstr = JNFCallStaticObjectMethod( env,
-                                              jm_getAccessibleActionDescription,
-                                              fAccessibleAction,
-                                              fIndex,
-                                              fCompLocal );
-    if (jstr != NULL) {
-        str = JNFJavaToNSString(env, jstr); // AWT_THREADING Safe (AWTRunLoopMode)
-        (*env)->DeleteLocalRef(env, jstr);
-    }
-    (*env)->DeleteLocalRef(env, fCompLocal);
-    return str;
+    return JNFJavaToNSString(env, JNFCallStaticObjectMethod(env, jm_getAccessibleActionDescription, fAccessibleAction, fIndex, fComponent)); // AWT_THREADING Safe (AWTRunLoopMode)
 }
 
 - (void)perform
@@ -98,9 +96,9 @@
 {
     self = [super init];
     if (self) {
-        fTabGroup = JNFNewWeakGlobalRef(env, tabGroup);
+        fTabGroup = JNFNewGlobalRef(env, tabGroup);
         fIndex = index;
-        fComponent = JNFNewWeakGlobalRef(env, component);
+        fComponent = JNFNewGlobalRef(env, component);
     }
     return self;
 }
@@ -109,13 +107,26 @@
 {
     JNIEnv *env = [ThreadUtilities getJNIEnvUncached];
 
-    JNFDeleteWeakGlobalRef(env, fTabGroup);
+    JNFDeleteGlobalRef(env, fTabGroup);
     fTabGroup = NULL;
 
-    JNFDeleteWeakGlobalRef(env, fComponent);
+    JNFDeleteGlobalRef(env, fComponent);
     fComponent = NULL;
 
     [super dealloc];
+}
+
+- (void)finalize
+{
+    JNIEnv *env = [ThreadUtilities getJNIEnvUncached];
+
+    JNFDeleteGlobalRef(env, fTabGroup);
+    fTabGroup = NULL;
+
+    JNFDeleteGlobalRef(env, fComponent);
+    fComponent = NULL;
+
+    [super finalize];
 }
 
 - (NSString *)getDescription

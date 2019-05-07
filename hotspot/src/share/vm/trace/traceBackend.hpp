@@ -25,7 +25,9 @@
 #define SHARE_VM_TRACE_TRACEBACKEND_HPP
 
 #include "utilities/macros.hpp"
+
 #if INCLUDE_TRACE
+
 #include "runtime/globals.hpp"
 #include "runtime/os.hpp"
 #include "trace/traceTime.hpp"
@@ -56,7 +58,9 @@ public:
 
 typedef TraceBackend Tracing;
 
-#else // !INCLUDE_TRACE
+#else /* INCLUDE_TRACE */
+
 #include "trace/noTraceBackend.hpp"
-#endif // INCLUDE_TRACE
-#endif // SHARE_VM_TRACE_TRACEBACKEND_HPP
+
+#endif /* INCLUDE_TRACE */
+#endif /* SHARE_VM_TRACE_TRACEBACKEND_HPP */

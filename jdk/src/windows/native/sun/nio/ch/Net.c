@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2001, 2015, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2001, 2013, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -127,7 +127,7 @@ Java_sun_nio_ch_Net_canJoin6WithIPv4Group0(JNIEnv* env, jclass cl)
 
 JNIEXPORT jint JNICALL
 Java_sun_nio_ch_Net_socket0(JNIEnv *env, jclass cl, jboolean preferIPv6,
-                            jboolean stream, jboolean reuse, jboolean fastLoopback)
+                            jboolean stream, jboolean reuse)
 {
     SOCKET s;
     int domain = (preferIPv6) ? AF_INET6 : AF_INET;
@@ -150,20 +150,6 @@ Java_sun_nio_ch_Net_socket0(JNIEnv *env, jclass cl, jboolean preferIPv6,
 
     } else {
         NET_ThrowNew(env, WSAGetLastError(), "socket");
-    }
-
-    if (stream && fastLoopback) {
-        static int loopback_available = 1;
-        if (loopback_available) {
-            int rv = NET_EnableFastTcpLoopback((jint)s);
-            if (rv) {
-                if (rv == WSAEOPNOTSUPP || rv == WSAEINVAL) {
-                    loopback_available = 0;
-                } else {
-                    NET_ThrowNew(env, rv, "fastLoopback");
-                }
-            }
-        }
     }
 
     return (jint)s;
@@ -309,9 +295,9 @@ Java_sun_nio_ch_Net_getIntOption0(JNIEnv *env, jclass clazz, jobject fdo,
     /**
      * HACK: IP_TOS is deprecated on Windows and querying the option
      * returns a protocol error. NET_GetSockOpt handles this and uses
-     * a fallback mechanism. Same applies to IPV6_TCLASS
+     * a fallback mechanism.
      */
-    if ((level == IPPROTO_IP && opt == IP_TOS) || (level == IPPROTO_IPV6 && opt == IPV6_TCLASS)) {
+    if (level == IPPROTO_IP && opt == IP_TOS) {
         mayNeedConversion = JNI_TRUE;
     }
 
@@ -333,7 +319,7 @@ Java_sun_nio_ch_Net_getIntOption0(JNIEnv *env, jclass clazz, jobject fdo,
 
 JNIEXPORT void JNICALL
 Java_sun_nio_ch_Net_setIntOption0(JNIEnv *env, jclass clazz, jobject fdo,
-                                  jboolean mayNeedConversion, jint level, jint opt, jint arg, jboolean ipv6)
+                                  jboolean mayNeedConversion, jint level, jint opt, jint arg)
 {
     struct linger linger;
     char *parg;
@@ -352,11 +338,6 @@ Java_sun_nio_ch_Net_setIntOption0(JNIEnv *env, jclass clazz, jobject fdo,
     } else {
         parg = (char *)&arg;
         arglen = sizeof(arg);
-    }
-
-    if (level == IPPROTO_IPV6 && opt == IPV6_TCLASS) {
-        /* No op */
-        return;
     }
 
     if (mayNeedConversion) {
@@ -573,11 +554,11 @@ Java_sun_nio_ch_Net_poll(JNIEnv* env, jclass this, jobject fdo, jint events, jlo
     FD_ZERO(&rd);
     FD_ZERO(&wr);
     FD_ZERO(&ex);
-    if (events & POLLIN) {
+    if (events & sun_nio_ch_PollArrayWrapper_POLLIN) {
         FD_SET(fd, &rd);
     }
-    if (events & POLLOUT ||
-        events & POLLCONN) {
+    if (events & sun_nio_ch_PollArrayWrapper_POLLOUT ||
+        events & sun_nio_ch_PollArrayWrapper_POLLCONN) {
         FD_SET(fd, &wr);
     }
     FD_SET(fd, &ex);
@@ -591,50 +572,14 @@ Java_sun_nio_ch_Net_poll(JNIEnv* env, jclass this, jobject fdo, jint events, jlo
     } else if (rv >= 0) {
         rv = 0;
         if (FD_ISSET(fd, &rd)) {
-            rv |= POLLIN;
+            rv |= sun_nio_ch_PollArrayWrapper_POLLIN;
         }
         if (FD_ISSET(fd, &wr)) {
-            rv |= POLLOUT;
+            rv |= sun_nio_ch_PollArrayWrapper_POLLOUT;
         }
         if (FD_ISSET(fd, &ex)) {
-            rv |= POLLERR;
+            rv |= sun_nio_ch_PollArrayWrapper_POLLERR;
         }
     }
     return rv;
-}
-
-JNIEXPORT jshort JNICALL
-Java_sun_nio_ch_Net_pollinValue(JNIEnv *env, jclass this)
-{
-    return (jshort)POLLIN;
-}
-
-JNIEXPORT jshort JNICALL
-Java_sun_nio_ch_Net_polloutValue(JNIEnv *env, jclass this)
-{
-    return (jshort)POLLOUT;
-}
-
-JNIEXPORT jshort JNICALL
-Java_sun_nio_ch_Net_pollerrValue(JNIEnv *env, jclass this)
-{
-    return (jshort)POLLERR;
-}
-
-JNIEXPORT jshort JNICALL
-Java_sun_nio_ch_Net_pollhupValue(JNIEnv *env, jclass this)
-{
-    return (jshort)POLLHUP;
-}
-
-JNIEXPORT jshort JNICALL
-Java_sun_nio_ch_Net_pollnvalValue(JNIEnv *env, jclass this)
-{
-    return (jshort)POLLNVAL;
-}
-
-JNIEXPORT jshort JNICALL
-Java_sun_nio_ch_Net_pollconnValue(JNIEnv *env, jclass this)
-{
-    return (jshort)POLLCONN;
 }

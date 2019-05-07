@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 1997, 2014, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 1997, 2013, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -42,7 +42,6 @@ class Abstract_VM_Version: AllStatic {
   static bool         _supports_atomic_getadd4;
   static bool         _supports_atomic_getadd8;
   static unsigned int _logical_processors_per_package;
-  static unsigned int _L1_data_cache_line_size;
   static int          _vm_major_version;
   static int          _vm_minor_version;
   static int          _vm_build_number;
@@ -55,25 +54,7 @@ class Abstract_VM_Version: AllStatic {
                                                   unsigned int dem,
                                                   unsigned int switch_pt);
  public:
-  // Called as part of the runtime services initialization which is
-  // called from the management module initialization (via init_globals())
-  // after argument parsing and attaching of the main thread has
-  // occurred.  Examines a variety of the hardware capabilities of
-  // the platform to determine which features can be used to execute the
-  // program.
   static void initialize();
-
-  // This allows for early initialization of VM_Version information
-  // that may be needed later in the initialization sequence but before
-  // full VM_Version initialization is possible. It can not depend on any
-  // other part of the VM being initialized when called. Platforms that
-  // need to specialize this define VM_Version::early_initialize().
-  static void early_initialize() { }
-
-  // Called to initialize VM variables needing initialization
-  // after command line parsing. Platforms that need to specialize
-  // this should define VM_Version::init_before_ergo().
-  static void init_before_ergo() {}
 
   // Name
   static const char* vm_name();
@@ -113,10 +94,6 @@ class Abstract_VM_Version: AllStatic {
 
   static unsigned int logical_processors_per_package() {
     return _logical_processors_per_package;
-  }
-
-  static unsigned int L1_data_cache_line_size() {
-    return _L1_data_cache_line_size;
   }
 
   // Need a space at the end of TLAB for prefetch instructions

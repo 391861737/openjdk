@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 1997, 2014, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 1997, 2013, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -62,54 +62,52 @@ public abstract class XMLStreamWriterFactory {
     /**
      * Singleton instance.
      */
-    private static volatile ContextClassloaderLocal<XMLStreamWriterFactory> writerFactory =
-            new ContextClassloaderLocal<XMLStreamWriterFactory>() {
+    private static volatile @NotNull XMLStreamWriterFactory theInstance;
 
-        @Override
-        protected XMLStreamWriterFactory initialValue() {
-            XMLOutputFactory  xof = null;
-            if (Boolean.getBoolean(XMLStreamWriterFactory.class.getName()+".woodstox")) {
-                try {
-                    xof = (XMLOutputFactory)Class.forName("com.ctc.wstx.stax.WstxOutputFactory").newInstance();
-                } catch (Exception e) {
-                    // Ignore and fallback to default XMLOutputFactory
-                }
-            }
-            if (xof == null) {
-                xof = XMLOutputFactory.newInstance();
-            }
 
-            XMLStreamWriterFactory f=null;
-
-            // this system property can be used to disable the pooling altogether,
-            // in case someone hits an issue with pooling in the production system.
-            if (!Boolean.getBoolean(XMLStreamWriterFactory.class.getName()+".noPool")) {
-                try {
-                    Class<?> clazz = xof.createXMLStreamWriter(new StringWriter()).getClass();
-                    if (clazz.getName().startsWith("com.sun.xml.internal.stream.")) {
-                        f =  new Zephyr(xof,clazz);
-                    }
-                } catch (XMLStreamException ex) {
-                    Logger.getLogger(XMLStreamWriterFactory.class.getName()).log(Level.INFO, null, ex);
-                } catch (NoSuchMethodException ex) {
-                    Logger.getLogger(XMLStreamWriterFactory.class.getName()).log(Level.INFO, null, ex);
-                }
+    static {
+        XMLOutputFactory  xof = null;
+        if (Boolean.getBoolean(XMLStreamWriterFactory.class.getName()+".woodstox")) {
+            try {
+                xof = (XMLOutputFactory)Class.forName("com.ctc.wstx.stax.WstxOutputFactory").newInstance();
+            } catch (Exception e) {
+                // Ignore and fallback to default XMLOutputFactory
             }
-
-            if(f==null) {
-                // is this Woodstox?
-                if(xof.getClass().getName().equals("com.ctc.wstx.stax.WstxOutputFactory"))
-                    f = new NoLock(xof);
-            }
-            if (f == null)
-                f = new Default(xof);
-
-            if (LOGGER.isLoggable(Level.FINE)) {
-                LOGGER.log(Level.FINE, "XMLStreamWriterFactory instance is = {0}", f);
-            }
-            return f;
         }
-    };
+        if (xof == null) {
+            xof = XMLOutputFactory.newInstance();
+        }
+
+        XMLStreamWriterFactory f=null;
+
+        // this system property can be used to disable the pooling altogether,
+        // in case someone hits an issue with pooling in the production system.
+        if (!Boolean.getBoolean(XMLStreamWriterFactory.class.getName()+".noPool")) {
+            try {
+                Class<?> clazz = xof.createXMLStreamWriter(new StringWriter()).getClass();
+                if (clazz.getName().startsWith("com.sun.xml.internal.stream.")) {
+                    f =  new Zephyr(xof,clazz);
+                }
+            } catch (XMLStreamException ex) {
+                Logger.getLogger(XMLStreamWriterFactory.class.getName()).log(Level.INFO, null, ex);
+            } catch (NoSuchMethodException ex) {
+                Logger.getLogger(XMLStreamWriterFactory.class.getName()).log(Level.INFO, null, ex);
+            }
+        }
+
+        if(f==null) {
+            // is this Woodstox?
+            if(xof.getClass().getName().equals("com.ctc.wstx.stax.WstxOutputFactory"))
+                f = new NoLock(xof);
+        }
+        if (f == null)
+            f = new Default(xof);
+
+        theInstance = f;
+        if (LOGGER.isLoggable(Level.FINE)) {
+            LOGGER.log(Level.FINE, "XMLStreamWriterFactory instance is = {0}", f);
+        }
+    }
 
     /**
      * See {@link #create(OutputStream)} for the contract.
@@ -172,7 +170,7 @@ public abstract class XMLStreamWriterFactory {
      * Gets the singleton instance.
      */
     public static @NotNull XMLStreamWriterFactory get() {
-        return writerFactory.get();
+        return theInstance;
     }
 
     /**
@@ -185,7 +183,7 @@ public abstract class XMLStreamWriterFactory {
     @SuppressWarnings({"null", "ConstantConditions"})
     public static void set(@NotNull XMLStreamWriterFactory f) {
         if(f==null) throw new IllegalArgumentException();
-        writerFactory.set(f);
+        theInstance = f;
     }
 
     /**

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2001, 2014, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2001, 2013, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -86,7 +86,7 @@ inline void ConcurrentMark::count_region(MemRegion mr, HeapRegion* hr,
   HeapWord* start = mr.start();
   HeapWord* end = mr.end();
   size_t region_size_bytes = mr.byte_size();
-  uint index = hr->hrm_index();
+  uint index = hr->hrs_index();
 
   assert(!hr->continuesHumongous(), "should not be HC region");
   assert(hr == g1h->heap_region_containing(start), "sanity");
@@ -125,6 +125,14 @@ inline void ConcurrentMark::count_region(MemRegion mr,
   count_region(mr, hr, marked_bytes_array, task_card_bm);
 }
 
+// Counts the given memory region, which may be a single object, in the
+// task/worker counting data structures for the given worker id.
+inline void ConcurrentMark::count_region(MemRegion mr, uint worker_id) {
+  HeapWord* addr = mr.start();
+  HeapRegion* hr = _g1h->heap_region_containing_raw(addr);
+  count_region(mr, hr, worker_id);
+}
+
 // Counts the given object in the given task/worker counting data structures.
 inline void ConcurrentMark::count_object(oop obj,
                                          HeapRegion* hr,
@@ -132,6 +140,17 @@ inline void ConcurrentMark::count_object(oop obj,
                                          BitMap* task_card_bm) {
   MemRegion mr((HeapWord*)obj, obj->size());
   count_region(mr, hr, marked_bytes_array, task_card_bm);
+}
+
+// Counts the given object in the task/worker counting data
+// structures for the given worker id.
+inline void ConcurrentMark::count_object(oop obj,
+                                         HeapRegion* hr,
+                                         uint worker_id) {
+  size_t* marked_bytes_array = count_marked_bytes_array_for(worker_id);
+  BitMap* task_card_bm = count_card_bitmap_for(worker_id);
+  HeapWord* addr = (HeapWord*) obj;
+  count_object(obj, hr, marked_bytes_array, task_card_bm);
 }
 
 // Attempts to mark the given object and, if successful, counts
@@ -165,6 +184,63 @@ inline bool ConcurrentMark::par_mark_and_count(oop obj,
   return false;
 }
 
+// Attempts to mark the given object and, if successful, counts
+// the object in the task/worker counting structures for the
+// given worker id.
+inline bool ConcurrentMark::par_mark_and_count(oop obj,
+                                               HeapRegion* hr,
+                                               uint worker_id) {
+  HeapWord* addr = (HeapWord*)obj;
+  if (_nextMarkBitMap->parMark(addr)) {
+    // Update the task specific count data for the object.
+    count_object(obj, hr, worker_id);
+    return true;
+  }
+  return false;
+}
+
+// As above - but we don't know the heap region containing the
+// object and so have to supply it.
+inline bool ConcurrentMark::par_mark_and_count(oop obj, uint worker_id) {
+  HeapWord* addr = (HeapWord*)obj;
+  HeapRegion* hr = _g1h->heap_region_containing_raw(addr);
+  return par_mark_and_count(obj, hr, worker_id);
+}
+
+// Similar to the above routine but we already know the size, in words, of
+// the object that we wish to mark/count
+inline bool ConcurrentMark::par_mark_and_count(oop obj,
+                                               size_t word_size,
+                                               uint worker_id) {
+  HeapWord* addr = (HeapWord*)obj;
+  if (_nextMarkBitMap->parMark(addr)) {
+    // Update the task specific count data for the object.
+    MemRegion mr(addr, word_size);
+    count_region(mr, worker_id);
+    return true;
+  }
+  return false;
+}
+
+// Unconditionally mark the given object, and unconditinally count
+// the object in the counting structures for worker id 0.
+// Should *not* be called from parallel code.
+inline bool ConcurrentMark::mark_and_count(oop obj, HeapRegion* hr) {
+  HeapWord* addr = (HeapWord*)obj;
+  _nextMarkBitMap->mark(addr);
+  // Update the task specific count data for the object.
+  count_object(obj, hr, 0 /* worker_id */);
+  return true;
+}
+
+// As above - but we don't have the heap region containing the
+// object, so we have to supply it.
+inline bool ConcurrentMark::mark_and_count(oop obj) {
+  HeapWord* addr = (HeapWord*)obj;
+  HeapRegion* hr = _g1h->heap_region_containing_raw(addr);
+  return mark_and_count(obj, hr);
+}
+
 inline bool CMBitMapRO::iterate(BitMapClosure* cl, MemRegion mr) {
   HeapWord* start_addr = MAX2(startWord(), mr.start());
   HeapWord* end_addr = MIN2(endWord(), mr.end());
@@ -192,36 +268,6 @@ inline bool CMBitMapRO::iterate(BitMapClosure* cl) {
   return iterate(cl, mr);
 }
 
-#define check_mark(addr)                                                       \
-  assert(_bmStartWord <= (addr) && (addr) < (_bmStartWord + _bmWordSize),      \
-         "outside underlying space?");                                         \
-  assert(G1CollectedHeap::heap()->is_in_exact(addr),                           \
-         err_msg("Trying to access not available bitmap "PTR_FORMAT            \
-                 " corresponding to "PTR_FORMAT" (%u)",                        \
-                 p2i(this), p2i(addr), G1CollectedHeap::heap()->addr_to_region(addr)));
-
-inline void CMBitMap::mark(HeapWord* addr) {
-  check_mark(addr);
-  _bm.set_bit(heapWordToOffset(addr));
-}
-
-inline void CMBitMap::clear(HeapWord* addr) {
-  check_mark(addr);
-  _bm.clear_bit(heapWordToOffset(addr));
-}
-
-inline bool CMBitMap::parMark(HeapWord* addr) {
-  check_mark(addr);
-  return _bm.par_set_bit(heapWordToOffset(addr));
-}
-
-inline bool CMBitMap::parClear(HeapWord* addr) {
-  check_mark(addr);
-  return _bm.par_clear_bit(heapWordToOffset(addr));
-}
-
-#undef check_mark
-
 inline void CMTask::push(oop obj) {
   HeapWord* objAddr = (HeapWord*) obj;
   assert(_g1h->is_in_g1_reserved(objAddr), "invariant");
@@ -231,7 +277,7 @@ inline void CMTask::push(oop obj) {
   assert(_nextMarkBitMap->isMarked(objAddr), "invariant");
 
   if (_cm->verbose_high()) {
-    gclog_or_tty->print_cr("[%u] pushing " PTR_FORMAT, _worker_id, p2i((void*) obj));
+    gclog_or_tty->print_cr("[%u] pushing " PTR_FORMAT, _worker_id, (void*) obj);
   }
 
   if (!_task_queue->push(obj)) {
@@ -259,95 +305,22 @@ inline void CMTask::push(oop obj) {
              ++_local_pushes );
 }
 
-inline bool CMTask::is_below_finger(oop obj, HeapWord* global_finger) const {
-  // If obj is above the global finger, then the mark bitmap scan
-  // will find it later, and no push is needed.  Similarly, if we have
-  // a current region and obj is between the local finger and the
-  // end of the current region, then no push is needed.  The tradeoff
-  // of checking both vs only checking the global finger is that the
-  // local check will be more accurate and so result in fewer pushes,
-  // but may also be a little slower.
-  HeapWord* objAddr = (HeapWord*)obj;
-  if (_finger != NULL) {
-    // We have a current region.
+// This determines whether the method below will check both the local
+// and global fingers when determining whether to push on the stack a
+// gray object (value 1) or whether it will only check the global one
+// (value 0). The tradeoffs are that the former will be a bit more
+// accurate and possibly push less on the stack, but it might also be
+// a little bit slower.
 
-    // Finger and region values are all NULL or all non-NULL.  We
-    // use _finger to check since we immediately use its value.
-    assert(_curr_region != NULL, "invariant");
-    assert(_region_limit != NULL, "invariant");
-    assert(_region_limit <= global_finger, "invariant");
-
-    // True if obj is less than the local finger, or is between
-    // the region limit and the global finger.
-    if (objAddr < _finger) {
-      return true;
-    } else if (objAddr < _region_limit) {
-      return false;
-    } // Else check global finger.
-  }
-  // Check global finger.
-  return objAddr < global_finger;
-}
-
-inline void CMTask::make_reference_grey(oop obj, HeapRegion* hr) {
-  if (_cm->par_mark_and_count(obj, hr, _marked_bytes_array, _card_bm)) {
-
-    if (_cm->verbose_high()) {
-      gclog_or_tty->print_cr("[%u] marked object " PTR_FORMAT,
-                             _worker_id, p2i(obj));
-    }
-
-    // No OrderAccess:store_load() is needed. It is implicit in the
-    // CAS done in CMBitMap::parMark() call in the routine above.
-    HeapWord* global_finger = _cm->finger();
-
-    // We only need to push a newly grey object on the mark
-    // stack if it is in a section of memory the mark bitmap
-    // scan has already examined.  Mark bitmap scanning
-    // maintains progress "fingers" for determining that.
-    //
-    // Notice that the global finger might be moving forward
-    // concurrently. This is not a problem. In the worst case, we
-    // mark the object while it is above the global finger and, by
-    // the time we read the global finger, it has moved forward
-    // past this object. In this case, the object will probably
-    // be visited when a task is scanning the region and will also
-    // be pushed on the stack. So, some duplicate work, but no
-    // correctness problems.
-    if (is_below_finger(obj, global_finger)) {
-      if (obj->is_typeArray()) {
-        // Immediately process arrays of primitive types, rather
-        // than pushing on the mark stack.  This keeps us from
-        // adding humongous objects to the mark stack that might
-        // be reclaimed before the entry is processed - see
-        // selection of candidates for eager reclaim of humongous
-        // objects.  The cost of the additional type test is
-        // mitigated by avoiding a trip through the mark stack,
-        // by only doing a bookkeeping update and avoiding the
-        // actual scan of the object - a typeArray contains no
-        // references, and the metadata is built-in.
-        process_grey_object<false>(obj);
-      } else {
-        if (_cm->verbose_high()) {
-          gclog_or_tty->print_cr("[%u] below a finger (local: " PTR_FORMAT
-                                 ", global: " PTR_FORMAT ") pushing "
-                                 PTR_FORMAT " on mark stack",
-                                 _worker_id, p2i(_finger),
-                                 p2i(global_finger), p2i(obj));
-        }
-        push(obj);
-      }
-    }
-  }
-}
+#define _CHECK_BOTH_FINGERS_      1
 
 inline void CMTask::deal_with_reference(oop obj) {
   if (_cm->verbose_high()) {
-    gclog_or_tty->print_cr("[%u] we're dealing with reference = "PTR_FORMAT,
-                           _worker_id, p2i((void*) obj));
+    gclog_or_tty->print_cr("[%u] we're dealing with reference = " PTR_FORMAT,
+                           _worker_id, (void*) obj);
   }
 
-  increment_refs_reached();
+  ++_refs_reached;
 
   HeapWord* objAddr = (HeapWord*) obj;
   assert(obj->is_oop_or_null(true /* ignore mark word */), "Error");
@@ -359,7 +332,62 @@ inline void CMTask::deal_with_reference(oop obj) {
       // anything with it).
       HeapRegion* hr = _g1h->heap_region_containing_raw(obj);
       if (!hr->obj_allocated_since_next_marking(obj)) {
-        make_reference_grey(obj, hr);
+        if (_cm->verbose_high()) {
+          gclog_or_tty->print_cr("[%u] " PTR_FORMAT" is not considered marked",
+                                 _worker_id, (void*) obj);
+        }
+
+        // we need to mark it first
+        if (_cm->par_mark_and_count(obj, hr, _marked_bytes_array, _card_bm)) {
+          // No OrderAccess:store_load() is needed. It is implicit in the
+          // CAS done in CMBitMap::parMark() call in the routine above.
+          HeapWord* global_finger = _cm->finger();
+
+#if _CHECK_BOTH_FINGERS_
+          // we will check both the local and global fingers
+
+          if (_finger != NULL && objAddr < _finger) {
+            if (_cm->verbose_high()) {
+              gclog_or_tty->print_cr("[%u] below the local finger (" PTR_FORMAT"), "
+                                     "pushing it", _worker_id, _finger);
+            }
+            push(obj);
+          } else if (_curr_region != NULL && objAddr < _region_limit) {
+            // do nothing
+          } else if (objAddr < global_finger) {
+            // Notice that the global finger might be moving forward
+            // concurrently. This is not a problem. In the worst case, we
+            // mark the object while it is above the global finger and, by
+            // the time we read the global finger, it has moved forward
+            // passed this object. In this case, the object will probably
+            // be visited when a task is scanning the region and will also
+            // be pushed on the stack. So, some duplicate work, but no
+            // correctness problems.
+
+            if (_cm->verbose_high()) {
+              gclog_or_tty->print_cr("[%u] below the global finger "
+                                     "(" PTR_FORMAT"), pushing it",
+                                     _worker_id, global_finger);
+            }
+            push(obj);
+          } else {
+            // do nothing
+          }
+#else // _CHECK_BOTH_FINGERS_
+          // we will only check the global finger
+
+          if (objAddr < global_finger) {
+            // see long comment above
+
+            if (_cm->verbose_high()) {
+              gclog_or_tty->print_cr("[%u] below the global finger "
+                                     "(" PTR_FORMAT"), pushing it",
+                                     _worker_id, global_finger);
+            }
+            push(obj);
+          }
+#endif // _CHECK_BOTH_FINGERS_
+        }
       }
     }
   }
@@ -392,7 +420,7 @@ inline void ConcurrentMark::grayRoot(oop obj, size_t word_size,
   // assert that word_size is under an upper bound which is its
   // containing region's capacity.
   assert(word_size * HeapWordSize <= hr->capacity(),
-         err_msg("size: "SIZE_FORMAT" capacity: "SIZE_FORMAT" "HR_FORMAT,
+         err_msg("size: " SIZE_FORMAT" capacity: " SIZE_FORMAT" " HR_FORMAT,
                  word_size * HeapWordSize, hr->capacity(),
                  HR_FORMAT_PARAMS(hr)));
 

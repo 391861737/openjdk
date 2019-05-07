@@ -1,5 +1,6 @@
 /*
- * Copyright (c) 2016, Oracle and/or its affiliates. All rights reserved.
+ * reserved comment block
+ * DO NOT REMOVE OR ALTER!
  */
 /*
  * Copyright 2001-2004 The Apache Software Foundation.
@@ -16,18 +17,18 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+/*
+ * $Id: VariableBase.java,v 1.5 2005/09/28 13:48:18 pvedula Exp $
+ */
 
 package com.sun.org.apache.xalan.internal.xsltc.compiler;
 
 import java.util.Vector;
 
-import com.sun.org.apache.bcel.internal.generic.CHECKCAST;
 import com.sun.org.apache.bcel.internal.generic.ConstantPoolGen;
 import com.sun.org.apache.bcel.internal.generic.Instruction;
 import com.sun.org.apache.bcel.internal.generic.InstructionList;
-import com.sun.org.apache.bcel.internal.generic.INVOKEINTERFACE;
 import com.sun.org.apache.bcel.internal.generic.INVOKESPECIAL;
-import com.sun.org.apache.bcel.internal.generic.INVOKEVIRTUAL;
 import com.sun.org.apache.bcel.internal.generic.LocalVariableGen;
 import com.sun.org.apache.bcel.internal.generic.NEW;
 import com.sun.org.apache.bcel.internal.generic.PUSH;
@@ -35,7 +36,6 @@ import com.sun.org.apache.xalan.internal.xsltc.compiler.util.ClassGenerator;
 import com.sun.org.apache.xalan.internal.xsltc.compiler.util.ErrorMsg;
 import com.sun.org.apache.xalan.internal.xsltc.compiler.util.MethodGenerator;
 import com.sun.org.apache.xalan.internal.xsltc.compiler.util.NodeSetType;
-import com.sun.org.apache.xalan.internal.xsltc.compiler.util.ResultTreeType;
 import com.sun.org.apache.xalan.internal.xsltc.compiler.util.Type;
 import com.sun.org.apache.xalan.internal.xsltc.compiler.util.Util;
 import com.sun.org.apache.xml.internal.utils.XML11Char;
@@ -49,18 +49,21 @@ import com.sun.org.apache.xml.internal.utils.XML11Char;
  */
 class VariableBase extends TopLevelElement {
 
-    protected QName       _name;             // The name of the variable.
-    protected String      _escapedName;      // The escaped qname of the variable.
-    protected Type        _type;             // The type of this variable.
-    protected boolean     _isLocal;          // True if the variable is local.
-    protected LocalVariableGen _local;       // Reference to JVM variable
-    protected Instruction _loadInstruction;  // Instruction to load JVM variable
+    protected QName       _name;            // The name of the variable.
+    protected String      _escapedName;        // The escaped qname of the variable.
+    protected Type        _type;            // The type of this variable.
+    protected boolean     _isLocal;         // True if the variable is local.
+    protected LocalVariableGen _local;      // Reference to JVM variable
+    protected Instruction _loadInstruction; // Instruction to load JVM variable
     protected Instruction _storeInstruction; // Instruction to load JVM variable
-    protected Expression  _select;           // Reference to variable expression
-    protected String      select;            // Textual repr. of variable expr.
+    protected Expression  _select;          // Reference to variable expression
+    protected String      select;           // Textual repr. of variable expr.
 
     // References to this variable (when local)
-    protected Vector<VariableRefBase> _refs = new Vector<>(2);
+    protected Vector      _refs = new Vector(2);
+
+    // Dependencies to other variables/parameters (for globals only)
+    protected Vector      _dependencies = null;
 
     // Used to make sure parameter field is not added twice
     protected boolean    _ignore = false;
@@ -89,7 +92,7 @@ class VariableBase extends TopLevelElement {
     public void copyReferences(VariableBase var) {
         final int size = _refs.size();
         for (int i = 0; i < size; i++) {
-            var.addReference(_refs.get(i));
+            var.addReference((VariableRefBase) _refs.get(i));
         }
     }
 
@@ -109,24 +112,8 @@ class VariableBase extends TopLevelElement {
      * Remove the mapping of this variable to a register.
      * Called when we leave the AST scope of the variable's declaration
      */
-    public void unmapRegister(ClassGenerator classGen, MethodGenerator methodGen) {
+    public void unmapRegister(MethodGenerator methodGen) {
         if (_local != null) {
-            if (_type instanceof ResultTreeType) {
-                final ConstantPoolGen cpg = classGen.getConstantPool();
-                final InstructionList il = methodGen.getInstructionList();
-                if (classGen.getStylesheet().callsNodeset() && classGen.getDOMClass().equals(MULTI_DOM_CLASS)) {
-                    final int removeDA = cpg.addMethodref(MULTI_DOM_CLASS, "removeDOMAdapter", "(" + DOM_ADAPTER_SIG + ")V");
-                    il.append(methodGen.loadDOM());
-                    il.append(new CHECKCAST(cpg.addClass(MULTI_DOM_CLASS)));
-                    il.append(loadInstruction());
-                    il.append(new CHECKCAST(cpg.addClass(DOM_ADAPTER_CLASS)));
-                    il.append(new INVOKEVIRTUAL(removeDA));
-                }
-                final int release = cpg.addInterfaceMethodref(DOM_IMPL_CLASS, "release", "()V");
-                il.append(loadInstruction());
-                il.append(new INVOKEINTERFACE(release, 1));
-            }
-
             _local.setEnd(methodGen.getInstructionList().getEnd());
             methodGen.removeLocalVariable(_local);
             _refs = null;
@@ -139,6 +126,7 @@ class VariableBase extends TopLevelElement {
      * the JVM stack.
      */
     public Instruction loadInstruction() {
+        final Instruction instr = _loadInstruction;
         if (_loadInstruction == null) {
             _loadInstruction = _type.LOAD(_local.getIndex());
         }
@@ -150,6 +138,7 @@ class VariableBase extends TopLevelElement {
      * into this variable.
      */
     public Instruction storeInstruction() {
+        final Instruction instr = _storeInstruction;
         if (_storeInstruction == null) {
             _storeInstruction = _type.STORE(_local.getIndex());
         }

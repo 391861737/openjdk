@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2000, 2014, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2000, 2013, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -51,6 +51,7 @@ import java.awt.image.WritableRaster;
 
 import java.io.BufferedInputStream;
 import java.io.BufferedReader;
+import java.io.ByteArrayInputStream;
 import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.io.IOException;
@@ -84,7 +85,7 @@ import java.io.ByteArrayOutputStream;
  *
  * @since 1.3.1
  */
-final class WDataTransferer extends DataTransferer {
+public class WDataTransferer extends DataTransferer {
     private static final String[] predefinedClipboardNames = {
             "",
             "TEXT",
@@ -158,14 +159,17 @@ final class WDataTransferer extends DataTransferer {
 
     private static WDataTransferer transferer;
 
-    static synchronized WDataTransferer getInstanceImpl() {
+    public static WDataTransferer getInstanceImpl() {
         if (transferer == null) {
-            transferer = new WDataTransferer();
+            synchronized (WDataTransferer.class) {
+                if (transferer == null) {
+                    transferer = new WDataTransferer();
+                }
+            }
         }
         return transferer;
     }
 
-    @Override
     public SortedMap <Long, DataFlavor> getFormatsForFlavors(
             DataFlavor[] flavors, FlavorTable map)
     {
@@ -179,12 +183,10 @@ final class WDataTransferer extends DataTransferer {
         return retval;
     }
 
-    @Override
     public String getDefaultUnicodeEncoding() {
         return "utf-16le";
     }
 
-    @Override
     public byte[] translateTransferable(Transferable contents,
                                         DataFlavor flavor,
                                         long format) throws IOException
@@ -222,7 +224,6 @@ final class WDataTransferer extends DataTransferer {
     }
 
     // The stream is closed as a closable object
-    @Override
     public Object translateStream(InputStream str,
                                  DataFlavor flavor, long format,
                                  Transferable localeTransferable)
@@ -238,7 +239,6 @@ final class WDataTransferer extends DataTransferer {
 
     }
 
-    @Override
     public Object translateBytes(byte[] bytes, DataFlavor flavor, long format,
         Transferable localeTransferable) throws IOException
     {
@@ -286,17 +286,14 @@ final class WDataTransferer extends DataTransferer {
 
     }
 
-    @Override
     public boolean isLocaleDependentTextFormat(long format) {
         return format == CF_TEXT || format == CFSTR_INETURL;
     }
 
-    @Override
     public boolean isFileFormat(long format) {
         return format == CF_HDROP || format == CF_FILEGROUPDESCRIPTORA || format == CF_FILEGROUPDESCRIPTORW;
     }
 
-    @Override
     protected Long getFormatForNativeAsLong(String str) {
         Long format = predefinedClipboardNameMap.get(str);
         if (format == null) {
@@ -305,7 +302,6 @@ final class WDataTransferer extends DataTransferer {
         return format;
     }
 
-    @Override
     protected String getNativeForFormat(long format) {
         return (format < predefinedClipboardNames.length)
                 ? predefinedClipboardNames[(int)format]
@@ -315,7 +311,6 @@ final class WDataTransferer extends DataTransferer {
     private final ToolkitThreadBlockedHandler handler =
             new WToolkitThreadBlockedHandler();
 
-    @Override
     public ToolkitThreadBlockedHandler getToolkitThreadBlockedHandler() {
         return handler;
     }
@@ -332,14 +327,12 @@ final class WDataTransferer extends DataTransferer {
      */
     private static native String getClipboardFormatName(long format);
 
-    @Override
     public boolean isImageFormat(long format) {
         return format == CF_DIB || format == CF_ENHMETAFILE ||
                 format == CF_METAFILEPICT || format == CF_PNG ||
                 format == CF_JFIF;
     }
 
-    @Override
     protected byte[] imageToPlatformBytes(Image image, long format)
             throws IOException {
         String mimeType = null;
@@ -413,7 +406,6 @@ final class WDataTransferer extends DataTransferer {
 
     private static final byte [] UNICODE_NULL_TERMINATOR =  new byte [] {0,0};
 
-    @Override
     protected ByteArrayOutputStream convertFileListToBytes(ArrayList<String> fileList)
             throws IOException
     {
@@ -451,7 +443,6 @@ final class WDataTransferer extends DataTransferer {
      * Translates either a byte array or an input stream which contain
      * platform-specific image data in the given format into an Image.
      */
-    @Override
     protected Image platformImageBytesToImage(byte[] bytes, long format)
             throws IOException {
         String mimeType = null;
@@ -491,14 +482,12 @@ final class WDataTransferer extends DataTransferer {
                                                        long format)
             throws IOException;
 
-    @Override
     protected native String[] dragQueryFile(byte[] bytes);
 }
 
 final class WToolkitThreadBlockedHandler extends Mutex
         implements ToolkitThreadBlockedHandler {
 
-    @Override
     public void enter() {
         if (!isOwned()) {
             throw new IllegalMonitorStateException();
@@ -508,7 +497,6 @@ final class WToolkitThreadBlockedHandler extends Mutex
         lock();
     }
 
-    @Override
     public void exit() {
         if (!isOwned()) {
             throw new IllegalMonitorStateException();
@@ -892,7 +880,6 @@ class HTMLCodec extends InputStream {
         descriptionParsed = true;
     }
 
-    @Override
     public synchronized int read() throws IOException {
         if( closed ){
             throw new IOException("Stream closed");
@@ -913,7 +900,6 @@ class HTMLCodec extends InputStream {
         return retval;
     }
 
-    @Override
     public synchronized void close() throws IOException {
         if( !closed ){
             closed = true;

@@ -274,9 +274,6 @@ Java_sun_awt_windows_WDataTransferer_dragQueryFile
 
         jclass str_clazz = env->FindClass("java/lang/String");
         DASSERT(str_clazz != NULL);
-        if (str_clazz == NULL) {
-           throw std::bad_alloc();
-        }
         jobjectArray filenames = env->NewObjectArray(nFilenames, str_clazz,
                                                      NULL);
         if (filenames == NULL) {
@@ -830,7 +827,6 @@ Java_sun_awt_windows_WDataTransferer_registerClipboardFormat(JNIEnv *env,
     TRY;
 
     LPCTSTR cStr = JNU_GetStringPlatformChars(env, str, NULL);
-    CHECK_NULL_RETURN(cStr, 0);
     jlong value = ::RegisterClipboardFormat(cStr);
     JNU_ReleaseStringPlatformChars(env, str, cStr);
 

@@ -57,12 +57,12 @@ Java_java_io_FileInputStream_initIDs(JNIEnv *env, jclass fdClass) {
  */
 
 JNIEXPORT void JNICALL
-Java_java_io_FileInputStream_open0(JNIEnv *env, jobject this, jstring path) {
+Java_java_io_FileInputStream_open(JNIEnv *env, jobject this, jstring path) {
     fileOpen(env, this, path, fis_fd, O_RDONLY);
 }
 
 JNIEXPORT jint JNICALL
-Java_java_io_FileInputStream_read0(JNIEnv *env, jobject this) {
+Java_java_io_FileInputStream_read(JNIEnv *env, jobject this) {
     return readSingle(env, this, fis_fd);
 }
 
@@ -73,7 +73,7 @@ Java_java_io_FileInputStream_readBytes(JNIEnv *env, jobject this,
 }
 
 JNIEXPORT jlong JNICALL
-Java_java_io_FileInputStream_skip0(JNIEnv *env, jobject this, jlong toSkip) {
+Java_java_io_FileInputStream_skip(JNIEnv *env, jobject this, jlong toSkip) {
     jlong cur = jlong_zero;
     jlong end = jlong_zero;
     FD fd = GET_FD(this, fis_fd);
@@ -90,7 +90,7 @@ Java_java_io_FileInputStream_skip0(JNIEnv *env, jobject this, jlong toSkip) {
 }
 
 JNIEXPORT jint JNICALL
-Java_java_io_FileInputStream_available0(JNIEnv *env, jobject this) {
+Java_java_io_FileInputStream_available(JNIEnv *env, jobject this) {
     jlong ret;
     FD fd = GET_FD(this, fis_fd);
     if (fd == -1) {

@@ -26,11 +26,8 @@
 #define SHARE_VM_CLASSFILE_METADATAONSTACKMARK_HPP
 
 #include "memory/allocation.hpp"
-#include "utilities/chunkedList.hpp"
 
 class Metadata;
-
-typedef ChunkedList<Metadata*, mtInternal> MetadataOnStackBuffer;
 
 // Helper class to mark and unmark metadata used on the stack as either handles
 // or executing methods, so that it can't be deleted during class redefinition
@@ -39,20 +36,10 @@ typedef ChunkedList<Metadata*, mtInternal> MetadataOnStackBuffer;
 // metadata during parsing, relocated methods, and methods in backtraces.
 class MetadataOnStackMark : public StackObj {
   NOT_PRODUCT(static bool _is_active;)
-
-  static volatile MetadataOnStackBuffer* _used_buffers;
-  static volatile MetadataOnStackBuffer* _free_buffers;
-
-  static MetadataOnStackBuffer* allocate_buffer();
-  static void retire_buffer(MetadataOnStackBuffer* buffer);
-
  public:
-  MetadataOnStackMark(bool visit_code_cache);
-   ~MetadataOnStackMark();
-
-  static void record(Metadata* m, Thread* thread);
-  static void retire_buffer_for_thread(Thread* thread);
-  static bool has_buffer_for_thread(Thread* thread);
+  MetadataOnStackMark();
+  ~MetadataOnStackMark();
+  static void record(Metadata* m);
 };
 
 #endif // SHARE_VM_CLASSFILE_METADATAONSTACKMARK_HPP

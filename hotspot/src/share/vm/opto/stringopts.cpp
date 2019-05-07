@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2009, 2016, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2009, 2013, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -891,9 +891,8 @@ bool StringConcat::validate_control_flow() {
       ctrl_path.push(cn);
       ctrl_path.push(cn->proj_out(0));
       ctrl_path.push(cn->proj_out(0)->unique_out());
-      Node* catchproj = cn->proj_out(0)->unique_out()->as_Catch()->proj_out(0);
-      if (catchproj != NULL) {
-        ctrl_path.push(catchproj);
+      if (cn->proj_out(0)->unique_out()->as_Catch()->proj_out(0) != NULL) {
+        ctrl_path.push(cn->proj_out(0)->unique_out()->as_Catch()->proj_out(0));
       }
     } else {
       ShouldNotReachHere();
@@ -1123,8 +1122,7 @@ Node* PhaseStringOpts::fetch_static_field(GraphKit& kit, ciField* field) {
 
   return kit.make_load(NULL, kit.basic_plus_adr(klass_node, field->offset_in_bytes()),
                        type, T_OBJECT,
-                       C->get_alias_index(mirror_type->add_offset(field->offset_in_bytes())),
-                       MemNode::unordered);
+                       C->get_alias_index(mirror_type->add_offset(field->offset_in_bytes())));
 }
 
 Node* PhaseStringOpts::int_stringSize(GraphKit& kit, Node* arg) {
@@ -1316,7 +1314,7 @@ void PhaseStringOpts::int_getChars(GraphKit& kit, Node* arg, Node* char_array, N
     Node* ch = __ AddI(r, __ intcon('0'));
 
     Node* st = __ store_to_memory(kit.control(), kit.array_element_address(char_array, m1, T_CHAR),
-                                  ch, T_CHAR, char_adr_idx, MemNode::unordered);
+                                  ch, T_CHAR, char_adr_idx);
 
 
     IfNode* iff = kit.create_and_map_if(head, __ Bool(__ CmpI(q, __ intcon(0)), BoolTest::ne),
@@ -1358,7 +1356,7 @@ void PhaseStringOpts::int_getChars(GraphKit& kit, Node* arg, Node* char_array, N
     } else {
       Node* m1 = __ SubI(charPos, __ intcon(1));
       Node* st = __ store_to_memory(kit.control(), kit.array_element_address(char_array, m1, T_CHAR),
-                                    sign, T_CHAR, char_adr_idx, MemNode::unordered);
+                                    sign, T_CHAR, char_adr_idx);
 
       final_merge->init_req(1, kit.control());
       final_mem->init_req(1, st);
@@ -1389,8 +1387,7 @@ Node* PhaseStringOpts::copy_string(GraphKit& kit, Node* str, Node* char_array, N
     ciTypeArray* value_array = t->const_oop()->as_type_array();
     for (int e = 0; e < c; e++) {
       __ store_to_memory(kit.control(), kit.array_element_address(char_array, start, T_CHAR),
-                         __ intcon(value_array->char_at(o + e)), T_CHAR, char_adr_idx,
-                         MemNode::unordered);
+                         __ intcon(value_array->char_at(o + e)), T_CHAR, char_adr_idx);
       start = __ AddI(start, __ intcon(1));
     }
   } else {
@@ -1508,12 +1505,10 @@ void PhaseStringOpts::replace_string_concat(StringConcat* sc) {
       }
       case StringConcat::StringMode: {
         const Type* type = kit.gvn().type(arg);
-        Node* count = NULL;
         if (type == TypePtr::NULL_PTR) {
           // replace the argument with the null checked version
           arg = null_string;
           sc->set_argument(argi, arg);
-          count = kit.load_String_length(kit.control(), arg);
         } else if (!type->higher_equal(TypeInstPtr::NOTNULL)) {
           // s = s != null ? s : "null";
           // length = length + (s.count - s.offset);
@@ -1536,13 +1531,10 @@ void PhaseStringOpts::replace_string_concat(StringConcat* sc) {
           // replace the argument with the null checked version
           arg = phi;
           sc->set_argument(argi, arg);
-          count = kit.load_String_length(kit.control(), arg);
-        } else {
-          // A corresponding nullcheck will be connected during IGVN MemNode::Ideal_common_DU_postCCP
-          // kit.control might be a different test, that can be hoisted above the actual nullcheck
-          // in case, that the control input is not null, Ideal_common_DU_postCCP will not look for a nullcheck.
-          count = kit.load_String_length(NULL, arg);
         }
+
+        Node* count = kit.load_String_length(kit.control(), arg);
+
         length = __ AddI(length, count);
         string_sizes->init_req(argi, NULL);
         break;
@@ -1615,7 +1607,7 @@ void PhaseStringOpts::replace_string_concat(StringConcat* sc) {
         }
         case StringConcat::CharMode: {
           __ store_to_memory(kit.control(), kit.array_element_address(char_array, start, T_CHAR),
-                             arg, T_CHAR, char_adr_idx, MemNode::unordered);
+                             arg, T_CHAR, char_adr_idx);
           start = __ AddI(start, __ intcon(1));
           break;
         }
@@ -1641,12 +1633,6 @@ void PhaseStringOpts::replace_string_concat(StringConcat* sc) {
       kit.store_String_length(kit.control(), result, length);
     }
     kit.store_String_value(kit.control(), result, char_array);
-
-    // The value field is final. Emit a barrier here to ensure that the effect
-    // of the initialization is committed to memory before any code publishes
-    // a reference to the newly constructed object (see Parse::do_exits()).
-    assert(AllocateNode::Ideal_allocation(result, _gvn) != NULL, "should be newly allocated");
-    kit.insert_mem_bar(Op_MemBarRelease, result);
   } else {
     result = C->top();
   }

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 1997, 2014, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 1997, 2012, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -30,8 +30,6 @@
 #include "prims/jvmtiRedefineClassesTrace.hpp"
 #include "runtime/handles.inline.hpp"
 #include "runtime/signature.hpp"
-
-PRAGMA_FORMAT_MUTE_WARNINGS_FOR_GCC
 
 class OopMapCacheEntry: private InterpreterOopMap {
   friend class InterpreterOopMap;
@@ -180,7 +178,7 @@ InterpreterOopMap::~InterpreterOopMap() {
   }
 }
 
-bool InterpreterOopMap::is_empty() const {
+bool InterpreterOopMap::is_empty() {
   bool result = _method == NULL;
   assert(_method != NULL || (_bci == 0 &&
     (_mask_size == 0 || _mask_size == USHRT_MAX) &&
@@ -196,7 +194,7 @@ void InterpreterOopMap::initialize() {
   for (int i = 0; i < N; i++) _bit_mask[i] = 0;
 }
 
-void InterpreterOopMap::iterate_oop(OffsetClosure* oop_closure) const {
+void InterpreterOopMap::iterate_oop(OffsetClosure* oop_closure) {
   int n = number_of_entries();
   int word_index = 0;
   uintptr_t value = 0;
@@ -238,14 +236,16 @@ void InterpreterOopMap::iterate_all(OffsetClosure* oop_closure, OffsetClosure* v
 #endif
 
 
-void InterpreterOopMap::print() const {
+void InterpreterOopMap::print() {
   int n = number_of_entries();
   tty->print("oop map for ");
   method()->print_value();
   tty->print(" @ %d = [%d] { ", bci(), n);
   for (int i = 0; i < n; i++) {
+#ifdef ENABLE_ZAP_DEAD_LOCALS
     if (is_dead(i)) tty->print("%d+ ", i);
     else
+#endif
     if (is_oop(i)) tty->print("%d ", i);
   }
   tty->print_cr("}");
@@ -400,11 +400,13 @@ void OopMapCacheEntry::set_mask(CellTypeState *vars, CellTypeState *stack, int s
       value |= (mask << oop_bit_number );
     }
 
+  #ifdef ENABLE_ZAP_DEAD_LOCALS
     // set dead bit
     if (!cell->is_live()) {
       value |= (mask << dead_bit_number);
       assert(!cell->is_reference(), "dead value marked as oop");
     }
+  #endif
   }
 
   // make sure last word is stored
@@ -465,7 +467,7 @@ void InterpreterOopMap::resource_copy(OopMapCacheEntry* from) {
   }
 }
 
-inline unsigned int OopMapCache::hash_value_for(methodHandle method, int bci) const {
+inline unsigned int OopMapCache::hash_value_for(methodHandle method, int bci) {
   // We use method->code_size() rather than method->identity_hash() below since
   // the mark may not be present if a pointer to the method is already reversed.
   return   ((unsigned int) bci)
@@ -518,7 +520,7 @@ void OopMapCache::flush_obsolete_entries() {
 
 void OopMapCache::lookup(methodHandle method,
                          int bci,
-                         InterpreterOopMap* entry_for) const {
+                         InterpreterOopMap* entry_for) {
   MutexLocker x(&_mut);
 
   OopMapCacheEntry* entry = NULL;

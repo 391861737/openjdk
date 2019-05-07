@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2000, 2014, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2000, 2002, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -24,10 +24,8 @@
  */
 
 #include <stdlib.h>
+#include <jni.h>
 #include <windows.h>
-#include "jni.h"
-#include "jni_util.h"
-#include "jvm.h"
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -39,15 +37,12 @@ extern "C" {
         int errorCode=-1;
         jintArray result;
         str = (*env)->GetByteArrayElements(env, lpSubKey, NULL);
-        CHECK_NULL_RETURN(str, NULL);
         errorCode =  RegOpenKeyEx((HKEY)hKey, str, 0, securityMask, &handle);
         (*env)->ReleaseByteArrayElements(env, lpSubKey, str, 0);
         tmp[0]= (int) handle;
         tmp[1]= errorCode;
         result = (*env)->NewIntArray(env,2);
-        if (result != NULL) {
-            (*env)->SetIntArrayRegion(env, result, 0, 2, tmp);
-        }
+        (*env)->SetIntArrayRegion(env, result, 0, 2, tmp);
         return result;
     }
 
@@ -63,9 +58,8 @@ extern "C" {
         int tmp[3];
         DWORD lpdwDisposition;
         int errorCode;
-        jintArray result = NULL;
+        jintArray result;
         str = (*env)->GetByteArrayElements(env, lpSubKey, NULL);
-        CHECK_NULL_RETURN(str, NULL);
         errorCode =  RegCreateKeyEx((HKEY)hKey, str, 0, NULL,
                       REG_OPTION_NON_VOLATILE, KEY_READ,
                       NULL, &handle, &lpdwDisposition);
@@ -74,9 +68,7 @@ extern "C" {
         tmp[1]= errorCode;
         tmp[2]= lpdwDisposition;
         result = (*env)->NewIntArray(env,3);
-        if (result != NULL) {
-            (*env)->SetIntArrayRegion(env, result, 0, 3, tmp);
-        }
+        (*env)->SetIntArrayRegion(env, result, 0, 3, tmp);
         return result;
     }
 
@@ -85,7 +77,6 @@ extern "C" {
         char* str;
         int result;
         str = (*env)->GetByteArrayElements(env, lpSubKey, NULL);
-        CHECK_NULL_RETURN(str, -1);
         result = RegDeleteKey((HKEY)hKey, str);
         (*env)->ReleaseByteArrayElements(env, lpSubKey, str, 0);
         return  result;
@@ -105,7 +96,6 @@ extern "C" {
         DWORD valueType;
         DWORD valueSize;
         valueNameStr = (*env)->GetByteArrayElements(env, valueName, NULL);
-        CHECK_NULL_RETURN(valueNameStr, NULL);
         if (RegQueryValueEx((HKEY)hKey, valueNameStr, NULL, &valueType, NULL,
                                                  &valueSize) != ERROR_SUCCESS) {
         (*env)->ReleaseByteArrayElements(env, valueName, valueNameStr, 0);
@@ -114,26 +104,18 @@ extern "C" {
 
         buffer = (char*)malloc(valueSize);
 
-        if (buffer != NULL) {
-            if (RegQueryValueEx((HKEY)hKey, valueNameStr, NULL, &valueType, buffer,
-                &valueSize) != ERROR_SUCCESS) {
-                free(buffer);
-                (*env)->ReleaseByteArrayElements(env, valueName, valueNameStr, 0);
-                return NULL;
-            }
-        } else {
-            JNU_ThrowOutOfMemoryError(env, "native memory allocation failed");
+        if (RegQueryValueEx((HKEY)hKey, valueNameStr, NULL, &valueType, buffer,
+            &valueSize) != ERROR_SUCCESS) {
+            free(buffer);
             (*env)->ReleaseByteArrayElements(env, valueName, valueNameStr, 0);
-            return NULL;
+        return NULL;
         }
 
         if (valueType == REG_SZ) {
-            result = (*env)->NewByteArray(env, valueSize);
-            if (result != NULL) {
-                (*env)->SetByteArrayRegion(env, result, 0, valueSize, buffer);
-            }
+        result = (*env)->NewByteArray(env, valueSize);
+        (*env)->SetByteArrayRegion(env, result, 0, valueSize, buffer);
         } else {
-            result = NULL;
+        result = NULL;
         }
         free(buffer);
         (*env)->ReleaseByteArrayElements(env, valueName, valueNameStr, 0);
@@ -153,9 +135,7 @@ extern "C" {
         if ((valueName == NULL)||(data == NULL)) {return -1;}
         size = (*env)->GetArrayLength(env, data);
         dataStr = (*env)->GetByteArrayElements(env, data, NULL);
-        CHECK_NULL_RETURN(dataStr, -1);
         valueNameStr = (*env)->GetByteArrayElements(env, valueName, NULL);
-        CHECK_NULL_RETURN(valueNameStr, -1);
         error_code = RegSetValueEx((HKEY)hKey, valueNameStr, 0,
                                                         REG_SZ, dataStr, size);
         (*env)->ReleaseByteArrayElements(env, data, dataStr, 0);
@@ -169,7 +149,6 @@ extern "C" {
         int error_code = -1;
         if (valueName == NULL) {return -1;}
         valueNameStr = (*env)->GetByteArrayElements(env, valueName, NULL);
-        CHECK_NULL_RETURN(valueNameStr, -1);
         error_code = RegDeleteValue((HKEY)hKey, valueNameStr);
         (*env)->ReleaseByteArrayElements(env, valueName, valueNameStr, 0);
         return error_code;
@@ -177,7 +156,7 @@ extern "C" {
 
     JNIEXPORT jintArray JNICALL Java_java_util_prefs_WindowsPreferences_WindowsRegQueryInfoKey
                                   (JNIEnv* env, jclass this_class, jint hKey) {
-        jintArray result = NULL;
+        jintArray result;
         int tmp[5];
         int valuesNumber = -1;
         int maxValueNameLength = -1;
@@ -194,9 +173,7 @@ extern "C" {
         tmp[3]= maxSubKeyLength;
         tmp[4]= maxValueNameLength;
         result = (*env)->NewIntArray(env,5);
-        if (result != NULL) {
-            (*env)->SetIntArrayRegion(env, result, 0, 5, tmp);
-        }
+        (*env)->SetIntArrayRegion(env, result, 0, 5, tmp);
         return result;
     }
 
@@ -206,19 +183,13 @@ extern "C" {
         jbyteArray result;
         char* buffer = NULL;
         buffer = (char*)malloc(maxKeyLength);
-        if (buffer == NULL) {
-            JNU_ThrowOutOfMemoryError(env, "native memory allocation failed");
-            return NULL;
-        }
         if (RegEnumKeyEx((HKEY) hKey, subKeyIndex, buffer, &size, NULL, NULL,
                                                  NULL, NULL) != ERROR_SUCCESS){
         free(buffer);
         return NULL;
         }
         result = (*env)->NewByteArray(env, size + 1);
-        if (result != NULL) {
-            (*env)->SetByteArrayRegion(env, result, 0, size + 1, buffer);
-        }
+        (*env)->SetByteArrayRegion(env, result, 0, size + 1, buffer);
         free(buffer);
         return result;
      }
@@ -230,10 +201,6 @@ extern "C" {
           char* buffer = NULL;
           int error_code;
           buffer = (char*)malloc(maxValueNameLength);
-          if (buffer == NULL) {
-              JNU_ThrowOutOfMemoryError(env, "native memory allocation failed");
-              return NULL;
-          }
           error_code = RegEnumValue((HKEY) hKey, valueIndex, buffer,
                                              &size, NULL, NULL, NULL, NULL);
           if (error_code!= ERROR_SUCCESS){
@@ -241,9 +208,7 @@ extern "C" {
             return NULL;
           }
           result = (*env)->NewByteArray(env, size + 1);
-          if (result != NULL) {
-              (*env)->SetByteArrayRegion(env, result, 0, size + 1, buffer);
-          }
+          (*env)->SetByteArrayRegion(env, result, 0, size + 1, buffer);
           free(buffer);
           return result;
      }

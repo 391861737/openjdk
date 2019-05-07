@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2000, 2014, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2000, 2013, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -27,15 +27,13 @@ package sun.awt;
 
 import java.awt.AWTEvent;
 
-import java.security.AccessController;
-import java.security.PrivilegedAction;
+import java.util.Collections;
 import java.util.HashSet;
 import java.util.IdentityHashMap;
 import java.util.Map;
 import java.util.Set;
 
 import sun.util.logging.PlatformLogger;
-import sun.misc.ThreadGroupUtils;
 
 /**
  * This class is to let AWT shutdown automatically when a user is done
@@ -217,10 +215,7 @@ public final class AWTAutoShutdown implements Runnable {
         synchronized (activationLock) {
             synchronized (mainLock) {
                 if (!isReadyToShutdown() && blockerThread == null) {
-                    AccessController.doPrivileged((PrivilegedAction<Void>) () -> {
-                        activateBlockerThread();
-                        return null;
-                    });
+                    activateBlockerThread();
                 } else {
                     mainLock.notifyAll();
                     timeoutPassed = false;
@@ -336,12 +331,9 @@ public final class AWTAutoShutdown implements Runnable {
     /**
      * Creates and starts a new blocker thread. Doesn't return until
      * the new blocker thread starts.
-     *
-     * Must be called with {@link sun.security.util.SecurityConstants#MODIFY_THREADGROUP_PERMISSION}
      */
     private void activateBlockerThread() {
-        Thread thread = new Thread(ThreadGroupUtils.getRootThreadGroup(), this, "AWT-Shutdown");
-        thread.setContextClassLoader(null);
+        Thread thread = new Thread(this, "AWT-Shutdown");
         thread.setDaemon(false);
         blockerThread = thread;
         thread.start();

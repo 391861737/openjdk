@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2003, 2014, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2003, 2013, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -164,11 +164,11 @@ private:
   // Instance variables
   int               _table_size;
   HashtableBucket<F>*     _buckets;
-  BasicHashtableEntry<F>* volatile _free_list;
+  BasicHashtableEntry<F>* _free_list;
   char*             _first_free_entry;
   char*             _end_block;
   int               _entry_size;
-  volatile int      _number_of_entries;
+  int               _number_of_entries;
 
 protected:
 
@@ -177,6 +177,11 @@ protected:
   int               _lookup_length;
   void verify_lookup_length(double load);
 #endif
+
+  enum {
+    rehash_count = 100,
+    rehash_multiple = 60
+  };
 
   void initialize(int table_size, int entry_size, int number_of_entries);
 
@@ -189,11 +194,11 @@ protected:
   // The following method is not MT-safe and must be done under lock.
   BasicHashtableEntry<F>** bucket_addr(int i) { return _buckets[i].entry_addr(); }
 
-  // Attempt to get an entry from the free list
-  BasicHashtableEntry<F>* new_entry_free_list();
-
   // Table entry management
   BasicHashtableEntry<F>* new_entry(unsigned int hashValue);
+
+  // Check that the table is unbalanced
+  bool check_rehash_table(int count);
 
   // Used when moving the entry to another table
   // Clean up links, but do not add to free_list
@@ -215,24 +220,6 @@ protected:
   // Free the buckets in this hashtable
   void free_buckets();
 
-  // Helper data structure containing context for the bucket entry unlink process,
-  // storing the unlinked buckets in a linked list.
-  // Also avoids the need to pass around these four members as parameters everywhere.
-  struct BucketUnlinkContext {
-    int _num_processed;
-    int _num_removed;
-    // Head and tail pointers for the linked list of removed entries.
-    BasicHashtableEntry<F>* _removed_head;
-    BasicHashtableEntry<F>* _removed_tail;
-
-    BucketUnlinkContext() : _num_processed(0), _num_removed(0), _removed_head(NULL), _removed_tail(NULL) {
-    }
-
-    void free_entry(BasicHashtableEntry<F>* entry);
-  };
-  // Add of bucket entries linked together in the given context to the global free list. This method
-  // is mt-safe wrt. to other calls of this method.
-  void bulk_free_entries(BucketUnlinkContext* context);
 public:
   int table_size() { return _table_size; }
   void set_entry(int index, BasicHashtableEntry<F>* entry);
@@ -290,32 +277,10 @@ protected:
     return (HashtableEntry<T, F>**)BasicHashtable<F>::bucket_addr(i);
   }
 
-};
-
-template <class T, MEMFLAGS F> class RehashableHashtable : public Hashtable<T, F> {
- protected:
-
-  enum {
-    rehash_count = 100,
-    rehash_multiple = 60
-  };
-
-  // Check that the table is unbalanced
-  bool check_rehash_table(int count);
-
- public:
-  RehashableHashtable(int table_size, int entry_size)
-    : Hashtable<T, F>(table_size, entry_size) { }
-
-  RehashableHashtable(int table_size, int entry_size,
-                   HashtableBucket<F>* buckets, int number_of_entries)
-    : Hashtable<T, F>(table_size, entry_size, buckets, number_of_entries) { }
-
-
   // Function to move these elements into the new table.
-  void move_to(RehashableHashtable<T, F>* new_table);
+  void move_to(Hashtable<T, F>* new_table);
   static bool use_alternate_hashcode()  { return _seed != 0; }
-  static juint seed()                    { return _seed; }
+  static jint seed()                    { return _seed; }
 
   static int literal_size(Symbol *symbol);
   static int literal_size(oop oop);
@@ -327,10 +292,11 @@ template <class T, MEMFLAGS F> class RehashableHashtable : public Hashtable<T, F
   static int literal_size(ConstantPool *cp) {Unimplemented(); return 0;}
   static int literal_size(Klass *k)         {Unimplemented(); return 0;}
 
+public:
   void dump_table(outputStream* st, const char *table_name);
 
  private:
-  static juint _seed;
+  static jint _seed;
 };
 
 

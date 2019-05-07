@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2010, 2015, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2010, 2013, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -41,23 +41,22 @@ import java.lang.annotation.Target;
 @Target(ElementType.METHOD)
 public @interface Function {
     /**
-     * @return the name of the property. If empty, the name is inferred.
+     * Name of the property. If empty, the name is inferred.
      */
     public String name() default "";
 
     /**
-     * @return the attribute flags for this function.
+     * Attribute flags for this function.
      */
     public int attributes() default DEFAULT_ATTRIBUTES;
 
     /**
-     * @return the arity of the function. By default computed from the method
-     *         signature.
+     * The arity of the function. By default computed from the method signature
      */
     public int arity() default -2;
 
     /**
-     * @return where this function lives.
+     * where this function lives
      */
     public Where where() default Where.PROTOTYPE;
 }

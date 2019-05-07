@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 1997, 2014, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 1997, 2013, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -41,16 +41,9 @@
 #ifdef TARGET_OS_FAMILY_windows
 # include "jvm_windows.h"
 #endif
-#ifdef TARGET_OS_FAMILY_aix
-# include "jvm_aix.h"
-# include <setjmp.h>
-#endif
 #ifdef TARGET_OS_FAMILY_bsd
 # include "jvm_bsd.h"
 # include <setjmp.h>
-# ifdef __APPLE__
-#  include <mach/mach_time.h>
-# endif
 #endif
 
 class AgentLibrary;
@@ -66,8 +59,6 @@ class JavaThread;
 class Event;
 class DLL;
 class FileHandle;
-class NativeCallStack;
-
 template<class E> class GrowableArray;
 
 // %%%%% Moved ThreadState, START_FN, OSThread to new osThread.hpp. -- Rose
@@ -99,11 +90,9 @@ const bool ExecMem = true;
 // Typedef for structured exception handling support
 typedef void (*java_call_t)(JavaValue* value, methodHandle* method, JavaCallArguments* args, Thread* thread);
 
-class MallocTracker;
-
 class os: AllStatic {
   friend class VMStructs;
-  friend class MallocTracker;
+
  public:
   enum { page_sizes_max = 9 }; // Size of _page_sizes array (8 plus a sentinel)
 
@@ -149,9 +138,7 @@ class os: AllStatic {
   static void   pd_free_memory(char *addr, size_t bytes, size_t alignment_hint);
   static void   pd_realign_memory(char *addr, size_t bytes, size_t alignment_hint);
 
-  static size_t page_size_for_region(size_t region_size, size_t min_pages, bool must_be_aligned);
 
-  static void initialize_initial_active_processor_count();
  public:
   static void init(void);                      // Called before command line parsing
   static void init_before_ergo(void);          // Called after command line parsing
@@ -161,15 +148,13 @@ class os: AllStatic {
   static void init_globals(void) {             // Called from init_globals() in init.cpp
     init_globals_ext();
   }
+  static void init_3(void);                    // Called at the end of vm init
 
   // File names are case-insensitive on windows only
   // Override me as needed
   static int    file_name_strcmp(const char* s1, const char* s2);
 
-  // get/unset environment variable
   static bool getenv(const char* name, char* buffer, int len);
-  static bool unsetenv(const char* name);
-
   static bool have_special_privileges();
 
   static jlong  javaTimeMillis();
@@ -215,14 +200,8 @@ class os: AllStatic {
 
   // Interface for detecting multiprocessor system
   static inline bool is_MP() {
-    // During bootstrap if _processor_count is not yet initialized
-    // we claim to be MP as that is safest. If any platform has a
-    // stub generator that might be triggered in this phase and for
-    // which being declared MP when in fact not, is a problem - then
-    // the bootstrap routine for the stub generator needs to check
-    // the processor count directly and leave the bootstrap routine
-    // in place until called after initialization has ocurred.
-    return (_processor_count != 1) || AssumeMP;
+    assert(_processor_count > 0, "invalid processor count");
+    return _processor_count > 1 || AssumeMP;
   }
   static julong available_memory();
   static julong physical_memory();
@@ -238,13 +217,6 @@ class os: AllStatic {
   // Returns the number of CPUs this process is currently allowed to run on.
   // Note that on some OSes this can change dynamically.
   static int active_processor_count();
-
-  // At startup the number of active CPUs this process is allowed to run on.
-  // This value does not change dynamically. May be different from active_processor_count().
-  static int initial_active_processor_count() {
-    assert(_initial_active_processor_count > 0, "Initial active processor count not set yet.");
-    return _initial_active_processor_count;
-  }
 
   // Bind processes to processors.
   //     This is a two step procedure:
@@ -274,16 +246,19 @@ class os: AllStatic {
   // Return the default page size.
   static int    vm_page_size();
 
-  // Returns the page size to use for a region of memory.
-  // region_size / min_pages will always be greater than or equal to the
-  // returned value. The returned value will divide region_size.
-  static size_t page_size_for_region_aligned(size_t region_size, size_t min_pages);
-
-  // Returns the page size to use for a region of memory.
-  // region_size / min_pages will always be greater than or equal to the
-  // returned value. The returned value might not divide region_size.
-  static size_t page_size_for_region_unaligned(size_t region_size, size_t min_pages);
-
+  // Return the page size to use for a region of memory.  The min_pages argument
+  // is a hint intended to limit fragmentation; it says the returned page size
+  // should be <= region_max_size / min_pages.  Because min_pages is a hint,
+  // this routine may return a size larger than region_max_size / min_pages.
+  //
+  // The current implementation ignores min_pages if a larger page size is an
+  // exact multiple of both region_min_size and region_max_size.  This allows
+  // larger pages to be used when doing so would not cause fragmentation; in
+  // particular, a single page can be used when region_min_size ==
+  // region_max_size == a supported page size.
+  static size_t page_size_for_region(size_t region_min_size,
+                                     size_t region_max_size,
+                                     uint min_pages);
   // Return the largest page size that can be used
   static size_t max_page_size() {
     // The _page_sizes array is sorted in descending order.
@@ -324,12 +299,6 @@ class os: AllStatic {
                                       bool executable, const char* mesg);
   static bool   uncommit_memory(char* addr, size_t bytes);
   static bool   release_memory(char* addr, size_t bytes);
-
-  // Touch memory pages that cover the memory range from start to end (exclusive)
-  // to make the OS back the memory range with actual memory.
-  // Current implementation may not touch the last page if unaligned addresses
-  // are passed.
-  static void   pretouch_memory(char* start, char* end);
 
   enum ProtType { MEM_PROT_NONE, MEM_PROT_READ, MEM_PROT_RW, MEM_PROT_RWX };
   static bool   protect_memory(char* addr, size_t bytes, ProtType prot,
@@ -461,10 +430,7 @@ class os: AllStatic {
   static intx current_thread_id();
   static int current_process_id();
   static int sleep(Thread* thread, jlong ms, bool interruptable);
-  // Short standalone OS sleep suitable for slow path spin loop.
-  // Ignores Thread.interrupt() (so keep it short).
-  // ms = 0, will sleep for the least amount of time allowed by the OS.
-  static void naked_short_sleep(jlong ms);
+  static int naked_sleep();
   static void infinite_sleep(); // never returns, use with CAUTION
   static void yield();        // Yields to all threads with same priority
   enum YieldResult {
@@ -503,6 +469,9 @@ class os: AllStatic {
 
   // run cmd in a separate process and return its exit code; or -1 on failures
   static int fork_and_exec(char *cmd);
+
+  // Set file to send error reports.
+  static void set_error_file(const char *logfile);
 
   // os::exit() is merged with vm_exit()
   // static void exit(int num);
@@ -675,20 +644,12 @@ class os: AllStatic {
   static void* thread_local_storage_at(int index);
   static void  free_thread_local_storage(int index);
 
-  // Retrieve native stack frames.
-  // Parameter:
-  //   stack:  an array to storage stack pointers.
-  //   frames: size of above array.
-  //   toSkip: number of stack frames to skip at the beginning.
-  // Return: number of stack frames captured.
-  static int get_native_stack(address* stack, int size, int toSkip = 0);
+  // Stack walk
+  static address get_caller_pc(int n = 0);
 
   // General allocation (must be MT-safe)
-  static void* malloc  (size_t size, MEMFLAGS flags, const NativeCallStack& stack);
-  static void* malloc  (size_t size, MEMFLAGS flags);
-  static void* realloc (void *memblock, size_t size, MEMFLAGS flag, const NativeCallStack& stack);
-  static void* realloc (void *memblock, size_t size, MEMFLAGS flag);
-
+  static void* malloc  (size_t size, MEMFLAGS flags, address caller_pc = 0);
+  static void* realloc (void *memblock, size_t size, MEMFLAGS flags, address caller_pc = 0);
   static void  free    (void *memblock, MEMFLAGS flags = mtNone);
   static bool  check_heap(bool force = false);      // verify C heap integrity
   static char* strdup(const char *, MEMFLAGS flags = mtInternal);  // Like strdup
@@ -808,10 +769,6 @@ class os: AllStatic {
 #ifdef TARGET_OS_FAMILY_windows
 # include "os_windows.hpp"
 #endif
-#ifdef TARGET_OS_FAMILY_aix
-# include "os_aix.hpp"
-# include "os_posix.hpp"
-#endif
 #ifdef TARGET_OS_FAMILY_bsd
 # include "os_posix.hpp"
 # include "os_bsd.hpp"
@@ -839,9 +796,6 @@ class os: AllStatic {
 #endif
 #ifdef TARGET_OS_ARCH_linux_ppc
 # include "os_linux_ppc.hpp"
-#endif
-#ifdef TARGET_OS_ARCH_aix_ppc
-# include "os_aix_ppc.hpp"
 #endif
 #ifdef TARGET_OS_ARCH_bsd_x86
 # include "os_bsd_x86.hpp"
@@ -983,9 +937,8 @@ class os: AllStatic {
 
 
  protected:
-  static long _rand_seed;                     // seed for random number generator
-  static int _processor_count;                // number of processors
-  static int _initial_active_processor_count; // number of active processors during initialization.
+  static long _rand_seed;                   // seed for random number generator
+  static int _processor_count;              // number of processors
 
   static char* format_boot_path(const char* format_string,
                                 const char* home,

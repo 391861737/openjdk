@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2005, 2016, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2005, 2013, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -23,7 +23,6 @@
  */
 
 #include "precompiled.hpp"
-#include "c1/c1_Defs.hpp"
 #include "c1/c1_Compilation.hpp"
 #include "c1/c1_FrameMap.hpp"
 #include "c1/c1_Instruction.hpp"
@@ -47,7 +46,10 @@
 #define __ gen()->lir()->
 #endif
 
-#ifndef PATCHED_ADDR
+// TODO: ARM - Use some recognizable constant which still fits architectural constraints
+#ifdef ARM
+#define PATCHED_ADDR  (204)
+#else
 #define PATCHED_ADDR  (max_jint)
 #endif
 
@@ -464,11 +466,8 @@ CodeEmitInfo* LIRGenerator::state_for(Instruction* x) {
 }
 
 
-void LIRGenerator::klass2reg_with_patching(LIR_Opr r, ciMetadata* obj, CodeEmitInfo* info, bool need_resolve) {
-  /* C2 relies on constant pool entries being resolved (ciTypeFlow), so if TieredCompilation
-   * is active and the class hasn't yet been resolved we need to emit a patch that resolves
-   * the class. */
-  if ((TieredCompilation && need_resolve) || !obj->is_loaded() || PatchALot) {
+void LIRGenerator::klass2reg_with_patching(LIR_Opr r, ciMetadata* obj, CodeEmitInfo* info) {
+  if (!obj->is_loaded() || PatchALot) {
     assert(info != NULL, "info must be set if class is not loaded");
     __ klass2reg_patch(NULL, r, info);
   } else {
@@ -661,18 +660,9 @@ void LIRGenerator::monitor_exit(LIR_Opr object, LIR_Opr lock, LIR_Opr new_hdr, L
   __ unlock_object(hdr, object, lock, scratch, slow_path);
 }
 
-#ifndef PRODUCT
-void LIRGenerator::print_if_not_loaded(const NewInstance* new_instance) {
-  if (PrintNotLoaded && !new_instance->klass()->is_loaded()) {
-    tty->print_cr("   ###class not loaded at new bci %d", new_instance->printable_bci());
-  } else if (PrintNotLoaded && (TieredCompilation && new_instance->is_unresolved())) {
-    tty->print_cr("   ###class not resolved at new bci %d", new_instance->printable_bci());
-  }
-}
-#endif
 
-void LIRGenerator::new_instance(LIR_Opr dst, ciInstanceKlass* klass, bool is_unresolved, LIR_Opr scratch1, LIR_Opr scratch2, LIR_Opr scratch3, LIR_Opr scratch4, LIR_Opr klass_reg, CodeEmitInfo* info) {
-  klass2reg_with_patching(klass_reg, klass, info, is_unresolved);
+void LIRGenerator::new_instance(LIR_Opr dst, ciInstanceKlass* klass, LIR_Opr scratch1, LIR_Opr scratch2, LIR_Opr scratch3, LIR_Opr scratch4, LIR_Opr klass_reg, CodeEmitInfo* info) {
+  klass2reg_with_patching(klass_reg, klass, info);
   // If klass is not loaded we do not know if the klass has finalizers:
   if (UseFastNewInstance && klass->is_loaded()
       && !Klass::layout_helper_needs_slow_path(klass->layout_helper())) {
@@ -1597,9 +1587,25 @@ void LIRGenerator::CardTableModRef_post_barrier(LIR_OprDesc* addr, LIR_OprDesc* 
   }
   assert(addr->is_register(), "must be a register at this point");
 
-#ifdef CARDTABLEMODREF_POST_BARRIER_HELPER
-  CardTableModRef_post_barrier_helper(addr, card_table_base);
-#else
+#ifdef ARM
+  // TODO: ARM - move to platform-dependent code
+  LIR_Opr tmp = FrameMap::R14_opr;
+  if (VM_Version::supports_movw()) {
+    __ move((LIR_Opr)card_table_base, tmp);
+  } else {
+    __ move(new LIR_Address(FrameMap::Rthread_opr, in_bytes(JavaThread::card_table_base_offset()), T_ADDRESS), tmp);
+  }
+
+  CardTableModRefBS* ct = (CardTableModRefBS*)_bs;
+  LIR_Address *card_addr = new LIR_Address(tmp, addr, (LIR_Address::Scale) -CardTableModRefBS::card_shift, 0, T_BYTE);
+  if(((int)ct->byte_map_base & 0xff) == 0) {
+    __ move(tmp, card_addr);
+  } else {
+    LIR_Opr tmp_zero = new_register(T_INT);
+    __ move(LIR_OprFact::intConst(0), tmp_zero);
+    __ move(tmp_zero, card_addr);
+  }
+#else // ARM
   LIR_Opr tmp = new_pointer_register();
   if (TwoOperandLIRForm) {
     __ move(addr, tmp);
@@ -1615,7 +1621,7 @@ void LIRGenerator::CardTableModRef_post_barrier(LIR_OprDesc* addr, LIR_OprDesc* 
               new LIR_Address(tmp, load_constant(card_table_base),
                               T_BYTE));
   }
-#endif
+#endif // ARM
 }
 
 
@@ -1700,10 +1706,8 @@ void LIRGenerator::do_StoreField(StoreField* x) {
   if (x->needs_null_check() &&
       (needs_patching ||
        MacroAssembler::needs_explicit_null_check(x->offset()))) {
-    // Emit an explicit null check because the offset is too large.
-    // If the class is not loaded and the object is NULL, we need to deoptimize to throw a
-    // NoClassDefFoundError in the interpreter instead of an implicit NPE from compiled code.
-    __ null_check(object.result(), new CodeEmitInfo(info), /* deoptimize */ needs_patching);
+    // emit an explicit null check because the offset is too large
+    __ null_check(object.result(), new CodeEmitInfo(info));
   }
 
   LIR_Address* address;
@@ -1787,10 +1791,8 @@ void LIRGenerator::do_LoadField(LoadField* x) {
       obj = new_register(T_OBJECT);
       __ move(LIR_OprFact::oopConst(NULL), obj);
     }
-    // Emit an explicit null check because the offset is too large.
-    // If the class is not loaded and the object is NULL, we need to deoptimize to throw a
-    // NoClassDefFoundError in the interpreter instead of an implicit NPE from compiled code.
-    __ null_check(obj, new CodeEmitInfo(info), /* deoptimize */ needs_patching);
+    // emit an explicit null check because the offset is too large
+    __ null_check(obj, new CodeEmitInfo(info));
   }
 
   LIR_Opr reg = rlock_result(x, field_type);
@@ -2028,8 +2030,6 @@ void LIRGenerator::do_RoundFP(RoundFP* x) {
   }
 }
 
-// Here UnsafeGetRaw may have x->base() and x->index() be int or long
-// on both 64 and 32 bits. Expecting x->base() to be always long on 64bit.
 void LIRGenerator::do_UnsafeGetRaw(UnsafeGetRaw* x) {
   LIRItem base(x->base(), this);
   LIRItem idx(this);
@@ -2044,73 +2044,50 @@ void LIRGenerator::do_UnsafeGetRaw(UnsafeGetRaw* x) {
 
   int   log2_scale = 0;
   if (x->has_index()) {
+    assert(x->index()->type()->tag() == intTag, "should not find non-int index");
     log2_scale = x->log2_scale();
   }
 
   assert(!x->has_index() || idx.value() == x->index(), "should match");
 
   LIR_Opr base_op = base.result();
-  LIR_Opr index_op = idx.result();
 #ifndef _LP64
-  if (base_op->type() == T_LONG) {
+  if (x->base()->type()->tag() == longTag) {
     base_op = new_register(T_INT);
     __ convert(Bytecodes::_l2i, base.result(), base_op);
+  } else {
+    assert(x->base()->type()->tag() == intTag, "must be");
   }
-  if (x->has_index()) {
-    if (index_op->type() == T_LONG) {
-      LIR_Opr long_index_op = index_op;
-      if (index_op->is_constant()) {
-        long_index_op = new_register(T_LONG);
-        __ move(index_op, long_index_op);
-      }
-      index_op = new_register(T_INT);
-      __ convert(Bytecodes::_l2i, long_index_op, index_op);
-    } else {
-      assert(x->index()->type()->tag() == intTag, "must be");
-    }
-  }
-  // At this point base and index should be all ints.
-  assert(base_op->type() == T_INT && !base_op->is_constant(), "base should be an non-constant int");
-  assert(!x->has_index() || index_op->type() == T_INT, "index should be an int");
-#else
-  if (x->has_index()) {
-    if (index_op->type() == T_INT) {
-      if (!index_op->is_constant()) {
-        index_op = new_register(T_LONG);
-        __ convert(Bytecodes::_i2l, idx.result(), index_op);
-      }
-    } else {
-      assert(index_op->type() == T_LONG, "must be");
-      if (index_op->is_constant()) {
-        index_op = new_register(T_LONG);
-        __ move(idx.result(), index_op);
-      }
-    }
-  }
-  // At this point base is a long non-constant
-  // Index is a long register or a int constant.
-  // We allow the constant to stay an int because that would allow us a more compact encoding by
-  // embedding an immediate offset in the address expression. If we have a long constant, we have to
-  // move it into a register first.
-  assert(base_op->type() == T_LONG && !base_op->is_constant(), "base must be a long non-constant");
-  assert(!x->has_index() || (index_op->type() == T_INT && index_op->is_constant()) ||
-                            (index_op->type() == T_LONG && !index_op->is_constant()), "unexpected index type");
 #endif
 
   BasicType dst_type = x->basic_type();
+  LIR_Opr index_op = idx.result();
 
   LIR_Address* addr;
   if (index_op->is_constant()) {
     assert(log2_scale == 0, "must not have a scale");
-    assert(index_op->type() == T_INT, "only int constants supported");
     addr = new LIR_Address(base_op, index_op->as_jint(), dst_type);
   } else {
 #ifdef X86
+#ifdef _LP64
+    if (!index_op->is_illegal() && index_op->type() == T_INT) {
+      LIR_Opr tmp = new_pointer_register();
+      __ convert(Bytecodes::_i2l, index_op, tmp);
+      index_op = tmp;
+    }
+#endif
     addr = new LIR_Address(base_op, index_op, LIR_Address::Scale(log2_scale), 0, dst_type);
-#elif defined(GENERATE_ADDRESS_IS_PREFERRED)
+#elif defined(ARM)
     addr = generate_address(base_op, index_op, log2_scale, 0, dst_type);
 #else
     if (index_op->is_illegal() || log2_scale == 0) {
+#ifdef _LP64
+      if (!index_op->is_illegal() && index_op->type() == T_INT) {
+        LIR_Opr tmp = new_pointer_register();
+        __ convert(Bytecodes::_i2l, index_op, tmp);
+        index_op = tmp;
+      }
+#endif
       addr = new LIR_Address(base_op, index_op, dst_type);
     } else {
       LIR_Opr tmp = new_pointer_register();
@@ -2137,6 +2114,7 @@ void LIRGenerator::do_UnsafePutRaw(UnsafePutRaw* x) {
   BasicType type = x->basic_type();
 
   if (x->has_index()) {
+    assert(x->index()->type()->tag() == intTag, "should not find non-int index");
     log2_scale = x->log2_scale();
   }
 
@@ -2159,53 +2137,40 @@ void LIRGenerator::do_UnsafePutRaw(UnsafePutRaw* x) {
   set_no_result(x);
 
   LIR_Opr base_op = base.result();
-  LIR_Opr index_op = idx.result();
-
-#ifdef GENERATE_ADDRESS_IS_PREFERRED
-  LIR_Address* addr = generate_address(base_op, index_op, log2_scale, 0, x->basic_type());
-#else
 #ifndef _LP64
-  if (base_op->type() == T_LONG) {
+  if (x->base()->type()->tag() == longTag) {
     base_op = new_register(T_INT);
     __ convert(Bytecodes::_l2i, base.result(), base_op);
+  } else {
+    assert(x->base()->type()->tag() == intTag, "must be");
   }
-  if (x->has_index()) {
-    if (index_op->type() == T_LONG) {
-      index_op = new_register(T_INT);
-      __ convert(Bytecodes::_l2i, idx.result(), index_op);
-    }
-  }
-  // At this point base and index should be all ints and not constants
-  assert(base_op->type() == T_INT && !base_op->is_constant(), "base should be an non-constant int");
-  assert(!x->has_index() || (index_op->type() == T_INT && !index_op->is_constant()), "index should be an non-constant int");
-#else
-  if (x->has_index()) {
-    if (index_op->type() == T_INT) {
-      index_op = new_register(T_LONG);
-      __ convert(Bytecodes::_i2l, idx.result(), index_op);
-    }
-  }
-  // At this point base and index are long and non-constant
-  assert(base_op->type() == T_LONG && !base_op->is_constant(), "base must be a non-constant long");
-  assert(!x->has_index() || (index_op->type() == T_LONG && !index_op->is_constant()), "index must be a non-constant long");
 #endif
 
+  LIR_Opr index_op = idx.result();
   if (log2_scale != 0) {
     // temporary fix (platform dependent code without shift on Intel would be better)
-    // TODO: ARM also allows embedded shift in the address
-    LIR_Opr tmp = new_pointer_register();
-    if (TwoOperandLIRForm) {
-      __ move(index_op, tmp);
-      index_op = tmp;
+    index_op = new_pointer_register();
+#ifdef _LP64
+    if(idx.result()->type() == T_INT) {
+      __ convert(Bytecodes::_i2l, idx.result(), index_op);
+    } else {
+#endif
+      // TODO: ARM also allows embedded shift in the address
+      __ move(idx.result(), index_op);
+#ifdef _LP64
     }
-    __ shift_left(index_op, log2_scale, tmp);
-    if (!TwoOperandLIRForm) {
-      index_op = tmp;
-    }
+#endif
+    __ shift_left(index_op, log2_scale, index_op);
   }
+#ifdef _LP64
+  else if(!index_op->is_illegal() && index_op->type() == T_INT) {
+    LIR_Opr tmp = new_pointer_register();
+    __ convert(Bytecodes::_i2l, index_op, tmp);
+    index_op = tmp;
+  }
+#endif
 
   LIR_Address* addr = new LIR_Address(base_op, index_op, x->basic_type());
-#endif // !GENERATE_ADDRESS_IS_PREFERRED
   __ move(value.result(), addr);
 }
 
@@ -2559,7 +2524,7 @@ void LIRGenerator::do_Goto(Goto* x) {
     // need to free up storage used for OSR entry point
     LIR_Opr osrBuffer = block()->next()->operand();
     BasicTypeList signature;
-    signature.append(NOT_LP64(T_INT) LP64_ONLY(T_LONG)); // pass a pointer to osrBuffer
+    signature.append(T_INT);
     CallingConvention* cc = frame_map()->c_calling_convention(&signature);
     __ move(osrBuffer, cc->args()->at(0));
     __ call_runtime_leaf(CAST_FROM_FN_PTR(address, SharedRuntime::OSR_migration_end),
@@ -2669,10 +2634,8 @@ ciKlass* LIRGenerator::profile_type(ciMethodData* md, int md_base_offset, int md
       // LIR_Assembler::emit_profile_type() from emitting useless code
       profiled_k = ciTypeEntries::with_status(result, profiled_k);
     }
-    // exact_klass and exact_signature_k can be both non NULL but
-    // different if exact_klass is loaded after the ciObject for
-    // exact_signature_k is created.
-    if (exact_klass == NULL && exact_signature_k != NULL && exact_klass != exact_signature_k) {
+    if (exact_signature_k != NULL && exact_klass != exact_signature_k) {
+      assert(exact_klass == NULL, "obj and signature disagree?");
       // sometimes the type of the signature is better than the best type
       // the compiler has
       exact_klass = exact_signature_k;
@@ -2683,7 +2646,8 @@ ciKlass* LIRGenerator::profile_type(ciMethodData* md, int md_base_offset, int md
       if (improved_klass == NULL) {
         improved_klass = comp->cha_exact_type(callee_signature_k);
       }
-      if (exact_klass == NULL && improved_klass != NULL && exact_klass != improved_klass) {
+      if (improved_klass != NULL && exact_klass != improved_klass) {
+        assert(exact_klass == NULL, "obj and signature disagree?");
         exact_klass = exact_signature_k;
       }
     }
@@ -2899,7 +2863,7 @@ LIRItemList* LIRGenerator::invoke_visit_arguments(Invoke* x) {
 //   g) lock result registers and emit call operation
 //
 // Before issuing a call, we must spill-save all values on stack
-// that are in caller-save register. "spill-save" moves those registers
+// that are in caller-save register. "spill-save" moves thos registers
 // either in a free callee-save register or spills them if no free
 // callee save register is available.
 //
@@ -2907,7 +2871,7 @@ LIRItemList* LIRGenerator::invoke_visit_arguments(Invoke* x) {
 // - if invoked between e) and f), we may lock callee save
 //   register in "spill-save" that destroys the receiver register
 //   before f) is executed
-// - if we rearrange f) to be earlier (by loading %o0) it
+// - if we rearange the f) to be earlier, by loading %o0, it
 //   may destroy a value on the stack that is currently in %o0
 //   and is waiting to be spilled
 // - if we keep the receiver locked while doing spill-save,
@@ -2940,16 +2904,14 @@ void LIRGenerator::do_Invoke(Invoke* x) {
   assert(receiver->is_illegal() || receiver->is_equal(LIR_Assembler::receiverOpr()), "must match");
 
   // JSR 292
-  // Preserve the SP over MethodHandle call sites, if needed.
+  // Preserve the SP over MethodHandle call sites.
   ciMethod* target = x->target();
   bool is_method_handle_invoke = (// %%% FIXME: Are both of these relevant?
                                   target->is_method_handle_intrinsic() ||
                                   target->is_compiled_lambda_form());
   if (is_method_handle_invoke) {
     info->set_is_method_handle_invoke(true);
-    if(FrameMap::method_handle_invoke_SP_save_opr() != LIR_OprFact::illegalOpr) {
-        __ move(FrameMap::stack_pointer(), FrameMap::method_handle_invoke_SP_save_opr());
-    }
+    __ move(FrameMap::stack_pointer(), FrameMap::method_handle_invoke_SP_save_opr());
   }
 
   switch (x->code()) {
@@ -2989,9 +2951,8 @@ void LIRGenerator::do_Invoke(Invoke* x) {
   }
 
   // JSR 292
-  // Restore the SP after MethodHandle call sites, if needed.
-  if (is_method_handle_invoke
-      && FrameMap::method_handle_invoke_SP_save_opr() != LIR_OprFact::illegalOpr) {
+  // Restore the SP after MethodHandle call sites.
+  if (is_method_handle_invoke) {
     __ move(FrameMap::method_handle_invoke_SP_save_opr(), FrameMap::stack_pointer());
   }
 
@@ -3185,52 +3146,50 @@ void LIRGenerator::profile_arguments(ProfileCall* x) {
     int bci = x->bci_of_invoke();
     ciMethodData* md = x->method()->method_data_or_null();
     ciProfileData* data = md->bci_to_data(bci);
-    if (data != NULL) {
-      if ((data->is_CallTypeData() && data->as_CallTypeData()->has_arguments()) ||
-          (data->is_VirtualCallTypeData() && data->as_VirtualCallTypeData()->has_arguments())) {
-        ByteSize extra = data->is_CallTypeData() ? CallTypeData::args_data_offset() : VirtualCallTypeData::args_data_offset();
-        int base_offset = md->byte_offset_of_slot(data, extra);
-        LIR_Opr mdp = LIR_OprFact::illegalOpr;
-        ciTypeStackSlotEntries* args = data->is_CallTypeData() ? ((ciCallTypeData*)data)->args() : ((ciVirtualCallTypeData*)data)->args();
+    if ((data->is_CallTypeData() && data->as_CallTypeData()->has_arguments()) ||
+        (data->is_VirtualCallTypeData() && data->as_VirtualCallTypeData()->has_arguments())) {
+      ByteSize extra = data->is_CallTypeData() ? CallTypeData::args_data_offset() : VirtualCallTypeData::args_data_offset();
+      int base_offset = md->byte_offset_of_slot(data, extra);
+      LIR_Opr mdp = LIR_OprFact::illegalOpr;
+      ciTypeStackSlotEntries* args = data->is_CallTypeData() ? ((ciCallTypeData*)data)->args() : ((ciVirtualCallTypeData*)data)->args();
 
-        Bytecodes::Code bc = x->method()->java_code_at_bci(bci);
-        int start = 0;
-        int stop = data->is_CallTypeData() ? ((ciCallTypeData*)data)->number_of_arguments() : ((ciVirtualCallTypeData*)data)->number_of_arguments();
-        if (x->callee()->is_loaded() && x->callee()->is_static() && Bytecodes::has_receiver(bc)) {
-          // first argument is not profiled at call (method handle invoke)
-          assert(x->method()->raw_code_at_bci(bci) == Bytecodes::_invokehandle, "invokehandle expected");
-          start = 1;
-        }
-        ciSignature* callee_signature = x->callee()->signature();
-        // method handle call to virtual method
-        bool has_receiver = x->callee()->is_loaded() && !x->callee()->is_static() && !Bytecodes::has_receiver(bc);
-        ciSignatureStream callee_signature_stream(callee_signature, has_receiver ? x->callee()->holder() : NULL);
-
-        bool ignored_will_link;
-        ciSignature* signature_at_call = NULL;
-        x->method()->get_method_at_bci(bci, ignored_will_link, &signature_at_call);
-        ciSignatureStream signature_at_call_stream(signature_at_call);
-
-        // if called through method handle invoke, some arguments may have been popped
-        for (int i = 0; i < stop && i+start < x->nb_profiled_args(); i++) {
-          int off = in_bytes(TypeEntriesAtCall::argument_type_offset(i)) - in_bytes(TypeEntriesAtCall::args_data_offset());
-          ciKlass* exact = profile_type(md, base_offset, off,
-              args->type(i), x->profiled_arg_at(i+start), mdp,
-              !x->arg_needs_null_check(i+start),
-              signature_at_call_stream.next_klass(), callee_signature_stream.next_klass());
-          if (exact != NULL) {
-            md->set_argument_type(bci, i, exact);
-          }
-        }
-      } else {
-#ifdef ASSERT
-        Bytecodes::Code code = x->method()->raw_code_at_bci(x->bci_of_invoke());
-        int n = x->nb_profiled_args();
-        assert(MethodData::profile_parameters() && (MethodData::profile_arguments_jsr292_only() ||
-            (x->inlined() && ((code == Bytecodes::_invokedynamic && n <= 1) || (code == Bytecodes::_invokehandle && n <= 2)))),
-            "only at JSR292 bytecodes");
-#endif
+      Bytecodes::Code bc = x->method()->java_code_at_bci(bci);
+      int start = 0;
+      int stop = data->is_CallTypeData() ? ((ciCallTypeData*)data)->number_of_arguments() : ((ciVirtualCallTypeData*)data)->number_of_arguments();
+      if (x->inlined() && x->callee()->is_static() && Bytecodes::has_receiver(bc)) {
+        // first argument is not profiled at call (method handle invoke)
+        assert(x->method()->raw_code_at_bci(bci) == Bytecodes::_invokehandle, "invokehandle expected");
+        start = 1;
       }
+      ciSignature* callee_signature = x->callee()->signature();
+      // method handle call to virtual method
+      bool has_receiver = x->inlined() && !x->callee()->is_static() && !Bytecodes::has_receiver(bc);
+      ciSignatureStream callee_signature_stream(callee_signature, has_receiver ? x->callee()->holder() : NULL);
+
+      bool ignored_will_link;
+      ciSignature* signature_at_call = NULL;
+      x->method()->get_method_at_bci(bci, ignored_will_link, &signature_at_call);
+      ciSignatureStream signature_at_call_stream(signature_at_call);
+
+      // if called through method handle invoke, some arguments may have been popped
+      for (int i = 0; i < stop && i+start < x->nb_profiled_args(); i++) {
+        int off = in_bytes(TypeEntriesAtCall::argument_type_offset(i)) - in_bytes(TypeEntriesAtCall::args_data_offset());
+        ciKlass* exact = profile_type(md, base_offset, off,
+                                      args->type(i), x->profiled_arg_at(i+start), mdp,
+                                      !x->arg_needs_null_check(i+start),
+                                      signature_at_call_stream.next_klass(), callee_signature_stream.next_klass());
+        if (exact != NULL) {
+          md->set_argument_type(bci, i, exact);
+        }
+      }
+    } else {
+#ifdef ASSERT
+      Bytecodes::Code code = x->method()->raw_code_at_bci(x->bci_of_invoke());
+      int n = x->nb_profiled_args();
+      assert(MethodData::profile_parameters() && x->inlined() &&
+             ((code == Bytecodes::_invokedynamic && n <= 1) || (code == Bytecodes::_invokehandle && n <= 2)),
+             "only at JSR292 bytecodes");
+#endif
     }
   }
 }
@@ -3321,26 +3280,21 @@ void LIRGenerator::do_ProfileReturnType(ProfileReturnType* x) {
   int bci = x->bci_of_invoke();
   ciMethodData* md = x->method()->method_data_or_null();
   ciProfileData* data = md->bci_to_data(bci);
-  if (data != NULL) {
-    assert(data->is_CallTypeData() || data->is_VirtualCallTypeData(), "wrong profile data type");
-    ciReturnTypeEntry* ret = data->is_CallTypeData() ? ((ciCallTypeData*)data)->ret() : ((ciVirtualCallTypeData*)data)->ret();
-    LIR_Opr mdp = LIR_OprFact::illegalOpr;
+  assert(data->is_CallTypeData() || data->is_VirtualCallTypeData(), "wrong profile data type");
+  ciReturnTypeEntry* ret = data->is_CallTypeData() ? ((ciCallTypeData*)data)->ret() : ((ciVirtualCallTypeData*)data)->ret();
+  LIR_Opr mdp = LIR_OprFact::illegalOpr;
 
-    bool ignored_will_link;
-    ciSignature* signature_at_call = NULL;
-    x->method()->get_method_at_bci(bci, ignored_will_link, &signature_at_call);
+  bool ignored_will_link;
+  ciSignature* signature_at_call = NULL;
+  x->method()->get_method_at_bci(bci, ignored_will_link, &signature_at_call);
 
-    // The offset within the MDO of the entry to update may be too large
-    // to be used in load/store instructions on some platforms. So have
-    // profile_type() compute the address of the profile in a register.
-    ciKlass* exact = profile_type(md, md->byte_offset_of_slot(data, ret->type_offset()), 0,
-        ret->type(), x->ret(), mdp,
-        !x->needs_null_check(),
-        signature_at_call->return_type()->as_klass(),
-        x->callee()->signature()->return_type()->as_klass());
-    if (exact != NULL) {
-      md->set_return_type(bci, exact);
-    }
+  ciKlass* exact = profile_type(md, 0, md->byte_offset_of_slot(data, ret->type_offset()),
+                                ret->type(), x->ret(), mdp,
+                                !x->needs_null_check(),
+                                signature_at_call->return_type()->as_klass(),
+                                x->callee()->signature()->return_type()->as_klass());
+  if (exact != NULL) {
+    md->set_return_type(bci, exact);
   }
 }
 
@@ -3355,7 +3309,7 @@ void LIRGenerator::do_ProfileInvoke(ProfileInvoke* x) {
 }
 
 void LIRGenerator::increment_event_counter(CodeEmitInfo* info, int bci, bool backedge) {
-  int freq_log = 0;
+  int freq_log;
   int level = compilation()->env()->comp_level();
   if (level == CompLevel_limited_profile) {
     freq_log = (backedge ? Tier2BackedgeNotifyFreqLog : Tier2InvokeNotifyFreqLog);
@@ -3376,7 +3330,7 @@ void LIRGenerator::increment_event_counter_impl(CodeEmitInfo* info,
   assert(level > CompLevel_simple, "Shouldn't be here");
 
   int offset = -1;
-  LIR_Opr counter_holder = NULL;
+  LIR_Opr counter_holder;
   if (level == CompLevel_limited_profile) {
     MethodCounters* counters_adr = method->ensure_method_counters();
     if (counters_adr == NULL) {
@@ -3653,27 +3607,4 @@ void LIRGenerator::do_MemBar(MemBar* x) {
       default                   : ShouldNotReachHere(); break;
     }
   }
-}
-
-LIR_Opr LIRGenerator::maybe_mask_boolean(StoreIndexed* x, LIR_Opr array, LIR_Opr value, CodeEmitInfo*& null_check_info) {
-  if (x->check_boolean()) {
-    LIR_Opr value_fixed = rlock_byte(T_BYTE);
-    if (TwoOperandLIRForm) {
-      __ move(value, value_fixed);
-      __ logical_and(value_fixed, LIR_OprFact::intConst(1), value_fixed);
-    } else {
-      __ logical_and(value, LIR_OprFact::intConst(1), value_fixed);
-    }
-    LIR_Opr klass = new_register(T_METADATA);
-    __ move(new LIR_Address(array, oopDesc::klass_offset_in_bytes(), T_ADDRESS), klass, null_check_info);
-    null_check_info = NULL;
-    LIR_Opr layout = new_register(T_INT);
-    __ move(new LIR_Address(klass, in_bytes(Klass::layout_helper_offset()), T_INT), layout);
-    int diffbit = Klass::layout_helper_boolean_diffbit();
-    __ logical_and(layout, LIR_OprFact::intConst(diffbit), layout);
-    __ cmp(lir_cond_notEqual, layout, LIR_OprFact::intConst(0));
-    __ cmove(lir_cond_notEqual, value_fixed, value, value_fixed, T_BYTE);
-    value = value_fixed;
-  }
-  return value;
 }

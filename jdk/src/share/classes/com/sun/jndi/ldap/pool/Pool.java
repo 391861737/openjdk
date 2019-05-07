@@ -25,11 +25,11 @@
 
 package com.sun.jndi.ldap.pool;
 
-import java.util.ArrayList;
 import java.util.Map;
 import java.util.WeakHashMap;
 import java.util.Collection;
 import java.util.Collections;
+import java.util.Iterator;
 import java.util.LinkedList;
 
 import java.io.PrintStream;
@@ -118,11 +118,7 @@ final public class Pool {
         PooledConnectionFactory factory) throws NamingException {
 
         d("get(): ", id);
-        if (debug) {
-            synchronized (map) {
-                d("size: ", map.size());
-            }
-        }
+        d("size: ", map.size());
 
         expungeStaleConnections();
 
@@ -145,8 +141,9 @@ final public class Pool {
                 // Keep the weak reference through the element of a linked list
                 weakRefs.add(weakRef);
             }
-            d("get(): size after: ", map.size());
         }
+
+        d("get(): size after: ", map.size());
 
         return conns.get(timeout, factory); // get one connection from list
     }
@@ -166,25 +163,17 @@ final public class Pool {
      *          and removed.
      */
     public void expire(long threshold) {
-        Collection<ConnectionsRef> copy;
         synchronized (map) {
-            copy = new ArrayList<>(map.values());
-        }
-
-        ArrayList<ConnectionsRef> removed = new ArrayList<>();
-        Connections conns;
-        for (ConnectionsRef ref : copy) {
-            conns = ref.getConnections();
-            if (conns.expire(threshold)) {
-                d("expire(): removing ", conns);
-                removed.add(ref);
+            Iterator<ConnectionsRef> iter = map.values().iterator();
+            Connections conns;
+            while (iter.hasNext()) {
+                conns = iter.next().getConnections();
+                if (conns.expire(threshold)) {
+                    d("expire(): removing ", conns);
+                    iter.remove();
+                }
             }
         }
-
-        synchronized (map) {
-            map.values().removeAll(removed);
-        }
-
         expungeStaleConnections();
     }
 
@@ -220,24 +209,19 @@ final public class Pool {
         out.println("maximum pool size: " + maxSize);
         out.println("preferred pool size: " + prefSize);
         out.println("initial pool size: " + initSize);
+        out.println("current pool size: " + map.size());
 
-        synchronized (map) {
-            out.println("current pool size: " + map.size());
-
-            for (Map.Entry<Object, ConnectionsRef> entry : map.entrySet()) {
-                id = entry.getKey();
-                conns = entry.getValue().getConnections();
-                out.println("   " + id + ":" + conns.getStats());
-            }
+        for (Map.Entry<Object, ConnectionsRef> entry : map.entrySet()) {
+            id = entry.getKey();
+            conns = entry.getValue().getConnections();
+            out.println("   " + id + ":" + conns.getStats());
         }
 
         out.println("====== Pool end =====================");
     }
 
     public String toString() {
-        synchronized (map) {
-            return super.toString() + " " + map.toString();
-        }
+        return super.toString() + " " + map.toString();
     }
 
     private void d(String msg, int i) {

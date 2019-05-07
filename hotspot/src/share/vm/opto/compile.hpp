@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 1997, 2014, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 1997, 2013, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -75,7 +75,6 @@ class SafePointNode;
 class JVMState;
 class Type;
 class TypeData;
-class TypeInt;
 class TypePtr;
 class TypeOopPtr;
 class TypeFunc;
@@ -151,8 +150,6 @@ class Compile : public Phase {
       assert(_element == NULL, "");
       _element = e;
     }
-
-    BasicType basic_type() const;
 
     void print_on(outputStream* st) PRODUCT_RETURN;
   };
@@ -293,7 +290,6 @@ class Compile : public Phase {
   int                   _freq_inline_size;      // Max hot method inline size for this compilation
   int                   _fixed_slots;           // count of frame slots not allocated by the register
                                                 // allocator i.e. locks, original deopt pc, etc.
-  uintx                 _max_node_limit;        // Max unique node count during a single compilation.
   // For deopt
   int                   _orig_pc_slot;
   int                   _orig_pc_slot_offset_in_bytes;
@@ -323,10 +319,9 @@ class Compile : public Phase {
   bool                  _trace_opto_output;
   bool                  _parsed_irreducible_loop; // True if ciTypeFlow detected irreducible loops during parsing
 #endif
-  bool                  _has_irreducible_loop;  // Found irreducible loops
+
   // JSR 292
   bool                  _has_method_handle_invokes; // True if this method has MethodHandle invokes.
-  RTMState              _rtm_state;             // State of Restricted Transactional Memory usage
 
   // Compilation environment.
   Arena                 _comp_arena;            // Arena with lifetime equivalent to Compile
@@ -337,7 +332,6 @@ class Compile : public Phase {
   GrowableArray<Node*>* _macro_nodes;           // List of nodes which need to be expanded before matching.
   GrowableArray<Node*>* _predicate_opaqs;       // List of Opaque1 nodes for the loop predicates.
   GrowableArray<Node*>* _expensive_nodes;       // List of nodes that are expensive to compute and that we'd better not let the GVN freely common
-  GrowableArray<Node*>* _range_check_casts;     // List of CastII nodes with a range check dependency
   ConnectionGraph*      _congraph;
 #ifndef PRODUCT
   IdealGraphPrinter*    _printer;
@@ -434,7 +428,8 @@ class Compile : public Phase {
   // Remove the speculative part of types and clean up the graph
   void remove_speculative_types(PhaseIterGVN &igvn);
 
-  void* _replay_inline_data; // Pointer to data loaded from file
+  // Are we within a PreserveJVMState block?
+  int _preserve_jvm_state;
 
  public:
 
@@ -467,13 +462,8 @@ class Compile : public Phase {
   void print_inlining(ciMethod* method, int inline_level, int bci, const char* msg = NULL) {
     stringStream ss;
     CompileTask::print_inlining(&ss, method, inline_level, bci, msg);
-    print_inlining_stream()->print("%s", ss.as_string());
+    print_inlining_stream()->print(ss.as_string());
   }
-
-  void* replay_inline_data() const { return _replay_inline_data; }
-
-  // Dump inlining replay data to the stream.
-  void dump_inline_data(outputStream* out);
 
  private:
   // Matching, CFG layout, allocation, code generation
@@ -489,7 +479,6 @@ class Compile : public Phase {
   RegMask               _FIRST_STACK_mask;      // All stack slots usable for spills (depends on frame layout)
   Arena*                _indexSet_arena;        // control IndexSet allocation within PhaseChaitin
   void*                 _indexSet_free_block_list; // free list of IndexSet bit blocks
-  int                   _interpreter_frame_size;
 
   uint                  _node_bundling_limit;
   Bundle*               _node_bundling_base;    // Information for instruction bundling
@@ -595,29 +584,15 @@ class Compile : public Phase {
   void          set_print_inlining(bool z)       { _print_inlining = z; }
   bool              print_intrinsics() const     { return _print_intrinsics; }
   void          set_print_intrinsics(bool z)     { _print_intrinsics = z; }
-  RTMState          rtm_state()  const           { return _rtm_state; }
-  void          set_rtm_state(RTMState s)        { _rtm_state = s; }
-  bool              use_rtm() const              { return (_rtm_state & NoRTM) == 0; }
-  bool          profile_rtm() const              { return _rtm_state == ProfileRTM; }
-  uint              max_node_limit() const       { return (uint)_max_node_limit; }
-  void          set_max_node_limit(uint n)       { _max_node_limit = n; }
-
   // check the CompilerOracle for special behaviours for this compile
   bool          method_has_option(const char * option) {
     return method() != NULL && method()->has_option(option);
-  }
-  template<typename T>
-  bool          method_has_option_value(const char * option, T& value) {
-    return method() != NULL && method()->has_option_value(option, value);
   }
 #ifndef PRODUCT
   bool          trace_opto_output() const       { return _trace_opto_output; }
   bool              parsed_irreducible_loop() const { return _parsed_irreducible_loop; }
   void          set_parsed_irreducible_loop(bool z) { _parsed_irreducible_loop = z; }
-  int _in_dump_cnt;  // Required for dumping ir nodes.
 #endif
-  bool              has_irreducible_loop() const { return _has_irreducible_loop; }
-  void          set_has_irreducible_loop(bool z) { _has_irreducible_loop = z; }
 
   // JSR 292
   bool              has_method_handle_invokes() const { return _has_method_handle_invokes;     }
@@ -673,7 +648,7 @@ class Compile : public Phase {
   void set_congraph(ConnectionGraph* congraph)  { _congraph = congraph;}
   void add_macro_node(Node * n) {
     //assert(n->is_macro(), "must be a macro node");
-    assert(!_macro_nodes->contains(n), "duplicate entry in expand list");
+    assert(!_macro_nodes->contains(n), " duplicate entry in expand list");
     _macro_nodes->append(n);
   }
   void remove_macro_node(Node * n) {
@@ -693,23 +668,10 @@ class Compile : public Phase {
     }
   }
   void add_predicate_opaq(Node * n) {
-    assert(!_predicate_opaqs->contains(n), "duplicate entry in predicate opaque1");
+    assert(!_predicate_opaqs->contains(n), " duplicate entry in predicate opaque1");
     assert(_macro_nodes->contains(n), "should have already been in macro list");
     _predicate_opaqs->append(n);
   }
-
-  // Range check dependent CastII nodes that can be removed after loop optimizations
-  void add_range_check_cast(Node* n);
-  void remove_range_check_cast(Node* n) {
-    if (_range_check_casts->contains(n)) {
-      _range_check_casts->remove(n);
-    }
-  }
-  Node* range_check_cast_node(int idx) const { return _range_check_casts->at(idx);  }
-  int   range_check_cast_count()       const { return _range_check_casts->length(); }
-  // Remove all range check dependent CastIINodes.
-  void  remove_range_check_casts(PhaseIterGVN &igvn);
-
   // remove the opaque nodes that protect the predicates so that the unused checks and
   // uncommon traps will be eliminated from the graph.
   void cleanup_loop_predicates(PhaseIterGVN &igvn);
@@ -744,7 +706,7 @@ class Compile : public Phase {
     record_method_not_compilable(reason, true);
   }
   bool check_node_count(uint margin, const char* reason) {
-    if (live_nodes() + margin > max_node_limit()) {
+    if (live_nodes() + margin > (uint)MaxNodeLimit) {
       record_method_not_compilable(reason);
       return true;
     } else {
@@ -795,8 +757,6 @@ class Compile : public Phase {
 
   MachConstantBaseNode*     mach_constant_base_node();
   bool                  has_mach_constant_base_node() const { return _mach_constant_base_node != NULL; }
-  // Generated by adlc, true if CallNode requires MachConstantBase.
-  bool                      needs_clone_jvms();
 
   // Handy undefined Node
   Node*             top() const                 { return _top; }
@@ -876,13 +836,11 @@ class Compile : public Phase {
 
   // Helper functions to identify inlining potential at call-site
   ciMethod* optimize_virtual_call(ciMethod* caller, int bci, ciInstanceKlass* klass,
-                                  ciKlass* holder, ciMethod* callee,
-                                  const TypeOopPtr* receiver_type, bool is_virtual,
-                                  bool &call_does_dispatch, int &vtable_index,
-                                  bool check_access = true);
+                                  ciMethod* callee, const TypeOopPtr* receiver_type,
+                                  bool is_virtual,
+                                  bool &call_does_dispatch, int &vtable_index);
   ciMethod* optimize_inlining(ciMethod* caller, int bci, ciInstanceKlass* klass,
-                              ciMethod* callee, const TypeOopPtr* receiver_type,
-                              bool check_access = true);
+                              ciMethod* callee, const TypeOopPtr* receiver_type);
 
   // Report if there were too many traps at a current method and bci.
   // Report if a trap was recorded, and/or PerMethodTrapLimit was exceeded.
@@ -895,11 +853,6 @@ class Compile : public Phase {
                       ciMethodData* logmd = NULL);
   // Report if there were too many recompiles at a method and bci.
   bool too_many_recompiles(ciMethod* method, int bci, Deoptimization::DeoptReason reason);
-  // Return a bitset with the reasons where deoptimization is allowed,
-  // i.e., where there were not too many uncommon traps.
-  int _allowed_reasons;
-  int      allowed_deopt_reasons() { return _allowed_reasons; }
-  void set_allowed_deopt_reasons();
 
   // Parsing, optimization
   PhaseGVN*         initial_gvn()               { return _initial_gvn; }
@@ -971,7 +924,6 @@ class Compile : public Phase {
   PhaseRegAlloc*    regalloc()                  { return _regalloc; }
   int               frame_slots() const         { return _frame_slots; }
   int               frame_size_in_words() const; // frame_slots in units of the polymorphic 'words'
-  int               frame_size_in_bytes() const { return _frame_slots << LogBytesPerInt; }
   RegMask&          FIRST_STACK_mask()          { return _FIRST_STACK_mask; }
   Arena*            indexSet_arena()            { return _indexSet_arena; }
   void*             indexSet_free_block_list()  { return _indexSet_free_block_list; }
@@ -982,13 +934,6 @@ class Compile : public Phase {
   bool          starts_bundle(const Node *n) const;
   bool          need_stack_bang(int frame_size_in_bytes) const;
   bool          need_register_stack_bang() const;
-
-  void  update_interpreter_frame_size(int size) {
-    if (_interpreter_frame_size < size) {
-      _interpreter_frame_size = size;
-    }
-  }
-  int           bang_size_in_bytes() const;
 
   void          set_matcher(Matcher* m)                 { _matcher = m; }
 //void          set_regalloc(PhaseRegAlloc* ra)           { _regalloc = ra; }
@@ -1218,11 +1163,23 @@ class Compile : public Phase {
   // Definitions of pd methods
   static void pd_compiler2_init();
 
-  // Convert integer value to a narrowed long type dependent on ctrl (for example, a range check)
-  static Node* constrained_convI2L(PhaseGVN* phase, Node* value, const TypeInt* itype, Node* ctrl);
-
   // Auxiliary method for randomized fuzzing/stressing
   static bool randomized_select(int count);
+
+  // enter a PreserveJVMState block
+  void inc_preserve_jvm_state() {
+    _preserve_jvm_state++;
+  }
+
+  // exit a PreserveJVMState block
+  void dec_preserve_jvm_state() {
+    _preserve_jvm_state--;
+    assert(_preserve_jvm_state >= 0, "_preserve_jvm_state shouldn't be negative");
+  }
+
+  bool has_preserve_jvm_state() const {
+    return _preserve_jvm_state > 0;
+  }
 };
 
 #endif // SHARE_VM_OPTO_COMPILE_HPP

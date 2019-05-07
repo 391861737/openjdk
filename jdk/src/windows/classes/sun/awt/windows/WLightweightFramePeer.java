@@ -27,7 +27,6 @@ package sun.awt.windows;
 
 import java.awt.Component;
 import java.awt.Graphics;
-import java.awt.dnd.DropTarget;
 import java.awt.event.ComponentEvent;
 import java.awt.event.MouseEvent;
 
@@ -94,15 +93,5 @@ public class WLightweightFramePeer extends WFramePeer {
 
     public boolean isLightweightFramePeer() {
         return true;
-    }
-
-    @Override
-    public void addDropTarget(DropTarget dt) {
-        getLwTarget().addDropTarget(dt);
-    }
-
-    @Override
-    public void removeDropTarget(DropTarget dt) {
-        getLwTarget().removeDropTarget(dt);
     }
 }

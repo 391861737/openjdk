@@ -25,10 +25,6 @@
 
 package com.sun.jndi.ldap;
 
-import java.security.AccessControlContext;
-import java.security.AccessController;
-import java.security.PrivilegedActionException;
-import java.security.PrivilegedExceptionAction;
 import java.util.Vector;
 import javax.naming.*;
 import javax.naming.directory.*;
@@ -39,8 +35,6 @@ import com.sun.jndi.toolkit.ctx.Continuation;
 
 final class LdapBindingEnumeration
         extends AbstractLdapNamingEnumeration<Binding> {
-
-    private final AccessControlContext acc = AccessController.getContext();
 
     LdapBindingEnumeration(LdapCtx homeCtx, LdapResult answer, Name remain,
         Continuation cont) throws NamingException
@@ -58,16 +52,7 @@ final class LdapBindingEnumeration
 
         if (attrs.get(Obj.JAVA_ATTRIBUTES[Obj.CLASSNAME]) != null) {
             // serialized object or object reference
-            try {
-                obj = AccessController.doPrivileged(new PrivilegedExceptionAction<Object>() {
-                    @Override
-                    public Object run() throws NamingException {
-                        return Obj.decodeObject(attrs);
-                    }
-                }, acc);
-            } catch (PrivilegedActionException e) {
-                throw (NamingException)e.getException();
-            }
+            obj = Obj.decodeObject(attrs);
         }
         if (obj == null) {
             // DirContext object
@@ -104,9 +89,9 @@ final class LdapBindingEnumeration
     }
 
     @Override
-    protected AbstractLdapNamingEnumeration<? extends NameClassPair> getReferredResults(
+    protected LdapBindingEnumeration getReferredResults(
             LdapReferralContext refCtx) throws NamingException{
         // repeat the original operation at the new context
-        return (AbstractLdapNamingEnumeration<? extends NameClassPair>)refCtx.listBindings(listArg);
+        return (LdapBindingEnumeration)refCtx.listBindings(listArg);
     }
 }

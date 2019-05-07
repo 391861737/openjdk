@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2002, 2016, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2002, 2011, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -60,6 +60,7 @@ class DigestClientId extends SimpleClientId {
 
     final private String[] propvals;
     final private int myHash;
+    private int pHash = 0;
 
     DigestClientId(int version, String hostname, int port,
         String protocol, Control[] bindCtls, OutputStream trace,
@@ -77,9 +78,12 @@ class DigestClientId extends SimpleClientId {
             propvals = new String[SASL_PROPS.length];
             for (int i = 0; i < SASL_PROPS.length; i++) {
                 propvals[i] = (String) env.get(SASL_PROPS[i]);
+                if (propvals[i] != null) {
+                    pHash = pHash * 31 + propvals[i].hashCode();
+                }
             }
         }
-        myHash = super.hashCode() ^ Arrays.hashCode(propvals);
+        myHash = super.hashCode() + pHash;
     }
 
     public boolean equals(Object obj) {
@@ -88,6 +92,7 @@ class DigestClientId extends SimpleClientId {
         }
         DigestClientId other = (DigestClientId)obj;
         return myHash == other.myHash
+            && pHash == other.pHash
             && super.equals(obj)
             && Arrays.equals(propvals, other.propvals);
     }

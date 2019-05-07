@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2002, 2015, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2002, 2012, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -538,13 +538,6 @@ public abstract class ClientNotifForwarder {
                 currentFetchThread = null;
             }
 
-            if (nr == null) {
-                if (logger.traceOn()) {
-                    logger.trace("NotifFetcher-run",
-                            "Recieved null object as notifs, stops fetching because the "
-                                    + "notification server is terminated.");
-                }
-            }
             if (nr == null || shouldStop()) {
                 // tell that the thread is REALLY stopped
                 setState(STOPPED);
@@ -664,7 +657,7 @@ public abstract class ClientNotifForwarder {
                     return null;
                 }
 
-                if (shouldStop() || nr == null)
+                if (shouldStop())
                     return null;
 
                 startSequenceNumber = nr.getNextSequenceNumber();
@@ -794,14 +787,6 @@ public abstract class ClientNotifForwarder {
             if (!reconnected) {
                 try {
                     NotificationResult nr = fetchNotifs(-1, 0, 0);
-
-                    if (state != STOPPED) { // JDK-8038940
-                                            // reconnection must happen during
-                                            // fetchNotifs(-1, 0, 0), and a new
-                                            // thread takes over the fetching job
-                        return;
-                    }
-
                     clientSequenceNumber = nr.getNextSequenceNumber();
                 } catch (ClassNotFoundException e) {
                     // can't happen

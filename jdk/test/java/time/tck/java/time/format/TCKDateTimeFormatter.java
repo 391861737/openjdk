@@ -254,20 +254,14 @@ public class TCKDateTimeFormatter {
         assertEquals(parsed.isSupported(YEAR), false);  // not in the list of resolverFields
     }
 
-    @Test
+    @Test(expectedExceptions = NullPointerException.class)
     public void test_resolverFields_Array_null() throws Exception {
-        DateTimeFormatter f = DateTimeFormatter.ISO_DATE.withResolverFields(MONTH_OF_YEAR);
-        assertEquals(f.getResolverFields().size(), 1);
-        f = f.withResolverFields((TemporalField[]) null);
-        assertEquals(f.getResolverFields(), null);
+        DateTimeFormatter.ISO_DATE.withResolverFields((TemporalField[]) null);
     }
 
-    @Test
+    @Test(expectedExceptions = NullPointerException.class)
     public void test_resolverFields_Set_null() throws Exception {
-        DateTimeFormatter f = DateTimeFormatter.ISO_DATE.withResolverFields(MONTH_OF_YEAR);
-        assertEquals(f.getResolverFields().size(), 1);
-        f = f.withResolverFields((Set<TemporalField>) null);
-        assertEquals(f.getResolverFields(), null);
+        DateTimeFormatter.ISO_DATE.withResolverFields((Set<TemporalField>) null);
     }
 
     //-----------------------------------------------------------------------

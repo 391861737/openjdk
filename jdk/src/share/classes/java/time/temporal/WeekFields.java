@@ -344,11 +344,8 @@ public final class WeekFields implements Serializable {
     /**
      * Restore the state of a WeekFields from the stream.
      * Check that the values are valid.
-     *
-     * @param s the stream to read
      * @throws InvalidObjectException if the serialized object has an invalid
      *     value for firstDayOfWeek or minimalDays.
-     * @throws ClassNotFoundException if a class cannot be resolved
      */
     private void readObject(ObjectInputStream s)
          throws IOException, ClassNotFoundException, InvalidObjectException
@@ -700,7 +697,7 @@ public final class WeekFields implements Serializable {
          * @see WeekFields#weekOfWeekBasedYear()
          */
         static ComputedDayOfField ofWeekOfWeekBasedYearField(WeekFields weekDef) {
-            return new ComputedDayOfField("WeekOfWeekBasedYear", weekDef, WEEKS, IsoFields.WEEK_BASED_YEARS, WEEK_OF_WEEK_BASED_YEAR_RANGE);
+            return new ComputedDayOfField("WeekOfWeekBasedYear", weekDef, WEEKS, IsoFields.WEEK_BASED_YEARS, WEEK_OF_YEAR_RANGE);
         }
 
         /**
@@ -753,7 +750,6 @@ public final class WeekFields implements Serializable {
         private static final ValueRange DAY_OF_WEEK_RANGE = ValueRange.of(1, 7);
         private static final ValueRange WEEK_OF_MONTH_RANGE = ValueRange.of(0, 1, 4, 6);
         private static final ValueRange WEEK_OF_YEAR_RANGE = ValueRange.of(0, 1, 52, 54);
-        private static final ValueRange WEEK_OF_WEEK_BASED_YEAR_RANGE = ValueRange.of(1, 52, 53);
 
         @Override
         public long getFrom(TemporalAccessor temporal) {

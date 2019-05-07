@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2009, 2013, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2009, 2012, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -24,8 +24,6 @@
  */
 
 package com.sun.tools.classfile;
-
-import java.util.Locale;
 
 /**
  * See JVMS, chapter 6.
@@ -213,7 +211,7 @@ public class Instruction {
         if (opcode == null)
             return "bytecode " + getUnsignedByte(0);
         else
-            return opcode.toString().toLowerCase(Locale.US);
+            return opcode.toString().toLowerCase();
     }
 
     /** Get the length, in bytes, of this instruction, including the opcode

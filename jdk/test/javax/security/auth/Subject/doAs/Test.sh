@@ -48,11 +48,6 @@ case "$OS" in
     FS="/"
     RM="/bin/rm -f"
     ;;
-  AIX )
-    PS=":"
-    FS="/"
-    RM="/bin/rm -f"
-    ;;
   CYGWIN* )
     PS=";"
     FS="/"

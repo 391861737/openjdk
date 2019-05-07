@@ -34,86 +34,73 @@ import jdk.nashorn.internal.ir.Symbol;
 import jdk.nashorn.internal.runtime.AccessorProperty;
 import jdk.nashorn.internal.runtime.Property;
 import jdk.nashorn.internal.runtime.PropertyMap;
-import jdk.nashorn.internal.runtime.ScriptObject;
-import jdk.nashorn.internal.runtime.SpillProperty;
 
 /**
  * Class that creates PropertyMap sent to script object constructors.
- * @param <T> value type for tuples, e.g. Symbol
  */
-public class MapCreator<T> {
+public class MapCreator {
     /** Object structure for objects associated with this map */
     private final Class<?> structure;
 
     /** key set for object map */
-    private final List<MapTuple<T>> tuples;
+    final List<String> keys;
+
+    /** corresponding symbol set for object map */
+    final List<Symbol> symbols;
 
     /**
      * Constructor
      *
      * @param structure structure to generate map for (a JO subclass)
-     * @param tuples    list of tuples for map
+     * @param keys      list of keys for map
+     * @param symbols   list of symbols for map
      */
-    MapCreator(final Class<? extends ScriptObject> structure, final List<MapTuple<T>> tuples) {
+    MapCreator(final Class<?> structure, final List<String> keys, final List<Symbol> symbols) {
         this.structure = structure;
-        this.tuples    = tuples;
+        this.keys      = keys;
+        this.symbols   = symbols;
     }
 
     /**
      * Constructs a property map based on a set of fields.
      *
-     * @param hasArguments  does the created object have an "arguments" property
+     * @param hasArguments does the created object have an "arguments" property
      * @param fieldCount    Number of fields in use.
-     * @param fieldMaximum  Number of fields available.
-     * @param evalCode      is this property map created for 'eval' code?
+     * @param fieldMaximum Number of fields available.
+     *
      * @return New map populated with accessor properties.
      */
-    PropertyMap makeFieldMap(final boolean hasArguments, final boolean dualFields, final int fieldCount, final int fieldMaximum, final boolean evalCode) {
+    PropertyMap makeFieldMap(final boolean hasArguments, final int fieldCount, final int fieldMaximum) {
         final List<Property> properties = new ArrayList<>();
-        assert tuples != null;
+        assert keys != null;
 
-        for (final MapTuple<T> tuple : tuples) {
-            final String   key         = tuple.key;
-            final Symbol   symbol      = tuple.symbol;
-            final Class<?> initialType = dualFields ? tuple.getValueType() : Object.class;
+        for (int i = 0, length = keys.size(); i < length; i++) {
+            final String key    = keys.get(i);
+            final Symbol symbol = symbols.get(i);
 
             if (symbol != null && !isValidArrayIndex(getArrayIndex(key))) {
-                final int      flags    = getPropertyFlags(symbol, hasArguments, evalCode, dualFields);
-                final Property property = new AccessorProperty(
-                        key,
-                        flags,
-                        structure,
-                        symbol.getFieldIndex(),
-                        initialType);
-                properties.add(property);
+                properties.add(new AccessorProperty(key, getPropertyFlags(symbol, hasArguments), structure, symbol.getFieldIndex()));
             }
         }
 
-        return PropertyMap.newMap(properties, structure.getName(), fieldCount, fieldMaximum, 0);
+        return PropertyMap.newMap(properties, fieldCount, fieldMaximum, 0);
     }
 
-    PropertyMap makeSpillMap(final boolean hasArguments, final boolean dualFields) {
+    PropertyMap makeSpillMap(final boolean hasArguments) {
         final List<Property> properties = new ArrayList<>();
         int spillIndex = 0;
-        assert tuples != null;
+        assert keys != null;
 
-        for (final MapTuple<T> tuple : tuples) {
-            final String key    = tuple.key;
-            final Symbol symbol = tuple.symbol;
-            final Class<?> initialType = dualFields ? tuple.getValueType() : Object.class;
+        for (int i = 0, length = keys.size(); i < length; i++) {
+            final String key    = keys.get(i);
+            final Symbol symbol = symbols.get(i);
 
             if (symbol != null && !isValidArrayIndex(getArrayIndex(key))) {
-                final int flags = getPropertyFlags(symbol, hasArguments, false, dualFields);
-                properties.add(
-                        new SpillProperty(
-                                key,
-                                flags,
-                                spillIndex++,
-                                initialType));
+                properties.add(new AccessorProperty(key, getPropertyFlags(symbol, hasArguments), spillIndex++));
             }
         }
 
-        return PropertyMap.newMap(properties, structure.getName(), 0, 0, spillIndex);
+        return PropertyMap.newMap(properties, 0, 0, spillIndex);
     }
 
     /**
@@ -124,48 +111,34 @@ public class MapCreator<T> {
      *
      * @return flags to use for fields
      */
-    static int getPropertyFlags(final Symbol symbol, final boolean hasArguments, final boolean evalCode, final boolean dualFields) {
+    protected int getPropertyFlags(final Symbol symbol, final boolean hasArguments) {
         int flags = 0;
 
         if (symbol.isParam()) {
-            flags |= Property.IS_PARAMETER;
+            flags |= Property.IS_ALWAYS_OBJECT | Property.IS_PARAMETER;
         }
 
         if (hasArguments) {
-            flags |= Property.HAS_ARGUMENTS;
+            flags |= Property.IS_ALWAYS_OBJECT | Property.HAS_ARGUMENTS;
         }
 
-        // See ECMA 5.1 10.5 Declaration Binding Instantiation.
-        // Step 2  If code is eval code, then let configurableBindings
-        // be true else let configurableBindings be false.
-        // We have to make vars, functions declared in 'eval' code
-        // configurable. But vars, functions from any other code is
-        // not configurable.
-        if (symbol.isScope() && !evalCode) {
+        if (symbol.isScope()) {
             flags |= Property.NOT_CONFIGURABLE;
+        }
+
+        if (symbol.canBePrimitive()) {
+            flags |= Property.CAN_BE_PRIMITIVE;
+        }
+
+        if (symbol.canBeUndefined()) {
+            flags |= Property.CAN_BE_UNDEFINED;
         }
 
         if (symbol.isFunctionDeclaration()) {
             flags |= Property.IS_FUNCTION_DECLARATION;
         }
 
-        if (symbol.isConst()) {
-            flags |= Property.NOT_WRITABLE;
-        }
-
-        if (symbol.isBlockScoped()) {
-            flags |= Property.IS_LEXICAL_BINDING;
-        }
-
-        // Mark symbol as needing declaration. Access before declaration will throw a ReferenceError.
-        if (symbol.isBlockScoped() && symbol.isScope()) {
-            flags |= Property.NEEDS_DECLARATION;
-        }
-
-        if (dualFields) {
-            flags |= Property.DUAL_FIELDS;
-        }
-
         return flags;
     }
+
 }

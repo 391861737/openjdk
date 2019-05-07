@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2002, 2014, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2002, 2013, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -56,7 +56,6 @@
 #include "services/memoryService.hpp"
 #include "utilities/stack.inline.hpp"
 
-PRAGMA_FORMAT_MUTE_WARNINGS_FOR_GCC
 
 HeapWord*                  PSScavenge::_to_space_top_before_gc = NULL;
 int                        PSScavenge::_consecutive_skipped_scavenges = 0;
@@ -329,8 +328,9 @@ bool PSScavenge::invoke_no_policy() {
     ResourceMark rm;
     HandleMark hm;
 
+    gclog_or_tty->date_stamp(PrintGC && PrintGCDateStamps);
     TraceCPUTime tcpu(PrintGCDetails, true, gclog_or_tty);
-    GCTraceTime t1(GCCauseString("GC", gc_cause), PrintGC, !PrintGCDetails, NULL, _gc_tracer.gc_id());
+    GCTraceTime t1(GCCauseString("GC", gc_cause), PrintGC, !PrintGCDetails, NULL);
     TraceCollectorStats tcs(counters());
     TraceMemoryManagerStats tms(false /* not full GC */,gc_cause);
 
@@ -396,7 +396,7 @@ bool PSScavenge::invoke_no_policy() {
     // We'll use the promotion manager again later.
     PSPromotionManager* promotion_manager = PSPromotionManager::vm_thread_promotion_manager();
     {
-      GCTraceTime tm("Scavenge", false, false, &_gc_timer, _gc_tracer.gc_id());
+      GCTraceTime tm("Scavenge", false, false, &_gc_timer);
       ParallelScavengeHeap::ParStrongRootsScope psrs;
 
       GCTaskQueue* q = GCTaskQueue::create();
@@ -438,7 +438,7 @@ bool PSScavenge::invoke_no_policy() {
 
     // Process reference objects discovered during scavenge
     {
-      GCTraceTime tm("References", false, false, &_gc_timer, _gc_tracer.gc_id());
+      GCTraceTime tm("References", false, false, &_gc_timer);
 
       reference_processor()->setup_policy(false); // not always_clear
       reference_processor()->set_active_mt_degree(active_workers);
@@ -449,10 +449,10 @@ bool PSScavenge::invoke_no_policy() {
         PSRefProcTaskExecutor task_executor;
         stats = reference_processor()->process_discovered_references(
           &_is_alive_closure, &keep_alive, &evac_followers, &task_executor,
-          &_gc_timer, _gc_tracer.gc_id());
+          &_gc_timer);
       } else {
         stats = reference_processor()->process_discovered_references(
-          &_is_alive_closure, &keep_alive, &evac_followers, NULL, &_gc_timer, _gc_tracer.gc_id());
+          &_is_alive_closure, &keep_alive, &evac_followers, NULL, &_gc_timer);
       }
 
       _gc_tracer.report_gc_reference_stats(stats);
@@ -466,12 +466,10 @@ bool PSScavenge::invoke_no_policy() {
       }
     }
 
-    {
-      GCTraceTime tm("StringTable", false, false, &_gc_timer, _gc_tracer.gc_id());
-      // Unlink any dead interned Strings and process the remaining live ones.
-      PSScavengeRootsClosure root_closure(promotion_manager);
-      StringTable::unlink_or_oops_do(&_is_alive_closure, &root_closure);
-    }
+    GCTraceTime tm("StringTable", false, false, &_gc_timer);
+    // Unlink any dead interned Strings and process the remaining live ones.
+    PSScavengeRootsClosure root_closure(promotion_manager);
+    StringTable::unlink_or_oops_do(&_is_alive_closure, &root_closure);
 
     // Finally, flush the promotion_manager's labs, and deallocate its stacks.
     promotion_failure_occurred = PSPromotionManager::post_scavenge(_gc_tracer);
@@ -529,19 +527,8 @@ bool PSScavenge::invoke_no_policy() {
           counters->update_survivor_overflowed(_survivor_overflow);
         }
 
-        size_t max_young_size = young_gen->max_size();
-
-        // Deciding a free ratio in the young generation is tricky, so if
-        // MinHeapFreeRatio or MaxHeapFreeRatio are in use (implicating
-        // that the old generation size may have been limited because of them) we
-        // should then limit our young generation size using NewRatio to have it
-        // follow the old generation size.
-        if (MinHeapFreeRatio != 0 || MaxHeapFreeRatio != 100) {
-          max_young_size = MIN2(old_gen->capacity_in_bytes() / NewRatio, young_gen->max_size());
-        }
-
         size_t survivor_limit =
-          size_policy->max_survivor_size(max_young_size);
+          size_policy->max_survivor_size(young_gen->max_size());
         _tenuring_threshold =
           size_policy->compute_survivor_space_size_and_threshold(
                                                            _survivor_overflow,
@@ -564,7 +551,8 @@ bool PSScavenge::invoke_no_policy() {
         // Do call at minor collections?
         // Don't check if the size_policy is ready at this
         // level.  Let the size_policy check that internally.
-        if (UseAdaptiveGenerationSizePolicyAtMinorCollection &&
+        if (UseAdaptiveSizePolicy &&
+            UseAdaptiveGenerationSizePolicyAtMinorCollection &&
             ((gc_cause != GCCause::_java_lang_system_gc) ||
               UseAdaptiveSizePolicyWithSystemGC)) {
 
@@ -578,7 +566,7 @@ bool PSScavenge::invoke_no_policy() {
           size_t eden_live = young_gen->eden_space()->used_in_bytes();
           size_t cur_eden = young_gen->eden_space()->capacity_in_bytes();
           size_t max_old_gen_size = old_gen->max_gen_size();
-          size_t max_eden_size = max_young_size -
+          size_t max_eden_size = young_gen->max_size() -
             young_gen->from_space()->capacity_in_bytes() -
             young_gen->to_space()->capacity_in_bytes();
 
@@ -637,7 +625,7 @@ bool PSScavenge::invoke_no_policy() {
     NOT_PRODUCT(reference_processor()->verify_no_references_recorded());
 
     {
-      GCTraceTime tm("Prune Scavenge Root Methods", false, false, &_gc_timer, _gc_tracer.gc_id());
+      GCTraceTime tm("Prune Scavenge Root Methods", false, false, &_gc_timer);
 
       CodeCache::prune_scavenge_root_nmethods();
     }
@@ -860,7 +848,8 @@ void PSScavenge::initialize() {
                            true,                       // mt discovery
                            (int) ParallelGCThreads,    // mt discovery degree
                            true,                       // atomic_discovery
-                           NULL);                      // header provides liveness info
+                           NULL,                       // header provides liveness info
+                           false);                     // next field updates do not need write barrier
 
   // Cache the cardtable
   BarrierSet* bs = Universe::heap()->barrier_set();

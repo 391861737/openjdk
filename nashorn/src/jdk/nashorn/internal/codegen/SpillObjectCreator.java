@@ -27,6 +27,7 @@ package jdk.nashorn.internal.codegen;
 
 import static jdk.nashorn.internal.codegen.CompilerConstants.constructorNoLookup;
 import static jdk.nashorn.internal.codegen.CompilerConstants.virtualCallNoLookup;
+import static jdk.nashorn.internal.codegen.types.Type.OBJECT;
 
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -34,146 +35,115 @@ import java.util.Set;
 import jdk.nashorn.internal.codegen.types.Type;
 import jdk.nashorn.internal.ir.Expression;
 import jdk.nashorn.internal.ir.LiteralNode;
-import jdk.nashorn.internal.runtime.JSType;
+import jdk.nashorn.internal.ir.Symbol;
 import jdk.nashorn.internal.runtime.Property;
 import jdk.nashorn.internal.runtime.PropertyMap;
 import jdk.nashorn.internal.runtime.ScriptObject;
-import jdk.nashorn.internal.runtime.ScriptRuntime;
 import jdk.nashorn.internal.runtime.arrays.ArrayData;
 import jdk.nashorn.internal.runtime.arrays.ArrayIndex;
-import jdk.nashorn.internal.scripts.JD;
 import jdk.nashorn.internal.scripts.JO;
 
 /**
  * An object creator that uses spill properties.
  */
-public final class SpillObjectCreator extends ObjectCreator<Expression> {
+public class SpillObjectCreator extends ObjectCreator {
+
+    private final List<Expression> values;
 
     /**
      * Constructor
      *
      * @param codegen  code generator
-     * @param tuples   tuples for key, symbol, value
+     * @param keys     keys for fields in object
+     * @param symbols  symbols for fields in object
+     * @param values   list of values corresponding to keys
      */
-    SpillObjectCreator(final CodeGenerator codegen, final List<MapTuple<Expression>> tuples) {
-        super(codegen, tuples, false, false);
+    protected SpillObjectCreator(final CodeGenerator codegen, final List<String> keys, final List<Symbol> symbols, final List<Expression> values) {
+        super(codegen, keys, symbols, false, false);
+        this.values = values;
         makeMap();
     }
 
     @Override
-    public void createObject(final MethodEmitter method) {
+    protected void makeObject(final MethodEmitter method) {
         assert !isScope() : "spill scope objects are not currently supported";
 
-        final int          length        = tuples.size();
-        final boolean      dualFields    = codegen.useDualFields();
-        final int          spillLength   = ScriptObject.spillAllocationLength(length);
-        final long[]       jpresetValues = dualFields ? new long[spillLength] : null;
-        final Object[]     opresetValues = new Object[spillLength];
-        final Class<?>     objectClass   = getAllocatorClass();
-        ArrayData          arrayData     = ArrayData.allocate(ScriptRuntime.EMPTY_ARRAY);
+        final int          length        = keys.size();
+        final Object[]     presetValues  = new Object[length];
+        final Set<Integer> postsetValues = new LinkedHashSet<>();
+        final int          callSiteFlags = codegen.getCallSiteFlags();
+        ArrayData          arrayData     = ArrayData.allocate(new Object[0]);
 
         // Compute constant property values
-        int pos = 0;
-        for (final MapTuple<Expression> tuple : tuples) {
-            final String     key   = tuple.key;
-            final Expression value = tuple.value;
+        for (int i = 0; i < length; i++) {
+            final String key = keys.get(i);
+            final Expression value = values.get(i);
 
-            //this is a nop of tuple.key isn't e.g. "apply" or another special name
-            method.invalidateSpecialName(tuple.key);
-
-            if (value != null) {
-                final Object constantValue = LiteralNode.objectAsConstant(value);
-                if (constantValue != LiteralNode.POSTSET_MARKER) {
-                    final Property property = propertyMap.findProperty(key);
-                    if (property != null) {
-                        // normal property key
-                        property.setType(dualFields ? JSType.unboxedFieldType(constantValue) : Object.class);
-                        final int slot = property.getSlot();
-                        if (dualFields && constantValue instanceof Number) {
-                            jpresetValues[slot] = ObjectClassGenerator.pack((Number)constantValue);
-                        } else {
-                            opresetValues[slot] = constantValue;
-                        }
-                    } else {
-                        // array index key
-                        final long oldLength = arrayData.length();
-                        final int  index     = ArrayIndex.getArrayIndex(key);
-                        final long longIndex = ArrayIndex.toLongIndex(index);
-
-                        assert ArrayIndex.isValidArrayIndex(index);
-
-                        if (longIndex >= oldLength) {
-                            arrayData = arrayData.ensure(longIndex);
-                        }
-
-                        //avoid blowing up the array if we can
-                        if (constantValue instanceof Integer) {
-                            arrayData = arrayData.set(index, ((Integer)constantValue).intValue(), false);
-                        } else if (constantValue instanceof Double) {
-                            arrayData = arrayData.set(index, ((Double)constantValue).doubleValue(), false);
-                        } else {
-                            arrayData = arrayData.set(index, constantValue, false);
-                        }
-
-                        if (longIndex > oldLength) {
-                            arrayData = arrayData.delete(oldLength, longIndex - 1);
-                        }
-                    }
-                }
+            if (value == null) {
+                continue; // getter or setter
             }
-            pos++;
-        }
 
-        // create object and invoke constructor
-        method._new(objectClass).dup();
-        codegen.loadConstant(propertyMap);
-
-        // load primitive value spill array
-        if (dualFields) {
-            codegen.loadConstant(jpresetValues);
-        } else {
-            method.loadNull();
-        }
-        // load object value spill array
-        codegen.loadConstant(opresetValues);
-
-        // instantiate the script object with spill objects
-        method.invoke(constructorNoLookup(objectClass, PropertyMap.class, long[].class, Object[].class));
-
-        // Set prefix array data if any
-        if (arrayData.length() > 0) {
-            method.dup();
-            codegen.loadConstant(arrayData);
-            method.invoke(virtualCallNoLookup(ScriptObject.class, "setArray", void.class, ArrayData.class));
-        }
-    }
-
-    @Override
-    public void populateRange(final MethodEmitter method, final Type objectType, final int objectSlot, final int start, final int end) {
-        final int  callSiteFlags = codegen.getCallSiteFlags();
-        method.load(objectType, objectSlot);
-
-        // set postfix values
-        for (int i = start; i < end; i++) {
-            final MapTuple<Expression> tuple = tuples.get(i);
-
-            if (LiteralNode.isConstant(tuple.value)) {
+            final Object constantValue = LiteralNode.objectAsConstant(value);
+            if (constantValue == LiteralNode.POSTSET_MARKER) {
+                postsetValues.add(i);
                 continue;
             }
 
-            final Property property = propertyMap.findProperty(tuple.key);
+            final Property property = propertyMap.findProperty(key);
+            if (property != null) {
+                // normal property key
+                presetValues[property.getSlot()] = constantValue;
+            } else {
+                // array index key
+                final long oldLength = arrayData.length();
+                final int index = ArrayIndex.getArrayIndex(key);
+                assert ArrayIndex.isValidArrayIndex(index);
+                final long longIndex =  ArrayIndex.toLongIndex(index);
+                if (longIndex >= oldLength) {
+                    arrayData = arrayData.ensure(longIndex);
+                }
+                arrayData = arrayData.set(index, constantValue, false);
+                if (longIndex > oldLength) {
+                    arrayData = arrayData.delete(oldLength, longIndex - 1);
+                }
+            }
+        }
+
+        // create object and invoke constructor
+        method._new(JO.class).dup();
+        codegen.loadConstant(propertyMap);
+        method.invoke(constructorNoLookup(JO.class, PropertyMap.class));
+
+        // Set spill array with preset values
+        method.dup();
+        codegen.loadConstant(presetValues);
+        method.putField(Type.getInternalName(ScriptObject.class), "spill", Type.OBJECT_ARRAY.getDescriptor());
+
+        // Set array data if any
+        if (arrayData.length() > 0) {
+            method.dup();
+            codegen.loadConstant(arrayData);
+            method.invoke(virtualCallNoLookup(ScriptObject.class, "setArray",void.class, ArrayData.class));
+        }
+
+        // Create properties with non-constant values
+        for (int i : postsetValues) {
+            final String key = keys.get(i);
+            final Property property = propertyMap.findProperty(key);
 
             if (property == null) {
-                final int index = ArrayIndex.getArrayIndex(tuple.key);
+                final int index = ArrayIndex.getArrayIndex(key);
                 assert ArrayIndex.isValidArrayIndex(index);
                 method.dup();
-                loadIndex(method, ArrayIndex.toLongIndex(index));
-                loadTuple(method, tuple, false);
+                method.load(ArrayIndex.toLongIndex(index));
+                codegen.load(values.get(i));
                 method.dynamicSetIndex(callSiteFlags);
             } else {
                 method.dup();
-                loadTuple(method, tuple, false);
-                method.dynamicSet(property.getKey(), codegen.getCallSiteFlags(), false);
+                method.getField(Type.getInternalName(ScriptObject.class), "spill", Type.OBJECT_ARRAY.getDescriptor());
+                method.load(property.getSlot());
+                codegen.load(values.get(i), OBJECT);
+                method.arraystore();
             }
         }
     }
@@ -181,19 +151,14 @@ public final class SpillObjectCreator extends ObjectCreator<Expression> {
     @Override
     protected PropertyMap makeMap() {
         assert propertyMap == null : "property map already initialized";
-        final Class<? extends ScriptObject> clazz = getAllocatorClass();
-        propertyMap = new MapCreator<>(clazz, tuples).makeSpillMap(false, codegen.useDualFields());
+
+        propertyMap = new MapCreator(JO.class, keys, symbols) {
+            @Override
+            protected int getPropertyFlags(Symbol symbol, boolean hasArguments) {
+                return super.getPropertyFlags(symbol, hasArguments) | Property.IS_SPILL | Property.IS_ALWAYS_OBJECT;
+            }
+        }.makeSpillMap(false);
+
         return propertyMap;
-    }
-
-    @Override
-    protected void loadValue(final Expression expr, final Type type) {
-        // Use generic type in order to avoid conversion between object types
-        codegen.loadExpressionAsType(expr, Type.generic(type));
-    }
-
-    @Override
-    protected Class<? extends ScriptObject> getAllocatorClass() {
-        return codegen.useDualFields() ? JD.class : JO.class;
     }
 }

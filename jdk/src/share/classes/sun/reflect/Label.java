@@ -47,10 +47,10 @@ class Label {
         }
         // This won't work for more than one assembler anyway, so this is
         // unnecessary
-        final ClassFileAssembler asm;
-        final short instrBCI;
-        final short patchBCI;
-        final int   stackDepth;
+        ClassFileAssembler asm;
+        short instrBCI;
+        short patchBCI;
+        int   stackDepth;
     }
     private List<PatchInfo> patches = new ArrayList<>();
 

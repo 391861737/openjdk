@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2003, 2014, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2003, 2012, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -60,8 +60,7 @@ class ByteBufferInputStream extends InputStream {
         if (bb.remaining() == 0) {
             return -1;
         }
-
-        return (bb.get() & 0xFF);   // need to be in the range 0 to 255
+        return bb.get();
     }
 
     /**

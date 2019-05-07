@@ -24,7 +24,6 @@
 
 #include "precompiled.hpp"
 #include "gc_implementation/shared/gcTimer.hpp"
-#include "gc_implementation/shared/gcTrace.hpp"
 #include "gc_implementation/shared/gcTraceTime.hpp"
 #include "runtime/globals.hpp"
 #include "runtime/os.hpp"
@@ -35,7 +34,7 @@
 #include "utilities/ticks.inline.hpp"
 
 
-GCTraceTime::GCTraceTime(const char* title, bool doit, bool print_cr, GCTimer* timer, GCId gc_id) :
+GCTraceTime::GCTraceTime(const char* title, bool doit, bool print_cr, GCTimer* timer) :
     _title(title), _doit(doit), _print_cr(print_cr), _timer(timer), _start_counter() {
   if (_doit || _timer != NULL) {
     _start_counter.stamp();
@@ -49,10 +48,9 @@ GCTraceTime::GCTraceTime(const char* title, bool doit, bool print_cr, GCTimer* t
   }
 
   if (_doit) {
-    gclog_or_tty->date_stamp(PrintGCDateStamps);
-    gclog_or_tty->stamp(PrintGCTimeStamps);
-    if (PrintGCID) {
-      gclog_or_tty->print("#%u: ", gc_id.id());
+    if (PrintGCTimeStamps) {
+      gclog_or_tty->stamp();
+      gclog_or_tty->print(": ");
     }
     gclog_or_tty->print("[%s", title);
     gclog_or_tty->flush();

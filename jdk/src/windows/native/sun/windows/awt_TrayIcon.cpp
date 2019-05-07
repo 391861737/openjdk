@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2005, 2014, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2005, 2013, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -93,12 +93,6 @@ AwtTrayIcon::~AwtTrayIcon() {
 
 void AwtTrayIcon::Dispose() {
     SendTrayMessage(NIM_DELETE);
-
-    // Destroy the icon to avoid leak of GDI objects
-    if (m_nid.hIcon != NULL) {
-        ::DestroyIcon(m_nid.hIcon);
-    }
-
     UnlinkObjects();
 
     if (--sm_instCount == 0) {
@@ -331,7 +325,7 @@ static int clickCount = 0;
 
 MsgRouting AwtTrayIcon::WmMouseDown(UINT flags, int x, int y, int button)
 {
-    jlong now = TimeHelper::getMessageTimeUTC();
+    jlong now = TimeHelper::windowsToUTC(::GetTickCount());
     jint javaModif = AwtComponent::GetJavaModifiers();
 
     if (lastClickTrIc == this &&
@@ -367,14 +361,14 @@ MsgRouting AwtTrayIcon::WmMouseUp(UINT flags, int x, int y, int button)
     MSG msg;
     AwtComponent::InitMessage(&msg, lastMessage, flags, MAKELPARAM(x, y), x, y);
 
-    SendMouseEvent(java_awt_event_MouseEvent_MOUSE_RELEASED, TimeHelper::getMessageTimeUTC(),
+    SendMouseEvent(java_awt_event_MouseEvent_MOUSE_RELEASED, TimeHelper::windowsToUTC(::GetTickCount()),
                    x, y, AwtComponent::GetJavaModifiers(), clickCount,
                    (AwtComponent::GetButton(button) == java_awt_event_MouseEvent_BUTTON3 ?
                     TRUE : FALSE), AwtComponent::GetButton(button), &msg);
 
     if ((m_mouseButtonClickAllowed & AwtComponent::GetButtonMK(button)) != 0) { // No up-button in the drag-state
         SendMouseEvent(java_awt_event_MouseEvent_MOUSE_CLICKED,
-                       TimeHelper::getMessageTimeUTC(), x, y, AwtComponent::GetJavaModifiers(),
+                       TimeHelper::windowsToUTC(::GetTickCount()), x, y, AwtComponent::GetJavaModifiers(),
                        clickCount, JNI_FALSE, AwtComponent::GetButton(button));
     }
     m_mouseButtonClickAllowed &= ~AwtComponent::GetButtonMK(button); // Exclude the up-button from the drag-state
@@ -401,7 +395,7 @@ MsgRouting AwtTrayIcon::WmMouseMove(UINT flags, int x, int y)
         if ((flags & ALL_MK_BUTTONS) != 0) {
             m_mouseButtonClickAllowed = 0;
         } else {
-            SendMouseEvent(java_awt_event_MouseEvent_MOUSE_MOVED, TimeHelper::getMessageTimeUTC(), x, y,
+            SendMouseEvent(java_awt_event_MouseEvent_MOUSE_MOVED, TimeHelper::windowsToUTC(::GetTickCount()), x, y,
                            AwtComponent::GetJavaModifiers(), 0, JNI_FALSE,
                            java_awt_event_MouseEvent_NOBUTTON, &msg);
         }
@@ -414,7 +408,7 @@ MsgRouting AwtTrayIcon::WmBalloonUserClick(UINT flags, int x, int y)
     if (AwtComponent::GetJavaModifiers() & java_awt_event_InputEvent_BUTTON1_DOWN_MASK) {
         MSG msg;
         AwtComponent::InitMessage(&msg, lastMessage, flags, MAKELPARAM(x, y), x, y);
-        SendActionEvent(java_awt_event_ActionEvent_ACTION_PERFORMED, TimeHelper::getMessageTimeUTC(),
+        SendActionEvent(java_awt_event_ActionEvent_ACTION_PERFORMED, TimeHelper::windowsToUTC(::GetTickCount()),
                         AwtComponent::GetJavaModifiers(), &msg);
     }
     return mrConsume;
@@ -423,14 +417,14 @@ MsgRouting AwtTrayIcon::WmBalloonUserClick(UINT flags, int x, int y)
 MsgRouting AwtTrayIcon::WmKeySelect(UINT flags, int x, int y)
 {
     static jlong lastKeySelectTime = 0;
-    jlong now = TimeHelper::getMessageTimeUTC();
+    jlong now = TimeHelper::windowsToUTC(::GetTickCount());
 
     // If a user selects a notify icon with the ENTER key,
     // Shell 5.0 sends double NIN_KEYSELECT notification.
     if (lastKeySelectTime != now) {
         MSG msg;
         AwtComponent::InitMessage(&msg, lastMessage, flags, MAKELPARAM(x, y), x, y);
-        SendActionEvent(java_awt_event_ActionEvent_ACTION_PERFORMED, TimeHelper::getMessageTimeUTC(),
+        SendActionEvent(java_awt_event_ActionEvent_ACTION_PERFORMED, TimeHelper::windowsToUTC(::GetTickCount()),
                         AwtComponent::GetJavaModifiers(), &msg);
     }
     lastKeySelectTime = now;
@@ -447,7 +441,7 @@ MsgRouting AwtTrayIcon::WmSelect(UINT flags, int x, int y)
     if (clickCount == 2) {
         MSG msg;
         AwtComponent::InitMessage(&msg, lastMessage, flags, MAKELPARAM(x, y), x, y);
-        SendActionEvent(java_awt_event_ActionEvent_ACTION_PERFORMED, TimeHelper::getMessageTimeUTC(),
+        SendActionEvent(java_awt_event_ActionEvent_ACTION_PERFORMED, TimeHelper::windowsToUTC(::GetTickCount()),
                         AwtComponent::GetJavaModifiers(), &msg);
     }
     return mrConsume;
@@ -509,7 +503,6 @@ void AwtTrayIcon::SendMouseEvent(jint id, jlong when, jint x, jint y,
             env->GetMethodID(mouseEventCls, "<init>",
                              "(Ljava/awt/Component;IJIIIIIIZI)V");
         DASSERT(mouseEventConst);
-        CHECK_NULL(mouseEventConst);
     }
     if (env->EnsureLocalCapacity(2) < 0) {
         return;
@@ -563,7 +556,6 @@ void AwtTrayIcon::SendActionEvent(jint id, jlong when, jint modifiers, MSG *pMsg
             env->GetMethodID(actionEventCls, "<init>",
                              "(Ljava/lang/Object;ILjava/lang/String;JI)V");
         DASSERT(actionEventConst);
-        CHECK_NULL(actionEventConst);
     }
     if (env->EnsureLocalCapacity(2) < 0) {
         return;
@@ -715,7 +707,7 @@ void AwtTrayIcon::SetToolTip(LPCTSTR tooltip)
 {
     if (tooltip == NULL) {
         m_nid.szTip[0] = '\0';
-    } else if (lstrlen(tooltip) >= TRAY_ICON_TOOLTIP_MAX_SIZE) {
+    } else if (lstrlen(tooltip) > TRAY_ICON_TOOLTIP_MAX_SIZE) {
         _tcsncpy(m_nid.szTip, tooltip, TRAY_ICON_TOOLTIP_MAX_SIZE);
         m_nid.szTip[TRAY_ICON_TOOLTIP_MAX_SIZE - 1] = '\0';
     } else {
@@ -744,7 +736,6 @@ void AwtTrayIcon::_SetToolTip(void *param)
     }
 
     tooltipStr = JNU_GetStringPlatformChars(env, jtooltip, (jboolean *)NULL);
-    if (env->ExceptionCheck()) goto ret;
     trayIcon->SetToolTip(tooltipStr);
     JNU_ReleaseStringPlatformChars(env, jtooltip, tooltipStr);
 ret:
@@ -820,7 +811,7 @@ void AwtTrayIcon::DisplayMessage(LPCTSTR caption, LPCTSTR text, LPCTSTR msgType)
     if (caption[0] == '\0') {
         m_nid.szInfoTitle[0] = '\0';
 
-    } else if (lstrlen(caption) >= TRAY_ICON_BALLOON_TITLE_MAX_SIZE) {
+    } else if (lstrlen(caption) > TRAY_ICON_BALLOON_TITLE_MAX_SIZE) {
 
         _tcsncpy(m_nid.szInfoTitle, caption, TRAY_ICON_BALLOON_TITLE_MAX_SIZE);
         m_nid.szInfoTitle[TRAY_ICON_BALLOON_TITLE_MAX_SIZE - 1] = '\0';
@@ -833,7 +824,7 @@ void AwtTrayIcon::DisplayMessage(LPCTSTR caption, LPCTSTR text, LPCTSTR msgType)
         m_nid.szInfo[0] = ' ';
         m_nid.szInfo[1] = '\0';
 
-    } else if (lstrlen(text) >= TRAY_ICON_BALLOON_INFO_MAX_SIZE) {
+    } else if (lstrlen(text) > TRAY_ICON_BALLOON_INFO_MAX_SIZE) {
 
         _tcsncpy(m_nid.szInfo, text, TRAY_ICON_BALLOON_INFO_MAX_SIZE);
         m_nid.szInfo[TRAY_ICON_BALLOON_INFO_MAX_SIZE - 1] = '\0';
@@ -864,18 +855,9 @@ void AwtTrayIcon::_DisplayMessage(void *param)
     trayIcon = (AwtTrayIcon *)pData;
 
     captionStr = JNU_GetStringPlatformChars(env, jcaption, (jboolean *)NULL);
-    if (env->ExceptionCheck()) goto ret;
     textStr = JNU_GetStringPlatformChars(env, jtext, (jboolean *)NULL);
-    if (env->ExceptionCheck()) {
-        JNU_ReleaseStringPlatformChars(env, jcaption, captionStr);
-        goto ret;
-    }
     msgTypeStr = JNU_GetStringPlatformChars(env, jmsgType, (jboolean *)NULL);
-    if (env->ExceptionCheck()) {
-        JNU_ReleaseStringPlatformChars(env, jcaption, captionStr);
-        JNU_ReleaseStringPlatformChars(env, jtext, textStr);
-        goto ret;
-    }
+
     trayIcon->DisplayMessage(captionStr, textStr, msgTypeStr);
 
     JNU_ReleaseStringPlatformChars(env, jcaption, captionStr);
@@ -907,12 +889,10 @@ Java_java_awt_TrayIcon_initIDs(JNIEnv *env, jclass cls)
 
     /* init field ids */
     AwtTrayIcon::idID = env->GetFieldID(cls, "id", "I");
-    DASSERT(AwtTrayIcon::idID != NULL);
-    CHECK_NULL(AwtTrayIcon::idID);
-
     AwtTrayIcon::actionCommandID = env->GetFieldID(cls, "actionCommand", "Ljava/lang/String;");
+
+    DASSERT(AwtTrayIcon::idID != NULL);
     DASSERT(AwtTrayIcon::actionCommandID != NULL);
-    CHECK_NULL( AwtTrayIcon::actionCommandID);
 
     CATCH_BAD_ALLOC;
 }
@@ -1001,11 +981,8 @@ Java_sun_awt_windows_WTrayIconPeer_setNativeIcon(JNIEnv *env, jobject self,
     jint *intRasterDataPtr = NULL;
     HBITMAP hColor = NULL;
     try {
-        intRasterDataPtr = (jint *)env->GetPrimitiveArrayCritical(intRasterData, 0);
-        if (intRasterDataPtr == NULL) {
-            ::DeleteObject(hMask);
-            return;
-        }
+        intRasterDataPtr =
+            (jint *)env->GetPrimitiveArrayCritical(intRasterData, 0);
         hColor = AwtTrayIcon::CreateBMP(NULL, (int *)intRasterDataPtr, nSS, nW, nH);
     } catch (...) {
         if (intRasterDataPtr != NULL) {

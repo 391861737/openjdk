@@ -48,7 +48,6 @@
 #   isSolaris - true if OS is Solaris
 #   isWindows - true if OS is Windows
 #   isMacos   - true if OS is Macos X
-#   isAIX     - true if OS is AIX
 
 
 if [ -z "${TESTJAVA}" ]; then
@@ -84,7 +83,6 @@ isSolaris=false
 isUnknownOS=false
 isWindows=false
 isMacos=false
-isAIX=false
 
 OS=`uname -s`
 
@@ -114,10 +112,6 @@ case "$OS" in
   SunOS )
     OS="Solaris"
     isSolaris=true
-    ;;
-  AIX )
-    OS="AIX"
-    isAIX=true
     ;;
   Windows* )
     OS="Windows"

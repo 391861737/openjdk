@@ -22,6 +22,7 @@
  * or visit www.oracle.com if you need additional information or have any
  * questions.
  */
+
 package jdk.nashorn.internal.test.framework;
 
 import static jdk.nashorn.internal.test.framework.TestConfig.OPTIONS_CHECK_COMPILE_MSG;
@@ -41,11 +42,11 @@ import static jdk.nashorn.internal.test.framework.TestConfig.TEST_JS_INCLUDES;
 import static jdk.nashorn.internal.test.framework.TestConfig.TEST_JS_LIST;
 import static jdk.nashorn.internal.test.framework.TestConfig.TEST_JS_ROOTS;
 import static jdk.nashorn.internal.test.framework.TestConfig.TEST_JS_UNCHECKED_DIR;
+
 import java.io.BufferedReader;
 import java.io.File;
 import java.io.FileReader;
 import java.io.IOException;
-import java.nio.ByteOrder;
 import java.nio.file.FileSystem;
 import java.nio.file.FileSystems;
 import java.nio.file.FileVisitOption;
@@ -55,20 +56,18 @@ import java.nio.file.Path;
 import java.nio.file.SimpleFileVisitor;
 import java.nio.file.attribute.BasicFileAttributes;
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.Collections;
 import java.util.EnumSet;
 import java.util.HashMap;
 import java.util.HashSet;
-import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
+import java.util.Scanner;
 import java.util.Set;
 import javax.xml.xpath.XPath;
 import javax.xml.xpath.XPathConstants;
 import javax.xml.xpath.XPathExpressionException;
 import javax.xml.xpath.XPathFactory;
-import jdk.nashorn.internal.runtime.ScriptingFunctions;
 import org.w3c.dom.NodeList;
 import org.xml.sax.InputSource;
 
@@ -76,35 +75,29 @@ import org.xml.sax.InputSource;
  * Utility class to find/parse script test files and to create 'test' instances.
  * Actual 'test' object type is decided by clients of this class.
  */
-@SuppressWarnings("javadoc")
-public final class TestFinder {
-
-    private TestFinder() {
-    }
+final class TestFinder {
+    private TestFinder() {}
 
     interface TestFactory<T> {
-
         // 'test' instance type is decided by the client.
-
         T createTest(final String framework, final File testFile, final List<String> engineOptions, final Map<String, String> testOptions, final List<String> arguments);
-
         // place to log messages from TestFinder
-
         void log(String mg);
     }
+
 
     // finds all tests from configuration and calls TestFactory to create 'test' instance for each script test found
     static <T> void findAllTests(final List<T> tests, final Set<String> orphans, final TestFactory<T> testFactory) throws Exception {
         final String framework = System.getProperty(TEST_JS_FRAMEWORK);
         final String testList = System.getProperty(TEST_JS_LIST);
         final String failedTestFileName = System.getProperty(TEST_FAILED_LIST_FILE);
-        if (failedTestFileName != null) {
-            final File failedTestFile = new File(failedTestFileName);
-            if (failedTestFile.exists() && failedTestFile.length() > 0L) {
-                try (final BufferedReader r = new BufferedReader(new FileReader(failedTestFile))) {
-                    for (;;) {
+        if(failedTestFileName != null) {
+            File failedTestFile = new File(failedTestFileName);
+            if(failedTestFile.exists() && failedTestFile.length() > 0L) {
+                try(final BufferedReader r = new BufferedReader(new FileReader(failedTestFile))) {
+                    for(;;) {
                         final String testFileName = r.readLine();
-                        if (testFileName == null) {
+                        if(testFileName == null) {
                             break;
                         }
                         handleOneTest(framework, new File(testFileName).toPath(), tests, orphans, testFactory);
@@ -156,7 +149,7 @@ public final class TestFinder {
         final Exception[] exceptions = new Exception[1];
         final List<String> excludedActualTests = new ArrayList<>();
 
-        if (!dir.toFile().isDirectory()) {
+        if (! dir.toFile().isDirectory()) {
             factory.log("WARNING: " + dir + " not found or not a directory");
         }
 
@@ -202,7 +195,7 @@ public final class TestFinder {
         return false;
     }
 
-    private static <T> void handleOneTest(final String framework, final Path testFile, final List<T> tests, final Set<String> orphans, final TestFactory<T> factory) throws Exception {
+    private static <T> void handleOneTest(final String framework, final Path testFile, final List<T> tests, final Set<String> orphans, TestFactory<T> factory) throws Exception {
         final String name = testFile.getFileName().toString();
 
         assert name.lastIndexOf(".js") > 0 : "not a JavaScript: " + name;
@@ -222,30 +215,27 @@ public final class TestFinder {
         final List<String> scriptArguments = new ArrayList<>();
         boolean inComment = false;
 
-        boolean explicitOptimistic = false;
+        try (Scanner scanner = new Scanner(testFile)) {
+            while (scanner.hasNext()) {
+                // TODO: Scan for /ref=file qualifiers, etc, to determine run
+                // behavior
+                String token = scanner.next();
+                if (token.startsWith("/*")) {
+                    inComment = true;
+                } else if (token.endsWith(("*/"))) {
+                    inComment = false;
+                } else if (!inComment) {
+                    continue;
+                }
 
-        String allContent = new String(Files.readAllBytes(testFile));
-        Iterator<String> scanner = ScriptingFunctions.tokenizeString(allContent).iterator();
-        while (scanner.hasNext()) {
-            // TODO: Scan for /ref=file qualifiers, etc, to determine run
-            // behavior
-            String token = scanner.next();
-            if (token.startsWith("/*")) {
-                inComment = true;
-            } else if (token.endsWith(("*/"))) {
-                inComment = false;
-            } else if (!inComment) {
-                continue;
-            }
-
-            // remove whitespace and trailing semicolons, if any
-            // (trailing semicolons are found in some sputnik tests)
-            token = token.trim();
-            final int semicolon = token.indexOf(';');
-            if (semicolon > 0) {
-                token = token.substring(0, semicolon);
-            }
-            switch (token) {
+                // remove whitespace and trailing semicolons, if any
+                // (trailing semicolons are found in some sputnik tests)
+                token = token.trim();
+                final int semicolon = token.indexOf(';');
+                if (semicolon > 0) {
+                    token = token.substring(0, semicolon);
+                }
+                switch (token) {
                 case "@test":
                     isTest = true;
                     break;
@@ -271,23 +261,14 @@ public final class TestFinder {
                     isTest = false;
                     isNotTest = true;
                     break;
-                case "@bigendian":
-                    shouldRun = ByteOrder.nativeOrder() == ByteOrder.BIG_ENDIAN;
-                    break;
-                case "@littleendian":
-                    shouldRun = ByteOrder.nativeOrder() == ByteOrder.LITTLE_ENDIAN;
-                    break;
-                case "@runif": {
-                    final String prop = scanner.next();
-                    if (System.getProperty(prop) != null) {
+                case "@runif":
+                    if (System.getProperty(scanner.next()) != null) {
                         shouldRun = true;
                     } else {
-                        factory.log("WARNING: (" + prop + ") skipping " + testFile);
                         isTest = false;
                         isNotTest = true;
                     }
                     break;
-                }
                 case "@run":
                     shouldRun = true;
                     break;
@@ -303,32 +284,29 @@ public final class TestFinder {
                     scriptArguments.add(scanner.next());
                     break;
                 case "@option":
-                    final String next = scanner.next();
-                    engineOptions.add(next);
-                    if (next.startsWith("--optimistic-types")) {
-                        explicitOptimistic = true;
-                    }
+                    engineOptions.add(scanner.next());
                     break;
                 case "@fork":
                     fork = true;
                     break;
-                default:
-                    break;
-            }
+                }
 
-            // negative tests are expected to fail at runtime only
-            // for those tests that are expected to fail at compile time,
-            // add @test/compile-error
-            if (token.equals("@negative") || token.equals("@strict_mode_negative")) {
-                shouldRun = true;
-                runFailure = true;
-            }
+                // negative tests are expected to fail at runtime only
+                // for those tests that are expected to fail at compile time,
+                // add @test/compile-error
+                if (token.equals("@negative") || token.equals("@strict_mode_negative")) {
+                    shouldRun = true;
+                    runFailure = true;
+                }
 
-            if (token.equals("@strict_mode") || token.equals("@strict_mode_negative") || token.equals("@onlyStrict") || token.equals("@noStrict")) {
-                if (!strictModeEnabled()) {
-                    return;
+                if (token.equals("@strict_mode") || token.equals("@strict_mode_negative") || token.equals("@onlyStrict") || token.equals("@noStrict")) {
+                    if (!strictModeEnabled()) {
+                        return;
+                    }
                 }
             }
+        } catch (final Exception ignored) {
+            return;
         }
 
         if (isTest) {
@@ -355,57 +333,9 @@ public final class TestFinder {
                 testOptions.put(OPTIONS_FORK, "true");
             }
 
-            //if there are explicit optimistic type settings, use those - do not override
-            //the test might only work with optimistic types on or off.
-            if (!explicitOptimistic) {
-                addExplicitOptimisticTypes(engineOptions);
-            }
-
             tests.add(factory.createTest(framework, testFile.toFile(), engineOptions, testOptions, scriptArguments));
         } else if (!isNotTest) {
             orphans.add(name);
-        }
-    }
-
-    //the reverse of the default setting for optimistic types, if enabled, false, otherwise true
-    //thus, true for 8u40, false for 9
-    private static final boolean OPTIMISTIC_OVERRIDE = true;
-
-    /**
-     * Check if there is an optimistic override, that disables the default false
-     * optimistic types and sets them to true, for testing purposes
-     *
-     * @return true if optimistic type override has been set by test suite
-     */
-    public static boolean hasOptimisticOverride() {
-        return Boolean.valueOf(OPTIMISTIC_OVERRIDE).toString().equals(System.getProperty("optimistic.override"));
-    }
-
-    /**
-     * Add an optimistic-types=true option to an argument list if this is set to
-     * override the default false. Add an optimistic-types=true options to an
-     * argument list if this is set to override the default true
-     *
-     * @args new argument list array
-     */
-    public static String[] addExplicitOptimisticTypes(final String[] args) {
-        if (hasOptimisticOverride()) {
-            final List<String> newList = new ArrayList<>(Arrays.asList(args));
-            newList.add("--optimistic-types=" + Boolean.valueOf(OPTIMISTIC_OVERRIDE));
-            return newList.toArray(new String[0]);
-        }
-        return args;
-    }
-
-    /**
-     * Add an optimistic-types=true option to an argument list if this is set to
-     * override the default false
-     *
-     * @args argument list
-     */
-    public static void addExplicitOptimisticTypes(final List<String> args) {
-        if (hasOptimisticOverride()) {
-            args.add("--optimistic-types=" + Boolean.valueOf(OPTIMISTIC_OVERRIDE));
         }
     }
 
@@ -440,7 +370,7 @@ public final class TestFinder {
 
     private static void loadExcludesFile(final String testExcludesFile, final Set<String> testExcludeSet) throws XPathExpressionException {
         final XPath xpath = XPathFactory.newInstance().newXPath();
-        final NodeList testIds = (NodeList) xpath.evaluate("/excludeList/test/@id", new InputSource(testExcludesFile), XPathConstants.NODESET);
+        final NodeList testIds = (NodeList)xpath.evaluate("/excludeList/test/@id", new InputSource(testExcludesFile), XPathConstants.NODESET);
         for (int i = testIds.getLength() - 1; i >= 0; i--) {
             testExcludeSet.add(testIds.item(i).getNodeValue());
         }

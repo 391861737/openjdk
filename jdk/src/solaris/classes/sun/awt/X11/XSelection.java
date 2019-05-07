@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2003, 2014, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2003, 2013, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -42,7 +42,7 @@ import sun.awt.datatransfer.DataTransferer;
 /**
  * A class which interfaces with the X11 selection service.
  */
-final class XSelection {
+public final class XSelection {
 
     /* Maps atoms to XSelection instances. */
     private static final Hashtable<XAtom, XSelection> table = new Hashtable<XAtom, XSelection>();
@@ -118,10 +118,11 @@ final class XSelection {
     /**
      * Creates a selection object.
      *
-     * @param  atom the selection atom
-     * @throws NullPointerException if atom is {@code null}
+     * @param atom   the selection atom.
+     * @param clpbrd the corresponding clipoboard
+     * @exception NullPointerException if atom is <code>null</code>.
      */
-    XSelection(XAtom atom) {
+    public XSelection(XAtom atom) {
         if (atom == null) {
             throw new NullPointerException("Null atom");
         }
@@ -133,8 +134,8 @@ final class XSelection {
         return selectionAtom;
     }
 
-    synchronized boolean setOwner(Transferable contents, Map formatMap,
-                                  long[] formats, long time)
+    public synchronized boolean setOwner(Transferable contents, Map formatMap,
+                                         long[] formats, long time)
     {
         long owner = XWindow.getXAWTRootWindow().getWindow();
         long selection = selectionAtom.getAtom();
@@ -432,7 +433,7 @@ final class XSelection {
         return data != null ? data : new byte[0];
     }
 
-    private void validateDataGetter(WindowPropertyGetter propertyGetter)
+    void validateDataGetter(WindowPropertyGetter propertyGetter)
             throws IOException
     {
         // The order of checks is important because a property getter

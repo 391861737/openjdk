@@ -30,15 +30,12 @@ import java.util.Arrays;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.Objects;
-
-import jdk.nashorn.internal.runtime.PropertyMap;
 
 /**
  * Manages constants needed by code generation.  Objects are maintained in an
  * interning maps to remove duplicates.
  */
-final class ConstantData {
+class ConstantData {
     /** Constant table. */
     final List<Object> constants;
 
@@ -64,7 +61,7 @@ final class ConstantData {
         private int calcHashCode() {
             final Class<?> cls = array.getClass();
 
-            if (!cls.getComponentType().isPrimitive()) {
+            if (cls == Object[].class) {
                 return Arrays.hashCode((Object[])array);
             } else if (cls == double[].class) {
                 return Arrays.hashCode((double[])array);
@@ -92,7 +89,7 @@ final class ConstantData {
             final Class<?> cls = array.getClass();
 
             if (cls == otherArray.getClass()) {
-                if (!cls.getComponentType().isPrimitive()) {
+                if (cls == Object[].class) {
                     return Arrays.equals((Object[])array, (Object[])otherArray);
                 } else if (cls == double[].class) {
                     return Arrays.equals((double[])array, (double[])otherArray);
@@ -109,37 +106,6 @@ final class ConstantData {
         @Override
         public int hashCode() {
             return hashCode;
-        }
-    }
-
-    /**
-     * {@link PropertyMap} wrapper class that provides implementations for the {@code hashCode} and {@code equals}
-     * methods that are based on the map layout. {@code PropertyMap} itself inherits the identity based implementations
-     * from {@code java.lang.Object}.
-     */
-    private static class PropertyMapWrapper {
-        private final PropertyMap propertyMap;
-        private final int hashCode;
-
-        public PropertyMapWrapper(final PropertyMap map) {
-            this.hashCode = Arrays.hashCode(map.getProperties()) + 31 * Objects.hashCode(map.getClassName());
-            this.propertyMap = map;
-        }
-
-        @Override
-        public int hashCode() {
-            return hashCode;
-        }
-
-        @Override
-        public boolean equals(final Object other) {
-            if (!(other instanceof PropertyMapWrapper)) {
-                return false;
-            }
-            final PropertyMap otherMap = ((PropertyMapWrapper) other).propertyMap;
-            return propertyMap == otherMap
-                    || (Arrays.equals(propertyMap.getProperties(), otherMap.getProperties())
-                        && Objects.equals(propertyMap.getClassName(), otherMap.getClassName()));
         }
     }
 
@@ -179,15 +145,7 @@ final class ConstantData {
      * @return the index in the constant pool that the object was given
      */
     public int add(final Object object) {
-        assert object != null;
-        final Object  entry;
-        if (object.getClass().isArray()) {
-            entry = new ArrayWrapper(object);
-        } else if (object instanceof PropertyMap) {
-            entry = new PropertyMapWrapper((PropertyMap) object);
-        } else {
-            entry = object;
-        }
+        final Object  entry = object.getClass().isArray() ? new ArrayWrapper(object) : object;
         final Integer value = objectMap.get(entry);
 
         if (value != null) {

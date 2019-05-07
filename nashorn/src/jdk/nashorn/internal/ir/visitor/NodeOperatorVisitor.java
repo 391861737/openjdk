@@ -34,7 +34,7 @@ import jdk.nashorn.internal.ir.UnaryNode;
  * Like NodeVisitor but navigating further into operators.
  * @param <T> Lexical context class for this NodeOperatorVisitor
  */
-public abstract class NodeOperatorVisitor<T extends LexicalContext> extends NodeVisitor<T> {
+public class NodeOperatorVisitor<T extends LexicalContext> extends NodeVisitor<T> {
     /**
      * Constructor
      *
@@ -53,6 +53,8 @@ public abstract class NodeOperatorVisitor<T extends LexicalContext> extends Node
             return enterBIT_NOT(unaryNode);
         case DELETE:
             return enterDELETE(unaryNode);
+        case DISCARD:
+            return enterDISCARD(unaryNode);
         case NEW:
             return enterNEW(unaryNode);
         case NOT:
@@ -82,6 +84,8 @@ public abstract class NodeOperatorVisitor<T extends LexicalContext> extends Node
             return leaveBIT_NOT(unaryNode);
         case DELETE:
             return leaveDELETE(unaryNode);
+        case DISCARD:
+            return leaveDISCARD(unaryNode);
         case NEW:
             return leaveNEW(unaryNode);
         case NOT:
@@ -351,6 +355,26 @@ public abstract class NodeOperatorVisitor<T extends LexicalContext> extends Node
      * @return processed node, which will replace the original one, or the original node
      */
      public Node leaveDELETE(final UnaryNode unaryNode) {
+        return leaveDefault(unaryNode);
+    }
+
+    /**
+     * Unary enter - callback for entering a discard operator
+     *
+     * @param  unaryNode the node
+     * @return true if traversal should continue and node children be traversed, false otherwise
+     */
+    public boolean enterDISCARD(final UnaryNode unaryNode) {
+        return enterDefault(unaryNode);
+    }
+
+    /**
+     * Unary leave - callback for leaving a discard operator
+     *
+     * @param  unaryNode the node
+     * @return processed node, which will replace the original one, or the original node
+     */
+     public Node leaveDISCARD(final UnaryNode unaryNode) {
         return leaveDefault(unaryNode);
     }
 

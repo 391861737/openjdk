@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008, 2014, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2008, 2012, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -33,16 +33,15 @@ import java.io.IOException;
 import java.net.InetAddress;
 import java.net.UnknownHostException;
 import java.nio.charset.Charset;
-import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Properties;
 import java.util.Scanner;
-import sun.awt.FcFontManager;
 import sun.awt.FontConfiguration;
 import sun.awt.FontDescriptor;
 import sun.awt.SunToolkit;
+import sun.awt.X11FontManager;
 import sun.font.CompositeFontDescriptor;
 import sun.font.FontManager;
 import sun.font.FontConfigManager.FontConfigInfo;
@@ -92,7 +91,7 @@ public class FcFontConfiguration extends FontConfiguration {
 
         setFontConfiguration();
         readFcInfo();
-        FcFontManager fm = (FcFontManager) fontManager;
+        X11FontManager fm = (X11FontManager) fontManager;
         FontConfigManager fcm = fm.getFontConfigManager();
         if (fcCompFonts == null) {
             fcCompFonts = fcm.loadFontConfig();
@@ -174,16 +173,8 @@ public class FcFontConfiguration extends FontConfiguration {
     }
 
     @Override
-    protected FontDescriptor[] buildFontDescriptors(int fontIndex, int styleIndex) {
-        CompositeFontDescriptor[] cfi = get2DCompositeFontInfo();
-        int idx = fontIndex * NUM_STYLES + styleIndex;
-        String[] componentFaceNames = cfi[idx].getComponentFaceNames();
-        FontDescriptor[] ret = new FontDescriptor[componentFaceNames.length];
-        for (int i = 0; i < componentFaceNames.length; i++) {
-            ret[i] = new FontDescriptor(componentFaceNames[i], StandardCharsets.ISO_8859_1.newEncoder(), new int[0]);
-        }
-
-        return ret;
+    public FontDescriptor[] getFontDescriptors(String fontName, int style) {
+        return new FontDescriptor[0];
     }
 
     @Override
@@ -194,7 +185,7 @@ public class FcFontConfiguration extends FontConfiguration {
     @Override
     public String[] getPlatformFontNames() {
         HashSet<String> nameSet = new HashSet<String>();
-        FcFontManager fm = (FcFontManager) fontManager;
+        X11FontManager fm = (X11FontManager) fontManager;
         FontConfigManager fcm = fm.getFontConfigManager();
         FcCompFont[] fcCompFonts = fcm.loadFontConfig();
         for (int i=0; i<fcCompFonts.length; i++) {
@@ -235,7 +226,7 @@ public class FcFontConfiguration extends FontConfiguration {
     @Override
     public CompositeFontDescriptor[] get2DCompositeFontInfo() {
 
-        FcFontManager fm = (FcFontManager) fontManager;
+        X11FontManager fm = (X11FontManager) fontManager;
         FontConfigManager fcm = fm.getFontConfigManager();
         FcCompFont[] fcCompFonts = fcm.loadFontConfig();
 
@@ -259,12 +250,10 @@ public class FcFontConfiguration extends FontConfiguration {
                 }
 
                 String[] fileNames = new String[numFonts];
-                String[] faceNames = new String[numFonts];
 
                 int index;
                 for (index = 0; index < fcFonts.length; index++) {
                     fileNames[index] = fcFonts[index].fontFile;
-                    faceNames[index] = fcFonts[index].familyName;
                 }
 
                 if (installedFallbackFontFiles != null) {
@@ -277,7 +266,7 @@ public class FcFontConfiguration extends FontConfiguration {
                         = new CompositeFontDescriptor(
                             faceName,
                             1,
-                            faceNames,
+                            null,
                             fileNames,
                             null, null);
             }
@@ -368,7 +357,7 @@ public class FcFontConfiguration extends FontConfiguration {
     private void writeFcInfo() {
         Properties props = new Properties();
         props.setProperty("version", fileVersion);
-        FcFontManager fm = (FcFontManager) fontManager;
+        X11FontManager fm = (X11FontManager) fontManager;
         FontConfigManager fcm = fm.getFontConfigManager();
         FontConfigInfo fcInfo = fcm.getFontConfigInfo();
         props.setProperty("fcversion", Integer.toString(fcInfo.fcVersion));
@@ -427,7 +416,7 @@ public class FcFontConfiguration extends FontConfiguration {
             return;
         }
         Properties props = new Properties();
-        FcFontManager fm = (FcFontManager) fontManager;
+        X11FontManager fm = (X11FontManager) fontManager;
         FontConfigManager fcm = fm.getFontConfigManager();
         try {
             FileInputStream fis = new FileInputStream(fcFile);

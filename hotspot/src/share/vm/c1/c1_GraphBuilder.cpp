@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 1999, 2016, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 1999, 2013, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -975,19 +975,7 @@ void GraphBuilder::store_indexed(BasicType type) {
       (array->as_NewArray() && array->as_NewArray()->length() && array->as_NewArray()->length()->type()->is_constant())) {
     length = append(new ArrayLength(array, state_before));
   }
-  ciType* array_type = array->declared_type();
-  bool check_boolean = false;
-  if (array_type != NULL) {
-    if (array_type->is_loaded() &&
-      array_type->as_array_klass()->element_type()->basic_type() == T_BOOLEAN) {
-      assert(type == T_BYTE, "boolean store uses bastore");
-      Value mask = append(new Constant(new IntConstant(1)));
-      value = append(new LogicOp(Bytecodes::_iand, value, mask));
-    }
-  } else if (type == T_BYTE) {
-    check_boolean = true;
-  }
-  StoreIndexed* result = new StoreIndexed(array, index, length, type, value, state_before, check_boolean);
+  StoreIndexed* result = new StoreIndexed(array, index, length, type, value, state_before);
   append(result);
   _memory->store_value(value);
 
@@ -1452,54 +1440,9 @@ void GraphBuilder::method_return(Value x) {
     need_mem_bar = true;
   }
 
-  BasicType bt = method()->return_type()->basic_type();
-  switch (bt) {
-    case T_BYTE:
-    {
-      Value shift = append(new Constant(new IntConstant(24)));
-      x = append(new ShiftOp(Bytecodes::_ishl, x, shift));
-      x = append(new ShiftOp(Bytecodes::_ishr, x, shift));
-      break;
-    }
-    case T_SHORT:
-    {
-      Value shift = append(new Constant(new IntConstant(16)));
-      x = append(new ShiftOp(Bytecodes::_ishl, x, shift));
-      x = append(new ShiftOp(Bytecodes::_ishr, x, shift));
-      break;
-    }
-    case T_CHAR:
-    {
-      Value mask = append(new Constant(new IntConstant(0xFFFF)));
-      x = append(new LogicOp(Bytecodes::_iand, x, mask));
-      break;
-    }
-    case T_BOOLEAN:
-    {
-      Value mask = append(new Constant(new IntConstant(1)));
-      x = append(new LogicOp(Bytecodes::_iand, x, mask));
-      break;
-    }
-  }
-
   // Check to see whether we are inlining. If so, Return
   // instructions become Gotos to the continuation point.
   if (continuation() != NULL) {
-
-    int invoke_bci = state()->caller_state()->bci();
-
-    if (x != NULL) {
-      ciMethod* caller = state()->scope()->caller()->method();
-      Bytecodes::Code invoke_raw_bc = caller->raw_code_at_bci(invoke_bci);
-      if (invoke_raw_bc == Bytecodes::_invokehandle || invoke_raw_bc == Bytecodes::_invokedynamic) {
-        ciType* declared_ret_type = caller->get_declared_signature_at_bci(invoke_bci)->return_type();
-        if (declared_ret_type->is_klass() && x->exact_type() == NULL &&
-            x->declared_type() != declared_ret_type && declared_ret_type != compilation()->env()->Object_klass()) {
-          x = append(new TypeCast(declared_ret_type->as_klass(), x, copy_state_before()));
-        }
-      }
-    }
-
     assert(!method()->is_synchronized() || InlineSynchronizedMethods, "can not inline synchronized methods yet");
 
     if (compilation()->env()->dtrace_method_probes()) {
@@ -1523,6 +1466,7 @@ void GraphBuilder::method_return(Value x) {
     // State at end of inlined method is the state of the caller
     // without the method parameters on stack, including the
     // return value, if any, of the inlined method on operand stack.
+    int invoke_bci = state()->caller_state()->bci();
     set_state(state()->caller_state()->copy_for_parsing());
     if (x != NULL) {
       state()->push(x->type(), x);
@@ -1530,7 +1474,7 @@ void GraphBuilder::method_return(Value x) {
         ciMethod* caller = state()->scope()->method();
         ciMethodData* md = caller->method_data_or_null();
         ciProfileData* data = md->bci_to_data(invoke_bci);
-        if (data != NULL && (data->is_CallTypeData() || data->is_VirtualCallTypeData())) {
+        if (data->is_CallTypeData() || data->is_VirtualCallTypeData()) {
           bool has_return = data->is_CallTypeData() ? ((ciCallTypeData*)data)->has_return() : ((ciVirtualCallTypeData*)data)->has_return();
           // May not be true in case of an inlined call through a method handle intrinsic.
           if (has_return) {
@@ -1625,7 +1569,6 @@ void GraphBuilder::access_field(Bytecodes::Code code) {
         default:
           constant = new Constant(as_ValueType(field_val));
         }
-        // Stable static fields are checked for non-default values in ciField::initialize_from().
       }
       if (constant != NULL) {
         push(type, append(constant));
@@ -1642,10 +1585,6 @@ void GraphBuilder::access_field(Bytecodes::Code code) {
       { Value val = pop(type);
         if (state_before == NULL) {
           state_before = copy_state_for_exception();
-        }
-        if (field->type()->basic_type() == T_BOOLEAN) {
-          Value mask = append(new Constant(new IntConstant(1)));
-          val = append(new LogicOp(Bytecodes::_iand, val, mask));
         }
         append(new StoreField(append(obj), offset, field, val, true, state_before, needs_patching));
       }
@@ -1670,10 +1609,6 @@ void GraphBuilder::access_field(Bytecodes::Code code) {
               break;
             default:
               constant = new Constant(as_ValueType(field_val));
-            }
-            if (FoldStableValues && field->is_stable() && field_val.is_null_or_zero()) {
-              // Stable field with default value can't be constant.
-              constant = NULL;
             }
           } else {
             // For CallSite objects treat the target field as a compile time constant.
@@ -1717,10 +1652,6 @@ void GraphBuilder::access_field(Bytecodes::Code code) {
       if (state_before == NULL) {
         state_before = copy_state_for_exception();
       }
-      if (field->type()->basic_type() == T_BOOLEAN) {
-        Value mask = append(new Constant(new IntConstant(1)));
-        val = append(new LogicOp(Bytecodes::_iand, val, mask));
-      }
       StoreField* store = new StoreField(obj, offset, field, val, false, state_before, needs_patching);
       if (!needs_patching) store = _memory->store(store);
       if (store != NULL) {
@@ -1747,7 +1678,7 @@ Values* GraphBuilder::args_list_for_profiling(ciMethod* target, int& start, bool
   start = has_receiver ? 1 : 0;
   if (profile_arguments()) {
     ciProfileData* data = method()->method_data()->bci_to_data(bci());
-    if (data != NULL && (data->is_CallTypeData() || data->is_VirtualCallTypeData())) {
+    if (data->is_CallTypeData() || data->is_VirtualCallTypeData()) {
       n = data->is_CallTypeData() ? data->as_CallTypeData()->number_of_arguments() : data->as_VirtualCallTypeData()->number_of_arguments();
     }
   }
@@ -1766,15 +1697,6 @@ Values* GraphBuilder::args_list_for_profiling(ciMethod* target, int& start, bool
   return NULL;
 }
 
-void GraphBuilder::check_args_for_profiling(Values* obj_args, int expected) {
-#ifdef ASSERT
-  bool ignored_will_link;
-  ciSignature* declared_signature = NULL;
-  ciMethod* real_target = method()->get_method_at_bci(bci(), ignored_will_link, &declared_signature);
-  assert(expected == obj_args->length() || real_target->is_method_handle_intrinsic(), "missed on arg?");
-#endif
-}
-
 // Collect arguments that we want to profile in a list
 Values* GraphBuilder::collect_args_for_profiling(Values* args, ciMethod* target, bool may_have_receiver) {
   int start = 0;
@@ -1783,14 +1705,13 @@ Values* GraphBuilder::collect_args_for_profiling(Values* args, ciMethod* target,
     return NULL;
   }
   int s = obj_args->size();
-  // if called through method handle invoke, some arguments may have been popped
-  for (int i = start, j = 0; j < s && i < args->length(); i++) {
+  for (int i = start, j = 0; j < s; i++) {
     if (args->at(i)->type()->is_object_kind()) {
       obj_args->push(args->at(i));
       j++;
     }
   }
-  check_args_for_profiling(obj_args, s);
+  assert(s == obj_args->length(), "missed on arg?");
   return obj_args;
 }
 
@@ -1836,20 +1757,6 @@ void GraphBuilder::invoke(Bytecodes::Code code) {
       log->elem("call method='%d' instr='%s'",
                 log->identify(target),
                 Bytecodes::name(code));
-
-  // invoke-special-super
-  if (bc_raw == Bytecodes::_invokespecial && !target->is_object_initializer()) {
-    ciInstanceKlass* sender_klass =
-          calling_klass->is_anonymous() ? calling_klass->host_klass() :
-                                          calling_klass;
-    if (sender_klass->is_interface()) {
-      int index = state()->stack_size() - (target->arg_size_no_receiver() + 1);
-      Value receiver = state()->stack_at(index);
-      CheckCast* c = new CheckCast(sender_klass, receiver, copy_state_before());
-      c->set_invokespecial_receiver_check();
-      state()->stack_at_put(index, append_split(c));
-    }
-  }
 
   // Some methods are obviously bindable without any type checks so
   // convert them directly to an invokespecial or invokestatic.
@@ -2076,13 +1983,7 @@ void GraphBuilder::invoke(Bytecodes::Code code) {
   if (!UseInlineCaches && is_loaded && code == Bytecodes::_invokevirtual
       && !target->can_be_statically_bound()) {
     // Find a vtable index if one is available
-    // For arrays, callee_holder is Object. Resolving the call with
-    // Object would allow an illegal call to finalize() on an
-    // array. We use holder instead: illegal calls to finalize() won't
-    // be compiled as vtable calls (IC call resolution will catch the
-    // illegal call) and the few legal calls on array types won't be
-    // either.
-    vtable_index = target->resolve_vtable_index(calling_klass, holder);
+    vtable_index = target->resolve_vtable_index(calling_klass, callee_holder);
   }
 #endif
 
@@ -2139,7 +2040,7 @@ void GraphBuilder::new_instance(int klass_index) {
   bool will_link;
   ciKlass* klass = stream()->get_klass(will_link);
   assert(klass->is_instance_klass(), "must be an instance klass");
-  NewInstance* new_instance = new NewInstance(klass->as_instance_klass(), state_before, stream()->is_unresolved_klass());
+  NewInstance* new_instance = new NewInstance(klass->as_instance_klass(), state_before);
   _memory->new_instance(new_instance);
   apush(append_split(new_instance));
 }
@@ -3866,14 +3767,11 @@ bool GraphBuilder::try_inline_full(ciMethod* callee, bool holder_known, Bytecode
   }
 
   // now perform tests that are based on flag settings
-  if (callee->force_inline() || callee->should_inline()) {
-    if (inline_level() > MaxForceInlineLevel                    ) INLINE_BAILOUT("MaxForceInlineLevel");
-    if (recursive_inline_level(callee) > MaxRecursiveInlineLevel) INLINE_BAILOUT("recursive inlining too deep");
-
-    const char* msg = "";
-    if (callee->force_inline())  msg = "force inline by annotation";
-    if (callee->should_inline()) msg = "force inline by CompileOracle";
-    print_inlining(callee, msg);
+  if (callee->force_inline()) {
+    if (inline_level() > MaxForceInlineLevel) INLINE_BAILOUT("MaxForceInlineLevel");
+    print_inlining(callee, "force inline by annotation");
+  } else if (callee->should_inline()) {
+    print_inlining(callee, "force inline by CompileOracle");
   } else {
     // use heuristic controls on inlining
     if (inline_level() > MaxInlineLevel                         ) INLINE_BAILOUT("inlining too deep");
@@ -3942,7 +3840,14 @@ bool GraphBuilder::try_inline_full(ciMethod* callee, bool holder_known, Bytecode
             j++;
           }
         }
-        check_args_for_profiling(obj_args, s);
+#ifdef ASSERT
+        {
+          bool ignored_will_link;
+          ciSignature* declared_signature = NULL;
+          ciMethod* real_target = method()->get_method_at_bci(bci(), ignored_will_link, &declared_signature);
+          assert(s == obj_args->length() || real_target->is_method_handle_intrinsic(), "missed on arg?");
+        }
+#endif
       }
       profile_call(callee, recv, holder_known ? callee->holder() : NULL, obj_args, true);
     }
@@ -3999,8 +3904,8 @@ bool GraphBuilder::try_inline_full(ciMethod* callee, bool holder_known, Bytecode
   caller_state->truncate_stack(args_base);
   assert(callee_state->stack_size() == 0, "callee stack must be empty");
 
-  Value lock = NULL;
-  BlockBegin* sync_handler = NULL;
+  Value lock;
+  BlockBegin* sync_handler;
 
   // Inline the locking of the receiver if the callee is synchronized
   if (callee->is_synchronized()) {
@@ -4038,14 +3943,9 @@ bool GraphBuilder::try_inline_full(ciMethod* callee, bool holder_known, Bytecode
   // Clear out bytecode stream
   scope_data()->set_stream(NULL);
 
-  CompileLog* log = compilation()->log();
-  if (log != NULL) log->head("parse method='%d'", log->identify(callee));
-
   // Ready to resume parsing in callee (either in the same block we
   // were in before or in the callee's start block)
   iterate_all_blocks(callee_start_block == NULL);
-
-  if (log != NULL) log->done("parse");
 
   // If we bailed out during parsing, return immediately (this is bad news)
   if (bailed_out())
@@ -4142,7 +4042,7 @@ bool GraphBuilder::try_method_handle_inline(ciMethod* callee) {
       ValueType* type = apop()->type();
       if (type->is_constant()) {
         ciMethod* target = type->as_ObjectType()->constant_value()->as_member_name()->get_vmtarget();
-        // If the target is another method handle invoke, try to recursively get
+        // If the target is another method handle invoke try recursivly to get
         // a better target.
         if (target->is_method_handle_intrinsic()) {
           if (try_method_handle_inline(target)) {
@@ -4300,12 +4200,7 @@ bool GraphBuilder::append_unsafe_put_obj(ciMethod* callee, BasicType t, bool is_
 #ifndef _LP64
     offset = append(new Convert(Bytecodes::_l2i, offset, as_ValueType(T_INT)));
 #endif
-    Value val = args->at(3);
-    if (t == T_BOOLEAN) {
-      Value mask = append(new Constant(new IntConstant(1)));
-      val = append(new LogicOp(Bytecodes::_iand, val, mask));
-    }
-    Instruction* op = append(new UnsafePutObject(t, args->at(1), offset, val, is_volatile));
+    Instruction* op = append(new UnsafePutObject(t, args->at(1), offset, args->at(3), is_volatile));
     compilation()->set_has_unsafe_access(true);
     kill_all();
   }
@@ -4443,15 +4338,11 @@ void GraphBuilder::print_stats() {
 #endif // PRODUCT
 
 void GraphBuilder::profile_call(ciMethod* callee, Value recv, ciKlass* known_holder, Values* obj_args, bool inlined) {
-  assert(known_holder == NULL || (known_holder->is_instance_klass() &&
-                                  (!known_holder->is_interface() ||
-                                   ((ciInstanceKlass*)known_holder)->has_default_methods())), "should be default method");
-  if (known_holder != NULL) {
-    if (known_holder->exact_klass() == NULL) {
-      known_holder = compilation()->cha_exact_type(known_holder);
-    }
+  // A default method's holder is an interface
+  if (known_holder != NULL && known_holder->is_interface()) {
+    assert(known_holder->is_instance_klass() && ((ciInstanceKlass*)known_holder)->has_default_methods(), "should be default method");
+    known_holder = NULL;
   }
-
   append(new ProfileCall(method(), bci(), callee, recv, known_holder, obj_args, inlined));
 }
 
@@ -4465,7 +4356,7 @@ void GraphBuilder::profile_return_type(Value ret, ciMethod* callee, ciMethod* m,
   }
   ciMethodData* md = m->method_data_or_null();
   ciProfileData* data = md->bci_to_data(invoke_bci);
-  if (data != NULL && (data->is_CallTypeData() || data->is_VirtualCallTypeData())) {
+  if (data->is_CallTypeData() || data->is_VirtualCallTypeData()) {
     append(new ProfileReturnType(m , invoke_bci, callee, ret));
   }
 }

@@ -504,10 +504,7 @@ public class ContainerOrderFocusTraversalPolicy extends FocusTraversalPolicy
                 } else if (comp instanceof Container && comp != aContainer) {
                     Container cont = (Container)comp;
                     if (cont.isFocusTraversalPolicyProvider()) {
-                        Component retComp = cont.getFocusTraversalPolicy().getLastComponent(cont);
-                        if (retComp != null) {
-                            return retComp;
-                        }
+                        return cont.getFocusTraversalPolicy().getLastComponent(cont);
                     }
                 }
             }

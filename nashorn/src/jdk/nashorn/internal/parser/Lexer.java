@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2010, 2015, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2010, 2013, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -28,14 +28,12 @@ package jdk.nashorn.internal.parser;
 import static jdk.nashorn.internal.parser.TokenType.ADD;
 import static jdk.nashorn.internal.parser.TokenType.COMMENT;
 import static jdk.nashorn.internal.parser.TokenType.DECIMAL;
-import static jdk.nashorn.internal.parser.TokenType.DIRECTIVE_COMMENT;
 import static jdk.nashorn.internal.parser.TokenType.EOF;
 import static jdk.nashorn.internal.parser.TokenType.EOL;
 import static jdk.nashorn.internal.parser.TokenType.ERROR;
 import static jdk.nashorn.internal.parser.TokenType.ESCSTRING;
 import static jdk.nashorn.internal.parser.TokenType.EXECSTRING;
 import static jdk.nashorn.internal.parser.TokenType.FLOATING;
-import static jdk.nashorn.internal.parser.TokenType.FUNCTION;
 import static jdk.nashorn.internal.parser.TokenType.HEXADECIMAL;
 import static jdk.nashorn.internal.parser.TokenType.LBRACE;
 import static jdk.nashorn.internal.parser.TokenType.LPAREN;
@@ -46,11 +44,9 @@ import static jdk.nashorn.internal.parser.TokenType.RPAREN;
 import static jdk.nashorn.internal.parser.TokenType.STRING;
 import static jdk.nashorn.internal.parser.TokenType.XML;
 
-import java.io.Serializable;
 import jdk.nashorn.internal.runtime.ECMAErrors;
 import jdk.nashorn.internal.runtime.ErrorManager;
 import jdk.nashorn.internal.runtime.JSErrorType;
-import jdk.nashorn.internal.runtime.JSType;
 import jdk.nashorn.internal.runtime.ParserException;
 import jdk.nashorn.internal.runtime.Source;
 import jdk.nashorn.internal.runtime.options.Options;
@@ -79,7 +75,7 @@ public class Lexer extends Scanner {
     private final boolean nested;
 
     /** Pending new line number and position. */
-    int pendingLine;
+    private int pendingLine;
 
     /** Position of last EOL + 1. */
     private int linePosition;
@@ -87,11 +83,11 @@ public class Lexer extends Scanner {
     /** Type of last token added. */
     private TokenType last;
 
-    private final boolean pauseOnFunctionBody;
-    private boolean pauseOnNextLeftBrace;
-
     private static final String SPACETAB = " \t";  // ASCII space and tab
     private static final String LFCR     = "\n\r"; // line feed and carriage return (ctrl-m)
+
+    private static final String JSON_WHITESPACE_EOL = LFCR;
+    private static final String JSON_WHITESPACE     = SPACETAB + LFCR;
 
     private static final String JAVASCRIPT_WHITESPACE_EOL =
         LFCR +
@@ -184,32 +180,14 @@ public class Lexer extends Scanner {
      * @param scripting are we in scripting mode
      */
     public Lexer(final Source source, final TokenStream stream, final boolean scripting) {
-        this(source, 0, source.getLength(), stream, scripting, false);
-    }
+        super(source.getContent(), 1, 0, source.getLength());
 
-    /**
-     * Constructor
-     *
-     * @param source    the source
-     * @param start     start position in source from which to start lexing
-     * @param len       length of source segment to lex
-     * @param stream    token stream to lex
-     * @param scripting are we in scripting mode
-     * @param pauseOnFunctionBody if true, lexer will return from {@link #lexify()} when it encounters a
-     * function body. This is used with the feature where the parser is skipping nested function bodies to
-     * avoid reading ahead unnecessarily when we skip the function bodies.
-     */
-
-    public Lexer(final Source source, final int start, final int len, final TokenStream stream, final boolean scripting, final boolean pauseOnFunctionBody) {
-        super(source.getContent(), 1, start, len);
         this.source      = source;
         this.stream      = stream;
         this.scripting   = scripting;
         this.nested      = false;
         this.pendingLine = 1;
         this.last        = EOL;
-
-        this.pauseOnFunctionBody = pauseOnFunctionBody;
     }
 
     private Lexer(final Lexer lexer, final State state) {
@@ -223,7 +201,6 @@ public class Lexer extends Scanner {
         pendingLine = state.pendingLine;
         linePosition = state.linePosition;
         last = EOL;
-        pauseOnFunctionBody = false;
     }
 
     static class State extends Scanner.State {
@@ -382,6 +359,24 @@ public class Lexer extends Scanner {
     }
 
     /**
+     * Test whether a char is valid JSON whitespace
+     * @param ch a char
+     * @return true if valid JSON whitespace
+     */
+    public static boolean isJsonWhitespace(final char ch) {
+        return JSON_WHITESPACE.indexOf(ch) != -1;
+    }
+
+    /**
+     * Test whether a char is valid JSON end of line
+     * @param ch a char
+     * @return true if valid JSON end of line
+     */
+    public static boolean isJsonEOL(final char ch) {
+        return JSON_WHITESPACE_EOL.indexOf(ch) != -1;
+    }
+
+    /**
      * Test if char is a string delimiter, e.g. '\' or '"'.  Also scans exec
      * strings ('`') in scripting mode.
      * @param ch a char
@@ -439,18 +434,12 @@ public class Lexer extends Scanner {
             if (ch1 == '/') {
                 // Skip over //.
                 skip(2);
-
-                boolean directiveComment = false;
-                if ((ch0 == '#' || ch0 == '@') && (ch1 == ' ')) {
-                    directiveComment = true;
-                }
-
                 // Scan for EOL.
                 while (!atEOF() && !isEOL(ch0)) {
                     skip(1);
                 }
                 // Did detect a comment.
-                add(directiveComment? DIRECTIVE_COMMENT : COMMENT, start);
+                add(COMMENT, start);
                 return true;
             } else if (ch1 == '*') {
                 // Skip over /*.
@@ -800,9 +789,6 @@ public class Lexer extends Scanner {
         final int length = scanIdentifier();
         // Check to see if it is a keyword.
         final TokenType type = TokenLookup.lookupKeyword(content, start, length);
-        if (type == FUNCTION && pauseOnFunctionBody) {
-            pauseOnNextLeftBrace = true;
-        }
         // Add keyword or identifier token.
         add(type, start);
     }
@@ -1042,7 +1028,11 @@ public class Lexer extends Scanner {
      */
     private static Number valueOf(final String valueString, final int radix) throws NumberFormatException {
         try {
-            return Integer.parseInt(valueString, radix);
+            final long value = Long.parseLong(valueString, radix);
+            if(value >= MIN_INT_L && value <= MAX_INT_L) {
+                return Integer.valueOf((int)value);
+            }
+            return Long.valueOf(value);
         } catch (final NumberFormatException e) {
             if (radix == 10) {
                 return Double.valueOf(valueString);
@@ -1447,22 +1437,9 @@ public class Lexer extends Scanner {
                 skip(3);
             }
 
-            // Scan identifier. It might be quoted, indicating that no string editing should take place.
-            final char quoteChar = ch0;
-            final boolean noStringEditing = quoteChar == '"' || quoteChar == '\'';
-            if (noStringEditing) {
-                skip(1);
-            }
+            // Scan identifier.
             final int identStart = position;
             final int identLength = scanIdentifier();
-            if (noStringEditing) {
-                if (ch0 != quoteChar) {
-                    error(Lexer.message("here.non.matching.delimiter"), last, position, position);
-                    restoreState(saved);
-                    return false;
-                }
-                skip(1);
-            }
 
             // Check for identifier.
             if (identLength == 0) {
@@ -1532,7 +1509,7 @@ public class Lexer extends Scanner {
             }
 
             // Edit string if appropriate.
-            if (!noStringEditing && !stringState.isEmpty()) {
+            if (scripting && !stringState.isEmpty()) {
                 editString(STRING, stringState);
             } else {
                 // Add here string.
@@ -1599,9 +1576,6 @@ public class Lexer extends Scanner {
                 // We break to let the parser decide what it is.
                 if (canStartLiteral(type)) {
                     break;
-                } else if (type == LBRACE && pauseOnNextLeftBrace) {
-                    pauseOnNextLeftBrace = false;
-                    break;
                 }
             } else if (Character.isJavaIdentifierStart(ch0) || ch0 == '\\' && ch1 == 'u') {
                 // Scan and add identifier or keyword.
@@ -1628,7 +1602,7 @@ public class Lexer extends Scanner {
      */
     Object getValueOf(final long token, final boolean strict) {
         final int start = Token.descPosition(token);
-        final int len   = Token.descLength(token);
+        final int len = Token.descLength(token);
 
         switch (Token.descType(token)) {
         case DECIMAL:
@@ -1638,21 +1612,7 @@ public class Lexer extends Scanner {
         case HEXADECIMAL:
             return Lexer.valueOf(source.getString(start + 2, len - 2), 16); // number
         case FLOATING:
-            final String str   = source.getString(start, len);
-            final double value = Double.valueOf(str);
-            if (str.indexOf('.') != -1) {
-                return value; //number
-            }
-            //anything without an explicit decimal point is still subject to a
-            //"representable as int or long" check. Then the programmer does not
-            //explicitly code something as a double. For example new Color(int, int, int)
-            //and new Color(float, float, float) will get ambiguous for cases like
-            //new Color(1.0, 1.5, 1.5) if we don't respect the decimal point.
-            //yet we don't want e.g. 1e6 to be a double unnecessarily
-            if (JSType.isStrictlyRepresentableAsInt(value)) {
-                return (int)value;
-            }
-            return value;
+            return Double.valueOf(source.getString(start, len)); // number
         case STRING:
             return source.getString(start, len); // String
         case ESCSTRING:
@@ -1663,8 +1623,6 @@ public class Lexer extends Scanner {
             return valueOfPattern(start, len); // RegexToken::LexerToken
         case XML:
             return valueOfXML(start, len); // XMLToken::LexerToken
-        case DIRECTIVE_COMMENT:
-            return source.getString(start, len);
         default:
             break;
         }
@@ -1704,9 +1662,7 @@ public class Lexer extends Scanner {
      * Helper class for Lexer tokens, e.g XML or RegExp tokens.
      * This is the abstract superclass
      */
-    public static abstract class LexerToken implements Serializable {
-        private static final long serialVersionUID = 1L;
-
+    public static abstract class LexerToken {
         private final String expression;
 
         /**
@@ -1730,8 +1686,6 @@ public class Lexer extends Scanner {
      * Temporary container for regular expressions.
      */
     public static class RegexToken extends LexerToken {
-        private static final long serialVersionUID = 1L;
-
         /** Options. */
         private final String options;
 
@@ -1764,7 +1718,6 @@ public class Lexer extends Scanner {
      * Temporary container for XML expression.
      */
     public static class XMLToken extends LexerToken {
-        private static final long serialVersionUID = 1L;
 
         /**
          * Constructor.

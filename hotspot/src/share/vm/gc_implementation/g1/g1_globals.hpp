@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2001, 2014, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2001, 2013, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -71,9 +71,6 @@
   diagnostic(bool, G1TraceConcRefinement, false,                            \
           "Trace G1 concurrent refinement")                                 \
                                                                             \
-  experimental(bool, G1TraceStringSymbolTableScrubbing, false,              \
-          "Trace information string and symbol table scrubbing.")           \
-                                                                            \
   product(double, G1ConcMarkStepDurationMillis, 10.0,                       \
           "Target duration of individual concurrent marking steps "         \
           "in milliseconds.")                                               \
@@ -107,6 +104,9 @@
                                                                             \
   develop(bool, G1RSBarrierRegionFilter, true,                              \
           "If true, generate region filtering code in RS barrier")          \
+                                                                            \
+  develop(bool, G1DeferredRSUpdate, true,                                   \
+          "If true, use deferred RS updates")                               \
                                                                             \
   develop(bool, G1RSLogCheckCardTable, false,                               \
           "If true, verify that no dirty cards remain after RS log "        \
@@ -217,6 +217,14 @@
   product(uintx, G1HeapRegionSize, 0,                                       \
           "Size of the G1 regions.")                                        \
                                                                             \
+  experimental(bool, G1UseParallelRSetUpdating, true,                       \
+          "Enables the parallelization of remembered set updating "         \
+          "during evacuation pauses")                                       \
+                                                                            \
+  experimental(bool, G1UseParallelRSetScanning, true,                       \
+          "Enables the parallelization of remembered set scanning "         \
+          "during evacuation pauses")                                       \
+                                                                            \
   product(uintx, G1ConcRefinementThreads, 0,                                \
           "If non-0 is the number of parallel rem set update threads, "     \
           "otherwise the value is determined ergonomically.")               \
@@ -262,28 +270,17 @@
           "Percentage (0-100) of the heap size to use as default "          \
           " maximum young gen size.")                                       \
                                                                             \
-  experimental(uintx, G1MixedGCLiveThresholdPercent, 85,                    \
+  experimental(uintx, G1MixedGCLiveThresholdPercent, 65,                    \
           "Threshold for regions to be considered for inclusion in the "    \
           "collection set of mixed GCs. "                                   \
           "Regions with live bytes exceeding this will not be collected.")  \
                                                                             \
-  product(uintx, G1HeapWastePercent, 5,                                     \
+  product(uintx, G1HeapWastePercent, 10,                                    \
           "Amount of space, expressed as a percentage of the heap size, "   \
           "that G1 is willing not to collect to avoid expensive GCs.")      \
                                                                             \
   product(uintx, G1MixedGCCountTarget, 8,                                   \
           "The target number of mixed GCs after a marking cycle.")          \
-                                                                            \
-  experimental(bool, G1EagerReclaimHumongousObjects, true,                  \
-          "Try to reclaim dead large objects at every young GC.")           \
-                                                                            \
-  experimental(bool, G1EagerReclaimHumongousObjectsWithStaleRefs, true,     \
-          "Try to reclaim dead large objects that have a few stale "        \
-          "references at every young GC.")                                  \
-                                                                            \
-  experimental(bool, G1TraceEagerReclaimHumongousObjects, false,            \
-          "Print some information about large object liveness "             \
-          "at every young GC.")                                             \
                                                                             \
   experimental(uintx, G1OldCSetRegionThresholdPercent, 10,                  \
           "An upper bound for the number of old CSet regions expressed "    \
@@ -321,14 +318,11 @@
           "evacuation pauses")                                              \
                                                                             \
   diagnostic(bool, G1VerifyRSetsDuringFullGC, false,                        \
-          "If true, perform verification of each heap region's "            \
-          "remembered set when verifying the heap during a full GC.")       \
+             "If true, perform verification of each heap region's "         \
+             "remembered set when verifying the heap during a full GC.")    \
                                                                             \
   diagnostic(bool, G1VerifyHeapRegionCodeRoots, false,                      \
-          "Verify the code root lists attached to each heap region.")       \
-                                                                            \
-  develop(bool, G1VerifyBitmaps, false,                                     \
-          "Verifies the consistency of the marking bitmaps")
+             "Verify the code root lists attached to each heap region.")
 
 G1_FLAGS(DECLARE_DEVELOPER_FLAG, DECLARE_PD_DEVELOPER_FLAG, DECLARE_PRODUCT_FLAG, DECLARE_PD_PRODUCT_FLAG, DECLARE_DIAGNOSTIC_FLAG, DECLARE_EXPERIMENTAL_FLAG, DECLARE_NOTPRODUCT_FLAG, DECLARE_MANAGEABLE_FLAG, DECLARE_PRODUCT_RW_FLAG)
 

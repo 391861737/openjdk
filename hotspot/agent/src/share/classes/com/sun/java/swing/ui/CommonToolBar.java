@@ -46,7 +46,7 @@ public abstract class CommonToolBar extends JToolBar
     {
         this.manager = manager;
         statusBar = status;
-        buttonSize = new Dimension(CommonUI.getButtconPrefSize());
+        buttonSize = new Dimension(CommonUI.buttconPrefSize);
         buttonInsets = new Insets(0, 0, 0, 0);
         addComponents();
     }

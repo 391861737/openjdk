@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 1998, 2016, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 1998, 2013, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -50,7 +50,6 @@ bool Abstract_VM_Version::_supports_atomic_getset8 = false;
 bool Abstract_VM_Version::_supports_atomic_getadd4 = false;
 bool Abstract_VM_Version::_supports_atomic_getadd8 = false;
 unsigned int Abstract_VM_Version::_logical_processors_per_package = 1U;
-unsigned int Abstract_VM_Version::_L1_data_cache_line_size = 0;
 int Abstract_VM_Version::_reserve_for_allocation_prefetch = 0;
 
 #ifndef HOTSPOT_RELEASE_VERSION
@@ -178,20 +177,18 @@ const char* Abstract_VM_Version::jre_release_version() {
 #define OS       LINUX_ONLY("linux")             \
                  WINDOWS_ONLY("windows")         \
                  SOLARIS_ONLY("solaris")         \
-                 AIX_ONLY("aix")                 \
                  BSD_ONLY("bsd")
 
-#ifndef CPU
 #ifdef ZERO
 #define CPU      ZERO_LIBARCH
 #else
 #define CPU      IA32_ONLY("x86")                \
                  IA64_ONLY("ia64")               \
                  AMD64_ONLY("amd64")             \
-                 PPC64_ONLY("ppc64")             \
+                 ARM_ONLY("arm")                 \
+                 PPC_ONLY("ppc")                 \
                  SPARC_ONLY("sparc")
 #endif // ZERO
-#endif
 
 const char *Abstract_VM_Version::vm_platform_string() {
   return OS "-" CPU;
@@ -241,9 +238,6 @@ const char* Abstract_VM_Version::internal_vm_info_string() {
       #endif
     #elif defined(__GNUC__)
         #define HOTSPOT_BUILD_COMPILER "gcc " __VERSION__
-    #elif defined(__IBMCPP__)
-        #define HOTSPOT_BUILD_COMPILER "xlC " XSTR(__IBMCPP__)
-
     #else
       #define HOTSPOT_BUILD_COMPILER "unknown compiler"
     #endif
@@ -252,6 +246,12 @@ const char* Abstract_VM_Version::internal_vm_info_string() {
   #ifndef FLOAT_ARCH
     #if defined(__SOFTFP__)
       #define FLOAT_ARCH_STR "-sflt"
+    #elif defined(E500V2)
+      #define FLOAT_ARCH_STR "-e500v2"
+    #elif defined(ARM)
+      #define FLOAT_ARCH_STR "-vfp"
+    #elif defined(PPC)
+      #define FLOAT_ARCH_STR "-hflt"
     #else
       #define FLOAT_ARCH_STR ""
     #endif
@@ -297,7 +297,7 @@ unsigned int Abstract_VM_Version::nof_parallel_worker_threads(
     // processor after the first 8.  For example, on a 72 cpu machine
     // and a chosen fraction of 5/8
     // use 8 + (72 - 8) * (5/8) == 48 worker threads.
-    unsigned int ncpus = (unsigned int) os::initial_active_processor_count();
+    unsigned int ncpus = (unsigned int) os::active_processor_count();
     return (ncpus <= switch_pt) ?
            ncpus :
           (switch_pt + ((ncpus - switch_pt) * num) / den);

@@ -46,8 +46,6 @@ import com.apple.laf.AquaIcon.JRSUIControlSpec;
 import com.apple.laf.AquaIcon.SystemIcon;
 import com.apple.laf.AquaUtils.RecyclableObject;
 import com.apple.laf.AquaUtils.RecyclableSingleton;
-import sun.awt.image.MultiResolutionImage;
-import sun.awt.image.MultiResolutionCachedImage;
 
 public class AquaImageFactory {
     public static IconUIResource getConfirmImageIcon() {
@@ -55,7 +53,7 @@ public class AquaImageFactory {
 
         return new IconUIResource(new AquaIcon.CachingScalingIcon(kAlertIconSize, kAlertIconSize) {
             Image createImage() {
-                return getGenericJavaIcon();
+                return getThisApplicationsIcon(kAlertIconSize, kAlertIconSize);
             }
         });
     }
@@ -81,6 +79,24 @@ public class AquaImageFactory {
         return getAppIconCompositedOn(lockIcon);
     }
 
+    static Image getThisApplicationsIcon(final int width, final int height) {
+        final String path = getPathToThisApplication();
+
+        if (path == null) {
+            return getGenericJavaIcon();
+        }
+
+        if (path.endsWith("/Home/bin")) {
+            return getGenericJavaIcon();
+        }
+
+        if (path.startsWith("/usr/bin")) {
+            return getGenericJavaIcon();
+        }
+
+        return AquaUtils.getCImageCreator().createImageOfFile(path, height, width);
+    }
+
     static Image getGenericJavaIcon() {
         return java.security.AccessController.doPrivileged(new PrivilegedAction<Image>() {
             public Image run() {
@@ -104,46 +120,28 @@ public class AquaImageFactory {
 
     private static final int kAlertIconSize = 64;
     static IconUIResource getAppIconCompositedOn(final Image background) {
+        final double scaleFactor = 1.0; // revise for HiDPI
 
-        if (background instanceof MultiResolutionCachedImage) {
-            int width = background.getWidth(null);
-            Image mrIconImage = ((MultiResolutionCachedImage) background).map(
-                    rv -> getAppIconImageCompositedOn(rv, rv.getWidth(null) / width));
-            return new IconUIResource(new ImageIcon(mrIconImage));
-        }
+        final int kAlertSubIconSize = (int)(kAlertIconSize * 0.5 * scaleFactor);
+        final int kAlertSubIconInset = (int)(kAlertIconSize * scaleFactor) - kAlertSubIconSize;
+        final Icon smallAppIconScaled = new AquaIcon.CachingScalingIcon(kAlertSubIconSize, kAlertSubIconSize) {
+            Image createImage() {
+                return getThisApplicationsIcon(kAlertSubIconSize, kAlertSubIconSize);
+            }
+        };
 
-        BufferedImage iconImage = getAppIconImageCompositedOn(background, 1);
-        return new IconUIResource(new ImageIcon(iconImage));
-    }
-
-    static BufferedImage getAppIconImageCompositedOn(final Image background, int scaleFactor) {
-
-        final int scaledAlertIconSize = kAlertIconSize * scaleFactor;
-        final int kAlertSubIconSize = (int) (scaledAlertIconSize * 0.5);
-        final int kAlertSubIconInset = scaledAlertIconSize - kAlertSubIconSize;
-        final Icon smallAppIconScaled = new AquaIcon.CachingScalingIcon(
-                kAlertSubIconSize, kAlertSubIconSize) {
-                    Image createImage() {
-                        return getGenericJavaIcon();
-                    }
-                };
-
-        final BufferedImage image = new BufferedImage(scaledAlertIconSize,
-                scaledAlertIconSize, BufferedImage.TYPE_INT_ARGB_PRE);
+        final BufferedImage image = new BufferedImage(kAlertIconSize, kAlertIconSize, BufferedImage.TYPE_INT_ARGB);
         final Graphics g = image.getGraphics();
-        g.drawImage(background, 0, 0,
-                scaledAlertIconSize, scaledAlertIconSize, null);
+        g.drawImage(background, 0, 0, (int)(kAlertIconSize * scaleFactor), (int)(kAlertIconSize * scaleFactor), null);
         if (g instanceof Graphics2D) {
             // improves icon rendering quality in Quartz
-            ((Graphics2D) g).setRenderingHint(RenderingHints.KEY_RENDERING,
-                    RenderingHints.VALUE_RENDER_QUALITY);
+            ((Graphics2D)g).setRenderingHint(RenderingHints.KEY_RENDERING, RenderingHints.VALUE_RENDER_QUALITY);
         }
 
-        smallAppIconScaled.paintIcon(null, g,
-                kAlertSubIconInset, kAlertSubIconInset);
+        smallAppIconScaled.paintIcon(null, g, kAlertSubIconInset, kAlertSubIconInset);
         g.dispose();
 
-        return image;
+        return new IconUIResource(new ImageIcon(image));
     }
 
     public static IconUIResource getTreeFolderIcon() {
@@ -209,7 +207,7 @@ public class AquaImageFactory {
 
         @Override
         protected Image getInstance() {
-            return getNSIcon(namedImage);
+            return Toolkit.getDefaultToolkit().getImage("NSImage://" + namedImage);
         }
     }
 
@@ -273,19 +271,11 @@ public class AquaImageFactory {
     }
 
     public static Icon getMenuItemCheckIcon() {
-        return new InvertableImageIcon(AquaUtils.generateLightenedImage(
-                getNSIcon("NSMenuItemSelection"), 25));
+        return new InvertableImageIcon(AquaUtils.generateLightenedImage(Toolkit.getDefaultToolkit().getImage("NSImage://NSMenuItemSelection"), 25));
     }
 
     public static Icon getMenuItemDashIcon() {
-        return new InvertableImageIcon(AquaUtils.generateLightenedImage(
-                getNSIcon("NSMenuMixedState"), 25));
-    }
-
-    private static Image getNSIcon(String imageName) {
-        Image icon = Toolkit.getDefaultToolkit()
-                .getImage("NSImage://" + imageName);
-        return icon;
+        return new InvertableImageIcon(AquaUtils.generateLightenedImage(Toolkit.getDefaultToolkit().getImage("NSImage://NSMenuMixedState"), 25));
     }
 
     public static class NineSliceMetrics {

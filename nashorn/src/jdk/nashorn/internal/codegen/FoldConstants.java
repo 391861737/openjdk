@@ -26,61 +26,44 @@
 package jdk.nashorn.internal.codegen;
 
 import java.util.ArrayList;
-import java.util.HashSet;
 import java.util.List;
-import java.util.Set;
 import jdk.nashorn.internal.codegen.types.Type;
 import jdk.nashorn.internal.ir.BinaryNode;
 import jdk.nashorn.internal.ir.Block;
 import jdk.nashorn.internal.ir.BlockStatement;
-import jdk.nashorn.internal.ir.CaseNode;
 import jdk.nashorn.internal.ir.EmptyNode;
-import jdk.nashorn.internal.ir.Expression;
 import jdk.nashorn.internal.ir.FunctionNode;
+import jdk.nashorn.internal.ir.FunctionNode.CompilationState;
 import jdk.nashorn.internal.ir.IfNode;
+import jdk.nashorn.internal.ir.LexicalContext;
 import jdk.nashorn.internal.ir.LiteralNode;
 import jdk.nashorn.internal.ir.LiteralNode.ArrayLiteralNode;
 import jdk.nashorn.internal.ir.Node;
 import jdk.nashorn.internal.ir.Statement;
-import jdk.nashorn.internal.ir.SwitchNode;
 import jdk.nashorn.internal.ir.TernaryNode;
 import jdk.nashorn.internal.ir.UnaryNode;
 import jdk.nashorn.internal.ir.VarNode;
-import jdk.nashorn.internal.ir.visitor.SimpleNodeVisitor;
-import jdk.nashorn.internal.runtime.Context;
+import jdk.nashorn.internal.ir.visitor.NodeVisitor;
+import jdk.nashorn.internal.runtime.DebugLogger;
 import jdk.nashorn.internal.runtime.JSType;
 import jdk.nashorn.internal.runtime.ScriptRuntime;
-import jdk.nashorn.internal.runtime.logging.DebugLogger;
-import jdk.nashorn.internal.runtime.logging.Loggable;
-import jdk.nashorn.internal.runtime.logging.Logger;
 
 /**
  * Simple constant folding pass, executed before IR is starting to be lowered.
  */
-@Logger(name="fold")
-final class FoldConstants extends SimpleNodeVisitor implements Loggable {
+final class FoldConstants extends NodeVisitor<LexicalContext> {
 
-    private final DebugLogger log;
+    private static final DebugLogger LOG = new DebugLogger("fold");
 
-    FoldConstants(final Compiler compiler) {
-        this.log = initLogger(compiler.getContext());
-    }
-
-    @Override
-    public DebugLogger getLogger() {
-        return log;
-    }
-
-    @Override
-    public DebugLogger initLogger(final Context context) {
-        return context.getLogger(this.getClass());
+    FoldConstants() {
+        super(new LexicalContext());
     }
 
     @Override
     public Node leaveUnaryNode(final UnaryNode unaryNode) {
         final LiteralNode<?> literalNode = new UnaryNodeConstantEvaluator(unaryNode).eval();
         if (literalNode != null) {
-            log.info("Unary constant folded ", unaryNode, " to ", literalNode);
+            LOG.info("Unary constant folded ", unaryNode, " to ", literalNode);
             return literalNode;
         }
         return unaryNode;
@@ -90,15 +73,20 @@ final class FoldConstants extends SimpleNodeVisitor implements Loggable {
     public Node leaveBinaryNode(final BinaryNode binaryNode) {
         final LiteralNode<?> literalNode = new BinaryNodeConstantEvaluator(binaryNode).eval();
         if (literalNode != null) {
-            log.info("Binary constant folded ", binaryNode, " to ", literalNode);
+            LOG.info("Binary constant folded ", binaryNode, " to ", literalNode);
             return literalNode;
         }
         return binaryNode;
     }
 
     @Override
+    public boolean enterFunctionNode(final FunctionNode functionNode) {
+        return !functionNode.isLazy();
+    }
+
+    @Override
     public Node leaveFunctionNode(final FunctionNode functionNode) {
-        return functionNode;
+        return functionNode.setState(lc, CompilationState.CONSTANT_FOLDED);
     }
 
     @Override
@@ -114,7 +102,7 @@ final class FoldConstants extends SimpleNodeVisitor implements Loggable {
                 statements.addAll(executed.getStatements()); // Get statements form executed branch
             }
             if (dropped != null) {
-                extractVarNodesFromDeadCode(dropped, statements); // Get var-nodes from non-executed branch
+                extractVarNodes(dropped, statements); // Get var-nodes from non-executed branch
             }
             if (statements.isEmpty()) {
                 return new EmptyNode(ifNode);
@@ -128,35 +116,9 @@ final class FoldConstants extends SimpleNodeVisitor implements Loggable {
     public Node leaveTernaryNode(final TernaryNode ternaryNode) {
         final Node test = ternaryNode.getTest();
         if (test instanceof LiteralNode.PrimitiveLiteralNode) {
-            return (((LiteralNode.PrimitiveLiteralNode<?>)test).isTrue() ? ternaryNode.getTrueExpression() : ternaryNode.getFalseExpression()).getExpression();
+            return ((LiteralNode.PrimitiveLiteralNode<?>)test).isTrue() ? ternaryNode.getTrueExpression() : ternaryNode.getFalseExpression();
         }
         return ternaryNode;
-    }
-
-    @Override
-    public Node leaveSwitchNode(final SwitchNode switchNode) {
-        return switchNode.setUniqueInteger(lc, isUniqueIntegerSwitchNode(switchNode));
-    }
-
-    private static boolean isUniqueIntegerSwitchNode(final SwitchNode switchNode) {
-        final Set<Integer> alreadySeen = new HashSet<>();
-        for (final CaseNode caseNode : switchNode.getCases()) {
-            final Expression test = caseNode.getTest();
-            if (test != null && !isUniqueIntegerLiteral(test, alreadySeen)) {
-                return false;
-            }
-        }
-        return true;
-    }
-
-    private static boolean isUniqueIntegerLiteral(final Expression expr, final Set<Integer> alreadySeen) {
-        if (expr instanceof LiteralNode) {
-            final Object value = ((LiteralNode<?>)expr).getValue();
-            if (value instanceof Integer) {
-                return alreadySeen.add((Integer)value);
-            }
-        }
-        return false;
     }
 
     /**
@@ -183,25 +145,12 @@ final class FoldConstants extends SimpleNodeVisitor implements Loggable {
         protected abstract LiteralNode<?> eval();
     }
 
-    /**
-     * When we eliminate dead code, we must preserve var declarations as they are scoped to the whole
-     * function. This method gathers var nodes from code passed to it, removing their initializers.
-     *
-     * @param deadCodeRoot the root node of eliminated dead code
-     * @param statements a list that will be receiving the var nodes from the dead code, with their
-     * initializers removed.
-     */
-    static void extractVarNodesFromDeadCode(final Node deadCodeRoot, final List<Statement> statements) {
-        deadCodeRoot.accept(new SimpleNodeVisitor() {
+    private static void extractVarNodes(final Block block, final List<Statement> statements) {
+        final LexicalContext lc = new LexicalContext();
+        block.accept(lc, new NodeVisitor<LexicalContext>(lc) {
             @Override
-            public boolean enterVarNode(final VarNode varNode) {
+            public boolean enterVarNode(VarNode varNode) {
                 statements.add(varNode.setInit(null));
-                return false;
-            }
-
-            @Override
-            public boolean enterFunctionNode(final FunctionNode functionNode) {
-                // Don't descend into nested functions
                 return false;
             }
         });
@@ -214,7 +163,7 @@ final class FoldConstants extends SimpleNodeVisitor implements Loggable {
 
         @Override
         protected LiteralNode<?> eval() {
-            final Node rhsNode = parent.getExpression();
+            final Node rhsNode = parent.rhs();
 
             if (!(rhsNode instanceof LiteralNode)) {
                 return null;
@@ -225,8 +174,7 @@ final class FoldConstants extends SimpleNodeVisitor implements Loggable {
             }
 
             final LiteralNode<?> rhs = (LiteralNode<?>)rhsNode;
-            final Type rhsType = rhs.getType();
-            final boolean rhsInteger = rhsType.isInteger() || rhsType.isBoolean();
+            final boolean rhsInteger = rhs.getType().isInteger();
 
             LiteralNode<?> literalNode;
 
@@ -234,8 +182,6 @@ final class FoldConstants extends SimpleNodeVisitor implements Loggable {
             case ADD:
                 if (rhsInteger) {
                     literalNode = LiteralNode.newInstance(token, finish, rhs.getInt32());
-                } else if (rhsType.isLong()) {
-                    literalNode = LiteralNode.newInstance(token, finish, rhs.getLong());
                 } else {
                     literalNode = LiteralNode.newInstance(token, finish, rhs.getNumber());
                 }
@@ -243,8 +189,6 @@ final class FoldConstants extends SimpleNodeVisitor implements Loggable {
             case SUB:
                 if (rhsInteger && rhs.getInt32() != 0) { // @see test/script/basic/minuszero.js
                     literalNode = LiteralNode.newInstance(token, finish, -rhs.getInt32());
-                } else if (rhsType.isLong() && rhs.getLong() != 0L) {
-                    literalNode = LiteralNode.newInstance(token, finish, -rhs.getLong());
                 } else {
                     literalNode = LiteralNode.newInstance(token, finish, -rhs.getNumber());
                 }
@@ -307,7 +251,9 @@ final class FoldConstants extends SimpleNodeVisitor implements Loggable {
             final Type widest = Type.widest(lhs.getType(), rhs.getType());
 
             boolean isInteger = widest.isInteger();
-            final double value;
+            boolean isLong    = widest.isLong();
+
+            double value;
 
             switch (parent.tokenType()) {
             case DIV:
@@ -315,7 +261,7 @@ final class FoldConstants extends SimpleNodeVisitor implements Loggable {
                 break;
             case ADD:
                 if ((lhs.isString() || rhs.isNumeric()) && (rhs.isString() || rhs.isNumeric())) {
-                    final Object res = ScriptRuntime.ADD(lhs.getObject(), rhs.getObject());
+                    Object res = ScriptRuntime.ADD(lhs.getObject(), rhs.getObject());
                     if (res instanceof Number) {
                         value = ((Number)res).doubleValue();
                         break;
@@ -334,8 +280,7 @@ final class FoldConstants extends SimpleNodeVisitor implements Loggable {
                 value = lhs.getNumber() - rhs.getNumber();
                 break;
             case SHR:
-                final long result = JSType.toUint32(lhs.getInt32() >>> rhs.getInt32());
-                return LiteralNode.newInstance(token, finish, JSType.toNarrowestNumber(result));
+                return LiteralNode.newInstance(token, finish, (lhs.getInt32() >>> rhs.getInt32()) & JSType.MAX_UINT);
             case SAR:
                 return LiteralNode.newInstance(token, finish, lhs.getInt32() >> rhs.getInt32());
             case SHL:
@@ -366,10 +311,13 @@ final class FoldConstants extends SimpleNodeVisitor implements Loggable {
                 return null;
             }
 
-            isInteger &= JSType.isStrictlyRepresentableAsInt(value);
+            isInteger &= value != 0.0 && JSType.isRepresentableAsInt(value);
+            isLong    &= value != 0.0 && JSType.isRepresentableAsLong(value);
 
             if (isInteger) {
                 return LiteralNode.newInstance(token, finish, (int)value);
+            } else if (isLong) {
+                return LiteralNode.newInstance(token, finish, (long)value);
             }
 
             return LiteralNode.newInstance(token, finish, value);

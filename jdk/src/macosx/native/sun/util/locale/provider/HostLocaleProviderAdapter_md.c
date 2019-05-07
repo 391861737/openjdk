@@ -24,7 +24,6 @@
  */
 
 #include "sun_util_locale_provider_HostLocaleProviderAdapterImpl.h"
-#include "jni_util.h"
 #include <CoreFoundation/CoreFoundation.h>
 #include <stdio.h>
 
@@ -64,10 +63,6 @@ JNIEXPORT jstring JNICALL Java_sun_util_locale_provider_HostLocaleProviderAdapte
     localeString = getMacOSXLocale(posixCat);
     if (localeString == NULL) {
         localeString = getPosixLocale(posixCat);
-        if (localeString == NULL) {
-            JNU_ThrowOutOfMemoryError(env, NULL);
-            return NULL;
-        }
     }
     ret = (*env)->NewStringUTF(env, localeString);
     free(localeString);
@@ -132,7 +127,6 @@ JNIEXPORT jstring JNICALL Java_sun_util_locale_provider_HostLocaleProviderAdapte
 JNIEXPORT jobjectArray JNICALL Java_sun_util_locale_provider_HostLocaleProviderAdapterImpl_getAmPmStrings
   (JNIEnv *env, jclass cls, jstring jlangtag, jobjectArray ampms) {
     CFLocaleRef cflocale = CFLocaleCopyCurrent();
-    jstring tmp_string;
     if (cflocale != NULL) {
         CFDateFormatterRef df = CFDateFormatterCreate(kCFAllocatorDefault,
                                                   cflocale,
@@ -144,21 +138,13 @@ JNIEXPORT jobjectArray JNICALL Java_sun_util_locale_provider_HostLocaleProviderA
             if (amStr != NULL) {
                 CFStringGetCString(amStr, buf, BUFLEN, kCFStringEncodingUTF8);
                 CFRelease(amStr);
-                tmp_string = (*env)->NewStringUTF(env, buf);
-                if (tmp_string != NULL) {
-                    (*env)->SetObjectArrayElement(env, ampms, 0, tmp_string);
-                }
+                (*env)->SetObjectArrayElement(env, ampms, 0, (*env)->NewStringUTF(env, buf));
             }
-            if (!(*env)->ExceptionCheck(env)){
-                CFStringRef pmStr = CFDateFormatterCopyProperty(df, kCFDateFormatterPMSymbol);
-                if (pmStr != NULL) {
-                    CFStringGetCString(pmStr, buf, BUFLEN, kCFStringEncodingUTF8);
-                    CFRelease(pmStr);
-                    tmp_string = (*env)->NewStringUTF(env, buf);
-                    if (tmp_string != NULL) {
-                        (*env)->SetObjectArrayElement(env, ampms, 1, tmp_string);
-                    }
-                }
+            CFStringRef pmStr = CFDateFormatterCopyProperty(df, kCFDateFormatterPMSymbol);
+            if (pmStr != NULL) {
+                CFStringGetCString(pmStr, buf, BUFLEN, kCFStringEncodingUTF8);
+                CFRelease(pmStr);
+                (*env)->SetObjectArrayElement(env, ampms, 1, (*env)->NewStringUTF(env, buf));
             }
             CFRelease(df);
         }
@@ -661,16 +647,10 @@ static CFNumberFormatterStyle convertNumberFormatterStyle(jint javaStyle) {
 
 static void copyArrayElements(JNIEnv *env, CFArrayRef cfarray, jobjectArray jarray, CFIndex sindex, int dindex, int count) {
     char buf[BUFLEN];
-    jstring tmp_string;
 
     for (; count > 0; sindex++, dindex++, count--) {
         CFStringGetCString(CFArrayGetValueAtIndex(cfarray, sindex), buf, BUFLEN, kCFStringEncodingUTF8);
-        tmp_string = (*env)->NewStringUTF(env, buf);
-        if (tmp_string != NULL) {
-            (*env)->SetObjectArrayElement(env, jarray, dindex, tmp_string);
-        } else {
-            break;
-        }
+        (*env)->SetObjectArrayElement(env, jarray, dindex, (*env)->NewStringUTF(env, buf));
     }
 }
 

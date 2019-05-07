@@ -25,10 +25,9 @@
 
 package jdk.nashorn.internal.objects;
 
-import static jdk.nashorn.internal.lookup.Lookup.MH;
 import static jdk.nashorn.internal.runtime.ECMAErrors.typeError;
 import static jdk.nashorn.internal.runtime.ScriptRuntime.UNDEFINED;
-import static jdk.nashorn.internal.runtime.UnwarrantedOptimismException.INVALID_PROGRAM_POINT;
+import static jdk.nashorn.internal.lookup.Lookup.MH;
 
 import java.lang.invoke.MethodHandle;
 import java.lang.invoke.MethodHandles;
@@ -39,7 +38,6 @@ import java.util.List;
 import jdk.internal.dynalink.CallSiteDescriptor;
 import jdk.internal.dynalink.linker.GuardedInvocation;
 import jdk.internal.dynalink.linker.LinkRequest;
-import jdk.nashorn.internal.lookup.Lookup;
 import jdk.nashorn.internal.objects.annotations.Constructor;
 import jdk.nashorn.internal.objects.annotations.ScriptClass;
 import jdk.nashorn.internal.runtime.FindProperty;
@@ -49,6 +47,7 @@ import jdk.nashorn.internal.runtime.ScriptFunction;
 import jdk.nashorn.internal.runtime.ScriptObject;
 import jdk.nashorn.internal.runtime.ScriptRuntime;
 import jdk.nashorn.internal.runtime.arrays.ArrayLikeIterator;
+import jdk.nashorn.internal.lookup.Lookup;
 import jdk.nashorn.internal.scripts.JO;
 
 /**
@@ -147,6 +146,10 @@ public final class NativeJSAdapter extends ScriptObject {
     // initialized by nasgen
     private static PropertyMap $nasgenmap$;
 
+    static PropertyMap getInitialMap() {
+        return $nasgenmap$;
+    }
+
     NativeJSAdapter(final Object overrides, final ScriptObject adaptee, final ScriptObject proto, final PropertyMap map) {
         super(proto, map);
         this.adaptee = wrapAdaptee(adaptee);
@@ -160,7 +163,7 @@ public final class NativeJSAdapter extends ScriptObject {
     }
 
     private static ScriptObject wrapAdaptee(final ScriptObject adaptee) {
-        return new JO(adaptee);
+        return new JO(adaptee, Global.instance().getObjectMap());
     }
 
     @Override
@@ -169,33 +172,63 @@ public final class NativeJSAdapter extends ScriptObject {
     }
 
     @Override
-    public int getInt(final Object key, final int programPoint) {
-        return (overrides && super.hasOwnProperty(key)) ? super.getInt(key, programPoint) : callAdapteeInt(programPoint, __get__, key);
+    public int getInt(final Object key) {
+        return (overrides && super.hasOwnProperty(key)) ? super.getInt(key) : callAdapteeInt(__get__, key);
     }
 
     @Override
-    public int getInt(final double key, final int programPoint) {
-        return (overrides && super.hasOwnProperty(key)) ? super.getInt(key, programPoint) : callAdapteeInt(programPoint, __get__, key);
+    public int getInt(final double key) {
+        return (overrides && super.hasOwnProperty(key)) ? super.getInt(key) : callAdapteeInt(__get__, key);
     }
 
     @Override
-    public int getInt(final int key, final int programPoint) {
-        return (overrides && super.hasOwnProperty(key)) ? super.getInt(key, programPoint) : callAdapteeInt(programPoint, __get__, key);
+    public int getInt(final long key) {
+        return (overrides && super.hasOwnProperty(key)) ? super.getInt(key) : callAdapteeInt(__get__, key);
     }
 
     @Override
-    public double getDouble(final Object key, final int programPoint) {
-        return (overrides && super.hasOwnProperty(key)) ? super.getDouble(key, programPoint) : callAdapteeDouble(programPoint, __get__, key);
+    public int getInt(final int key) {
+        return (overrides && super.hasOwnProperty(key)) ? super.getInt(key) : callAdapteeInt(__get__, key);
     }
 
     @Override
-    public double getDouble(final double key, final int programPoint) {
-        return (overrides && super.hasOwnProperty(key)) ? super.getDouble(key, programPoint) : callAdapteeDouble(programPoint, __get__, key);
+    public long getLong(final Object key) {
+        return (overrides && super.hasOwnProperty(key)) ? super.getLong(key) : callAdapteeLong(__get__, key);
     }
 
     @Override
-    public double getDouble(final int key, final int programPoint) {
-        return (overrides && super.hasOwnProperty(key)) ? super.getDouble(key, programPoint) : callAdapteeDouble(programPoint, __get__, key);
+    public long getLong(final double key) {
+        return (overrides && super.hasOwnProperty(key)) ? super.getLong(key) : callAdapteeLong(__get__, key);
+    }
+
+    @Override
+    public long getLong(final long key) {
+        return (overrides && super.hasOwnProperty(key)) ? super.getLong(key) : callAdapteeLong(__get__, key);
+    }
+
+    @Override
+    public long getLong(final int key) {
+        return (overrides && super.hasOwnProperty(key)) ? super.getLong(key) : callAdapteeLong(__get__, key);
+    }
+
+    @Override
+    public double getDouble(final Object key) {
+        return (overrides && super.hasOwnProperty(key)) ? super.getDouble(key) : callAdapteeDouble(__get__, key);
+    }
+
+    @Override
+    public double getDouble(final double key) {
+        return (overrides && super.hasOwnProperty(key)) ? super.getDouble(key) : callAdapteeDouble(__get__, key);
+    }
+
+    @Override
+    public double getDouble(final long key) {
+        return (overrides && super.hasOwnProperty(key)) ? super.getDouble(key) : callAdapteeDouble(__get__, key);
+    }
+
+    @Override
+    public double getDouble(final int key) {
+        return (overrides && super.hasOwnProperty(key)) ? super.getDouble(key) : callAdapteeDouble(__get__, key);
     }
 
     @Override
@@ -209,88 +242,156 @@ public final class NativeJSAdapter extends ScriptObject {
     }
 
     @Override
+    public Object get(final long key) {
+        return (overrides && super.hasOwnProperty(key)) ? super.get(key) : callAdaptee(__get__, key);
+    }
+
+    @Override
     public Object get(final int key) {
         return (overrides && super.hasOwnProperty(key)) ? super.get(key) : callAdaptee(__get__, key);
     }
 
     @Override
-    public void set(final Object key, final int value, final int flags) {
+    public void set(final Object key, final int value, final boolean strict) {
         if (overrides && super.hasOwnProperty(key)) {
-            super.set(key, value, flags);
+            super.set(key, value, strict);
         } else {
-            callAdaptee(__put__, key, value, flags);
+            callAdaptee(__put__, key, value, strict);
         }
     }
 
     @Override
-    public void set(final Object key, final double value, final int flags) {
+    public void set(final Object key, final long value, final boolean strict) {
         if (overrides && super.hasOwnProperty(key)) {
-            super.set(key, value, flags);
+            super.set(key, value, strict);
         } else {
-            callAdaptee(__put__, key, value, flags);
+            callAdaptee(__put__, key, value, strict);
         }
     }
 
     @Override
-    public void set(final Object key, final Object value, final int flags) {
+    public void set(final Object key, final double value, final boolean strict) {
         if (overrides && super.hasOwnProperty(key)) {
-            super.set(key, value, flags);
+            super.set(key, value, strict);
         } else {
-            callAdaptee(__put__, key, value, flags);
+            callAdaptee(__put__, key, value, strict);
         }
     }
 
     @Override
-    public void set(final double key, final int value, final int flags) {
+    public void set(final Object key, final Object value, final boolean strict) {
         if (overrides && super.hasOwnProperty(key)) {
-            super.set(key, value, flags);
+            super.set(key, value, strict);
         } else {
-            callAdaptee(__put__, key, value, flags);
+            callAdaptee(__put__, key, value, strict);
         }
     }
 
     @Override
-    public void set(final double key, final double value, final int flags) {
+    public void set(final double key, final int value, final boolean strict) {
         if (overrides && super.hasOwnProperty(key)) {
-            super.set(key, value, flags);
+            super.set(key, value, strict);
         } else {
-            callAdaptee(__put__, key, value, flags);
+            callAdaptee(__put__, key, value, strict);
         }
     }
 
     @Override
-    public void set(final double key, final Object value, final int flags) {
+    public void set(final double key, final long value, final boolean strict) {
         if (overrides && super.hasOwnProperty(key)) {
-            super.set(key, value, flags);
+            super.set(key, value, strict);
         } else {
-            callAdaptee(__put__, key, value, flags);
+            callAdaptee(__put__, key, value, strict);
         }
     }
 
     @Override
-    public void set(final int key, final int value, final int flags) {
+    public void set(final double key, final double value, final boolean strict) {
         if (overrides && super.hasOwnProperty(key)) {
-            super.set(key, value, flags);
+            super.set(key, value, strict);
         } else {
-            callAdaptee(__put__, key, value, flags);
+            callAdaptee(__put__, key, value, strict);
         }
     }
 
     @Override
-    public void set(final int key, final double value, final int flags) {
+    public void set(final double key, final Object value, final boolean strict) {
         if (overrides && super.hasOwnProperty(key)) {
-            super.set(key, value, flags);
+            super.set(key, value, strict);
         } else {
-            callAdaptee(__put__, key, value, flags);
+            callAdaptee(__put__, key, value, strict);
         }
     }
 
     @Override
-    public void set(final int key, final Object value, final int flags) {
+    public void set(final long key, final int value, final boolean strict) {
         if (overrides && super.hasOwnProperty(key)) {
-            super.set(key, value, flags);
+            super.set(key, value, strict);
         } else {
-            callAdaptee(__put__, key, value, flags);
+            callAdaptee(__put__, key, value, strict);
+        }
+    }
+
+    @Override
+    public void set(final long key, final long value, final boolean strict) {
+        if (overrides && super.hasOwnProperty(key)) {
+            super.set(key, value, strict);
+        } else {
+            callAdaptee(__put__, key, value, strict);
+        }
+    }
+
+    @Override
+    public void set(final long key, final double value, final boolean strict) {
+        if (overrides && super.hasOwnProperty(key)) {
+            super.set(key, value, strict);
+        } else {
+            callAdaptee(__put__, key, value, strict);
+        }
+    }
+
+    @Override
+    public void set(final long key, final Object value, final boolean strict) {
+        if (overrides && super.hasOwnProperty(key)) {
+            super.set(key, value, strict);
+        } else {
+            callAdaptee(__put__, key, value, strict);
+        }
+    }
+
+    @Override
+    public void set(final int key, final int value, final boolean strict) {
+        if (overrides && super.hasOwnProperty(key)) {
+            super.set(key, value, strict);
+        } else {
+            callAdaptee(__put__, key, value, strict);
+        }
+    }
+
+    @Override
+    public void set(final int key, final long value, final boolean strict) {
+        if (overrides && super.hasOwnProperty(key)) {
+            super.set(key, value, strict);
+        } else {
+            callAdaptee(__put__, key, value, strict);
+        }
+    }
+
+    @Override
+    public void set(final int key, final double value, final boolean strict) {
+        if (overrides && super.hasOwnProperty(key)) {
+            super.set(key, value, strict);
+        } else {
+            callAdaptee(__put__, key, value, strict);
+        }
+    }
+
+    @Override
+    public void set(final int key, final Object value, final boolean strict) {
+        if (overrides && super.hasOwnProperty(key)) {
+            super.set(key, value, strict);
+        } else {
+            callAdaptee(__put__, key, value, strict);
         }
     }
 
@@ -313,6 +414,15 @@ public final class NativeJSAdapter extends ScriptObject {
     }
 
     @Override
+    public boolean has(final long key) {
+        if (overrides && super.hasOwnProperty(key)) {
+            return true;
+        }
+
+        return JSType.toBoolean(callAdaptee(Boolean.FALSE, __has__, key));
+    }
+
+    @Override
     public boolean has(final double key) {
         if (overrides && super.hasOwnProperty(key)) {
             return true;
@@ -323,6 +433,15 @@ public final class NativeJSAdapter extends ScriptObject {
 
     @Override
     public boolean delete(final int key, final boolean strict) {
+        if (overrides && super.hasOwnProperty(key)) {
+            return super.delete(key, strict);
+        }
+
+        return JSType.toBoolean(callAdaptee(Boolean.TRUE, __delete__, key, strict));
+    }
+
+    @Override
+    public boolean delete(final long key, final boolean strict) {
         if (overrides && super.hasOwnProperty(key)) {
             return super.delete(key, strict);
         }
@@ -421,7 +540,7 @@ public final class NativeJSAdapter extends ScriptObject {
      * @return new NativeJSAdapter
      */
     @Constructor
-    public static NativeJSAdapter construct(final boolean isNew, final Object self, final Object... args) {
+    public static Object construct(final boolean isNew, final Object self, final Object... args) {
         Object proto     = UNDEFINED;
         Object overrides = UNDEFINED;
         Object adaptee;
@@ -458,11 +577,11 @@ public final class NativeJSAdapter extends ScriptObject {
             proto = global.getJSAdapterPrototype();
         }
 
-        return new NativeJSAdapter(overrides, (ScriptObject)adaptee, (ScriptObject)proto, $nasgenmap$);
+        return new NativeJSAdapter(overrides, (ScriptObject)adaptee, (ScriptObject)proto, global.getJSAdapterMap());
     }
 
     @Override
-    protected GuardedInvocation findNewMethod(final CallSiteDescriptor desc, final LinkRequest request) {
+    protected GuardedInvocation findNewMethod(final CallSiteDescriptor desc) {
         return findHook(desc, __new__, false);
     }
 
@@ -503,15 +622,15 @@ public final class NativeJSAdapter extends ScriptObject {
         case "getMethod":
             final FindProperty find = adaptee.findProperty(__call__, true);
             if (find != null) {
-                final Object value = find.getObjectValue();
+                final Object value = getObjectValue(find);
                 if (value instanceof ScriptFunction) {
-                    final ScriptFunction func = (ScriptFunction)value;
+                    final ScriptFunctionImpl func = (ScriptFunctionImpl)value;
                     // TODO: It's a shame we need to produce a function bound to this and name, when we'd only need it bound
                     // to name. Probably not a big deal, but if we can ever make it leaner, it'd be nice.
                     return new GuardedInvocation(MH.dropArguments(MH.constant(Object.class,
-                            func.createBound(this, new Object[] { name })), 0, Object.class),
-                            testJSAdaptor(adaptee, null, null, null),
-                            adaptee.getProtoSwitchPoints(__call__, find.getOwner()), null);
+                            func.makeBoundFunction(this, new Object[] { name })), 0, Object.class),
+                            adaptee.getMap().getProtoGetSwitchPoint(adaptee.getProto(), __call__),
+                            testJSAdaptor(adaptee, null, null, null));
                 }
             }
             throw typeError("no.such.function", desc.getNameToken(2), ScriptRuntime.safeToString(this));
@@ -543,12 +662,16 @@ public final class NativeJSAdapter extends ScriptObject {
         return callAdaptee(UNDEFINED, name, args);
     }
 
-    private double callAdapteeDouble(final int programPoint, final String name, final Object... args) {
-        return JSType.toNumberMaybeOptimistic(callAdaptee(name, args), programPoint);
+    private double callAdapteeDouble(final String name, final Object... args) {
+        return JSType.toNumber(callAdaptee(name, args));
     }
 
-    private int callAdapteeInt(final int programPoint, final String name, final Object... args) {
-        return JSType.toInt32MaybeOptimistic(callAdaptee(name, args), programPoint);
+    private long callAdapteeLong(final String name, final Object... args) {
+        return JSType.toLong(callAdaptee(name, args));
+    }
+
+    private int callAdapteeInt(final String name, final Object... args) {
+        return JSType.toInt32(callAdaptee(name, args));
     }
 
     private Object callAdaptee(final Object retValue, final String name, final Object... args) {
@@ -568,7 +691,7 @@ public final class NativeJSAdapter extends ScriptObject {
         final MethodType type = desc.getMethodType();
         if (findData != null) {
             final String name = desc.getNameTokenCount() > 2 ? desc.getNameToken(2) : null;
-            final Object value = findData.getObjectValue();
+            final Object value = getObjectValue(findData);
             if (value instanceof ScriptFunction) {
                 final ScriptFunction func = (ScriptFunction)value;
 
@@ -577,8 +700,8 @@ public final class NativeJSAdapter extends ScriptObject {
                 if (methodHandle != null) {
                     return new GuardedInvocation(
                             methodHandle,
-                            testJSAdaptor(adaptee, findData.getGetter(Object.class, INVALID_PROGRAM_POINT, null), findData.getOwner(), func),
-                            adaptee.getProtoSwitchPoints(hook, findData.getOwner()), null);
+                            adaptee.getMap().getProtoGetSwitchPoint(adaptee.getProto(), hook),
+                            testJSAdaptor(adaptee, findData.getGetter(Object.class), findData.getOwner(), func));
                 }
              }
         }
@@ -590,7 +713,7 @@ public final class NativeJSAdapter extends ScriptObject {
             final MethodHandle methodHandle = hook.equals(__put__) ?
             MH.asType(Lookup.EMPTY_SETTER, type) :
             Lookup.emptyGetter(type.returnType());
-            return new GuardedInvocation(methodHandle, testJSAdaptor(adaptee, null, null, null), adaptee.getProtoSwitchPoints(hook, null), null);
+            return new GuardedInvocation(methodHandle, adaptee.getMap().getProtoGetSwitchPoint(adaptee.getProto(), hook), testJSAdaptor(adaptee, null, null, null));
         }
     }
 

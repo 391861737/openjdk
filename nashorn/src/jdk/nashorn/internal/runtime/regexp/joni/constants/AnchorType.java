@@ -19,7 +19,6 @@
  */
 package jdk.nashorn.internal.runtime.regexp.joni.constants;
 
-@SuppressWarnings("javadoc")
 public interface AnchorType {
     final int BEGIN_BUF         = (1<<0);
     final int BEGIN_LINE        = (1<<1);

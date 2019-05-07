@@ -41,10 +41,8 @@ import java.lang.reflect.TypeVariable;
 public abstract class AbstractScope<D extends GenericDeclaration>
     implements Scope {
 
-    private final D recvr; // the declaration whose scope this instance represents
-
-    /** The enclosing scope of this scope.  Lazily initialized. */
-    private volatile Scope enclosingScope;
+    private D recvr; // the declaration whose scope this instance represents
+    private Scope enclosingScope; // the enclosing scope of this scope
 
     /**
      * Constructor. Takes a reflective object whose scope the newly
@@ -73,11 +71,7 @@ public abstract class AbstractScope<D extends GenericDeclaration>
      * @return the enclosing scope
      */
     protected Scope getEnclosingScope(){
-        Scope enclosingScope = this.enclosingScope;
-        if (enclosingScope == null) {
-            enclosingScope = computeEnclosingScope();
-            this.enclosingScope = enclosingScope;
-        }
+        if (enclosingScope == null) {enclosingScope = computeEnclosingScope();}
         return enclosingScope;
     }
 

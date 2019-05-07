@@ -54,7 +54,6 @@ class CallStaticJavaNode;
 class CatchNode;
 class CatchProjNode;
 class CheckCastPPNode;
-class CastIINode;
 class ClearArrayNode;
 class CmpNode;
 class CodeBuffer;
@@ -70,6 +69,7 @@ class EncodePNode;
 class EncodePKlassNode;
 class FastLockNode;
 class FastUnlockNode;
+class FlagsProjNode;
 class IfNode;
 class IfFalseNode;
 class IfTrueNode;
@@ -99,8 +99,8 @@ class MachReturnNode;
 class MachSafePointNode;
 class MachSpillCopyNode;
 class MachTempNode;
-class MachMergeNode;
 class Matcher;
+class MathExactNode;
 class MemBarNode;
 class MemBarStoreStoreNode;
 class MemNode;
@@ -295,16 +295,10 @@ protected:
 
  public:
   // Each Node is assigned a unique small/dense number.  This number is used
-  // to index into auxiliary arrays of data and bit vectors.
-  // The field _idx is declared constant to defend against inadvertent assignments,
-  // since it is used by clients as a naked field. However, the field's value can be
-  // changed using the set_idx() method.
-  //
-  // The PhaseRenumberLive phase renumbers nodes based on liveness information.
-  // Therefore, it updates the value of the _idx field. The parse-time _idx is
-  // preserved in _parse_idx.
+  // to index into auxiliary arrays of data and bitvectors.
+  // It is declared const to defend against inadvertant assignment,
+  // since it is used by clients as a naked field.
   const node_idx_t _idx;
-  DEBUG_ONLY(const node_idx_t _parse_idx;)
 
   // Get the (read-only) number of input edges
   uint req() const { return _cnt; }
@@ -363,8 +357,6 @@ protected:
 
   // Reference to the i'th input Node.  Error if out of bounds.
   Node* in(uint i) const { assert(i < _max, err_msg_res("oob: i=%d, _max=%d", i, _max)); return _in[i]; }
-  // Reference to the i'th input Node.  NULL if out of bounds.
-  Node* lookup(uint i) const { return ((i < _max) ? _in[i] : NULL); }
   // Reference to the i'th output Node.  Error if out of bounds.
   // Use this accessor sparingly.  We are going trying to use iterators instead.
   Node* raw_out(uint i) const { assert(i < _outcnt,"oob"); return _out[i]; }
@@ -392,10 +384,6 @@ protected:
 
   // Set a required input edge, also updates corresponding output edge
   void add_req( Node *n ); // Append a NEW required input
-  void add_req( Node *n0, Node *n1 ) {
-    add_req(n0); add_req(n1); }
-  void add_req( Node *n0, Node *n1, Node *n2 ) {
-    add_req(n0); add_req(n1); add_req(n2); }
   void add_req_batch( Node* n, uint m ); // Append m NEW required inputs (all n).
   void del_req( uint idx ); // Delete required edge & compact
   void del_req_ordered( uint idx ); // Delete required edge & compact with preserved order
@@ -581,6 +569,7 @@ public:
       DEFINE_CLASS_ID(MemBar,      Multi, 3)
         DEFINE_CLASS_ID(Initialize,       MemBar, 0)
         DEFINE_CLASS_ID(MemBarStoreStore, MemBar, 1)
+      DEFINE_CLASS_ID(MathExact,   Multi, 4)
 
     DEFINE_CLASS_ID(Mach,  Node, 1)
       DEFINE_CLASS_ID(MachReturn, Mach, 0)
@@ -599,12 +588,10 @@ public:
       DEFINE_CLASS_ID(MachTemp,         Mach, 3)
       DEFINE_CLASS_ID(MachConstantBase, Mach, 4)
       DEFINE_CLASS_ID(MachConstant,     Mach, 5)
-      DEFINE_CLASS_ID(MachMerge,        Mach, 6)
 
     DEFINE_CLASS_ID(Type,  Node, 2)
       DEFINE_CLASS_ID(Phi,   Type, 0)
       DEFINE_CLASS_ID(ConstraintCast, Type, 1)
-        DEFINE_CLASS_ID(CastII, ConstraintCast, 0)
       DEFINE_CLASS_ID(CheckCastPP, Type, 2)
       DEFINE_CLASS_ID(CMove, Type, 3)
       DEFINE_CLASS_ID(SafePointScalarObject, Type, 4)
@@ -639,6 +626,7 @@ public:
       DEFINE_CLASS_ID(Cmp,   Sub, 0)
         DEFINE_CLASS_ID(FastLock,   Cmp, 0)
         DEFINE_CLASS_ID(FastUnlock, Cmp, 1)
+        DEFINE_CLASS_ID(FlagsProj, Cmp, 2)
 
     DEFINE_CLASS_ID(MergeMem, Node, 7)
     DEFINE_CLASS_ID(Bool,     Node, 8)
@@ -655,18 +643,17 @@ public:
 
   // Flags are sorted by usage frequency.
   enum NodeFlags {
-    Flag_is_Copy                     = 0x01, // should be first bit to avoid shift
-    Flag_rematerialize               = Flag_is_Copy << 1,
+    Flag_is_Copy             = 0x01, // should be first bit to avoid shift
+    Flag_rematerialize       = Flag_is_Copy << 1,
     Flag_needs_anti_dependence_check = Flag_rematerialize << 1,
-    Flag_is_macro                    = Flag_needs_anti_dependence_check << 1,
-    Flag_is_Con                      = Flag_is_macro << 1,
-    Flag_is_cisc_alternate           = Flag_is_Con << 1,
-    Flag_is_dead_loop_safe           = Flag_is_cisc_alternate << 1,
-    Flag_may_be_short_branch         = Flag_is_dead_loop_safe << 1,
-    Flag_avoid_back_to_back_before   = Flag_may_be_short_branch << 1,
-    Flag_avoid_back_to_back_after    = Flag_avoid_back_to_back_before << 1,
-    Flag_has_call                    = Flag_avoid_back_to_back_after << 1,
-    Flag_is_expensive                = Flag_has_call << 1,
+    Flag_is_macro            = Flag_needs_anti_dependence_check << 1,
+    Flag_is_Con              = Flag_is_macro << 1,
+    Flag_is_cisc_alternate   = Flag_is_Con << 1,
+    Flag_is_dead_loop_safe   = Flag_is_cisc_alternate << 1,
+    Flag_may_be_short_branch = Flag_is_dead_loop_safe << 1,
+    Flag_avoid_back_to_back  = Flag_may_be_short_branch << 1,
+    Flag_has_call            = Flag_avoid_back_to_back << 1,
+    Flag_is_expensive        = Flag_has_call << 1,
     _max_flags = (Flag_is_expensive << 1) - 1 // allow flags combination
   };
 
@@ -729,7 +716,6 @@ public:
   DEFINE_CLASS_QUERY(Catch)
   DEFINE_CLASS_QUERY(CatchProj)
   DEFINE_CLASS_QUERY(CheckCastPP)
-  DEFINE_CLASS_QUERY(CastII)
   DEFINE_CLASS_QUERY(ConstraintCast)
   DEFINE_CLASS_QUERY(ClearArray)
   DEFINE_CLASS_QUERY(CMove)
@@ -744,6 +730,7 @@ public:
   DEFINE_CLASS_QUERY(EncodePKlass)
   DEFINE_CLASS_QUERY(FastLock)
   DEFINE_CLASS_QUERY(FastUnlock)
+  DEFINE_CLASS_QUERY(FlagsProj)
   DEFINE_CLASS_QUERY(If)
   DEFINE_CLASS_QUERY(IfFalse)
   DEFINE_CLASS_QUERY(IfTrue)
@@ -772,7 +759,7 @@ public:
   DEFINE_CLASS_QUERY(MachSafePoint)
   DEFINE_CLASS_QUERY(MachSpillCopy)
   DEFINE_CLASS_QUERY(MachTemp)
-  DEFINE_CLASS_QUERY(MachMerge)
+  DEFINE_CLASS_QUERY(MathExact)
   DEFINE_CLASS_QUERY(Mem)
   DEFINE_CLASS_QUERY(MemBar)
   DEFINE_CLASS_QUERY(MemBarStoreStore)
@@ -1040,7 +1027,8 @@ public:
   // RegMask Print Functions
   void dump_in_regmask(int idx) { in_RegMask(idx).dump(); }
   void dump_out_regmask() { out_RegMask().dump(); }
-  static bool in_dump() { return Compile::current()->_in_dump_cnt > 0; }
+  static int _in_dump_cnt;
+  static bool in_dump() { return _in_dump_cnt > 0; }
   void fast_dump() const {
     tty->print("%4d: %-17s", _idx, Name());
     for (uint i = 0; i < len(); i++)
@@ -1362,7 +1350,7 @@ class Node_List : public Node_Array {
 public:
   Node_List() : Node_Array(Thread::current()->resource_area()), _cnt(0) {}
   Node_List(Arena *a) : Node_Array(a), _cnt(0) {}
-  bool contains(const Node* n) const {
+  bool contains(Node* n) {
     for (uint e = 0; e < size(); e++) {
       if (at(e) == n) return true;
     }
@@ -1377,7 +1365,6 @@ public:
   void clear() { _cnt = 0; Node_Array::clear(); } // retain storage
   uint size() const { return _cnt; }
   void dump() const;
-  void dump_simple() const;
 };
 
 //------------------------------Unique_Node_List-------------------------------

@@ -27,6 +27,7 @@ package com.sun.jndi.ldap.pool;
 
 import java.util.ArrayList; // JDK 1.2
 import java.util.List;
+import java.util.Iterator;
 
 import java.lang.ref.Reference;
 import java.lang.ref.SoftReference;
@@ -289,28 +290,23 @@ final class Connections implements PoolCallback {
      * @param threshold an entry idle since this time has expired.
      * @return true if no more connections in list
      */
-    boolean expire(long threshold) {
-        List<ConnectionDesc> clonedConns;
-        synchronized(this) {
-            clonedConns = new ArrayList<>(conns);
-        }
-        List<ConnectionDesc> expired = new ArrayList<>();
-
-        for (ConnectionDesc entry : clonedConns) {
-            d("expire(): ", entry);
+    synchronized boolean expire(long threshold) {
+        Iterator<ConnectionDesc> iter = conns.iterator();
+        ConnectionDesc entry;
+        while (iter.hasNext()) {
+            entry = iter.next();
             if (entry.expire(threshold)) {
-                expired.add(entry);
-                td("expire(): Expired ", entry);
+                d("expire(): removing ", entry);
+                td("Expired ", entry);
+
+                iter.remove();  // remove from pool
+
+                // Don't need to call notify() because we're
+                // removing only idle connections. If there were
+                // idle connections, then there should be no waiters.
             }
         }
-
-        synchronized (this) {
-            conns.removeAll(expired);
-            // Don't need to call notify() because we're
-            // removing only idle connections. If there were
-            // idle connections, then there should be no waiters.
-            return conns.isEmpty();  // whether whole list has 'expired'
-        }
+        return conns.isEmpty();  // whether whole list has 'expired'
     }
 
     /**

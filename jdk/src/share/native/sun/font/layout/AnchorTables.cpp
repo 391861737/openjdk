@@ -44,27 +44,21 @@ void AnchorTable::getAnchor(const LETableReference &base, LEGlyphID glyphID, con
     case 1:
     {
         LEReferenceTo<Format1AnchorTable> f1(base, success);
-        if (LE_SUCCESS(success)) {
-            f1->getAnchor(f1, fontInstance, anchor, success);
-        }
+        f1->getAnchor(f1, fontInstance, anchor, success);
         break;
     }
 
     case 2:
     {
         LEReferenceTo<Format2AnchorTable> f2(base, success);
-        if (LE_SUCCESS(success)) {
-            f2->getAnchor(f2, glyphID, fontInstance, anchor, success);
-        }
+        f2->getAnchor(f2, glyphID, fontInstance, anchor, success);
         break;
     }
 
     case 3:
     {
         LEReferenceTo<Format3AnchorTable> f3(base, success);
-        if (LE_SUCCESS(success)) {
-            f3->getAnchor(f3, fontInstance, anchor, success);
-        }
+        f3->getAnchor(f3, fontInstance, anchor, success);
         break;
     }
 
@@ -72,9 +66,7 @@ void AnchorTable::getAnchor(const LETableReference &base, LEGlyphID glyphID, con
     {
         // unknown format: just use x, y coordinate, like format 1...
         LEReferenceTo<Format1AnchorTable> f1(base, success);
-        if (LE_SUCCESS(success)) {
-            f1->getAnchor(f1, fontInstance, anchor, success);
-        }
+        f1->getAnchor(f1, fontInstance, anchor, success);
         break;
     }
   }
@@ -120,18 +112,16 @@ void Format3AnchorTable::getAnchor(const LEReferenceTo<Format3AnchorTable> &base
 
     if (dtxOffset != 0) {
         LEReferenceTo<DeviceTable> dt(base, success, dtxOffset);
-        if (LE_SUCCESS(success)) {
-            le_int16 adjx = dt->getAdjustment(dt, (le_int16) fontInstance->getXPixelsPerEm(), success);
-            pixels.fX += adjx;
-        }
+        le_int16 adjx = dt->getAdjustment(dt, (le_int16) fontInstance->getXPixelsPerEm(), success);
+
+        pixels.fX += adjx;
     }
 
     if (dtyOffset != 0) {
         LEReferenceTo<DeviceTable> dt(base, success, dtyOffset);
-        if (LE_SUCCESS(success)) {
-            le_int16 adjy = dt->getAdjustment(dt, (le_int16) fontInstance->getYPixelsPerEm(), success);
-            pixels.fY += adjy;
-        }
+        le_int16 adjy = dt->getAdjustment(dt, (le_int16) fontInstance->getYPixelsPerEm(), success);
+
+        pixels.fY += adjy;
     }
 
     fontInstance->pixelsToUnits(pixels, anchor);

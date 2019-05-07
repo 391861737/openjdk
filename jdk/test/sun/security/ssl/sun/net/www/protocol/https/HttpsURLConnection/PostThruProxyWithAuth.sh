@@ -32,7 +32,7 @@
 HOSTNAME=`uname -n`
 OS=`uname -s`
 case "$OS" in
-  SunOS | Linux | Darwin | AIX )
+  SunOS | Linux | Darwin )
     PS=":"
     FS="/"
     ;;
@@ -53,7 +53,5 @@ esac
 ${COMPILEJAVA}${FS}bin${FS}javac ${TESTJAVACOPTS} ${TESTTOOLVMOPTS} -d . ${TESTSRC}${FS}OriginServer.java \
     ${TESTSRC}${FS}ProxyTunnelServer.java \
     ${TESTSRC}${FS}PostThruProxyWithAuth.java
-${TESTJAVA}${FS}bin${FS}java ${TESTVMOPTS} \
-    -Djdk.http.auth.tunneling.disabledSchemes= \
-    PostThruProxyWithAuth ${HOSTNAME} ${TESTSRC}
+${TESTJAVA}${FS}bin${FS}java ${TESTVMOPTS} PostThruProxyWithAuth ${HOSTNAME} ${TESTSRC}
 exit

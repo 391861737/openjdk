@@ -53,12 +53,7 @@ public final class Converter {
         // prevents instantiation
     }
     private static final Logger LOGGER = Logger.getLogger(Converter.class);
-    private static final ContextClassloaderLocal<XMLOutputFactory> xmlOutputFactory = new ContextClassloaderLocal<XMLOutputFactory>() {
-        @Override
-        protected XMLOutputFactory initialValue() throws Exception {
-            return XMLOutputFactory.newInstance();
-        }
-    };
+    private static final XMLOutputFactory xmlOutputFactory = XMLOutputFactory.newInstance();
     private static final AtomicBoolean logMissingStaxUtilsWarning = new AtomicBoolean(false);
 
     /**
@@ -115,7 +110,7 @@ public final class Converter {
             stringOut = new StringWriter();
             XMLStreamWriter writer = null;
             try {
-                writer = xmlOutputFactory.get().createXMLStreamWriter(stringOut);
+                writer = xmlOutputFactory.createXMLStreamWriter(stringOut);
                 if (createIndenter) {
                     writer = createIndenter(writer);
                 }
@@ -148,7 +143,7 @@ public final class Converter {
 
         try {
             if (message != null) {
-                XMLStreamWriter xsw = xmlOutputFactory.get().createXMLStreamWriter(baos, encoding);
+                XMLStreamWriter xsw = xmlOutputFactory.createXMLStreamWriter(baos, encoding);
                 try {
                     message.writeTo(xsw);
                 } finally {

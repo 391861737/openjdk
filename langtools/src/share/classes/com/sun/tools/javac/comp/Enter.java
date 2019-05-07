@@ -105,7 +105,6 @@ public class Enter extends JCTree.Visitor {
     Names names;
     JavaFileManager fileManager;
     PkgInfo pkginfoOpt;
-    TypeEnvs typeEnvs;
 
     private final Todo todo;
 
@@ -143,8 +142,13 @@ public class Enter extends JCTree.Visitor {
 
         Options options = Options.instance(context);
         pkginfoOpt = PkgInfo.get(options);
-        typeEnvs = TypeEnvs.instance(context);
     }
+
+    /** A hashtable mapping classes and packages to the environments current
+     *  at the points of their definitions.
+     */
+    Map<TypeSymbol,Env<AttrContext>> typeEnvs =
+            new HashMap<TypeSymbol,Env<AttrContext>>();
 
     /** Accessor for typeEnvs
      */

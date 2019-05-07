@@ -25,15 +25,15 @@
 
 package jdk.nashorn.internal.objects;
 
-import static jdk.nashorn.internal.lookup.Lookup.MH;
 import static jdk.nashorn.internal.runtime.ECMAErrors.rangeError;
 import static jdk.nashorn.internal.runtime.ECMAErrors.typeError;
+import static jdk.nashorn.internal.runtime.JSType.isRepresentableAsInt;
+import static jdk.nashorn.internal.runtime.JSType.isRepresentableAsLong;
 import static jdk.nashorn.internal.runtime.ScriptRuntime.UNDEFINED;
+import static jdk.nashorn.internal.lookup.Lookup.MH;
 
 import java.lang.invoke.MethodHandle;
 import java.lang.invoke.MethodHandles;
-import java.lang.invoke.MethodType;
-import java.math.RoundingMode;
 import java.text.NumberFormat;
 import java.util.Locale;
 import jdk.internal.dynalink.linker.GuardedInvocation;
@@ -43,13 +43,11 @@ import jdk.nashorn.internal.objects.annotations.Constructor;
 import jdk.nashorn.internal.objects.annotations.Function;
 import jdk.nashorn.internal.objects.annotations.Property;
 import jdk.nashorn.internal.objects.annotations.ScriptClass;
-import jdk.nashorn.internal.objects.annotations.SpecializedFunction;
 import jdk.nashorn.internal.objects.annotations.Where;
 import jdk.nashorn.internal.runtime.JSType;
 import jdk.nashorn.internal.runtime.PropertyMap;
 import jdk.nashorn.internal.runtime.ScriptObject;
 import jdk.nashorn.internal.runtime.ScriptRuntime;
-import jdk.nashorn.internal.runtime.linker.NashornGuards;
 import jdk.nashorn.internal.runtime.linker.PrimitiveLookup;
 
 /**
@@ -59,10 +57,7 @@ import jdk.nashorn.internal.runtime.linker.PrimitiveLookup;
 @ScriptClass("Number")
 public final class NativeNumber extends ScriptObject {
 
-    /** Method handle to create an object wrapper for a primitive number. */
-    static final MethodHandle WRAPFILTER = findOwnMH("wrapFilter", MH.type(NativeNumber.class, Object.class));
-    /** Method handle to retrieve the Number prototype object. */
-    private static final MethodHandle PROTOFILTER = findOwnMH("protoFilter", MH.type(Object.class, Object.class));
+    static final MethodHandle WRAPFILTER = findWrapFilter();
 
     /** ECMA 15.7.3.2 largest positive finite value */
     @Property(attributes = Attribute.NON_ENUMERABLE_CONSTANT, where = Where.CONSTRUCTOR)
@@ -85,17 +80,25 @@ public final class NativeNumber extends ScriptObject {
     public static final double POSITIVE_INFINITY = Double.POSITIVE_INFINITY;
 
     private final double  value;
+    private final boolean isInt;
+    private final boolean isLong;
 
     // initialized by nasgen
     private static PropertyMap $nasgenmap$;
 
+    static PropertyMap getInitialMap() {
+        return $nasgenmap$;
+    }
+
     private NativeNumber(final double value, final ScriptObject proto, final PropertyMap map) {
         super(proto, map);
         this.value = value;
+        this.isInt  = isRepresentableAsInt(value);
+        this.isLong = isRepresentableAsLong(value);
     }
 
     NativeNumber(final double value, final Global global) {
-        this(value, global.getNumberPrototype(), $nasgenmap$);
+        this(value, global.getNumberPrototype(), global.getNumberMap());
     }
 
     private NativeNumber(final double value) {
@@ -129,6 +132,30 @@ public final class NativeNumber extends ScriptObject {
         return value;
     }
 
+    /**
+     * Get the value of this Number as a {@code int}
+     * @return an {@code int} representing the Number value
+     * @throws ClassCastException If number is not representable as an {@code int}
+     */
+    public int intValue() throws ClassCastException {
+        if (isInt) {
+            return (int)value;
+        }
+        throw new ClassCastException();
+    }
+
+    /**
+     * Get the value of this Number as a {@code long}
+     * @return a {@code long} representing the Number value
+     * @throws ClassCastException If number is not representable as an {@code long}
+     */
+    public long longValue() throws ClassCastException {
+        if (isLong) {
+            return (long)value;
+        }
+        throw new ClassCastException();
+    }
+
     @Override
     public String getClassName() {
         return "Number";
@@ -158,21 +185,9 @@ public final class NativeNumber extends ScriptObject {
      * @return number in decimal fixed point notation
      */
     @Function(attributes = Attribute.NOT_ENUMERABLE)
-    public static String toFixed(final Object self, final Object fractionDigits) {
-        return toFixed(self, JSType.toInteger(fractionDigits));
-    }
-
-    /**
-     * ECMA 15.7.4.5 Number.prototype.toFixed (fractionDigits) specialized for int fractionDigits
-     *
-     * @param self           self reference
-     * @param fractionDigits how many digits should be after the decimal point, 0 if undefined
-     *
-     * @return number in decimal fixed point notation
-     */
-    @SpecializedFunction
-    public static String toFixed(final Object self, final int fractionDigits) {
-        if (fractionDigits < 0 || fractionDigits > 20) {
+    public static Object toFixed(final Object self, final Object fractionDigits) {
+        final int f = JSType.toInteger(fractionDigits);
+        if (f < 0 || f > 20) {
             throw rangeError("invalid.fraction.digits", "toFixed");
         }
 
@@ -186,10 +201,9 @@ public final class NativeNumber extends ScriptObject {
         }
 
         final NumberFormat format = NumberFormat.getNumberInstance(Locale.US);
-        format.setMinimumFractionDigits(fractionDigits);
-        format.setMaximumFractionDigits(fractionDigits);
+        format.setMinimumFractionDigits(f);
+        format.setMaximumFractionDigits(f);
         format.setGroupingUsed(false);
-        format.setRoundingMode(RoundingMode.HALF_UP);
 
         return format.format(x);
     }
@@ -203,7 +217,7 @@ public final class NativeNumber extends ScriptObject {
      * @return number in decimal exponential notation
      */
     @Function(attributes = Attribute.NOT_ENUMERABLE)
-    public static String toExponential(final Object self, final Object fractionDigits) {
+    public static Object toExponential(final Object self, final Object fractionDigits) {
         final double  x         = getNumberValue(self);
         final boolean trimZeros = fractionDigits == UNDEFINED;
         final int     f         = trimZeros ? 16 : JSType.toInteger(fractionDigits);
@@ -226,33 +240,18 @@ public final class NativeNumber extends ScriptObject {
      * ECMA 15.7.4.7 Number.prototype.toPrecision (precision)
      *
      * @param self      self reference
-     * @param precision use {@code precision - 1} digits after the significand's decimal point or call {@link JSType#toString} if undefined
+     * @param precision use {@code precision - 1} digits after the significand's decimal point or call {@link NativeDate#toString} if undefined
      *
      * @return number in decimal exponentiation notation or decimal fixed notation depending on {@code precision}
      */
     @Function(attributes = Attribute.NOT_ENUMERABLE)
-    public static String toPrecision(final Object self, final Object precision) {
+    public static Object toPrecision(final Object self, final Object precision) {
         final double x = getNumberValue(self);
         if (precision == UNDEFINED) {
             return JSType.toString(x);
         }
-        return (toPrecision(x, JSType.toInteger(precision)));
-    }
 
-    /**
-     * ECMA 15.7.4.7 Number.prototype.toPrecision (precision) specialized f
-     *
-     * @param self      self reference
-     * @param precision use {@code precision - 1} digits after the significand's decimal point.
-     *
-     * @return number in decimal exponentiation notation or decimal fixed notation depending on {@code precision}
-     */
-    @SpecializedFunction
-    public static String toPrecision(final Object self, final int precision) {
-        return toPrecision(getNumberValue(self), precision);
-    }
-
-    private static String toPrecision(final double x, final int p) {
+        final int p = JSType.toInteger(precision);
         if (Double.isNaN(x)) {
             return "NaN";
         } else if (Double.isInfinite(x)) {
@@ -279,7 +278,7 @@ public final class NativeNumber extends ScriptObject {
      * @return string representation of this Number in the given radix
      */
     @Function(attributes = Attribute.NOT_ENUMERABLE)
-    public static String toString(final Object self, final Object radix) {
+    public static Object toString(final Object self, final Object radix) {
         if (radix != UNDEFINED) {
             final int intRadix = JSType.toInteger(radix);
             if (intRadix != 10) {
@@ -300,7 +299,7 @@ public final class NativeNumber extends ScriptObject {
      * @return localized string for this Number
      */
     @Function(attributes = Attribute.NOT_ENUMERABLE)
-    public static String toLocaleString(final Object self) {
+    public static Object toLocaleString(final Object self) {
         return JSType.toString(getNumberValue(self));
     }
 
@@ -309,10 +308,10 @@ public final class NativeNumber extends ScriptObject {
      * ECMA 15.7.4.4 Number.prototype.valueOf ( )
      *
      * @param self self reference
-     * @return number value for this Number
+     * @return boxed number value for this Number
      */
     @Function(attributes = Attribute.NOT_ENUMERABLE)
-    public static double valueOf(final Object self) {
+    public static Object valueOf(final Object self) {
         return getNumberValue(self);
     }
 
@@ -323,17 +322,12 @@ public final class NativeNumber extends ScriptObject {
      * @return Link to be invoked at call site.
      */
     public static GuardedInvocation lookupPrimitive(final LinkRequest request, final Object receiver) {
-        return PrimitiveLookup.lookupPrimitive(request, NashornGuards.getNumberGuard(), new NativeNumber(((Number)receiver).doubleValue()), WRAPFILTER, PROTOFILTER);
+        return PrimitiveLookup.lookupPrimitive(request, Number.class, new NativeNumber(((Number)receiver).doubleValue()), WRAPFILTER);
     }
 
     @SuppressWarnings("unused")
     private static NativeNumber wrapFilter(final Object receiver) {
         return new NativeNumber(((Number)receiver).doubleValue());
-    }
-
-    @SuppressWarnings("unused")
-    private static Object protoFilter(final Object object) {
-        return Global.instance().getNumberPrototype();
     }
 
     private static double getNumberValue(final Object self) {
@@ -384,7 +378,7 @@ public final class NativeNumber extends ScriptObject {
         return str;
     }
 
-    private static MethodHandle findOwnMH(final String name, final MethodType type) {
-        return MH.findStatic(MethodHandles.lookup(), NativeNumber.class, name, type);
+    private static MethodHandle findWrapFilter() {
+        return MH.findStatic(MethodHandles.lookup(), NativeNumber.class, "wrapFilter", MH.type(NativeNumber.class, Object.class));
     }
 }

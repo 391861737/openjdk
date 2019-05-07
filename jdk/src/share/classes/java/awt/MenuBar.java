@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 1995, 2015, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 1995, 2013, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -181,7 +181,7 @@ public class MenuBar extends MenuComponent implements MenuContainer, Accessible 
      * removed from the menu bar, and replaced with the specified menu.
      * @param m    the menu to be set as the help menu
      */
-    public void setHelpMenu(final Menu m) {
+    public void setHelpMenu(Menu m) {
         synchronized (getTreeLock()) {
             if (helpMenu == m) {
                 return;
@@ -189,11 +189,11 @@ public class MenuBar extends MenuComponent implements MenuContainer, Accessible 
             if (helpMenu != null) {
                 remove(helpMenu);
             }
+            if (m.parent != this) {
+                add(m);
+            }
             helpMenu = m;
             if (m != null) {
-                if (m.parent != this) {
-                    add(m);
-                }
                 m.isHelpMenu = true;
                 m.parent = this;
                 MenuBarPeer peer = (MenuBarPeer)this.peer;
@@ -222,6 +222,7 @@ public class MenuBar extends MenuComponent implements MenuContainer, Accessible 
             if (m.parent != null) {
                 m.parent.remove(m);
             }
+            menus.addElement(m);
             m.parent = this;
 
             MenuBarPeer peer = (MenuBarPeer)this.peer;
@@ -229,10 +230,7 @@ public class MenuBar extends MenuComponent implements MenuContainer, Accessible 
                 if (m.peer == null) {
                     m.addNotify();
                 }
-                menus.addElement(m);
                 peer.addMenu(m);
-            } else {
-                menus.addElement(m);
             }
             return m;
         }
@@ -244,19 +242,15 @@ public class MenuBar extends MenuComponent implements MenuContainer, Accessible 
      * @param        index   the position of the menu to be removed.
      * @see          java.awt.MenuBar#add(java.awt.Menu)
      */
-    public void remove(final int index) {
+    public void remove(int index) {
         synchronized (getTreeLock()) {
             Menu m = getMenu(index);
             menus.removeElementAt(index);
             MenuBarPeer peer = (MenuBarPeer)this.peer;
             if (peer != null) {
-                peer.delMenu(index);
                 m.removeNotify();
                 m.parent = null;
-            }
-            if (helpMenu == m) {
-                helpMenu = null;
-                m.isHelpMenu = false;
+                peer.delMenu(index);
             }
         }
     }

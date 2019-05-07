@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 1997, 2017, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 1997, 2013, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -32,6 +32,7 @@
 #include "oops/klassPS.hpp"
 #include "oops/metadata.hpp"
 #include "oops/oop.hpp"
+#include "runtime/orderAccess.hpp"
 #include "trace/traceMacros.hpp"
 #include "utilities/accessFlags.hpp"
 #include "utilities/macros.hpp"
@@ -90,7 +91,6 @@ class ClassLoaderData;
 class klassVtable;
 class ParCompactionManager;
 class KlassSizeStats;
-class fieldDescriptor;
 
 class Klass : public Metadata {
   friend class VMStructs;
@@ -176,27 +176,12 @@ class Klass : public Metadata {
   jbyte _modified_oops;             // Card Table Equivalent (YC/CMS support)
   jbyte _accumulated_modified_oops; // Mod Union Equivalent (CMS support)
 
-private:
-  // This is an index into FileMapHeader::_classpath_entry_table[], to
-  // associate this class with the JAR file where it's loaded from during
-  // dump time. If a class is not loaded from the shared archive, this field is
-  // -1.
-  jshort _shared_class_path_index;
-
-  friend class SharedClassUtil;
-protected:
-
   // Constructor
   Klass();
 
   void* operator new(size_t size, ClassLoaderData* loader_data, size_t word_size, TRAPS) throw();
 
  public:
-  enum DefaultsLookupMode { find_defaults, skip_defaults };
-  enum OverpassLookupMode { find_overpass, skip_overpass };
-  enum StaticLookupMode   { find_static,   skip_static };
-  enum PrivateLookupMode  { find_private,  skip_private };
-
   bool is_klass() const volatile { return true; }
 
   // super
@@ -295,15 +280,6 @@ protected:
   void clear_accumulated_modified_oops() { _accumulated_modified_oops = 0; }
   bool has_accumulated_modified_oops()   { return _accumulated_modified_oops == 1; }
 
-  int shared_classpath_index() const   {
-    return _shared_class_path_index;
-  };
-
-  void set_shared_classpath_index(int index) {
-    _shared_class_path_index = index;
-  };
-
-
  protected:                                // internal accessors
   Klass* subklass_oop() const            { return _subklass; }
   Klass* next_sibling_oop() const        { return _next_sibling; }
@@ -373,21 +349,6 @@ protected:
     assert(btvalue >= T_BOOLEAN && btvalue <= T_OBJECT, "sanity");
     return (BasicType) btvalue;
   }
-
-  // Want a pattern to quickly diff against layout header in register
-  // find something less clever!
-  static int layout_helper_boolean_diffbit() {
-    jint zlh = array_layout_helper(T_BOOLEAN);
-    jint blh = array_layout_helper(T_BYTE);
-    assert(zlh != blh, "array layout helpers must differ");
-    int diffbit = 1;
-    while ((diffbit & (zlh ^ blh)) == 0 && (diffbit & zlh) == 0) {
-      diffbit <<= 1;
-      assert(diffbit != 0, "make sure T_BOOLEAN has a different bit than T_BYTE");
-    }
-    return diffbit;
-  }
-
   static int layout_helper_log2_element_size(jint lh) {
     assert(lh < (jint)_lh_neutral_value, "must be array");
     int l2esz = (lh >> _lh_log2_element_size_shift) & _lh_log2_element_size_mask;
@@ -460,11 +421,10 @@ protected:
   virtual void initialize(TRAPS);
   // lookup operation for MethodLookupCache
   friend class MethodLookupCache;
-  virtual Klass* find_field(Symbol* name, Symbol* signature, fieldDescriptor* fd) const;
-  virtual Method* uncached_lookup_method(Symbol* name, Symbol* signature, OverpassLookupMode overpass_mode) const;
+  virtual Method* uncached_lookup_method(Symbol* name, Symbol* signature) const;
  public:
   Method* lookup_method(Symbol* name, Symbol* signature) const {
-    return uncached_lookup_method(name, signature, find_overpass);
+    return uncached_lookup_method(name, signature);
   }
 
   // array class with specific rank
@@ -491,7 +451,7 @@ protected:
  public:
   // CDS support - remove and restore oops from metadata. Oops are not shared.
   virtual void remove_unshareable_info();
-  virtual void restore_unshareable_info(ClassLoaderData* loader_data, Handle protection_domain, TRAPS);
+  virtual void restore_unshareable_info(TRAPS);
 
  protected:
   // computes the subtype relationship
@@ -538,7 +498,6 @@ protected:
   virtual bool oop_is_objArray_slow()       const { return false; }
   virtual bool oop_is_typeArray_slow()      const { return false; }
  public:
-  virtual bool oop_is_instanceClassLoader() const { return false; }
   virtual bool oop_is_instanceMirror()      const { return false; }
   virtual bool oop_is_instanceRef()         const { return false; }
 
@@ -622,9 +581,36 @@ protected:
   // The is_alive closure passed in depends on the Garbage Collector used.
   bool is_loader_alive(BoolObjectClosure* is_alive);
 
-  static void clean_weak_klass_links(BoolObjectClosure* is_alive, bool clean_alive_klasses = true);
-  static void clean_subklass_tree(BoolObjectClosure* is_alive) {
-    clean_weak_klass_links(is_alive, false /* clean_alive_klasses */);
+  static void clean_weak_klass_links(BoolObjectClosure* is_alive);
+
+  // Prefetch within oop iterators.  This is a macro because we
+  // can't guarantee that the compiler will inline it.  In 64-bit
+  // it generally doesn't.  Signature is
+  //
+  // static void prefetch_beyond(oop* const start,
+  //                             oop* const end,
+  //                             const intx foffset,
+  //                             const Prefetch::style pstyle);
+#define prefetch_beyond(start, end, foffset, pstyle) {   \
+    const intx foffset_ = (foffset);                     \
+    const Prefetch::style pstyle_ = (pstyle);            \
+    assert(foffset_ > 0, "prefetch beyond, not behind"); \
+    if (pstyle_ != Prefetch::do_none) {                  \
+      oop* ref = (start);                                \
+      if (ref < (end)) {                                 \
+        switch (pstyle_) {                               \
+        case Prefetch::do_read:                          \
+          Prefetch::read(*ref, foffset_);                \
+          break;                                         \
+        case Prefetch::do_write:                         \
+          Prefetch::write(*ref, foffset_);               \
+          break;                                         \
+        default:                                         \
+          ShouldNotReachHere();                          \
+          break;                                         \
+        }                                                \
+      }                                                  \
+    }                                                    \
   }
 
   // iterators
@@ -709,8 +695,8 @@ protected:
   virtual const char* internal_name() const = 0;
 
   // Verification
-  virtual void verify_on(outputStream* st);
-  void verify() { verify_on(tty); }
+  virtual void verify_on(outputStream* st, bool check_dictionary);
+  void verify(bool check_dictionary = true) { verify_on(tty, check_dictionary); }
 
 #ifndef PRODUCT
   bool verify_vtable_index(int index);
@@ -732,7 +718,7 @@ protected:
  private:
   // barriers used by klass_oop_store
   void klass_update_barrier_set(oop v);
-  void klass_update_barrier_set_pre(oop* p, oop v);
+  void klass_update_barrier_set_pre(void* p, oop v);
 };
 
 #endif // SHARE_VM_OOPS_KLASS_HPP

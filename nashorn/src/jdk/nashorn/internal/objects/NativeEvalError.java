@@ -44,7 +44,7 @@ import jdk.nashorn.internal.runtime.ScriptObject;
 public final class NativeEvalError extends ScriptObject {
 
     /** message property in instance */
-    @Property(name = NativeError.MESSAGE, attributes = Attribute.NOT_ENUMERABLE)
+    @Property(name = NativeError.MESSAGE)
     public Object instMessage;
 
     /** error name property */
@@ -55,14 +55,13 @@ public final class NativeEvalError extends ScriptObject {
     @Property(attributes = Attribute.NOT_ENUMERABLE, where = Where.PROTOTYPE)
     public Object message;
 
-    /** Nashorn extension: underlying exception */
-    @Property(attributes = Attribute.NOT_ENUMERABLE)
-    public Object nashornException;
-
     // initialized by nasgen
     private static PropertyMap $nasgenmap$;
 
-    @SuppressWarnings("LeakingThisInConstructor")
+    static PropertyMap getInitialMap() {
+        return $nasgenmap$;
+    }
+
     private NativeEvalError(final Object msg, final ScriptObject proto, final PropertyMap map) {
         super(proto, map);
         if (msg != UNDEFINED) {
@@ -70,11 +69,10 @@ public final class NativeEvalError extends ScriptObject {
         } else {
             this.delete(NativeError.MESSAGE, false);
         }
-        NativeError.initException(this);
     }
 
     NativeEvalError(final Object msg, final Global global) {
-        this(msg, global.getEvalErrorPrototype(), $nasgenmap$);
+        this(msg, global.getEvalErrorPrototype(), global.getEvalErrorMap());
     }
 
     private NativeEvalError(final Object msg) {
@@ -98,7 +96,7 @@ public final class NativeEvalError extends ScriptObject {
      * @return new EvalError
      */
     @Constructor(name = "EvalError")
-    public static NativeEvalError constructor(final boolean newObj, final Object self, final Object msg) {
+    public static Object constructor(final boolean newObj, final Object self, final Object msg) {
         return new NativeEvalError(msg);
     }
 }

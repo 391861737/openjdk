@@ -57,20 +57,12 @@ Java_sun_nio_ch_ServerSocketChannelImpl_initIDs(JNIEnv *env, jclass c)
     jclass cls;
 
     cls = (*env)->FindClass(env, "java/io/FileDescriptor");
-    CHECK_NULL(cls);
     fd_fdID = (*env)->GetFieldID(env, cls, "fd", "I");
-    CHECK_NULL(fd_fdID);
 
     cls = (*env)->FindClass(env, "java/net/InetSocketAddress");
-    CHECK_NULL(cls);
     isa_class = (*env)->NewGlobalRef(env, cls);
-    if (isa_class == NULL) {
-        JNU_ThrowOutOfMemoryError(env, NULL);
-        return;
-    }
     isa_ctorID = (*env)->GetMethodID(env, cls, "<init>",
                                      "(Ljava/net/InetAddress;I)V");
-    CHECK_NULL(isa_ctorID);
 }
 
 JNIEXPORT jint JNICALL
@@ -84,13 +76,9 @@ Java_sun_nio_ch_ServerSocketChannelImpl_accept0(JNIEnv *env, jobject this,
     int alloc_len;
     jobject remote_ia = 0;
     jobject isa;
-    jint remote_port = 0;
+    jint remote_port;
 
     NET_AllocSockaddr(&sa, &alloc_len);
-    if (sa == NULL) {
-        JNU_ThrowOutOfMemoryError(env, NULL);
-        return IOS_THROWN;
-    }
 
     /*
      * accept connection but ignore ECONNABORTED indicating that
@@ -122,9 +110,8 @@ Java_sun_nio_ch_ServerSocketChannelImpl_accept0(JNIEnv *env, jobject this,
     (*env)->SetIntField(env, newfdo, fd_fdID, newfd);
     remote_ia = NET_SockaddrToInetAddress(env, sa, (int *)&remote_port);
     free((void *)sa);
-    CHECK_NULL_RETURN(remote_ia, IOS_THROWN);
-    isa = (*env)->NewObject(env, isa_class, isa_ctorID, remote_ia, remote_port);
-    CHECK_NULL_RETURN(isa, IOS_THROWN);
+    isa = (*env)->NewObject(env, isa_class, isa_ctorID,
+                            remote_ia, remote_port);
     (*env)->SetObjectArrayElement(env, isaa, 0, isa);
     return 1;
 }

@@ -204,6 +204,22 @@ if [ ! -r c:/ ] ; then
     clean
 fi
 
+
+if [ ! -r c:/ ] ; then
+    # Can't make a file unreadable under MKS.
+    echo
+    echo "+++++++++++++++++++++++++++++++++++"
+    echo "Read an unreadable file - verify the read fails."
+    # If the file exists, we try to read it.  The
+    # read will fail.
+    mkFiles $HOME/jdb.ini
+        chmod a-r $HOME/jdb.ini
+        doit
+        failIfNot 1 "open: $HOME/jdb.ini"
+        clean
+fi
+
+
 echo
 echo "+++++++++++++++++++++++++++++++++++"
 echo "Read a directory - verify the read fails"
@@ -223,8 +239,8 @@ echo "read $fred" > $here/jdb.ini
     doit
     failIfNot 1 "from $fred"
 
-    if [ "$canMakeUnreadable" = "Yes" ]
-    then
+    if [ ! -r c:/ ] ; then
+        # Can't make a file unreadable under MKS
         chmod a-r $fred
         doit
         failIfNot 1 "open: $fred"

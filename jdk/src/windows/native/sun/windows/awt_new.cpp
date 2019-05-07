@@ -149,7 +149,7 @@ void
 handle_bad_alloc(void) {
     if (jvm != NULL) {
         JNIEnv* env = (JNIEnv *)JNU_GetEnv(jvm, JNI_VERSION_1_2);
-        if (env != NULL && !env->ExceptionCheck()) {
+        if (env != NULL) {
             JNU_ThrowOutOfMemoryError(env, "OutOfMemoryError");
         }
     }
@@ -163,18 +163,20 @@ jthrowable
 safe_ExceptionOccurred(JNIEnv *env) throw (std::bad_alloc) {
     jthrowable xcp = env->ExceptionOccurred();
     if (xcp != NULL) {
-        env->ExceptionClear(); // if we don't do this, isInstanceOf will fail
-        jint isOutofmem = JNU_IsInstanceOfByName(env, xcp, "java/lang/OutOfMemoryError");
-        if (isOutofmem > 0) {
+        env->ExceptionClear(); // if we don't do this, FindClass will fail
+
+        jclass outofmem = env->FindClass("java/lang/OutOfMemoryError");
+        DASSERT(outofmem != NULL);
+        jboolean isOutofmem = env->IsInstanceOf(xcp, outofmem);
+
+        env->DeleteLocalRef(outofmem);
+
+        if (isOutofmem) {
             env->DeleteLocalRef(xcp);
             throw std::bad_alloc();
         } else {
-            env->ExceptionClear();
             // rethrow exception
             env->Throw(xcp);
-            // temp solution to reveal all concurrency issues in jtreg and JCK
-            // we will switch it back to silent mode before the release
-            env->ExceptionDescribe();
             return xcp;
         }
     }

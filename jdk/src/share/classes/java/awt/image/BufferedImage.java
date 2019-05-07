@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 1997, 2015, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 1997, 2013, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -25,23 +25,26 @@
 
 package java.awt.image;
 
-import java.awt.Graphics2D;
-import java.awt.GraphicsEnvironment;
-import java.awt.Point;
-import java.awt.Rectangle;
 import java.awt.Transparency;
 import java.awt.color.ColorSpace;
+import java.awt.Graphics2D;
+import java.awt.GraphicsConfiguration;
+import java.awt.GraphicsEnvironment;
+import java.awt.ImageCapabilities;
+import java.awt.geom.Rectangle2D;
+import java.awt.geom.Point2D;
+import java.awt.Point;
+import java.awt.Rectangle;
 import java.security.AccessController;
 import java.security.PrivilegedAction;
 import java.util.Hashtable;
-import java.util.Set;
 import java.util.Vector;
 
-import sun.awt.image.ByteComponentRaster;
 import sun.awt.image.BytePackedRaster;
+import sun.awt.image.ShortComponentRaster;
+import sun.awt.image.ByteComponentRaster;
 import sun.awt.image.IntegerComponentRaster;
 import sun.awt.image.OffScreenImageSource;
-import sun.awt.image.ShortComponentRaster;
 
 /**
  *
@@ -65,14 +68,18 @@ import sun.awt.image.ShortComponentRaster;
  * @see Raster
  * @see WritableRaster
  */
+
 public class BufferedImage extends java.awt.Image
                            implements WritableRenderedImage, Transparency
 {
-    private int imageType = TYPE_CUSTOM;
-    private ColorModel colorModel;
-    private final WritableRaster raster;
-    private OffScreenImageSource osis;
-    private Hashtable<String, Object> properties;
+    int        imageType = TYPE_CUSTOM;
+    ColorModel colorModel;
+    WritableRaster raster;
+    OffScreenImageSource osis;
+    Hashtable properties;
+
+    boolean    isAlphaPremultiplied;// If true, alpha has been premultiplied in
+    // color channels
 
     /**
      * Image Type Constants
@@ -321,8 +328,8 @@ public class BufferedImage extends java.awt.Image
                                                   0x000000ff,   // Blue
                                                   0x0           // Alpha
                                                   );
-                raster = colorModel.createCompatibleWritableRaster(width,
-                                                                   height);
+                  raster = colorModel.createCompatibleWritableRaster(width,
+                                                                      height);
             }
         break;
 
@@ -348,8 +355,9 @@ public class BufferedImage extends java.awt.Image
                                      true,       // Alpha Premultiplied
                                      DataBuffer.TYPE_INT
                                      );
-                raster = colorModel.createCompatibleWritableRaster(width,
-                                                                   height);
+
+                  raster = colorModel.createCompatibleWritableRaster(width,
+                                                                      height);
             }
         break;
 
@@ -360,8 +368,8 @@ public class BufferedImage extends java.awt.Image
                                                   0x0000ff00,   // Green
                                                   0x00ff0000    // Blue
                                                   );
-                raster = colorModel.createCompatibleWritableRaster(width,
-                                                                   height);
+                  raster = colorModel.createCompatibleWritableRaster(width,
+                                                                      height);
             }
         break;
 
@@ -634,14 +642,7 @@ public class BufferedImage extends java.awt.Image
 
         colorModel = cm;
         this.raster  = raster;
-        if (properties != null && !properties.isEmpty()) {
-            this.properties = new Hashtable<>();
-            for (final Object key : properties.keySet()) {
-                if (key instanceof String) {
-                    this.properties.put((String) key, properties.get(key));
-                }
-            }
-        }
+        this.properties = properties;
         int numBands = raster.getNumBands();
         boolean isAlphaPre = cm.isAlphaPremultiplied();
         final boolean isStandard = isStandard(cm, raster);
@@ -1271,11 +1272,7 @@ public class BufferedImage extends java.awt.Image
      *          or <code>null</code> if no property names are recognized.
      */
     public String[] getPropertyNames() {
-        if (properties == null || properties.isEmpty()) {
-            return null;
-        }
-        final Set<String> keys = properties.keySet();
-        return keys.toArray(new String[keys.size()]);
+         return null;
     }
 
     /**

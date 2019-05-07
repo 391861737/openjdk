@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2001, 2016, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2001, 2010, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -24,7 +24,6 @@
 
 #include "precompiled.hpp"
 #include "gc_implementation/g1/dirtyCardQueue.hpp"
-#include "gc_implementation/g1/g1CollectedHeap.inline.hpp"
 #include "gc_implementation/g1/heapRegionRemSet.hpp"
 #include "runtime/atomic.hpp"
 #include "runtime/mutexLocker.hpp"
@@ -34,12 +33,12 @@
 
 bool DirtyCardQueue::apply_closure(CardTableEntryClosure* cl,
                                    bool consume,
-                                   uint worker_i) {
+                                   size_t worker_i) {
   bool res = true;
   if (_buf != NULL) {
     res = apply_closure_to_buffer(cl, _buf, _index, _sz,
                                   consume,
-                                  worker_i);
+                                  (int) worker_i);
     if (res && consume) _index = _sz;
   }
   return res;
@@ -49,7 +48,7 @@ bool DirtyCardQueue::apply_closure_to_buffer(CardTableEntryClosure* cl,
                                              void** buf,
                                              size_t index, size_t sz,
                                              bool consume,
-                                             uint worker_i) {
+                                             int worker_i) {
   if (cl == NULL) return true;
   for (size_t i = index; i < sz; i += oopSize) {
     int ind = byte_index_to_index((int)i);
@@ -70,7 +69,7 @@ bool DirtyCardQueue::apply_closure_to_buffer(CardTableEntryClosure* cl,
 
 DirtyCardQueueSet::DirtyCardQueueSet(bool notify_when_complete) :
   PtrQueueSet(notify_when_complete),
-  _mut_process_closure(NULL),
+  _closure(NULL),
   _shared_dirty_card_queue(this, true /*perm*/),
   _free_ids(NULL),
   _processed_buffers_mut(0), _processed_buffers_rs_thread(0)
@@ -79,15 +78,14 @@ DirtyCardQueueSet::DirtyCardQueueSet(bool notify_when_complete) :
 }
 
 // Determines how many mutator threads can process the buffers in parallel.
-uint DirtyCardQueueSet::num_par_ids() {
-  return (uint)os::initial_active_processor_count();
+size_t DirtyCardQueueSet::num_par_ids() {
+  return os::processor_count();
 }
 
-void DirtyCardQueueSet::initialize(CardTableEntryClosure* cl, Monitor* cbl_mon, Mutex* fl_lock,
+void DirtyCardQueueSet::initialize(Monitor* cbl_mon, Mutex* fl_lock,
                                    int process_completed_threshold,
                                    int max_completed_queue,
                                    Mutex* lock, PtrQueueSet* fl_owner) {
-  _mut_process_closure = cl;
   PtrQueueSet::initialize(cbl_mon, fl_lock, process_completed_threshold,
                           max_completed_queue, fl_owner);
   set_buffer_size(G1UpdateBufferSize);
@@ -99,15 +97,18 @@ void DirtyCardQueueSet::handle_zero_index_for_thread(JavaThread* t) {
   t->dirty_card_queue().handle_zero_index();
 }
 
-void DirtyCardQueueSet::iterate_closure_all_threads(CardTableEntryClosure* cl,
-                                                    bool consume,
-                                                    uint worker_i) {
+void DirtyCardQueueSet::set_closure(CardTableEntryClosure* closure) {
+  _closure = closure;
+}
+
+void DirtyCardQueueSet::iterate_closure_all_threads(bool consume,
+                                                    size_t worker_i) {
   assert(SafepointSynchronize::is_at_safepoint(), "Must be at safepoint.");
   for(JavaThread* t = Threads::first(); t; t = t->next()) {
-    bool b = t->dirty_card_queue().apply_closure(cl, consume);
+    bool b = t->dirty_card_queue().apply_closure(_closure, consume);
     guarantee(b, "Should not be interrupted.");
   }
-  bool b = shared_dirty_card_queue()->apply_closure(cl,
+  bool b = shared_dirty_card_queue()->apply_closure(_closure,
                                                     consume,
                                                     worker_i);
   guarantee(b, "Should not be interrupted.");
@@ -124,11 +125,11 @@ bool DirtyCardQueueSet::mut_process_buffer(void** buf) {
 
   // We get the the number of any par_id that this thread
   // might have already claimed.
-  uint worker_i = thread->get_claimed_par_id();
+  int worker_i = thread->get_claimed_par_id();
 
-  // If worker_i is not UINT_MAX then the thread has already claimed
+  // If worker_i is not -1 then the thread has already claimed
   // a par_id. We make note of it using the already_claimed value
-  if (worker_i != UINT_MAX) {
+  if (worker_i != -1) {
     already_claimed = true;
   } else {
 
@@ -140,8 +141,8 @@ bool DirtyCardQueueSet::mut_process_buffer(void** buf) {
   }
 
   bool b = false;
-  if (worker_i != UINT_MAX) {
-    b = DirtyCardQueue::apply_closure_to_buffer(_mut_process_closure, buf, 0,
+  if (worker_i != -1) {
+    b = DirtyCardQueue::apply_closure_to_buffer(_closure, buf, 0,
                                                 _sz, true, worker_i);
     if (b) Atomic::inc(&_processed_buffers_mut);
 
@@ -152,8 +153,8 @@ bool DirtyCardQueueSet::mut_process_buffer(void** buf) {
       // we release the id
       _free_ids->release_par_id(worker_i);
 
-      // and set the claimed_id in the thread to UINT_MAX
-      thread->set_claimed_par_id(UINT_MAX);
+      // and set the claimed_id in the thread to -1
+      thread->set_claimed_par_id(-1);
     }
   }
   return b;
@@ -184,7 +185,7 @@ DirtyCardQueueSet::get_completed_buffer(int stop_at) {
 
 bool DirtyCardQueueSet::
 apply_closure_to_completed_buffer_helper(CardTableEntryClosure* cl,
-                                         uint worker_i,
+                                         int worker_i,
                                          BufferNode* nd) {
   if (nd != NULL) {
     void **buf = BufferNode::make_buffer_from_node(nd);
@@ -206,7 +207,7 @@ apply_closure_to_completed_buffer_helper(CardTableEntryClosure* cl,
 }
 
 bool DirtyCardQueueSet::apply_closure_to_completed_buffer(CardTableEntryClosure* cl,
-                                                          uint worker_i,
+                                                          int worker_i,
                                                           int stop_at,
                                                           bool during_pause) {
   assert(!during_pause || stop_at == 0, "Should not leave any completed buffers during a pause");
@@ -216,33 +217,22 @@ bool DirtyCardQueueSet::apply_closure_to_completed_buffer(CardTableEntryClosure*
   return res;
 }
 
-void DirtyCardQueueSet::apply_closure_to_all_completed_buffers(CardTableEntryClosure* cl) {
+bool DirtyCardQueueSet::apply_closure_to_completed_buffer(int worker_i,
+                                                          int stop_at,
+                                                          bool during_pause) {
+  return apply_closure_to_completed_buffer(_closure, worker_i,
+                                           stop_at, during_pause);
+}
+
+void DirtyCardQueueSet::apply_closure_to_all_completed_buffers() {
   BufferNode* nd = _completed_buffers_head;
   while (nd != NULL) {
     bool b =
-      DirtyCardQueue::apply_closure_to_buffer(cl,
+      DirtyCardQueue::apply_closure_to_buffer(_closure,
                                               BufferNode::make_buffer_from_node(nd),
                                               0, _sz, false);
     guarantee(b, "Should not stop early.");
     nd = nd->next();
-  }
-}
-
-void DirtyCardQueueSet::par_apply_closure_to_all_completed_buffers(CardTableEntryClosure* cl) {
-  BufferNode* nd = _cur_par_buffer_node;
-  while (nd != NULL) {
-    BufferNode* next = (BufferNode*)nd->next();
-    BufferNode* actual = (BufferNode*)Atomic::cmpxchg_ptr((void*)next, (volatile void*)&_cur_par_buffer_node, (void*)nd);
-    if (actual == nd) {
-      bool b =
-        DirtyCardQueue::apply_closure_to_buffer(cl,
-                                                BufferNode::make_buffer_from_node(actual),
-                                                0, _sz, false);
-      guarantee(b, "Should not stop early.");
-      nd = next;
-    } else {
-      nd = actual;
-    }
   }
 }
 

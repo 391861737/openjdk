@@ -25,6 +25,7 @@
 
 package jdk.nashorn.internal.runtime;
 
+import static jdk.nashorn.internal.runtime.JSType.digit;
 import static jdk.nashorn.internal.lookup.Lookup.MH;
 
 import java.lang.invoke.MethodHandle;
@@ -37,31 +38,10 @@ import java.util.Locale;
 public final class GlobalFunctions {
 
     /** Methodhandle to implementation of ECMA 15.1.2.2, parseInt */
-    public static final MethodHandle PARSEINT = findOwnMH("parseInt", double.class, Object.class, Object.class, Object.class);
-
-    /** Methodhandle (specialized) to implementation of ECMA 15.1.2.2, parseInt */
-    public static final MethodHandle PARSEINT_OI = findOwnMH("parseInt", double.class, Object.class, Object.class, int.class);
-
-    /** ParseInt - NaN for booleans (thru string conversion to number conversion) */
-    public static final MethodHandle PARSEINT_Z = MH.dropArguments(MH.dropArguments(MH.constant(double.class, Double.NaN), 0, boolean.class), 0, Object.class);
-
-    /** ParseInt - identity for ints */
-    public static final MethodHandle PARSEINT_I = MH.dropArguments(MH.identity(int.class), 0, Object.class);
-
-    /** Methodhandle (specialized) to implementation of ECMA 15.1.2.2, parseInt */
-    public static final MethodHandle PARSEINT_O = findOwnMH("parseInt", double.class, Object.class, Object.class);
+    public static final MethodHandle PARSEINT = findOwnMH("parseInt",   double.class, Object.class, Object.class, Object.class);
 
     /** Methodhandle to implementation of ECMA 15.1.2.3, parseFloat */
     public static final MethodHandle PARSEFLOAT = findOwnMH("parseFloat", double.class, Object.class, Object.class);
-
-    /** isNan for integers - always false */
-    public static final MethodHandle IS_NAN_I = MH.dropArguments(MH.constant(boolean.class, false), 0, Object.class);
-
-    /** isNan for longs - always false */
-    public static final MethodHandle IS_NAN_J = MH.dropArguments(MH.constant(boolean.class, false), 0, Object.class);
-
-    /** IsNan for doubles - use Double.isNaN */
-    public static final MethodHandle IS_NAN_D = MH.dropArguments(MH.findStatic(MethodHandles.lookup(), Double.class, "isNaN", MH.type(boolean.class, double.class)), 0, Object.class);
 
     /** Methodhandle to implementation of ECMA 15.1.2.4, isNaN */
     public static final MethodHandle IS_NAN = findOwnMH("isNaN",      boolean.class, Object.class, Object.class);
@@ -98,44 +78,19 @@ public final class GlobalFunctions {
     /**
      * ECMA 15.1.2.2 parseInt implementation
      *
+     * TODO: specialize
+     *
      * @param self   self reference
      * @param string string to parse
      * @param rad    radix
      *
-     * @return numeric type representing string contents as an int
+     * @return numeric type representing string contents as an int (TODO: specialize for int case)
      */
+    //TODO specialize
     public static double parseInt(final Object self, final Object string, final Object rad) {
-        return parseIntInternal(JSType.trimLeft(JSType.toString(string)), JSType.toInt32(rad));
-    }
-
-    /**
-     * ECMA 15.1.2.2 parseInt implementation specialized for int radix
-     *
-     * @param self   self reference
-     * @param string string to parse
-     * @param rad    radix
-     *
-     * @return numeric type representing string contents as an int
-     */
-    public static double parseInt(final Object self, final Object string, final int rad) {
-        return parseIntInternal(JSType.trimLeft(JSType.toString(string)), rad);
-    }
-
-    /**
-     * ECMA 15.1.2.2 parseInt implementation specialized for no radix argument
-     *
-     * @param self   self reference
-     * @param string string to parse
-     *
-     * @return numeric type representing string contents as an int
-     */
-    public static double parseInt(final Object self, final Object string) {
-        return parseIntInternal(JSType.trimLeft(JSType.toString(string)), 0);
-    }
-
-    private static double parseIntInternal(final String str, final int rad) {
-        final int length = str.length();
-        int radix = rad;
+        final String str    = JSType.trimLeft(JSType.toString(string));
+        final int    length = str.length();
+        int          radix  = JSType.toInt32(rad);
 
         // empty string is not valid
         if (length == 0) {
@@ -184,14 +139,14 @@ public final class GlobalFunctions {
 
         double result = 0.0;
         int digit;
-        // we should see at least one valid digit
+        // we should see atleast one valid digit
         boolean entered = false;
         while (idx < length) {
-            digit = fastDigit(str.charAt(idx++), radix);
+            digit = digit(str.charAt(idx++), radix, true);
             if (digit < 0) {
                 break;
             }
-            // we have seen at least one valid digit in the specified radix
+            // we have seen atleast one valid digit in the specified radix
             entered = true;
             result *= radix;
             result += digit;
@@ -501,21 +456,8 @@ loop:
         return ScriptRuntime.UNDEFINED;
     }
 
-    private static int fastDigit(final int ch, final int radix) {
-        int n = -1;
-        if (ch >= '0' && ch <= '9') {
-            n = ch - '0';
-        } else if (radix > 10) {
-            if (ch >= 'a' && ch <= 'z') {
-                n = ch - 'a' + 10;
-            } else if (ch >= 'A' && ch <= 'Z') {
-                n = ch - 'A' + 10;
-            }
-        }
-        return n < radix ? n : -1;
-    }
-
     private static MethodHandle findOwnMH(final String name, final Class<?> rtype, final Class<?>... types) {
         return MH.findStatic(MethodHandles.lookup(), GlobalFunctions.class, name, MH.type(rtype, types));
     }
+
 }

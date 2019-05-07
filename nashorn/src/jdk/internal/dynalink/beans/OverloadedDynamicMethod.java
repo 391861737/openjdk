@@ -86,9 +86,7 @@ package jdk.internal.dynalink.beans;
 import java.lang.invoke.MethodHandle;
 import java.lang.invoke.MethodHandles;
 import java.lang.invoke.MethodType;
-import java.text.Collator;
 import java.util.ArrayList;
-import java.util.Collections;
 import java.util.Iterator;
 import java.util.LinkedList;
 import java.util.List;
@@ -117,20 +115,20 @@ class OverloadedDynamicMethod extends DynamicMethod {
      * @param clazz the class this method belongs to
      * @param name the name of the method
      */
-    OverloadedDynamicMethod(final Class<?> clazz, final String name) {
+    OverloadedDynamicMethod(Class<?> clazz, String name) {
         this(new LinkedList<SingleDynamicMethod>(), clazz.getClassLoader(), getClassAndMethodName(clazz, name));
     }
 
-    private OverloadedDynamicMethod(final LinkedList<SingleDynamicMethod> methods, final ClassLoader classLoader, final String name) {
+    private OverloadedDynamicMethod(LinkedList<SingleDynamicMethod> methods, ClassLoader classLoader, String name) {
         super(name);
         this.methods = methods;
         this.classLoader = classLoader;
     }
 
     @Override
-    SingleDynamicMethod getMethodForExactParamTypes(final String paramTypes) {
+    SingleDynamicMethod getMethodForExactParamTypes(String paramTypes) {
         final LinkedList<SingleDynamicMethod> matchingMethods = new LinkedList<>();
-        for(final SingleDynamicMethod method: methods) {
+        for(SingleDynamicMethod method: methods) {
             final SingleDynamicMethod matchingMethod = method.getMethodForExactParamTypes(paramTypes);
             if(matchingMethod != null) {
                 matchingMethods.add(matchingMethod);
@@ -150,6 +148,7 @@ class OverloadedDynamicMethod extends DynamicMethod {
         }
     }
 
+    @SuppressWarnings("fallthrough")
     @Override
     public MethodHandle getInvocation(final CallSiteDescriptor callSiteDescriptor, final LinkerServices linkerServices) {
         final MethodType callSiteType = callSiteDescriptor.getMethodType();
@@ -208,7 +207,7 @@ class OverloadedDynamicMethod extends DynamicMethod {
             case 1: {
                 // Very lucky, we ended up with a single candidate method handle based on the call site signature; we
                 // can link it very simply by delegating to the SingleDynamicMethod.
-                return invokables.iterator().next().getInvocation(callSiteDescriptor, linkerServices);
+                invokables.iterator().next().getInvocation(callSiteDescriptor, linkerServices);
             }
             default: {
                 // We have more than one candidate. We have no choice but to link to a method that resolves overloads on
@@ -219,7 +218,7 @@ class OverloadedDynamicMethod extends DynamicMethod {
                 // has an already determined Lookup.
                 final List<MethodHandle> methodHandles = new ArrayList<>(invokables.size());
                 final MethodHandles.Lookup lookup = callSiteDescriptor.getLookup();
-                for(final SingleDynamicMethod method: invokables) {
+                for(SingleDynamicMethod method: invokables) {
                     methodHandles.add(method.getTarget(lookup));
                 }
                 return new OverloadedMethod(methodHandles, this, callSiteType, linkerServices).getInvoker();
@@ -229,8 +228,8 @@ class OverloadedDynamicMethod extends DynamicMethod {
     }
 
     @Override
-    public boolean contains(final SingleDynamicMethod m) {
-        for(final SingleDynamicMethod method: methods) {
+    public boolean contains(SingleDynamicMethod m) {
+        for(SingleDynamicMethod method: methods) {
             if(method.contains(m)) {
                 return true;
             }
@@ -238,47 +237,12 @@ class OverloadedDynamicMethod extends DynamicMethod {
         return false;
     }
 
-    @Override
-    public boolean isConstructor() {
-        assert !methods.isEmpty();
-        return methods.getFirst().isConstructor();
-    }
-
-    @Override
-    public String toString() {
-        // First gather the names and sort them. This makes it consistent and easier to read.
-        final List<String> names = new ArrayList<>(methods.size());
-        int len = 0;
-        for (final SingleDynamicMethod m: methods) {
-            final String name = m.getName();
-            len += name.length();
-            names.add(name);
-        }
-        // Case insensitive sorting, so e.g. "Object" doesn't come before "boolean".
-        final Collator collator = Collator.getInstance();
-        collator.setStrength(Collator.SECONDARY);
-        Collections.sort(names, collator);
-
-        final String className = getClass().getName();
-        // Class name length + length of signatures + 2 chars/per signature for indentation and newline +
-        // 3 for brackets and initial newline
-        final int totalLength = className.length() + len + 2 * names.size() + 3;
-        final StringBuilder b = new StringBuilder(totalLength);
-        b.append('[').append(className).append('\n');
-        for(final String name: names) {
-            b.append(' ').append(name).append('\n');
-        }
-        b.append(']');
-        assert b.length() == totalLength;
-        return b.toString();
-    };
-
     ClassLoader getClassLoader() {
         return classLoader;
     }
 
-    private static boolean isApplicableDynamically(final LinkerServices linkerServices, final MethodType callSiteType,
-            final SingleDynamicMethod m) {
+    private static boolean isApplicableDynamically(LinkerServices linkerServices, MethodType callSiteType,
+            SingleDynamicMethod m) {
         final MethodType methodType = m.getMethodType();
         final boolean varArgs = m.isVarArgs();
         final int fixedArgLen = methodType.parameterCount() - (varArgs ? 1 : 0);
@@ -324,13 +288,13 @@ class OverloadedDynamicMethod extends DynamicMethod {
         return true;
     }
 
-    private static boolean isApplicableDynamically(final LinkerServices linkerServices, final Class<?> callSiteType,
-            final Class<?> methodType) {
+    private static boolean isApplicableDynamically(LinkerServices linkerServices, Class<?> callSiteType,
+            Class<?> methodType) {
         return TypeUtilities.isPotentiallyConvertible(callSiteType, methodType)
                 || linkerServices.canConvert(callSiteType, methodType);
     }
 
-    private ApplicableOverloadedMethods getApplicables(final MethodType callSiteType, final ApplicabilityTest test) {
+    private ApplicableOverloadedMethods getApplicables(MethodType callSiteType, ApplicabilityTest test) {
         return new ApplicableOverloadedMethods(methods, callSiteType, test);
     }
 
@@ -339,12 +303,7 @@ class OverloadedDynamicMethod extends DynamicMethod {
      *
      * @param method a method to add
      */
-    public void addMethod(final SingleDynamicMethod method) {
-        assert constructorFlagConsistent(method);
+    public void addMethod(SingleDynamicMethod method) {
         methods.add(method);
-    }
-
-    private boolean constructorFlagConsistent(final SingleDynamicMethod method) {
-        return methods.isEmpty()? true : (methods.getFirst().isConstructor() == method.isConstructor());
     }
 }

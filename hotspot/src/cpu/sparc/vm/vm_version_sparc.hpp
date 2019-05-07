@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 1997, 2014, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 1997, 2013, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -47,14 +47,8 @@ protected:
     cbcond_instructions  = 13,
     sparc64_family       = 14,
     M_family             = 15,
-    S_family             = 16,
-    T_family             = 17,
-    T1_model             = 18,
-    sparc5_instructions  = 19,
-    aes_instructions     = 20,
-    sha1_instruction     = 21,
-    sha256_instruction   = 22,
-    sha512_instruction   = 23
+    T_family             = 16,
+    T1_model             = 17
   };
 
   enum Feature_Flag_Set {
@@ -77,14 +71,8 @@ protected:
     cbcond_instructions_m   = 1 << cbcond_instructions,
     sparc64_family_m        = 1 << sparc64_family,
     M_family_m              = 1 << M_family,
-    S_family_m              = 1 << S_family,
     T_family_m              = 1 << T_family,
     T1_model_m              = 1 << T1_model,
-    sparc5_instructions_m   = 1 << sparc5_instructions,
-    aes_instructions_m      = 1 << aes_instructions,
-    sha1_instruction_m      = 1 << sha1_instruction,
-    sha256_instruction_m    = 1 << sha256_instruction,
-    sha512_instruction_m    = 1 << sha512_instruction,
 
     generic_v8_m        = v8_instructions_m | hardware_mul32_m | hardware_div32_m | hardware_fsmuld_m,
     generic_v9_m        = generic_v8_m | v9_instructions_m,
@@ -98,16 +86,12 @@ protected:
   static int  _features;
   static const char* _features_str;
 
-  static unsigned int _L2_data_cache_line_size;
-  static unsigned int L2_data_cache_line_size() { return _L2_data_cache_line_size; }
-
   static void print_features();
   static int  determine_features();
   static int  platform_features(int features);
 
   // Returns true if the platform is in the niagara line (T series)
   static bool is_M_family(int features) { return (features & M_family_m) != 0; }
-  static bool is_S_family(int features) { return (features & S_family_m) != 0; }
   static bool is_T_family(int features) { return (features & T_family_m) != 0; }
   static bool is_niagara() { return is_T_family(_features); }
 #ifdef ASSERT
@@ -122,12 +106,10 @@ protected:
   static bool is_T1_model(int features) { return is_T_family(features) && ((features & T1_model_m) != 0); }
 
   static int maximum_niagara1_processor_count() { return 32; }
-  static int parse_features(const char* implementation);
+
 public:
   // Initialization
   static void initialize();
-
-  static void init_before_ergo()        { _features = determine_features(); }
 
   // Instruction support
   static bool has_v8()                  { return (_features & v8_instructions_m) != 0; }
@@ -141,11 +123,6 @@ public:
   static bool has_vis3()                { return (_features & vis3_instructions_m) != 0; }
   static bool has_blk_init()            { return (_features & blk_init_instructions_m) != 0; }
   static bool has_cbcond()              { return (_features & cbcond_instructions_m) != 0; }
-  static bool has_sparc5_instr()        { return (_features & sparc5_instructions_m) != 0; }
-  static bool has_aes()                 { return (_features & aes_instructions_m) != 0; }
-  static bool has_sha1()                { return (_features & sha1_instruction_m) != 0; }
-  static bool has_sha256()              { return (_features & sha256_instruction_m) != 0; }
-  static bool has_sha512()              { return (_features & sha512_instruction_m) != 0; }
 
   static bool supports_compare_and_exchange()
                                         { return has_v9(); }
@@ -155,9 +132,7 @@ public:
   static bool is_niagara_plus()         { return is_T_family(_features) && !is_T1_model(_features); }
 
   static bool is_M_series()             { return is_M_family(_features); }
-  static bool is_S_series()             { return is_S_family(_features); }
   static bool is_T4()                   { return is_T_family(_features) && has_cbcond(); }
-  static bool is_T7()                   { return is_T_family(_features) && has_sparc5_instr(); }
 
   // Fujitsu SPARC64
   static bool is_sparc64()              { return (_features & sparc64_family_m) != 0; }
@@ -176,8 +151,9 @@ public:
 
   static const char* cpu_features()     { return _features_str; }
 
-  // default prefetch block size on sparc
-  static intx prefetch_data_size()      { return L2_data_cache_line_size();  }
+  static intx prefetch_data_size()  {
+    return is_T4() ? 32 : 64;  // default prefetch block size on sparc
+  }
 
   // Prefetch
   static intx prefetch_copy_interval_in_bytes() {

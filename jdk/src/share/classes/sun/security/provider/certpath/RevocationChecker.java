@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2012, 2017, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2012, 2013, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -43,6 +43,7 @@ import javax.security.auth.x500.X500Principal;
 
 import static sun.security.provider.certpath.OCSP.*;
 import static sun.security.provider.certpath.PKIX.*;
+import sun.security.action.GetPropertyAction;
 import sun.security.x509.*;
 import static sun.security.x509.PKIXExtensions.*;
 import sun.security.util.Debug;
@@ -61,12 +62,12 @@ class RevocationChecker extends PKIXRevocationChecker {
     private List<CertStore> certStores;
     private Map<X509Certificate, byte[]> ocspResponses;
     private List<Extension> ocspExtensions;
-    private final boolean legacy;
+    private boolean legacy;
     private LinkedList<CertPathValidatorException> softFailExceptions =
         new LinkedList<>();
 
     // state variables
-    private OCSPResponse.IssuerInfo issuerInfo;
+    private X509Certificate issuerCert;
     private PublicKey prevPubKey;
     private boolean crlSignFlag;
     private int certIndex;
@@ -301,9 +302,9 @@ class RevocationChecker extends PKIXRevocationChecker {
                 CertPathValidatorException("forward checking not supported");
         }
         if (anchor != null) {
-            issuerInfo = new OCSPResponse.IssuerInfo(anchor);
-            prevPubKey = issuerInfo.getPublicKey();
-
+            issuerCert = anchor.getTrustedCert();
+            prevPubKey = (issuerCert != null) ? issuerCert.getPublicKey()
+                                              : anchor.getCAPublicKey();
         }
         crlSignFlag = true;
         if (params != null && params.certPath() != null) {
@@ -342,17 +343,11 @@ class RevocationChecker extends PKIXRevocationChecker {
                        PublicKey pubKey, boolean crlSignFlag)
         throws CertPathValidatorException
     {
-        if (debug != null) {
-            debug.println("RevocationChecker.check: checking cert" +
-                "\n  SN: " + Debug.toHexString(xcert.getSerialNumber()) +
-                "\n  Subject: " + xcert.getSubjectX500Principal() +
-                "\n  Issuer: " + xcert.getIssuerX500Principal());
-        }
         try {
             if (onlyEE && xcert.getBasicConstraints() != -1) {
                 if (debug != null) {
-                    debug.println("Skipping revocation check; cert is not " +
-                                  "an end entity cert");
+                    debug.println("Skipping revocation check, not end " +
+                                  "entity cert");
                 }
                 return;
             }
@@ -437,7 +432,7 @@ class RevocationChecker extends PKIXRevocationChecker {
     private void updateState(X509Certificate cert)
         throws CertPathValidatorException
     {
-        issuerInfo = new OCSPResponse.IssuerInfo(anchor, cert);
+        issuerCert = cert;
 
         // Make new public key if parameters are missing
         PublicKey pubKey = cert.getPublicKey();
@@ -465,34 +460,6 @@ class RevocationChecker extends PKIXRevocationChecker {
                   stackedCerts, params.trustAnchors());
     }
 
-    static boolean isCausedByNetworkIssue(String type, CertStoreException cse) {
-        boolean result;
-        Throwable t = cse.getCause();
-
-        switch (type) {
-            case "LDAP":
-                if (t != null) {
-                    // These two exception classes are inside java.naming module
-                    String cn = t.getClass().getName();
-                    result = (cn.equals("javax.naming.ServiceUnavailableException") ||
-                        cn.equals("javax.naming.CommunicationException"));
-                } else {
-                    result = false;
-                }
-                break;
-            case "SSLServer":
-                result = (t != null && t instanceof IOException);
-                break;
-            case "URI":
-                result = (t != null && t instanceof IOException);
-                break;
-            default:
-                // we don't know about any other remote CertStore types
-                return false;
-        }
-        return result;
-    }
-
     private void checkCRLs(X509Certificate cert, PublicKey prevKey,
                            X509Certificate prevCert, boolean signFlag,
                            boolean allowSeparateKey,
@@ -505,9 +472,9 @@ class RevocationChecker extends PKIXRevocationChecker {
                           " ---checking revocation status ...");
         }
 
-        // Reject circular dependencies - RFC 5280 is not explicit on how
-        // to handle this, but does suggest that they can be a security
-        // risk and can create unresolvable dependencies
+        // reject circular dependencies - RFC 3280 is not explicit on how
+        // to handle this, so we feel it is safest to reject them until
+        // the issue is resolved in the PKIX WG.
         if (stackedCerts != null && stackedCerts.contains(cert)) {
             if (debug != null) {
                 debug.println("RevocationChecker.checkCRLs()" +
@@ -537,7 +504,7 @@ class RevocationChecker extends PKIXRevocationChecker {
                                   "CertStoreException: " + e.getMessage());
                 }
                 if (networkFailureException == null &&
-                    isCausedByNetworkIssue(store.getType(),e)) {
+                    CertStoreHelper.isCausedByNetworkIssue(store.getType(),e)) {
                     // save this exception, we may need to throw it later
                     networkFailureException = new CertPathValidatorException(
                         "Unable to determine revocation status due to " +
@@ -577,14 +544,15 @@ class RevocationChecker extends PKIXRevocationChecker {
             try {
                 if (crlDP) {
                     approvedCRLs.addAll(DistributionPointFetcher.getCRLs(
-                            sel, signFlag, prevKey, prevCert,
-                            params.sigProvider(), certStores, reasonsMask,
-                            anchors, null, params.variant()));
+                                        sel, signFlag, prevKey, prevCert,
+                                        params.sigProvider(), certStores,
+                                        reasonsMask, anchors, null));
                 }
             } catch (CertStoreException e) {
                 if (e instanceof CertStoreTypeException) {
                     CertStoreTypeException cste = (CertStoreTypeException)e;
-                    if (isCausedByNetworkIssue(cste.getType(), e)) {
+                    if (CertStoreHelper.isCausedByNetworkIssue(cste.getType(),
+                                                               e)) {
                         throw new CertPathValidatorException(
                             "Unable to determine revocation status due to " +
                             "network error", e, null, -1,
@@ -660,7 +628,7 @@ class RevocationChecker extends PKIXRevocationChecker {
                 /*
                  * Abort CRL validation and throw exception if there are any
                  * unrecognized critical CRL entry extensions (see section
-                 * 5.3 of RFC 5280).
+                 * 5.3 of RFC 3280).
                  */
                 Set<String> unresCritExts = entry.getCriticalExtensionOIDs();
                 if (unresCritExts != null && !unresCritExts.isEmpty()) {
@@ -708,8 +676,14 @@ class RevocationChecker extends PKIXRevocationChecker {
         OCSPResponse response = null;
         CertId certId = null;
         try {
-            certId = new CertId(issuerInfo.getName(), issuerInfo.getPublicKey(),
-                    currCert.getSerialNumberObject());
+            if (issuerCert != null) {
+                certId = new CertId(issuerCert,
+                                    currCert.getSerialNumberObject());
+            } else {
+                // must be an anchor name and key
+                certId = new CertId(anchor.getCA(), anchor.getCAPublicKey(),
+                                    currCert.getSerialNumberObject());
+            }
 
             // check if there is a cached OCSP response available
             byte[] responseBytes = ocspResponses.get(cert);
@@ -726,8 +700,8 @@ class RevocationChecker extends PKIXRevocationChecker {
                         nonce = ext.getValue();
                     }
                 }
-                response.verify(Collections.singletonList(certId), issuerInfo,
-                        responderCert, params.date(), nonce, params.variant());
+                response.verify(Collections.singletonList(certId), issuerCert,
+                                responderCert, params.date(), nonce);
 
             } else {
                 URI responderURI = (this.responderURI != null)
@@ -740,8 +714,8 @@ class RevocationChecker extends PKIXRevocationChecker {
                 }
 
                 response = OCSP.check(Collections.singletonList(certId),
-                        responderURI, issuerInfo, responderCert, null,
-                        ocspExtensions, params.variant());
+                                      responderURI, issuerCert, responderCert,
+                                      null, ocspExtensions);
             }
         } catch (IOException e) {
             throw new CertPathValidatorException(
@@ -853,7 +827,7 @@ class RevocationChecker extends PKIXRevocationChecker {
                     if (DistributionPointFetcher.verifyCRL(
                             certImpl, point, crl, reasonsMask, signFlag,
                             prevKey, null, params.sigProvider(), anchors,
-                            certStores, params.date(), params.variant()))
+                            certStores, params.date()))
                     {
                         results.add(crl);
                     }
@@ -906,9 +880,9 @@ class RevocationChecker extends PKIXRevocationChecker {
                 " ---checking " + msg + "...");
         }
 
-        // Reject circular dependencies - RFC 5280 is not explicit on how
-        // to handle this, but does suggest that they can be a security
-        // risk and can create unresolvable dependencies
+        // reject circular dependencies - RFC 3280 is not explicit on how
+        // to handle this, so we feel it is safest to reject them until
+        // the issue is resolved in the PKIX WG.
         if ((stackedCerts != null) && stackedCerts.contains(cert)) {
             if (debug != null) {
                 debug.println(
@@ -1062,16 +1036,16 @@ class RevocationChecker extends PKIXRevocationChecker {
                 List<? extends Certificate> cpList =
                     cpbr.getCertPath().getCertificates();
                 try {
-                    for (int i = cpList.size() - 1; i >= 0; i--) {
-                        X509Certificate cert = (X509Certificate) cpList.get(i);
+                    for (int i = cpList.size()-1; i >= 0; i-- ) {
+                        X509Certificate cert = (X509Certificate)cpList.get(i);
 
                         if (debug != null) {
                             debug.println("RevocationChecker.buildToNewKey()"
-                                    + " index " + i + " checking "
-                                    + cert);
+                                          + " index " + i + " checking "
+                                          + cert);
                         }
                         checkCRLs(cert, prevKey2, null, signFlag, true,
-                                stackedCerts, newAnchors);
+                                  stackedCerts, newAnchors);
                         signFlag = certCanSignCrl(cert);
                         prevKey2 = cert.getPublicKey();
                     }
@@ -1090,10 +1064,8 @@ class RevocationChecker extends PKIXRevocationChecker {
                 // If it doesn't check out, try to find a different key.
                 // And if we can't find a key, then return false.
                 PublicKey newKey = cpbr.getPublicKey();
-                X509Certificate newCert = cpList.isEmpty() ?
-                    null : (X509Certificate) cpList.get(0);
                 try {
-                    checkCRLs(currCert, newKey, newCert,
+                    checkCRLs(currCert, newKey, (X509Certificate) cpList.get(0),
                               true, false, null, params.trustAnchors());
                     // If that passed, the cert is OK!
                     return;

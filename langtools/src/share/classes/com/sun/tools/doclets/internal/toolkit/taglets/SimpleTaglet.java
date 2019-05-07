@@ -28,7 +28,6 @@ package com.sun.tools.doclets.internal.toolkit.taglets;
 import com.sun.javadoc.*;
 import com.sun.tools.doclets.internal.toolkit.Content;
 import com.sun.tools.doclets.internal.toolkit.util.DocFinder;
-import com.sun.tools.javac.util.StringUtils;
 
 /**
  * A simple single argument custom tag.
@@ -111,7 +110,7 @@ public class SimpleTaglet extends BaseTaglet implements InheritableTaglet {
     public SimpleTaglet(String tagName, String header, String locations) {
         this.tagName = tagName;
         this.header = header;
-        locations = StringUtils.toLowerCase(locations);
+        locations = locations.toLowerCase();
         if (locations.indexOf(ALL) != -1 && locations.indexOf(EXCLUDED) == -1) {
             this.locations = PACKAGE + TYPE + FIELD + METHOD + CONSTRUCTOR + OVERVIEW;
         } else {

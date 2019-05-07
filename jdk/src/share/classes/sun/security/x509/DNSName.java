@@ -232,15 +232,15 @@ public class DNSName implements GeneralNameInterface {
      * @throws UnsupportedOperationException if not supported for this name type
      */
     public int subtreeDepth() throws UnsupportedOperationException {
-        // subtree depth is always at least 1
-        int sum = 1;
+        String subtree=name;
+        int i=1;
 
-        // count dots
-        for (int i = name.indexOf('.'); i >= 0; i = name.indexOf('.', i + 1)) {
-            ++sum;
+        /* count dots */
+        for (; subtree.lastIndexOf('.') >= 0; i++) {
+            subtree=subtree.substring(0,subtree.lastIndexOf('.'));
         }
 
-        return sum;
+        return i;
     }
 
 }

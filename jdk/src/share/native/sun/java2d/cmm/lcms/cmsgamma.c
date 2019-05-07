@@ -30,7 +30,7 @@
 //---------------------------------------------------------------------------------
 //
 //  Little Color Management System
-//  Copyright (c) 1998-2013 Marti Maria Saguer
+//  Copyright (c) 1998-2012 Marti Maria Saguer
 //
 // Permission is hereby granted, free of charge, to any person obtaining
 // a copy of this software and associated documentation files (the "Software"),
@@ -82,6 +82,7 @@ typedef struct _cmsParametricCurvesCollection_st {
 
 } _cmsParametricCurvesCollection;
 
+
 // This is the default (built-in) evaluator
 static cmsFloat64Number DefaultEvalParametricFn(cmsInt32Number Type, const cmsFloat64Number Params[], cmsFloat64Number R);
 
@@ -94,77 +95,22 @@ static _cmsParametricCurvesCollection DefaultCurves = {
     NULL                                // Next in chain
 };
 
-// Duplicates the zone of memory used by the plug-in in the new context
-static
-void DupPluginCurvesList(struct _cmsContext_struct* ctx,
-                                               const struct _cmsContext_struct* src)
-{
-   _cmsCurvesPluginChunkType newHead = { NULL };
-   _cmsParametricCurvesCollection*  entry;
-   _cmsParametricCurvesCollection*  Anterior = NULL;
-   _cmsCurvesPluginChunkType* head = (_cmsCurvesPluginChunkType*) src->chunks[CurvesPlugin];
-
-    _cmsAssert(head != NULL);
-
-    // Walk the list copying all nodes
-   for (entry = head->ParametricCurves;
-        entry != NULL;
-        entry = entry ->Next) {
-
-            _cmsParametricCurvesCollection *newEntry = ( _cmsParametricCurvesCollection *) _cmsSubAllocDup(ctx ->MemPool, entry, sizeof(_cmsParametricCurvesCollection));
-
-            if (newEntry == NULL)
-                return;
-
-            // We want to keep the linked list order, so this is a little bit tricky
-            newEntry -> Next = NULL;
-            if (Anterior)
-                Anterior -> Next = newEntry;
-
-            Anterior = newEntry;
-
-            if (newHead.ParametricCurves == NULL)
-                newHead.ParametricCurves = newEntry;
-    }
-
-  ctx ->chunks[CurvesPlugin] = _cmsSubAllocDup(ctx->MemPool, &newHead, sizeof(_cmsCurvesPluginChunkType));
-}
-
-// The allocator have to follow the chain
-void _cmsAllocCurvesPluginChunk(struct _cmsContext_struct* ctx,
-                                const struct _cmsContext_struct* src)
-{
-    _cmsAssert(ctx != NULL);
-
-    if (src != NULL) {
-
-        // Copy all linked list
-       DupPluginCurvesList(ctx, src);
-    }
-    else {
-        static _cmsCurvesPluginChunkType CurvesPluginChunk = { NULL };
-        ctx ->chunks[CurvesPlugin] = _cmsSubAllocDup(ctx ->MemPool, &CurvesPluginChunk, sizeof(_cmsCurvesPluginChunkType));
-    }
-}
-
-
 // The linked list head
-_cmsCurvesPluginChunkType _cmsCurvesPluginChunk = { NULL };
+static _cmsParametricCurvesCollection* ParametricCurves = &DefaultCurves;
 
 // As a way to install new parametric curves
-cmsBool _cmsRegisterParametricCurvesPlugin(cmsContext ContextID, cmsPluginBase* Data)
+cmsBool _cmsRegisterParametricCurvesPlugin(cmsPluginBase* Data)
 {
-    _cmsCurvesPluginChunkType* ctx = ( _cmsCurvesPluginChunkType*) _cmsContextGetClientChunk(ContextID, CurvesPlugin);
     cmsPluginParametricCurves* Plugin = (cmsPluginParametricCurves*) Data;
     _cmsParametricCurvesCollection* fl;
 
     if (Data == NULL) {
 
-          ctx -> ParametricCurves =  NULL;
+          ParametricCurves =  &DefaultCurves;
           return TRUE;
     }
 
-    fl = (_cmsParametricCurvesCollection*) _cmsPluginMalloc(ContextID, sizeof(_cmsParametricCurvesCollection));
+    fl = (_cmsParametricCurvesCollection*) _cmsPluginMalloc(sizeof(_cmsParametricCurvesCollection));
     if (fl == NULL) return FALSE;
 
     // Copy the parameters
@@ -180,8 +126,8 @@ cmsBool _cmsRegisterParametricCurvesPlugin(cmsContext ContextID, cmsPluginBase* 
     memmove(fl->ParameterCount, Plugin ->ParameterCount,  fl->nFunctions * sizeof(cmsUInt32Number));
 
     // Keep linked list
-    fl ->Next = ctx->ParametricCurves;
-    ctx->ParametricCurves = fl;
+    fl ->Next = ParametricCurves;
+    ParametricCurves = fl;
 
     // All is ok
     return TRUE;
@@ -203,24 +149,12 @@ int IsInSet(int Type, _cmsParametricCurvesCollection* c)
 
 // Search for the collection which contains a specific type
 static
-_cmsParametricCurvesCollection *GetParametricCurveByType(cmsContext ContextID, int Type, int* index)
+_cmsParametricCurvesCollection *GetParametricCurveByType(int Type, int* index)
 {
     _cmsParametricCurvesCollection* c;
     int Position;
-    _cmsCurvesPluginChunkType* ctx = ( _cmsCurvesPluginChunkType*) _cmsContextGetClientChunk(ContextID, CurvesPlugin);
 
-    for (c = ctx->ParametricCurves; c != NULL; c = c ->Next) {
-
-        Position = IsInSet(Type, c);
-
-        if (Position != -1) {
-            if (index != NULL)
-                *index = Position;
-            return c;
-        }
-    }
-    // If none found, revert for defaults
-    for (c = &DefaultCurves; c != NULL; c = c ->Next) {
+    for (c = ParametricCurves; c != NULL; c = c ->Next) {
 
         Position = IsInSet(Type, c);
 
@@ -317,15 +251,14 @@ cmsToneCurve* AllocateToneCurveStruct(cmsContext ContextID, cmsInt32Number nEntr
                 p ->Segments[i].SampledPoints = NULL;
 
 
-            c = GetParametricCurveByType(ContextID, Segments[i].Type, NULL);
+            c = GetParametricCurveByType(Segments[i].Type, NULL);
             if (c != NULL)
                     p ->Evals[i] = c ->Evaluator;
         }
     }
 
     p ->InterpParams = _cmsComputeInterpParams(ContextID, p ->nEntries, 1, 1, p->Table16, CMS_LERP_FLAGS_16BITS);
-    if (p->InterpParams != NULL)
-        return p;
+    return p;
 
 Error:
     if (p -> Segments) _cmsFree(ContextID, p ->Segments);
@@ -490,7 +423,7 @@ cmsFloat64Number DefaultEvalParametricFn(cmsInt32Number Type, const cmsFloat64Nu
             if (e > 0)
                 Val = pow(e, Params[0]) + Params[5];
             else
-                Val = Params[5];
+                Val = 0;
         }
         else
             Val = R*Params[3] + Params[6];
@@ -525,7 +458,7 @@ cmsFloat64Number DefaultEvalParametricFn(cmsInt32Number Type, const cmsFloat64Nu
         e = Params[1]*R + Params[2];
 
         if (e < 0)
-            Val = Params[3];
+            Val = 0;
         else
             Val = pow(e, Params[0]) + Params[3];
         break;
@@ -545,7 +478,7 @@ cmsFloat64Number DefaultEvalParametricFn(cmsInt32Number Type, const cmsFloat64Nu
 
        e = Params[2] * pow(R, Params[0]) + Params[3];
        if (e <= 0)
-           Val = Params[4];
+           Val = 0;
        else
            Val = Params[1]*log10(e) + Params[4];
        break;
@@ -596,7 +529,7 @@ cmsFloat64Number DefaultEvalParametricFn(cmsInt32Number Type, const cmsFloat64Nu
     return Val;
 }
 
-// Evaluate a segmented function for a single value. Return -1 if no valid segment found .
+// Evaluate a segmented funtion for a single value. Return -1 if no valid segment found .
 // If fn type is 0, perform an interpolation on the table
 static
 cmsFloat64Number EvalSegmentedFn(const cmsToneCurve *g, cmsFloat64Number R)
@@ -611,7 +544,7 @@ cmsFloat64Number EvalSegmentedFn(const cmsToneCurve *g, cmsFloat64Number R)
             // Type == 0 means segment is sampled
             if (g ->Segments[i].Type == 0) {
 
-                cmsFloat32Number R1 = (cmsFloat32Number) (R - g ->Segments[i].x0) / (g ->Segments[i].x1 - g ->Segments[i].x0);
+                cmsFloat32Number R1 = (cmsFloat32Number) (R - g ->Segments[i].x0);
                 cmsFloat32Number Out;
 
                 // Setup the table (TODO: clean that)
@@ -696,21 +629,20 @@ cmsToneCurve* CMSEXPORT cmsBuildSegmentedToneCurve(cmsContext ContextID,
 // Use a segmented curve to store the floating point table
 cmsToneCurve* CMSEXPORT cmsBuildTabulatedToneCurveFloat(cmsContext ContextID, cmsUInt32Number nEntries, const cmsFloat32Number values[])
 {
-    cmsCurveSegment Seg[3];
+    cmsCurveSegment Seg[2];
 
-    // A segmented tone curve should have function segments in the first and last positions
-    // Initialize segmented curve part up to 0 to constant value = samples[0]
-    Seg[0].x0 = MINUS_INF;
+    // Initialize segmented curve part up to 0
+    Seg[0].x0 = -1;
     Seg[0].x1 = 0;
     Seg[0].Type = 6;
 
     Seg[0].Params[0] = 1;
     Seg[0].Params[1] = 0;
     Seg[0].Params[2] = 0;
-    Seg[0].Params[3] = values[0];
+    Seg[0].Params[3] = 0;
     Seg[0].Params[4] = 0;
 
-    // From zero to 1
+    // From zero to any
     Seg[1].x0 = 0;
     Seg[1].x1 = 1.0;
     Seg[1].Type = 0;
@@ -718,19 +650,7 @@ cmsToneCurve* CMSEXPORT cmsBuildTabulatedToneCurveFloat(cmsContext ContextID, cm
     Seg[1].nGridPoints = nEntries;
     Seg[1].SampledPoints = (cmsFloat32Number*) values;
 
-    // Final segment is constant = lastsample
-    Seg[2].x0 = 1.0;
-    Seg[2].x1 = PLUS_INF;
-    Seg[2].Type = 6;
-
-    Seg[2].Params[0] = 1;
-    Seg[2].Params[1] = 0;
-    Seg[2].Params[2] = 0;
-    Seg[2].Params[3] = values[nEntries-1];
-    Seg[2].Params[4] = 0;
-
-
-    return cmsBuildSegmentedToneCurve(ContextID, 3, Seg);
+    return cmsBuildSegmentedToneCurve(ContextID, 2, Seg);
 }
 
 // Parametric curves
@@ -743,12 +663,12 @@ cmsToneCurve* CMSEXPORT cmsBuildParametricToneCurve(cmsContext ContextID, cmsInt
     cmsCurveSegment Seg0;
     int Pos = 0;
     cmsUInt32Number size;
-    _cmsParametricCurvesCollection* c = GetParametricCurveByType(ContextID, Type, &Pos);
+    _cmsParametricCurvesCollection* c = GetParametricCurveByType(Type, &Pos);
 
     _cmsAssert(Params != NULL);
 
     if (c == NULL) {
-        cmsSignalError(ContextID, cmsERROR_UNKNOWN_EXTENSION, "Invalid parametric curve type %d", Type);
+         cmsSignalError(ContextID, cmsERROR_UNKNOWN_EXTENSION, "Invalid parametric curve type %d", Type);
         return NULL;
     }
 
@@ -938,10 +858,7 @@ cmsToneCurve* CMSEXPORT cmsReverseToneCurveEx(cmsInt32Number nResultSamples, con
     _cmsAssert(InCurve != NULL);
 
     // Try to reverse it analytically whatever possible
-
-    if (InCurve ->nSegments == 1 && InCurve ->Segments[0].Type > 0 &&
-        /* InCurve -> Segments[0].Type <= 5 */
-        GetParametricCurveByType(InCurve ->InterpParams->ContextID, InCurve ->Segments[0].Type, NULL) != NULL) {
+    if (InCurve ->nSegments == 1 && InCurve ->Segments[0].Type > 0 && InCurve -> Segments[0].Type <= 5) {
 
         return cmsBuildParametricToneCurve(InCurve ->InterpParams->ContextID,
                                        -(InCurve -> Segments[0].Type),
@@ -1076,7 +993,7 @@ cmsBool  CMSEXPORT cmsSmoothToneCurve(cmsToneCurve* Tab, cmsFloat64Number lambda
 
     if (Tab == NULL) return FALSE;
 
-    if (cmsIsToneCurveLinear(Tab)) return TRUE; // Nothing to do
+    if (cmsIsToneCurveLinear(Tab)) return FALSE; // Nothing to do
 
     nItems = Tab -> nEntries;
 
@@ -1103,20 +1020,11 @@ cmsBool  CMSEXPORT cmsSmoothToneCurve(cmsToneCurve* Tab, cmsFloat64Number lambda
 
         if (z[i] == 0.) Zeros++;
         if (z[i] >= 65535.) Poles++;
-        if (z[i] < z[i-1]) {
-            cmsSignalError(Tab ->InterpParams->ContextID, cmsERROR_RANGE, "cmsSmoothToneCurve: Non-Monotonic.");
-            return FALSE;
-        }
+        if (z[i] < z[i-1]) return FALSE; // Non-Monotonic
     }
 
-    if (Zeros > (nItems / 3)) {
-        cmsSignalError(Tab ->InterpParams->ContextID, cmsERROR_RANGE, "cmsSmoothToneCurve: Degenerated, mostly zeros.");
-        return FALSE;
-    }
-    if (Poles > (nItems / 3)) {
-        cmsSignalError(Tab ->InterpParams->ContextID, cmsERROR_RANGE, "cmsSmoothToneCurve: Degenerated, mostly poles.");
-        return FALSE;
-    }
+    if (Zeros > (nItems / 3)) return FALSE;  // Degenerated, mostly zeros
+    if (Poles > (nItems / 3)) return FALSE;  // Degenerated, mostly poles
 
     // Seems ok
     for (i=0; i < nItems; i++) {

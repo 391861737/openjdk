@@ -25,6 +25,7 @@
 
 package jdk.nashorn.internal.ir;
 
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
@@ -38,7 +39,6 @@ import jdk.nashorn.internal.parser.TokenType;
  */
 @Immutable
 public class RuntimeNode extends Expression {
-    private static final long serialVersionUID = 1L;
 
     /**
      * Request enum used for meta-information about the runtime request
@@ -56,8 +56,6 @@ public class RuntimeNode extends Expression {
         REFERENCE_ERROR,
         /** Delete operator */
         DELETE(TokenType.DELETE, Type.BOOLEAN, 1),
-        /** Delete operator for slow scopes */
-        SLOW_DELETE(TokenType.DELETE, Type.BOOLEAN, 1, false),
         /** Delete operator that always fails -- see Lower */
         FAIL_DELETE(TokenType.DELETE, Type.BOOLEAN, 1, false),
         /** === operator with at least one object */
@@ -79,11 +77,7 @@ public class RuntimeNode extends Expression {
         /** !== operator with at least one object */
         NE_STRICT(TokenType.NE_STRICT, Type.BOOLEAN, 2, true),
         /** != operator with at least one object */
-        NE(TokenType.NE, Type.BOOLEAN, 2, true),
-        /** is undefined */
-        IS_UNDEFINED(TokenType.EQ_STRICT, Type.BOOLEAN, 2),
-        /** is not undefined */
-        IS_NOT_UNDEFINED(TokenType.NE_STRICT, Type.BOOLEAN, 2);
+        NE(TokenType.NE, Type.BOOLEAN, 2, true);
 
         /** token type */
         private final TokenType tokenType;
@@ -169,14 +163,9 @@ public class RuntimeNode extends Expression {
          * @param node the node
          * @return request type
          */
-        public static Request requestFor(final Expression node) {
+        public static Request requestFor(final Node node) {
+            assert node.isComparison();
             switch (node.tokenType()) {
-            case TYPEOF:
-                return Request.TYPEOF;
-            case IN:
-                return Request.IN;
-            case INSTANCEOF:
-                return Request.INSTANCEOF;
             case EQ_STRICT:
                 return Request.EQ_STRICT;
             case NE_STRICT:
@@ -200,17 +189,6 @@ public class RuntimeNode extends Expression {
         }
 
         /**
-         * Is this an undefined check?
-         *
-         * @param request request
-         *
-         * @return true if undefined check
-         */
-        public static boolean isUndefinedCheck(final Request request) {
-            return request == IS_UNDEFINED || request == IS_NOT_UNDEFINED;
-        }
-
-        /**
          * Is this an EQ or EQ_STRICT?
          *
          * @param request a request
@@ -230,17 +208,6 @@ public class RuntimeNode extends Expression {
          */
         public static boolean isNE(final Request request) {
             return request == NE || request == NE_STRICT;
-        }
-
-        /**
-         * Is this strict?
-         *
-         * @param request a request
-         *
-         * @return true if script
-         */
-        public static boolean isStrict(final Request request) {
-            return request == EQ_STRICT || request == NE_STRICT;
         }
 
         /**
@@ -276,7 +243,7 @@ public class RuntimeNode extends Expression {
          *
          * @param request a request
          *
-         * @return the inverted request, or null if not applicable
+         * @return the inverted rquest, or null if not applicable
          */
         public static Request invert(final Request request) {
             switch (request) {
@@ -318,8 +285,6 @@ public class RuntimeNode extends Expression {
             case LT:
             case GE:
             case GT:
-            case IS_UNDEFINED:
-            case IS_NOT_UNDEFINED:
                 return true;
             default:
                 return false;
@@ -332,6 +297,9 @@ public class RuntimeNode extends Expression {
 
     /** Call arguments. */
     private final List<Expression> args;
+
+    /** is final - i.e. may not be removed again, lower in the code pipeline */
+    private final boolean isFinal;
 
     /**
      * Constructor
@@ -346,13 +314,15 @@ public class RuntimeNode extends Expression {
 
         this.request      = request;
         this.args         = args;
+        this.isFinal      = false;
     }
 
-    private RuntimeNode(final RuntimeNode runtimeNode, final Request request, final List<Expression> args) {
+    private RuntimeNode(final RuntimeNode runtimeNode, final Request request, final boolean isFinal, final List<Expression> args) {
         super(runtimeNode);
 
         this.request      = request;
         this.args         = args;
+        this.isFinal      = isFinal;
     }
 
     /**
@@ -390,6 +360,7 @@ public class RuntimeNode extends Expression {
 
         this.request      = request;
         this.args         = args;
+        this.isFinal      = false;
     }
 
     /**
@@ -399,29 +370,38 @@ public class RuntimeNode extends Expression {
      * @param request the request
      */
     public RuntimeNode(final UnaryNode parent, final Request request) {
-        this(parent, request, parent.getExpression());
+        this(parent, request, parent.rhs());
     }
 
     /**
-     * Constructor used to replace a binary node with a runtime request.
+     * Constructor
      *
      * @param parent  parent node from which to inherit source, token, finish and arguments
+     * @param request the request
      */
-    public RuntimeNode(final BinaryNode parent) {
-        this(parent, Request.requestFor(parent), parent.lhs(), parent.rhs());
+    public RuntimeNode(final BinaryNode parent, final Request request) {
+        this(parent, request, parent.lhs(), parent.rhs());
     }
 
     /**
-     * Reset the request for this runtime node
-     * @param request request
-     * @return new runtime node or same if same request
+     * Is this node final - i.e. it can never be replaced with other nodes again
+     * @return true if final
      */
-    public RuntimeNode setRequest(final Request request) {
-        if (this.request == request) {
+    public boolean isFinal() {
+        return isFinal;
+    }
+
+    /**
+     * Flag this node as final - i.e it may never be replaced with other nodes again
+     * @param isFinal is the node final, i.e. can not be removed and replaced by a less generic one later in codegen
+     * @return same runtime node if already final, otherwise a new one
+     */
+    public RuntimeNode setIsFinal(final boolean isFinal) {
+        if (this.isFinal == isFinal) {
             return this;
         }
-        return new RuntimeNode(this, request, args);
-   }
+        return new RuntimeNode(this, request, isFinal, args);
+    }
 
     /**
      * Return type for the ReferenceNode
@@ -434,14 +414,18 @@ public class RuntimeNode extends Expression {
     @Override
     public Node accept(final NodeVisitor<? extends LexicalContext> visitor) {
         if (visitor.enterRuntimeNode(this)) {
-            return visitor.leaveRuntimeNode(setArgs(Node.accept(visitor, args)));
+            final List<Expression> newArgs = new ArrayList<>();
+            for (final Node arg : args) {
+                newArgs.add((Expression)arg.accept(visitor));
+            }
+            return visitor.leaveRuntimeNode(setArgs(newArgs));
         }
 
         return this;
     }
 
     @Override
-    public void toString(final StringBuilder sb, final boolean printType) {
+    public void toString(final StringBuilder sb) {
         sb.append("ScriptRuntime.");
         sb.append(request);
         sb.append('(');
@@ -455,7 +439,7 @@ public class RuntimeNode extends Expression {
                 first = false;
             }
 
-            arg.toString(sb, printType);
+            arg.toString(sb);
         }
 
         sb.append(')');
@@ -469,16 +453,11 @@ public class RuntimeNode extends Expression {
         return Collections.unmodifiableList(args);
     }
 
-    /**
-     * Set the arguments of this runtime node
-     * @param args new arguments
-     * @return new runtime node, or identical if no change
-     */
-    public RuntimeNode setArgs(final List<Expression> args) {
+    private RuntimeNode setArgs(final List<Expression> args) {
         if (this.args == args) {
             return this;
         }
-        return new RuntimeNode(this, request, args);
+        return new RuntimeNode(this, request, isFinal, args);
     }
 
     /**

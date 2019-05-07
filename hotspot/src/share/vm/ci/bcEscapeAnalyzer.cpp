@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2005, 2014, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2005, 2013, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -42,7 +42,7 @@
   #define TRACE_BCEA(level, code)
 #endif
 
-// Maintain a map of which arguments a local variable or
+// Maintain a map of which aguments a local variable or
 // stack slot may contain.  In addition to tracking
 // arguments, it tracks two special values, "allocated"
 // which represents any object allocated in the current
@@ -89,8 +89,8 @@ class BCEscapeAnalyzer::StateInfo {
 public:
   ArgumentMap *_vars;
   ArgumentMap *_stack;
-  int _stack_height;
-  int _max_stack;
+  short _stack_height;
+  short _max_stack;
   bool _initialized;
   ArgumentMap empty_map;
 
@@ -158,9 +158,6 @@ void BCEscapeAnalyzer::clear_bits(ArgumentMap vars, VectorSet &bm) {
 
 void BCEscapeAnalyzer::set_method_escape(ArgumentMap vars) {
   clear_bits(vars, _arg_local);
-  if (vars.contains_allocated()) {
-    _allocated_escapes = true;
-  }
 }
 
 void BCEscapeAnalyzer::set_global_escape(ArgumentMap vars, bool merge) {
@@ -318,16 +315,14 @@ void BCEscapeAnalyzer::invoke(StateInfo &state, Bytecodes::Code code, ciMethod* 
     bool must_record_dependencies = false;
     for (i = arg_size - 1; i >= 0; i--) {
       ArgumentMap arg = state.raw_pop();
-      // Check if callee arg is a caller arg or an allocated object
-      bool allocated = arg.contains_allocated();
-      if (!(is_argument(arg) || allocated))
+      if (!is_argument(arg))
         continue;
       for (int j = 0; j < _arg_size; j++) {
         if (arg.contains(j)) {
           _arg_modified[j] |= analyzer._arg_modified[i];
         }
       }
-      if (!(is_arg_stack(arg) || allocated)) {
+      if (!is_arg_stack(arg)) {
         // arguments have already been recognized as escaping
       } else if (analyzer.is_arg_stack(i) && !analyzer.is_arg_returned(i)) {
         set_method_escape(arg);
@@ -1292,10 +1287,10 @@ void BCEscapeAnalyzer::compute_escape_info() {
         tty->print_cr("class of method is not initialized.");
       else if (_level > MaxBCEAEstimateLevel)
         tty->print_cr("level (%d) exceeds MaxBCEAEstimateLevel (%d).",
-                      _level, (int) MaxBCEAEstimateLevel);
+                      _level, MaxBCEAEstimateLevel);
       else if (method()->code_size() > MaxBCEAEstimateSize)
-        tty->print_cr("code size (%d) exceeds MaxBCEAEstimateSize (%d).",
-                      method()->code_size(), (int) MaxBCEAEstimateSize);
+        tty->print_cr("code size (%d) exceeds MaxBCEAEstimateSize.",
+                      method()->code_size(), MaxBCEAEstimateSize);
       else
         ShouldNotReachHere();
     }

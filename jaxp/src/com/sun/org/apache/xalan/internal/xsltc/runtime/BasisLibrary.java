@@ -1,13 +1,13 @@
 /*
- * Copyright (c) 2007, 2016, Oracle and/or its affiliates. All rights reserved.
+ * reserved comment block
+ * DO NOT REMOVE OR ALTER!
  */
 /*
- * Licensed to the Apache Software Foundation (ASF) under one or more
- * contributor license agreements.  See the NOTICE file distributed with
- * this work for additional information regarding copyright ownership.
- * The ASF licenses this file to You under the Apache License, Version 2.0
- * (the "License"); you may not use this file except in compliance with
- * the License.  You may obtain a copy of the License at
+ * Copyright 2001-2004 The Apache Software Foundation.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
@@ -24,23 +24,6 @@
 package com.sun.org.apache.xalan.internal.xsltc.runtime;
 
 import com.sun.org.apache.xalan.internal.utils.SecuritySupport;
-import com.sun.org.apache.xalan.internal.xsltc.DOM;
-import com.sun.org.apache.xalan.internal.xsltc.Translet;
-import com.sun.org.apache.xalan.internal.xsltc.dom.AbsoluteIterator;
-import com.sun.org.apache.xalan.internal.xsltc.dom.ArrayNodeListIterator;
-import com.sun.org.apache.xalan.internal.xsltc.dom.DOMAdapter;
-import com.sun.org.apache.xalan.internal.xsltc.dom.MultiDOM;
-import com.sun.org.apache.xalan.internal.xsltc.dom.SingletonIterator;
-import com.sun.org.apache.xalan.internal.xsltc.dom.StepIterator;
-import com.sun.org.apache.xml.internal.dtm.Axis;
-import com.sun.org.apache.xml.internal.dtm.DTM;
-import com.sun.org.apache.xml.internal.dtm.DTMAxisIterator;
-import com.sun.org.apache.xml.internal.dtm.DTMManager;
-import com.sun.org.apache.xml.internal.dtm.ref.DTMDefaultBase;
-import com.sun.org.apache.xml.internal.dtm.ref.DTMNodeProxy;
-import com.sun.org.apache.xml.internal.serializer.NamespaceMappings;
-import com.sun.org.apache.xml.internal.serializer.SerializationHandler;
-import com.sun.org.apache.xml.internal.utils.XML11Char;
 import java.text.DecimalFormat;
 import java.text.DecimalFormatSymbols;
 import java.text.FieldPosition;
@@ -48,13 +31,32 @@ import java.text.MessageFormat;
 import java.text.NumberFormat;
 import java.util.Locale;
 import java.util.ResourceBundle;
-import java.util.concurrent.atomic.AtomicInteger;
 import javax.xml.transform.dom.DOMSource;
+
+import com.sun.org.apache.xalan.internal.xsltc.DOM;
+import com.sun.org.apache.xalan.internal.xsltc.Translet;
+import com.sun.org.apache.xalan.internal.xsltc.dom.AbsoluteIterator;
+import com.sun.org.apache.xml.internal.dtm.Axis;
+import com.sun.org.apache.xalan.internal.xsltc.dom.DOMAdapter;
+import com.sun.org.apache.xalan.internal.xsltc.dom.MultiDOM;
+import com.sun.org.apache.xalan.internal.xsltc.dom.SingletonIterator;
+import com.sun.org.apache.xalan.internal.xsltc.dom.StepIterator;
+import com.sun.org.apache.xalan.internal.xsltc.dom.ArrayNodeListIterator;
+import com.sun.org.apache.xml.internal.dtm.DTM;
+import com.sun.org.apache.xml.internal.dtm.DTMAxisIterator;
+import com.sun.org.apache.xml.internal.dtm.DTMManager;
+import com.sun.org.apache.xml.internal.dtm.ref.DTMDefaultBase;
+import com.sun.org.apache.xml.internal.dtm.ref.DTMNodeProxy;
+
+import org.w3c.dom.DOMException;
 import org.w3c.dom.Attr;
 import org.w3c.dom.Document;
 import org.w3c.dom.Element;
 import org.w3c.dom.NodeList;
 import org.xml.sax.SAXException;
+import com.sun.org.apache.xml.internal.serializer.NamespaceMappings;
+import com.sun.org.apache.xml.internal.serializer.SerializationHandler;
+import com.sun.org.apache.xml.internal.utils.XML11Char;
 
 /**
  * Standard XSLT functions. All standard functions expect the current node
@@ -268,15 +270,14 @@ public final class BasisLibrary {
         if (Double.isNaN(start))
             return(EMPTYSTRING);
 
-        final int strlen = getStringLength(value);
-        int istart = (int)Math.round(start) - 1;
+            final int strlen = value.length();
+            int istart = (int)Math.round(start) - 1;
 
         if (istart > strlen)
             return(EMPTYSTRING);
         if (istart < 1)
             istart = 0;
         try {
-            istart = value.offsetByCodePoints(0, istart);
             return value.substring(istart);
         } catch (IndexOutOfBoundsException e) {
             runTimeError(RUN_TIME_INTERNAL_ERR, "substring()");
@@ -291,35 +292,28 @@ public final class BasisLibrary {
     public static String substringF(String value, double start, double length) {
         if (Double.isInfinite(start) ||
             Double.isNaN(start) ||
-            Double.isNaN(length) ||
-            length < 0)
+            Double.isNaN(length))
             return(EMPTYSTRING);
 
-        int istart = (int)Math.round(start) - 1;
-        int ilength = (int)Math.round(length);
+            int istart = (int)Math.round(start) - 1;
         final int isum;
         if (Double.isInfinite(length))
             isum = Integer.MAX_VALUE;
         else
-            isum = istart + ilength;
+            isum = istart + (int)Math.round(length);
 
-        final int strlen = getStringLength(value);
+        final int strlen = value.length();
         if (isum < 0 || istart > strlen)
                 return(EMPTYSTRING);
 
-        if (istart < 0) {
-            ilength += istart;
+        if (istart < 0)
             istart = 0;
-        }
 
         try {
-            istart = value.offsetByCodePoints(0, istart);
-            if (isum > strlen) {
+            if (isum > strlen)
                 return value.substring(istart);
-            } else {
-                int offset = value.offsetByCodePoints(istart, ilength);
-                return value.substring(istart, offset);
-            }
+            else
+                return value.substring(istart, isum);
         } catch (IndexOutOfBoundsException e) {
             runTimeError(RUN_TIME_INTERNAL_ERR, "substring()");
             return null;
@@ -981,7 +975,7 @@ public final class BasisLibrary {
 
     /**
      * Utility function: used to format/adjust  a double to a string. The
-     * DecimalFormat object comes from the 'formatSymbols' map in
+     * DecimalFormat object comes from the 'formatSymbols' hashtable in
      * AbstractTranslet.
      */
     private static FieldPosition _fieldPosition = new FieldPosition(0);
@@ -1531,24 +1525,15 @@ public final class BasisLibrary {
     }
 
     /**
-     * These functions are used in the execution of xsl:element to generate
-     * and reset namespace prefix index local to current transformation process
+     * This function is used in the execution of xsl:element
      */
+    private static int prefixIndex = 0;
+
     public static String generatePrefix() {
-        return ("ns" + threadLocalPrefixIndex.get().getAndIncrement());
+        synchronized (BasisLibrary.class) {
+            return ("ns" + prefixIndex++);
+        }
     }
-
-    public static void resetPrefixIndex() {
-        threadLocalPrefixIndex.get().set(0);
-    }
-
-    private static final ThreadLocal<AtomicInteger> threadLocalPrefixIndex =
-        new ThreadLocal<AtomicInteger>() {
-            @Override
-            protected AtomicInteger initialValue() {
-                return new AtomicInteger();
-            }
-        };
 
     public static final String RUN_TIME_INTERNAL_ERR =
                                            "RUN_TIME_INTERNAL_ERR";
@@ -1673,15 +1658,6 @@ public final class BasisLibrary {
                                      "","$colon$","$ques$","$hash$","$per$",
                                      "$aster$"});
 
-    }
-
-    /**
-     *  Utility method to calculate string-length as a number of code points,
-     *  to avoid possible errors with string that contains
-     *  complementary characters
-     */
-    public static int getStringLength(String str) {
-        return str.codePointCount(0,str.length());
     }
 
     //-- End utility functions

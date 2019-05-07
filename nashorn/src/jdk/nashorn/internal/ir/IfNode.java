@@ -32,9 +32,7 @@ import jdk.nashorn.internal.ir.visitor.NodeVisitor;
  * IR representation for an IF statement.
  */
 @Immutable
-public final class IfNode extends Statement implements JoinPredecessor {
-    private static final long serialVersionUID = 1L;
-
+public final class IfNode extends Statement {
     /** Test expression. */
     private final Expression test;
 
@@ -43,12 +41,6 @@ public final class IfNode extends Statement implements JoinPredecessor {
 
     /** Fail statements. */
     private final Block fail;
-
-    /**
-     * Local variable conversions that need to be performed after test if it evaluates to false, and there's no else
-     * branch.
-     */
-    private final LocalVariableConversion conversion;
 
     /**
      * Constructor
@@ -65,15 +57,13 @@ public final class IfNode extends Statement implements JoinPredecessor {
         this.test = test;
         this.pass = pass;
         this.fail = fail;
-        this.conversion = null;
     }
 
-    private IfNode(final IfNode ifNode, final Expression test, final Block pass, final Block fail, final LocalVariableConversion conversion) {
+    private IfNode(final IfNode ifNode, final Expression test, final Block pass, final Block fail) {
         super(ifNode);
         this.test = test;
         this.pass = pass;
         this.fail = fail;
-        this.conversion = conversion;
     }
 
     @Override
@@ -94,9 +84,9 @@ public final class IfNode extends Statement implements JoinPredecessor {
     }
 
     @Override
-    public void toString(final StringBuilder sb, final boolean printTypes) {
+    public void toString(final StringBuilder sb) {
         sb.append("if (");
-        test.toString(sb, printTypes);
+        test.toString(sb);
         sb.append(')');
     }
 
@@ -112,7 +102,7 @@ public final class IfNode extends Statement implements JoinPredecessor {
         if (this.fail == fail) {
             return this;
         }
-        return new IfNode(this, test, pass, fail, conversion);
+        return new IfNode(this, test, pass, fail);
     }
 
     /**
@@ -127,7 +117,7 @@ public final class IfNode extends Statement implements JoinPredecessor {
         if (this.pass == pass) {
             return this;
         }
-        return new IfNode(this, test, pass, fail, conversion);
+        return new IfNode(this, test, pass, fail);
     }
 
     /**
@@ -147,19 +137,6 @@ public final class IfNode extends Statement implements JoinPredecessor {
         if (this.test == test) {
             return this;
         }
-        return new IfNode(this, test, pass, fail, conversion);
-    }
-
-    @Override
-    public IfNode setLocalVariableConversion(final LexicalContext lc, final LocalVariableConversion conversion) {
-        if(this.conversion == conversion) {
-            return this;
-        }
-        return new IfNode(this, test, pass, fail, conversion);
-    }
-
-    @Override
-    public LocalVariableConversion getLocalVariableConversion() {
-        return conversion;
+        return new IfNode(this, test, pass, fail);
     }
 }

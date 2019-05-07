@@ -28,24 +28,33 @@ package jdk.nashorn.internal.codegen.types;
 import static jdk.internal.org.objectweb.asm.Opcodes.L2D;
 import static jdk.internal.org.objectweb.asm.Opcodes.L2I;
 import static jdk.internal.org.objectweb.asm.Opcodes.LADD;
+import static jdk.internal.org.objectweb.asm.Opcodes.LAND;
+import static jdk.internal.org.objectweb.asm.Opcodes.LCMP;
 import static jdk.internal.org.objectweb.asm.Opcodes.LCONST_0;
 import static jdk.internal.org.objectweb.asm.Opcodes.LCONST_1;
+import static jdk.internal.org.objectweb.asm.Opcodes.LDIV;
 import static jdk.internal.org.objectweb.asm.Opcodes.LLOAD;
+import static jdk.internal.org.objectweb.asm.Opcodes.LMUL;
+import static jdk.internal.org.objectweb.asm.Opcodes.LNEG;
+import static jdk.internal.org.objectweb.asm.Opcodes.LOR;
+import static jdk.internal.org.objectweb.asm.Opcodes.LREM;
 import static jdk.internal.org.objectweb.asm.Opcodes.LRETURN;
+import static jdk.internal.org.objectweb.asm.Opcodes.LSHL;
+import static jdk.internal.org.objectweb.asm.Opcodes.LSHR;
 import static jdk.internal.org.objectweb.asm.Opcodes.LSTORE;
+import static jdk.internal.org.objectweb.asm.Opcodes.LSUB;
+import static jdk.internal.org.objectweb.asm.Opcodes.LUSHR;
+import static jdk.internal.org.objectweb.asm.Opcodes.LXOR;
 import static jdk.nashorn.internal.codegen.CompilerConstants.staticCallNoLookup;
-import static jdk.nashorn.internal.runtime.JSType.UNDEFINED_LONG;
-import static jdk.nashorn.internal.runtime.UnwarrantedOptimismException.INVALID_PROGRAM_POINT;
 
 import jdk.internal.org.objectweb.asm.MethodVisitor;
 import jdk.nashorn.internal.codegen.CompilerConstants;
-import jdk.nashorn.internal.runtime.JSType;
+import jdk.nashorn.internal.codegen.ObjectClassGenerator;
 
 /**
  * Type class: LONG
  */
-class LongType extends Type {
-    private static final long serialVersionUID = 1L;
+class LongType extends BitwiseType {
 
     private static final CompilerConstants.Call VALUE_OF = staticCallNoLookup(Long.class, "valueOf", Long.class, long.class);
 
@@ -68,8 +77,9 @@ class LongType extends Type {
     }
 
     @Override
-    public char getBytecodeStackType() {
-        return 'J';
+    public Type cmp(final MethodVisitor method) {
+        method.visitInsn(LCMP);
+        return INT;
     }
 
     @Override
@@ -111,11 +121,11 @@ class LongType extends Type {
         if (to.isNumber()) {
             method.visitInsn(L2D);
         } else if (to.isInteger()) {
-            invokestatic(method, JSType.TO_INT32_L);
+            method.visitInsn(L2I);
         } else if (to.isBoolean()) {
             method.visitInsn(L2I);
         } else if (to.isObject()) {
-            invokestatic(method, VALUE_OF);
+            invokeStatic(method, VALUE_OF);
         } else {
             assert false : "Illegal conversion " + this + " -> " + to;
         }
@@ -124,12 +134,74 @@ class LongType extends Type {
     }
 
     @Override
-    public Type add(final MethodVisitor method, final int programPoint) {
-        if(programPoint == INVALID_PROGRAM_POINT) {
-            method.visitInsn(LADD);
-        } else {
-            method.visitInvokeDynamicInsn("ladd", "(JJ)J", MATHBOOTSTRAP, programPoint);
-        }
+    public Type add(final MethodVisitor method) {
+        method.visitInsn(LADD);
+        return LONG;
+    }
+
+    @Override
+    public Type sub(final MethodVisitor method) {
+        method.visitInsn(LSUB);
+        return LONG;
+    }
+
+    @Override
+    public Type mul(final MethodVisitor method) {
+        method.visitInsn(LMUL);
+        return LONG;
+    }
+
+    @Override
+    public Type div(final MethodVisitor method) {
+        method.visitInsn(LDIV);
+        return LONG;
+    }
+
+    @Override
+    public Type rem(final MethodVisitor method) {
+        method.visitInsn(LREM);
+        return LONG;
+    }
+
+    @Override
+    public Type shr(final MethodVisitor method) {
+        method.visitInsn(LUSHR);
+        return LONG;
+    }
+
+    @Override
+    public Type sar(final MethodVisitor method) {
+        method.visitInsn(LSHR);
+        return LONG;
+    }
+
+    @Override
+    public Type shl(final MethodVisitor method) {
+        method.visitInsn(LSHL);
+        return LONG;
+    }
+
+    @Override
+    public Type and(final MethodVisitor method) {
+        method.visitInsn(LAND);
+        return LONG;
+    }
+
+    @Override
+    public Type or(final MethodVisitor method) {
+        method.visitInsn(LOR);
+        return LONG;
+    }
+
+    @Override
+    public Type xor(final MethodVisitor method) {
+        method.visitInsn(LXOR);
+        return LONG;
+    }
+
+    @Override
+    public Type neg(final MethodVisitor method) {
+        method.visitInsn(LNEG);
         return LONG;
     }
 
@@ -140,13 +212,12 @@ class LongType extends Type {
 
     @Override
     public Type loadUndefined(final MethodVisitor method) {
-        method.visitLdcInsn(UNDEFINED_LONG);
+        method.visitLdcInsn(ObjectClassGenerator.UNDEFINED_LONG);
         return LONG;
     }
 
     @Override
-    public Type loadForcedInitializer(final MethodVisitor method) {
-        method.visitInsn(LCONST_0);
-        return LONG;
+    public Type cmp(final MethodVisitor method, final boolean isCmpG) {
+        return cmp(method);
     }
 }

@@ -150,9 +150,6 @@ class CompiledIC: public ResourceObj {
   bool          _is_optimized;  // an optimized virtual call (i.e., no compiled IC)
 
   CompiledIC(nmethod* nm, NativeCall* ic_call);
-  CompiledIC(RelocIterator* iter);
-
-  void initialize_from_iter(RelocIterator* iter);
 
   static bool is_icholder_entry(address entry);
 
@@ -186,7 +183,6 @@ class CompiledIC: public ResourceObj {
   friend CompiledIC* CompiledIC_before(nmethod* nm, address return_addr);
   friend CompiledIC* CompiledIC_at(nmethod* nm, address call_site);
   friend CompiledIC* CompiledIC_at(Relocation* call_site);
-  friend CompiledIC* CompiledIC_at(RelocIterator* reloc_iter);
 
   // This is used to release CompiledICHolder*s from nmethods that
   // are about to be freed.  The callsite might contain other stale
@@ -228,9 +224,8 @@ class CompiledIC: public ResourceObj {
   //
   // They all takes a TRAP argument, since they can cause a GC if the inline-cache buffer is full.
   //
-  void set_to_clean(bool in_use = true);
+  void set_to_clean();  // Can only be called during a safepoint operation
   void set_to_monomorphic(CompiledICInfo& info);
-  void clear_ic_stub();
 
   // Returns true if successful and false otherwise. The call can fail if memory
   // allocation in the code cache fails.
@@ -268,13 +263,6 @@ inline CompiledIC* CompiledIC_at(Relocation* call_site) {
   return c_ic;
 }
 
-inline CompiledIC* CompiledIC_at(RelocIterator* reloc_iter) {
-  assert(reloc_iter->type() == relocInfo::virtual_call_type ||
-      reloc_iter->type() == relocInfo::opt_virtual_call_type, "wrong reloc. info");
-  CompiledIC* c_ic = new CompiledIC(reloc_iter);
-  c_ic->verify();
-  return c_ic;
-}
 
 //-----------------------------------------------------------------------------
 // The CompiledStaticCall represents a call to a static method in the compiled
@@ -320,7 +308,7 @@ class CompiledStaticCall: public NativeCall {
   friend CompiledStaticCall* compiledStaticCall_at(Relocation* call_site);
 
   // Code
-  static address emit_to_interp_stub(CodeBuffer &cbuf);
+  static void emit_to_interp_stub(CodeBuffer &cbuf);
   static int to_interp_stub_size();
   static int reloc_to_interp_stub();
 

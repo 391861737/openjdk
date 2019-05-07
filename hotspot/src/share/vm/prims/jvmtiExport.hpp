@@ -363,7 +363,6 @@ class JvmtiExport : public AllStatic {
   }
 
   static void cleanup_thread             (JavaThread* thread) NOT_JVMTI_RETURN;
-  static void clear_detected_exception   (JavaThread* thread) NOT_JVMTI_RETURN;
 
   static void oops_do(OopClosure* f) NOT_JVMTI_RETURN;
   static void weak_oops_do(BoolObjectClosure* b, OopClosure* f) NOT_JVMTI_RETURN;

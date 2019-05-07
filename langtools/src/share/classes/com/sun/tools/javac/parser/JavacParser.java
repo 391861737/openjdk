@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 1999, 2016, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 1999, 2013, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -161,7 +161,6 @@ public class JavacParser implements Parser {
         this.allowStaticInterfaceMethods = source.allowStaticInterfaceMethods();
         this.allowIntersectionTypesInCast = source.allowIntersectionTypesInCast();
         this.allowTypeAnnotations = source.allowTypeAnnotations();
-        this.allowAnnotationsAfterTypeParams = source.allowAnnotationsAfterTypeParams();
         this.keepDocComments = keepDocComments;
         docComments = newDocCommentTable(keepDocComments, fac);
         this.keepLineMap = keepLineMap;
@@ -254,10 +253,6 @@ public class JavacParser implements Parser {
     /** Switch: should we recognize type annotations?
      */
     boolean allowTypeAnnotations;
-
-    /** Switch: should we allow annotations after the method type parameters?
-     */
-    boolean allowAnnotationsAfterTypeParams;
 
     /** Switch: is "this" allowed as an identifier?
      * This is needed to parse receiver types.
@@ -515,7 +510,7 @@ public class JavacParser implements Parser {
         if (mods != 0) {
             long lowestMod = mods & -mods;
             error(token.pos, "mod.not.allowed.here",
-                    Flags.asFlagSet(lowestMod));
+                      Flags.asFlagSet(lowestMod));
         }
     }
 
@@ -585,7 +580,7 @@ public class JavacParser implements Parser {
     /**
      * Ident = IDENTIFIER
      */
-    public Name ident() {
+    Name ident() {
         if (token.kind == IDENTIFIER) {
             Name name = token.name();
             nextToken();
@@ -954,7 +949,10 @@ public class JavacParser implements Parser {
         t = odStack[0];
 
         if (t.hasTag(JCTree.Tag.PLUS)) {
-            t = foldStrings(t);
+            StringBuilder buf = foldStrings(t);
+            if (buf != null) {
+                t = toP(F.at(startPos).Literal(TypeTag.CLASS, buf.toString()));
+            }
         }
 
         odStackSupply.add(odStack);
@@ -978,78 +976,36 @@ public class JavacParser implements Parser {
         /** If tree is a concatenation of string literals, replace it
          *  by a single literal representing the concatenated string.
          */
-        protected JCExpression foldStrings(JCExpression tree) {
+        protected StringBuilder foldStrings(JCTree tree) {
             if (!allowStringFolding)
-                return tree;
-            ListBuffer<JCExpression> opStack = new ListBuffer<>();
-            ListBuffer<JCLiteral> litBuf = new ListBuffer<>();
-            boolean needsFolding = false;
-            JCExpression curr = tree;
+                return null;
+            List<String> buf = List.nil();
             while (true) {
-                if (curr.hasTag(JCTree.Tag.PLUS)) {
-                    JCBinary op = (JCBinary)curr;
-                    needsFolding |= foldIfNeeded(op.rhs, litBuf, opStack, false);
-                    curr = op.lhs;
-                } else {
-                    needsFolding |= foldIfNeeded(curr, litBuf, opStack, true);
-                    break; //last one!
+                if (tree.hasTag(LITERAL)) {
+                    JCLiteral lit = (JCLiteral) tree;
+                    if (lit.typetag == TypeTag.CLASS) {
+                        StringBuilder sbuf =
+                            new StringBuilder((String)lit.value);
+                        while (buf.nonEmpty()) {
+                            sbuf.append(buf.head);
+                            buf = buf.tail;
+                        }
+                        return sbuf;
+                    }
+                } else if (tree.hasTag(JCTree.Tag.PLUS)) {
+                    JCBinary op = (JCBinary)tree;
+                    if (op.rhs.hasTag(LITERAL)) {
+                        JCLiteral lit = (JCLiteral) op.rhs;
+                        if (lit.typetag == TypeTag.CLASS) {
+                            buf = buf.prepend((String) lit.value);
+                            tree = op.lhs;
+                            continue;
+                        }
+                    }
                 }
-            }
-            if (needsFolding) {
-                List<JCExpression> ops = opStack.toList();
-                JCExpression res = ops.head;
-                for (JCExpression op : ops.tail) {
-                    res = F.at(op.getStartPosition()).Binary(optag(TokenKind.PLUS), res, op);
-                    storeEnd(res, getEndPos(op));
-                }
-                return res;
-            } else {
-                return tree;
+                return null;
             }
         }
-
-        private boolean foldIfNeeded(JCExpression tree, ListBuffer<JCLiteral> litBuf,
-                                                ListBuffer<JCExpression> opStack, boolean last) {
-            JCLiteral str = stringLiteral(tree);
-            if (str != null) {
-                litBuf.prepend(str);
-                return last && merge(litBuf, opStack);
-            } else {
-                boolean res = merge(litBuf, opStack);
-                litBuf.clear();
-                opStack.prepend(tree);
-                return res;
-            }
-        }
-
-        boolean merge(ListBuffer<JCLiteral> litBuf, ListBuffer<JCExpression> opStack) {
-            if (litBuf.isEmpty()) {
-                return false;
-            } else if (litBuf.size() == 1) {
-                opStack.prepend(litBuf.first());
-                return false;
-            } else {
-                StringBuilder sb = new StringBuilder();
-                for (JCLiteral lit : litBuf) {
-                    sb.append(lit.getValue());
-                }
-                JCExpression t = F.at(litBuf.first().getStartPosition()).Literal(TypeTag.CLASS, sb.toString());
-                storeEnd(t, litBuf.last().getEndPosition(endPosTable));
-                opStack.prepend(t);
-                return true;
-            }
-        }
-
-        private JCLiteral stringLiteral(JCTree tree) {
-            if (tree.hasTag(LITERAL)) {
-                JCLiteral lit = (JCLiteral)tree;
-                if (lit.typetag == TypeTag.CLASS) {
-                    return lit;
-                }
-            }
-            return null;
-        }
-
 
         /** optimization: To save allocating a new operand/operator stack
          *  for every binary operation, we use supplys.
@@ -2064,7 +2020,7 @@ public class JavacParser implements Parser {
     /** Creator = [Annotations] Qualident [TypeArguments] ( ArrayCreatorRest | ClassCreatorRest )
      */
     JCExpression creator(int newpos, List<JCExpression> typeArgs) {
-        List<JCAnnotation> newAnnotations = typeAnnotationsOpt();
+        List<JCAnnotation> newAnnotations = annotationsOpt(Tag.ANNOTATION);
 
         switch (token.kind) {
         case BYTE: case SHORT: case CHAR: case INT: case LONG: case FLOAT:
@@ -2759,7 +2715,7 @@ public class JavacParser implements Parser {
         } else {
             JCExpression t = term(EXPR | TYPE);
             if ((lastmode & TYPE) != 0 && LAX_IDENTIFIER.accepts(token.kind)) {
-                return variableDeclarators(mods(pos, 0, List.<JCAnnotation>nil()), t, stats).toList();
+                return variableDeclarators(modifiersOpt(), t, stats).toList();
             } else if ((lastmode & TYPE) != 0 && token.kind == COLON) {
                 error(pos, "bad.initializer", "for-loop");
                 return List.of((JCStatement)F.at(pos).VarDef(null, null, t, null));
@@ -2868,20 +2824,16 @@ public class JavacParser implements Parser {
         default: break;
         }
 
-        return mods(pos, flags, annotations.toList());
-    }
-    //where
-        JCModifiers mods(int pos, long flags, List<JCAnnotation> annotations) {
-            /* A modifiers tree with no modifier tokens or annotations
-             * has no text position. */
-            if ((flags & (Flags.ModifierFlags | Flags.ANNOTATION)) == 0 && annotations.isEmpty())
-                pos = Position.NOPOS;
+        /* A modifiers tree with no modifier tokens or annotations
+         * has no text position. */
+        if ((flags & (Flags.ModifierFlags | Flags.ANNOTATION)) == 0 && annotations.isEmpty())
+            pos = Position.NOPOS;
 
-            JCModifiers mods = F.at(pos).Modifiers(flags, annotations);
-            if (pos != Position.NOPOS)
-                storeEnd(mods, S.prevToken().endPos);
-            return mods;
-        }
+        JCModifiers mods = F.at(pos).Modifiers(flags, annotations.toList());
+        if (pos != Position.NOPOS)
+            storeEnd(mods, S.prevToken().endPos);
+        return mods;
+    }
 
     /** Annotation              = "@" Qualident [ "(" AnnotationFieldValues ")" ]
      *
@@ -3449,28 +3401,16 @@ public class JavacParser implements Parser {
      *    | ModifiersOpt
      *      ( Type Ident
      *        ( VariableDeclaratorsRest ";" | MethodDeclaratorRest )
-     *      | VOID Ident VoidMethodDeclaratorRest
-     *      | TypeParameters [Annotations]
-     *        ( Type Ident MethodDeclaratorRest
-     *        | VOID Ident VoidMethodDeclaratorRest
-     *        )
+     *      | VOID Ident MethodDeclaratorRest
+     *      | TypeParameters (Type | VOID) Ident MethodDeclaratorRest
      *      | Ident ConstructorDeclaratorRest
      *      | TypeParameters Ident ConstructorDeclaratorRest
      *      | ClassOrInterfaceOrEnumDeclaration
      *      )
      *  InterfaceBodyDeclaration =
      *      ";"
-     *    | ModifiersOpt
-     *      ( Type Ident
-     *        ( ConstantDeclaratorsRest ";" | MethodDeclaratorRest )
-     *      | VOID Ident MethodDeclaratorRest
-     *      | TypeParameters [Annotations]
-     *        ( Type Ident MethodDeclaratorRest
-     *        | VOID Ident VoidMethodDeclaratorRest
-     *        )
-     *      | ClassOrInterfaceOrEnumDeclaration
-     *      )
-     *
+     *    | ModifiersOpt Type Ident
+     *      ( ConstantDeclaratorsRest | InterfaceMethodDeclaratorRest ";" )
      */
     protected List<JCTree> classOrInterfaceBodyDeclaration(Name className, boolean isInterface) {
         if (token.kind == SEMI) {
@@ -3499,29 +3439,27 @@ public class JavacParser implements Parser {
                 }
                 List<JCAnnotation> annosAfterParams = annotationsOpt(Tag.ANNOTATION);
 
-                if (annosAfterParams.nonEmpty()) {
-                    checkAnnotationsAfterTypeParams(annosAfterParams.head.pos);
-                    mods.annotations = mods.annotations.appendList(annosAfterParams);
-                    if (mods.pos == Position.NOPOS)
-                        mods.pos = mods.annotations.head.pos;
-                }
-
                 Token tk = token;
                 pos = token.pos;
                 JCExpression type;
                 boolean isVoid = token.kind == VOID;
                 if (isVoid) {
+                    if (annosAfterParams.nonEmpty())
+                        illegal(annosAfterParams.head.pos);
                     type = to(F.at(pos).TypeIdent(TypeTag.VOID));
                     nextToken();
                 } else {
+                    if (annosAfterParams.nonEmpty()) {
+                        mods.annotations = mods.annotations.appendList(annosAfterParams);
+                        if (mods.pos == Position.NOPOS)
+                            mods.pos = mods.annotations.head.pos;
+                    }
                     // method returns types are un-annotated types
                     type = unannotatedType();
                 }
                 if (token.kind == LPAREN && !isInterface && type.hasTag(IDENT)) {
                     if (isInterface || tk.name() != className)
                         error(pos, "invalid.meth.decl.ret.type.req");
-                    else if (annosAfterParams.nonEmpty())
-                        illegal(annosAfterParams.head.pos);
                     return List.of(methodDeclaratorRest(
                         pos, mods, null, names.init, typarams,
                         isInterface, true, dc));
@@ -3553,9 +3491,13 @@ public class JavacParser implements Parser {
     }
 
     /** MethodDeclaratorRest =
-     *      FormalParameters BracketsOpt [THROWS TypeList] ( MethodBody | [DEFAULT AnnotationValue] ";")
+     *      FormalParameters BracketsOpt [Throws TypeList] ( MethodBody | [DEFAULT AnnotationValue] ";")
      *  VoidMethodDeclaratorRest =
-     *      FormalParameters [THROWS TypeList] ( MethodBody | ";")
+     *      FormalParameters [Throws TypeList] ( MethodBody | ";")
+     *  InterfaceMethodDeclaratorRest =
+     *      FormalParameters BracketsOpt [THROWS TypeList] ";"
+     *  VoidInterfaceMethodDeclaratorRest =
+     *      FormalParameters [THROWS TypeList] ";"
      *  ConstructorDeclaratorRest =
      *      "(" FormalParameterListOpt ")" [THROWS TypeList] MethodBody
      */
@@ -4099,28 +4041,21 @@ public class JavacParser implements Parser {
             allowTypeAnnotations = true;
         }
     }
-    void checkAnnotationsAfterTypeParams(int pos) {
-        if (!allowAnnotationsAfterTypeParams) {
-            log.error(pos, "annotations.after.type.params.not.supported.in.source", source.name);
-            allowAnnotationsAfterTypeParams = true;
-        }
-    }
 
     /*
      * a functional source tree and end position mappings
      */
     protected static class SimpleEndPosTable extends AbstractEndPosTable {
 
-        private final IntHashTable endPosMap;
+        private final Map<JCTree, Integer> endPosMap;
 
         SimpleEndPosTable(JavacParser parser) {
             super(parser);
-            endPosMap = new IntHashTable();
+            endPosMap = new HashMap<JCTree, Integer>();
         }
 
         public void storeEnd(JCTree tree, int endpos) {
-            endPosMap.putAtIndex(tree, errorEndPos > endpos ? errorEndPos : endpos,
-                                 endPosMap.lookup(tree));
+            endPosMap.put(tree, errorEndPos > endpos ? errorEndPos : endpos);
         }
 
         protected <T extends JCTree> T to(T t) {
@@ -4134,15 +4069,14 @@ public class JavacParser implements Parser {
         }
 
         public int getEndPos(JCTree tree) {
-            int value = endPosMap.getFromIndex(endPosMap.lookup(tree));
-            // As long as Position.NOPOS==-1, this just returns value.
-            return (value == -1) ? Position.NOPOS : value;
+            Integer value = endPosMap.get(tree);
+            return (value == null) ? Position.NOPOS : value;
         }
 
         public int replaceTree(JCTree oldTree, JCTree newTree) {
-            int pos = endPosMap.remove(oldTree);
-            if (pos != -1) {
-                storeEnd(newTree, pos);
+            Integer pos = endPosMap.remove(oldTree);
+            if (pos != null) {
+                endPosMap.put(newTree, pos);
                 return pos;
             }
             return Position.NOPOS;

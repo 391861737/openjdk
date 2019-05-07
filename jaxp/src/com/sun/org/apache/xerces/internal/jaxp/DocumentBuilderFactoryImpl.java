@@ -1,13 +1,13 @@
 /*
- * Copyright (c) 2005, 2015, Oracle and/or its affiliates. All rights reserved.
+ * reserved comment block
+ * DO NOT REMOVE OR ALTER!
  */
 /*
- * Licensed to the Apache Software Foundation (ASF) under one or more
- * contributor license agreements.  See the NOTICE file distributed with
- * this work for additional information regarding copyright ownership.
- * The ASF licenses this file to You under the Apache License, Version 2.0
- * (the "License"); you may not use this file except in compliance with
- * the License.  You may obtain a copy of the License at
+ * Copyright 2000-2002,2004,2005 The Apache Software Foundation.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
  *
  *      http://www.apache.org/licenses/LICENSE-2.0
  *
@@ -20,15 +20,16 @@
 
 package com.sun.org.apache.xerces.internal.jaxp;
 
-import com.sun.org.apache.xerces.internal.parsers.DOMParser;
-import com.sun.org.apache.xerces.internal.util.SAXMessageFormatter;
-import java.util.HashMap;
-import java.util.Map;
+import java.util.Hashtable;
+
 import javax.xml.XMLConstants;
 import javax.xml.parsers.DocumentBuilder;
 import javax.xml.parsers.DocumentBuilderFactory;
 import javax.xml.parsers.ParserConfigurationException;
 import javax.xml.validation.Schema;
+
+import com.sun.org.apache.xerces.internal.parsers.DOMParser;
+import com.sun.org.apache.xerces.internal.util.SAXMessageFormatter;
 import org.xml.sax.SAXException;
 import org.xml.sax.SAXNotRecognizedException;
 import org.xml.sax.SAXNotSupportedException;
@@ -40,8 +41,8 @@ import org.xml.sax.SAXNotSupportedException;
  */
 public class DocumentBuilderFactoryImpl extends DocumentBuilderFactory {
     /** These are DocumentBuilderFactory attributes not DOM attributes */
-    private Map<String, Object> attributes;
-    private Map<String, Boolean> features;
+    private Hashtable attributes;
+    private Hashtable features;
     private Schema grammar;
     private boolean isXIncludeAware;
 
@@ -100,9 +101,9 @@ public class DocumentBuilderFactoryImpl extends DocumentBuilderFactory {
         // This is ugly.  We have to collect the attributes and then
         // later create a DocumentBuilderImpl to verify the attributes.
 
-        // Create the Map if none existed before
+        // Create Hashtable if none existed before
         if (attributes == null) {
-            attributes = new HashMap<>();
+            attributes = new Hashtable();
         }
 
         attributes.put(name, value);
@@ -123,7 +124,7 @@ public class DocumentBuilderFactoryImpl extends DocumentBuilderFactory {
     public Object getAttribute(String name)
         throws IllegalArgumentException
     {
-        // See if it's in the attributes Map
+        // See if it's in the attributes Hashtable
         if (attributes != null) {
             Object val = attributes.get(name);
             if (val != null) {
@@ -134,7 +135,7 @@ public class DocumentBuilderFactoryImpl extends DocumentBuilderFactory {
         DOMParser domParser = null;
         try {
             // We create a dummy DocumentBuilderImpl in case the attribute
-            // name is not one that is in the attributes map.
+            // name is not one that is in the attributes hashtable.
             domParser =
                 new DocumentBuilderImpl(this, attributes, features).getDOMParser();
             return domParser.getProperty(name);
@@ -172,11 +173,11 @@ public class DocumentBuilderFactoryImpl extends DocumentBuilderFactory {
         if (name.equals(XMLConstants.FEATURE_SECURE_PROCESSING)) {
             return fSecureProcess;
         }
-        // See if it's in the features map
+        // See if it's in the features Hashtable
         if (features != null) {
-            Boolean val = features.get(name);
+            Object val = features.get(name);
             if (val != null) {
-                return val;
+                return ((Boolean) val).booleanValue();
             }
         }
         try {
@@ -191,7 +192,7 @@ public class DocumentBuilderFactoryImpl extends DocumentBuilderFactory {
     public void setFeature(String name, boolean value)
         throws ParserConfigurationException {
         if (features == null) {
-            features = new HashMap<>();
+            features = new Hashtable();
         }
         // If this is the secure processing feature, save it then return.
         if (name.equals(XMLConstants.FEATURE_SECURE_PROCESSING)) {

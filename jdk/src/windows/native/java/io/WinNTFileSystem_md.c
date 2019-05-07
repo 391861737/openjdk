@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2001, 2014, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2001, 2013, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -59,12 +59,10 @@ JNIEXPORT void JNICALL
 Java_java_io_WinNTFileSystem_initIDs(JNIEnv *env, jclass cls)
 {
     HMODULE handle;
-    jclass fileClass;
-
-    fileClass = (*env)->FindClass(env, "java/io/File");
-    CHECK_NULL(fileClass);
-    ids.path = (*env)->GetFieldID(env, fileClass, "path", "Ljava/lang/String;");
-    CHECK_NULL(ids.path);
+    jclass fileClass = (*env)->FindClass(env, "java/io/File");
+    if (!fileClass) return;
+    ids.path =
+             (*env)->GetFieldID(env, fileClass, "path", "Ljava/lang/String;");
 
     // GetFinalPathNameByHandle requires Windows Vista or newer
     if (GetModuleHandleExW((GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS |
@@ -85,7 +83,7 @@ extern int wcanonicalizeWithPrefix(const WCHAR *canonicalPrefix, const WCHAR *pa
  * Retrieves the fully resolved (final) path for the given path or NULL
  * if the function fails.
  */
-static WCHAR* getFinalPath(JNIEnv *env, const WCHAR *path)
+static WCHAR* getFinalPath(const WCHAR *path)
 {
     HANDLE h;
     WCHAR *result;
@@ -121,7 +119,6 @@ static WCHAR* getFinalPath(JNIEnv *env, const WCHAR *path)
                 len = (*GetFinalPathNameByHandle_func)(h, result, len, 0);
             } else {
                 len = 0;
-                JNU_ThrowOutOfMemoryError(env, "native memory allocation failed");
             }
         }
 
@@ -142,7 +139,6 @@ static WCHAR* getFinalPath(JNIEnv *env, const WCHAR *path)
                 /* copy result without prefix into new buffer */
                 WCHAR *tmp = (WCHAR*)malloc(resultLen * sizeof(WCHAR));
                 if (tmp == NULL) {
-                    JNU_ThrowOutOfMemoryError(env, "native memory allocation failed");
                     len = 0;
                 } else {
                     WCHAR *p = result;
@@ -166,8 +162,6 @@ static WCHAR* getFinalPath(JNIEnv *env, const WCHAR *path)
             free(result);
             result = NULL;
         }
-    } else {
-        JNU_ThrowOutOfMemoryError(env, "native memory allocation failed");
     }
 
     error = GetLastError();
@@ -249,8 +243,8 @@ Java_java_io_WinNTFileSystem_canonicalize0(JNIEnv *env, jobject this,
     WCHAR canonicalPath[MAX_PATH_LENGTH];
 
     WITH_UNICODE_STRING(env, pathname, path) {
-        /* we estimate the max length of memory needed as
-           "currentDir. length + pathname.length"
+        /*we estimate the max length of memory needed as
+          "currentDir. length + pathname.length"
          */
         int len = (int)wcslen(path);
         len += currentDirLength(path, len);
@@ -261,14 +255,13 @@ Java_java_io_WinNTFileSystem_canonicalize0(JNIEnv *env, jobject this,
                     rv = (*env)->NewString(env, cp, (jsize)wcslen(cp));
                 }
                 free(cp);
-            } else {
-                JNU_ThrowOutOfMemoryError(env, "native memory allocation failed");
             }
-        } else if (wcanonicalize(path, canonicalPath, MAX_PATH_LENGTH) >= 0) {
+        } else
+        if (wcanonicalize(path, canonicalPath, MAX_PATH_LENGTH) >= 0) {
             rv = (*env)->NewString(env, canonicalPath, (jsize)wcslen(canonicalPath));
         }
     } END_UNICODE_STRING(env, path);
-    if (rv == NULL && !(*env)->ExceptionCheck(env)) {
+    if (rv == NULL) {
         JNU_ThrowIOExceptionWithLastError(env, "Bad pathname");
     }
     return rv;
@@ -294,17 +287,16 @@ Java_java_io_WinNTFileSystem_canonicalizeWithPrefix0(JNIEnv *env, jobject this,
                       rv = (*env)->NewString(env, cp, (jsize)wcslen(cp));
                     }
                     free(cp);
-                } else {
-                    JNU_ThrowOutOfMemoryError(env, "native memory allocation failed");
                 }
-            } else if (wcanonicalizeWithPrefix(canonicalPrefix,
-                                               pathWithCanonicalPrefix,
-                                               canonicalPath, MAX_PATH_LENGTH) >= 0) {
+            } else
+            if (wcanonicalizeWithPrefix(canonicalPrefix,
+                                        pathWithCanonicalPrefix,
+                                        canonicalPath, MAX_PATH_LENGTH) >= 0) {
                 rv = (*env)->NewString(env, canonicalPath, (jsize)wcslen(canonicalPath));
             }
         } END_UNICODE_STRING(env, pathWithCanonicalPrefix);
     } END_UNICODE_STRING(env, canonicalPrefix);
-    if (rv == NULL && !(*env)->ExceptionCheck(env)) {
+    if (rv == NULL) {
         JNU_ThrowIOExceptionWithLastError(env, "Bad pathname");
     }
     return rv;
@@ -442,7 +434,7 @@ Java_java_io_WinNTFileSystem_setPermission(JNIEnv *env, jobject this,
     if ((a != INVALID_FILE_ATTRIBUTES) &&
         ((a & FILE_ATTRIBUTE_REPARSE_POINT) != 0))
     {
-        WCHAR *fp = getFinalPath(env, pathbuf);
+        WCHAR *fp = getFinalPath(pathbuf);
         if (fp == NULL) {
             a = INVALID_FILE_ATTRIBUTES;
         } else {
@@ -624,20 +616,14 @@ Java_java_io_WinNTFileSystem_list(JNIEnv *env, jobject this, jobject file)
     jobjectArray rv, old;
     DWORD fattr;
     jstring name;
-    jclass str_class;
-    WCHAR *pathbuf;
 
-    str_class = JNU_ClassString(env);
-    CHECK_NULL_RETURN(str_class, NULL);
-
-    pathbuf = fileToNTPath(env, file, ids.path);
+    WCHAR *pathbuf = fileToNTPath(env, file, ids.path);
     if (pathbuf == NULL)
         return NULL;
     search_path = (WCHAR*)malloc(2*wcslen(pathbuf) + 6);
     if (search_path == 0) {
         free (pathbuf);
         errno = ENOMEM;
-        JNU_ThrowOutOfMemoryError(env, "native memory allocation faiuled");
         return NULL;
     }
     wcscpy(search_path, pathbuf);
@@ -678,7 +664,7 @@ Java_java_io_WinNTFileSystem_list(JNIEnv *env, jobject this, jobject file)
             return NULL;
         } else {
             // No files found - return an empty array
-            rv = (*env)->NewObjectArray(env, 0, str_class, NULL);
+            rv = (*env)->NewObjectArray(env, 0, JNU_ClassString(env), NULL);
             return rv;
         }
     }
@@ -686,7 +672,7 @@ Java_java_io_WinNTFileSystem_list(JNIEnv *env, jobject this, jobject file)
     /* Allocate an initial String array */
     len = 0;
     maxlen = 16;
-    rv = (*env)->NewObjectArray(env, maxlen, str_class, NULL);
+    rv = (*env)->NewObjectArray(env, maxlen, JNU_ClassString(env), NULL);
     if (rv == NULL) // Couldn't allocate an array
         return NULL;
     /* Scan the directory */
@@ -700,8 +686,10 @@ Java_java_io_WinNTFileSystem_list(JNIEnv *env, jobject this, jobject file)
             return NULL; // error;
         if (len == maxlen) {
             old = rv;
-            rv = (*env)->NewObjectArray(env, maxlen <<= 1, str_class, NULL);
-            if (rv == NULL || JNU_CopyObjectArray(env, rv, old, len) < 0)
+            rv = (*env)->NewObjectArray(env, maxlen <<= 1,
+                                            JNU_ClassString(env), NULL);
+            if ( rv == NULL
+                         || JNU_CopyObjectArray(env, rv, old, len) < 0)
                 return NULL; // error
             (*env)->DeleteLocalRef(env, old);
         }
@@ -716,7 +704,7 @@ Java_java_io_WinNTFileSystem_list(JNIEnv *env, jobject this, jobject file)
 
     /* Copy the final results into an appropriately-sized array */
     old = rv;
-    rv = (*env)->NewObjectArray(env, len, str_class, NULL);
+    rv = (*env)->NewObjectArray(env, len, JNU_ClassString(env), NULL);
     if (rv == NULL)
         return NULL; /* error */
     if (JNU_CopyObjectArray(env, rv, old, len) < 0)
@@ -813,7 +801,7 @@ Java_java_io_WinNTFileSystem_setReadOnly(JNIEnv *env, jobject this,
     if ((a != INVALID_FILE_ATTRIBUTES) &&
         ((a & FILE_ATTRIBUTE_REPARSE_POINT) != 0))
     {
-        WCHAR *fp = getFinalPath(env, pathbuf);
+        WCHAR *fp = getFinalPath(pathbuf);
         if (fp == NULL) {
             a = INVALID_FILE_ATTRIBUTES;
         } else {

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 1997, 2016, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 1997, 2013, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -148,7 +148,8 @@ class Universe: AllStatic {
   static LatestMethodCache* _finalizer_register_cache; // static method for registering finalizable objects
   static LatestMethodCache* _loader_addClass_cache;    // method for registering loaded classes in class loader vector
   static LatestMethodCache* _pd_implies_cache;         // method for checking protection domain attributes
-  static LatestMethodCache* _throw_illegal_access_error_cache; // Unsafe.throwIllegalAccessError() method
+
+  static Method* _throw_illegal_access_error;
 
   // preallocated error objects (no backtrace)
   static oop          _out_of_memory_error_java_heap;
@@ -156,7 +157,6 @@ class Universe: AllStatic {
   static oop          _out_of_memory_error_class_metaspace;
   static oop          _out_of_memory_error_array_size;
   static oop          _out_of_memory_error_gc_overhead_limit;
-  static oop          _out_of_memory_error_realloc_objects;
 
   static Array<int>*       _the_empty_int_array;    // Canonicalized int array
   static Array<u2>*        _the_empty_short_array;  // Canonicalized short array
@@ -177,8 +177,6 @@ class Universe: AllStatic {
   // The object used as an exception dummy when exceptions are thrown for
   // the vm thread.
   static oop          _vm_exception;
-
-  static oop          _allocation_context_notification_obj;
 
   // The particular choice of collected heap.
   static CollectedHeap* _collectedHeap;
@@ -247,7 +245,6 @@ class Universe: AllStatic {
   static int _verify_count;                           // number of verifies done
   // True during call to verify().  Should only be set/cleared in verify().
   static bool _verify_in_progress;
-  static long verify_flags;
 
   static void compute_verify_oop_data();
 
@@ -305,15 +302,12 @@ class Universe: AllStatic {
   static Method*      loader_addClass_method()        { return _loader_addClass_cache->get_method(); }
 
   static Method*      protection_domain_implies_method() { return _pd_implies_cache->get_method(); }
-  static Method*      throw_illegal_access_error()    { return _throw_illegal_access_error_cache->get_method(); }
 
   static oop          null_ptr_exception_instance()   { return _null_ptr_exception_instance;   }
   static oop          arithmetic_exception_instance() { return _arithmetic_exception_instance; }
   static oop          virtual_machine_error_instance() { return _virtual_machine_error_instance; }
   static oop          vm_exception()                  { return _vm_exception; }
-
-  static inline oop   allocation_context_notification_obj();
-  static inline void  set_allocation_context_notification_obj(oop obj);
+  static Method*      throw_illegal_access_error()    { return _throw_illegal_access_error; }
 
   static Array<int>*       the_empty_int_array()    { return _the_empty_int_array; }
   static Array<u2>*        the_empty_short_array()  { return _the_empty_short_array; }
@@ -328,7 +322,6 @@ class Universe: AllStatic {
   static oop out_of_memory_error_class_metaspace()    { return gen_out_of_memory_error(_out_of_memory_error_class_metaspace);   }
   static oop out_of_memory_error_array_size()         { return gen_out_of_memory_error(_out_of_memory_error_array_size); }
   static oop out_of_memory_error_gc_overhead_limit()  { return gen_out_of_memory_error(_out_of_memory_error_gc_overhead_limit);  }
-  static oop out_of_memory_error_realloc_objects()    { return gen_out_of_memory_error(_out_of_memory_error_realloc_objects);  }
 
   // Accessors needed for fast allocation
   static Klass** boolArrayKlassObj_addr()           { return &_boolArrayKlassObj;   }
@@ -374,8 +367,6 @@ class Universe: AllStatic {
   static address* narrow_ptrs_base_addr()                 { return &_narrow_ptrs_base; }
   static void     set_narrow_ptrs_base(address a)         { _narrow_ptrs_base = a; }
   static address  narrow_ptrs_base()                      { return _narrow_ptrs_base; }
-
-  static void     print_compressed_oops_mode();
 
   // this is set in vm_version on sparc (and then reset in universe afaict)
   static void     set_narrow_oop_shift(int shift)         {
@@ -426,22 +417,6 @@ class Universe: AllStatic {
   static void init_self_patching_vtbl_list(void** list, int count);
 
   // Debugging
-  enum VERIFY_FLAGS {
-    Verify_Threads = 1,
-    Verify_Heap = 2,
-    Verify_SymbolTable = 4,
-    Verify_StringTable = 8,
-    Verify_CodeCache = 16,
-    Verify_SystemDictionary = 32,
-    Verify_ClassLoaderDataGraph = 64,
-    Verify_MetaspaceAux = 128,
-    Verify_JNIHandles = 256,
-    Verify_CHeap = 512,
-    Verify_CodeCacheOops = 1024,
-    Verify_All = -1
-  };
-  static void initialize_verify_flags();
-  static bool should_verify_subset(uint subset);
   static bool verify_in_progress() { return _verify_in_progress; }
   static void verify(VerifyOption option, const char* prefix, bool silent = VerifySilently);
   static void verify(const char* prefix, bool silent = VerifySilently) {

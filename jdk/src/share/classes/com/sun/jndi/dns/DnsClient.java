@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2000, 2015, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2000, 2012, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -30,14 +30,13 @@ import java.net.DatagramSocket;
 import java.net.DatagramPacket;
 import java.net.InetAddress;
 import java.net.Socket;
-import java.security.SecureRandom;
 import javax.naming.*;
 
 import java.util.Collections;
 import java.util.Map;
 import java.util.HashMap;
-
-import sun.security.jca.JCAUtil;
+import java.util.Set;
+import java.util.HashSet;
 
 // Some of this code began life as part of sun.javaos.net.DnsClient
 // originally by sritchie@eng 1/96.  It was first hacked up for JNDI
@@ -78,8 +77,6 @@ public class DnsClient {
     };
 
     private static final int DEFAULT_PORT = 53;
-    private static final int TRANSACTION_ID_BOUND = 0x10000;
-    private static final SecureRandom random = JCAUtil.getSecureRandom();
     private InetAddress[] servers;
     private int[] serverPorts;
     private int timeout;                // initial timeout on UDP queries in ms
@@ -88,7 +85,7 @@ public class DnsClient {
     private DatagramSocket udpSocket;
 
     // Requests sent
-    private Map<Integer, ResourceRecord> reqs;
+    private Set<Integer> reqs;
 
     // Responses received
     private Map<Integer, byte[]> resps;
@@ -137,8 +134,7 @@ public class DnsClient {
                 throw ne;
             }
         }
-        reqs = Collections.synchronizedMap(
-            new HashMap<Integer, ResourceRecord>());
+        reqs = Collections.synchronizedSet(new HashSet<Integer>());
         resps = Collections.synchronizedMap(new HashMap<Integer, byte[]>());
     }
 
@@ -157,6 +153,10 @@ public class DnsClient {
         }
     }
 
+
+    private int ident = 0;              // used to set the msg ID field
+    private Object identLock = new Object();
+
     /*
      * If recursion is true, recursion is requested on the query.
      * If auth is true, only authoritative responses are accepted; other
@@ -167,141 +167,132 @@ public class DnsClient {
             throws NamingException {
 
         int xid;
-        Packet pkt;
-        ResourceRecord collision;
+        synchronized (identLock) {
+            ident = 0xFFFF & (ident + 1);
+            xid = ident;
+        }
 
-        do {
-            // Generate a random transaction ID
-            xid = random.nextInt(TRANSACTION_ID_BOUND);
-            pkt = makeQueryPacket(fqdn, xid, qclass, qtype, recursion);
+        // enqueue the outstanding request
+        reqs.add(xid);
 
-            // enqueue the outstanding request
-            collision = reqs.putIfAbsent(xid, new ResourceRecord(pkt.getData(),
-                pkt.length(), Header.HEADER_SIZE, true, false));
-
-        } while (collision != null);
+        Packet pkt = makeQueryPacket(fqdn, xid, qclass, qtype, recursion);
 
         Exception caughtException = null;
         boolean[] doNotRetry = new boolean[servers.length];
 
-        try {
-            //
-            // The UDP retry strategy is to try the 1st server, and then
-            // each server in order. If no answer, double the timeout
-            // and try each server again.
-            //
-            for (int retry = 0; retry < retries; retry++) {
+        //
+        // The UDP retry strategy is to try the 1st server, and then
+        // each server in order. If no answer, double the timeout
+        // and try each server again.
+        //
+        for (int retry = 0; retry < retries; retry++) {
 
-                // Try each name server.
-                for (int i = 0; i < servers.length; i++) {
-                    if (doNotRetry[i]) {
-                        continue;
+            // Try each name server.
+            for (int i = 0; i < servers.length; i++) {
+                if (doNotRetry[i]) {
+                    continue;
+                }
+
+                // send the request packet and wait for a response.
+                try {
+                    if (debug) {
+                        dprint("SEND ID (" + (retry + 1) + "): " + xid);
                     }
 
-                    // send the request packet and wait for a response.
-                    try {
-                        if (debug) {
-                            dprint("SEND ID (" + (retry + 1) + "): " + xid);
+                    byte[] msg = null;
+                    msg = doUdpQuery(pkt, servers[i], serverPorts[i],
+                                        retry, xid);
+                    //
+                    // If the matching response is not got within the
+                    // given timeout, check if the response was enqueued
+                    // by some other thread, if not proceed with the next
+                    // server or retry.
+                    //
+                    if (msg == null) {
+                        if (resps.size() > 0) {
+                            msg = lookupResponse(xid);
                         }
-
-                        byte[] msg = null;
-                        msg = doUdpQuery(pkt, servers[i], serverPorts[i],
-                                            retry, xid);
-                        //
-                        // If the matching response is not got within the
-                        // given timeout, check if the response was enqueued
-                        // by some other thread, if not proceed with the next
-                        // server or retry.
-                        //
-                        if (msg == null) {
-                            if (resps.size() > 0) {
-                                msg = lookupResponse(xid);
-                            }
-                            if (msg == null) { // try next server or retry
-                                continue;
-                            }
-                        }
-                        Header hdr = new Header(msg, msg.length);
-
-                        if (auth && !hdr.authoritative) {
-                            caughtException = new NameNotFoundException(
-                                    "DNS response not authoritative");
-                            doNotRetry[i] = true;
+                        if (msg == null) { // try next server or retry
                             continue;
                         }
-                        if (hdr.truncated) {  // message is truncated -- try TCP
+                    }
+                    Header hdr = new Header(msg, msg.length);
 
-                            // Try each server, starting with the one that just
-                            // provided the truncated message.
-                            for (int j = 0; j < servers.length; j++) {
-                                int ij = (i + j) % servers.length;
-                                if (doNotRetry[ij]) {
-                                    continue;
-                                }
+                    if (auth && !hdr.authoritative) {
+                        caughtException = new NameNotFoundException(
+                                "DNS response not authoritative");
+                        doNotRetry[i] = true;
+                        continue;
+                    }
+                    if (hdr.truncated) {    // message is truncated -- try TCP
+
+                        // Try each server, starting with the one that just
+                        // provided the truncated message.
+                        for (int j = 0; j < servers.length; j++) {
+                            int ij = (i + j) % servers.length;
+                            if (doNotRetry[ij]) {
+                                continue;
+                            }
+                            try {
+                                Tcp tcp =
+                                    new Tcp(servers[ij], serverPorts[ij]);
+                                byte[] msg2;
                                 try {
-                                    Tcp tcp =
-                                        new Tcp(servers[ij], serverPorts[ij]);
-                                    byte[] msg2;
-                                    try {
-                                        msg2 = doTcpQuery(tcp, pkt);
-                                    } finally {
-                                        tcp.close();
-                                    }
-                                    Header hdr2 = new Header(msg2, msg2.length);
-                                    if (hdr2.query) {
-                                        throw new CommunicationException(
-                                            "DNS error: expecting response");
-                                    }
-                                    checkResponseCode(hdr2);
-
-                                    if (!auth || hdr2.authoritative) {
-                                        // Got a valid response
-                                        hdr = hdr2;
-                                        msg = msg2;
-                                        break;
-                                    } else {
-                                        doNotRetry[ij] = true;
-                                    }
-                                } catch (Exception e) {
-                                    // Try next server, or use UDP response
+                                    msg2 = doTcpQuery(tcp, pkt);
+                                } finally {
+                                    tcp.close();
                                 }
-                            } // servers
-                        }
-                        return new ResourceRecords(msg, msg.length, hdr, false);
+                                Header hdr2 = new Header(msg2, msg2.length);
+                                if (hdr2.query) {
+                                    throw new CommunicationException(
+                                        "DNS error: expecting response");
+                                }
+                                checkResponseCode(hdr2);
 
-                    } catch (IOException e) {
-                        if (debug) {
-                            dprint("Caught IOException:" + e);
-                        }
-                        if (caughtException == null) {
-                            caughtException = e;
-                        }
-                        // Use reflection to allow pre-1.4 compilation.
-                        // This won't be needed much longer.
-                        if (e.getClass().getName().equals(
-                                "java.net.PortUnreachableException")) {
-                            doNotRetry[i] = true;
-                        }
-                    } catch (NameNotFoundException e) {
-                        // This is authoritative, so return immediately
-                        throw e;
-                    } catch (CommunicationException e) {
-                        if (caughtException == null) {
-                            caughtException = e;
-                        }
-                    } catch (NamingException e) {
-                        if (caughtException == null) {
-                            caughtException = e;
-                        }
+                                if (!auth || hdr2.authoritative) {
+                                    // Got a valid response
+                                    hdr = hdr2;
+                                    msg = msg2;
+                                    break;
+                                } else {
+                                    doNotRetry[ij] = true;
+                                }
+                            } catch (Exception e) {
+                                // Try next server, or use UDP response
+                            }
+                        } // servers
+                    }
+                    return new ResourceRecords(msg, msg.length, hdr, false);
+
+                } catch (IOException e) {
+                    if (debug) {
+                        dprint("Caught IOException:" + e);
+                    }
+                    if (caughtException == null) {
+                        caughtException = e;
+                    }
+                    // Use reflection to allow pre-1.4 compilation.
+                    // This won't be needed much longer.
+                    if (e.getClass().getName().equals(
+                            "java.net.PortUnreachableException")) {
                         doNotRetry[i] = true;
                     }
-                } // servers
-            } // retries
+                } catch (NameNotFoundException e) {
+                    throw e;
+                } catch (CommunicationException e) {
+                    if (caughtException == null) {
+                        caughtException = e;
+                    }
+                } catch (NamingException e) {
+                    if (caughtException == null) {
+                        caughtException = e;
+                    }
+                    doNotRetry[i] = true;
+                }
+            } // servers
+        } // retries
 
-        } finally {
-            reqs.remove(xid); // cleanup
-        }
-
+        reqs.remove(xid);
         if (caughtException instanceof NamingException) {
             throw (NamingException) caughtException;
         }
@@ -314,8 +305,11 @@ public class DnsClient {
     ResourceRecords queryZone(DnsName zone, int qclass, boolean recursion)
             throws NamingException {
 
-        int xid = random.nextInt(TRANSACTION_ID_BOUND);
-
+        int xid;
+        synchronized (identLock) {
+            ident = 0xFFFF & (ident + 1);
+            xid = ident;
+        }
         Packet pkt = makeQueryPacket(zone, xid, qclass,
                                      ResourceRecord.QTYPE_AXFR, recursion);
         Exception caughtException = null;
@@ -396,7 +390,6 @@ public class DnsClient {
             DatagramPacket opkt = new DatagramPacket(
                     pkt.getData(), pkt.length(), server, port);
             DatagramPacket ipkt = new DatagramPacket(new byte[8000], 8000);
-            // Packets may only be sent to or received from this server address
             udpSocket.connect(server, port);
             int pktTimeout = (timeout * (1 << retry));
             try {
@@ -550,9 +543,6 @@ public class DnsClient {
      * Checks the header of an incoming DNS response.
      * Returns true if it matches the given xid and throws a naming
      * exception, if appropriate, based on the response code.
-     *
-     * Also checks that the domain name, type and class in the response
-     * match those in the original query.
      */
     private boolean isMatchResponse(byte[] pkt, int xid)
                 throws NamingException {
@@ -562,7 +552,7 @@ public class DnsClient {
             throw new CommunicationException("DNS error: expecting response");
         }
 
-        if (!reqs.containsKey(xid)) { // already received, ignore the response
+        if (!reqs.contains(xid)) { // already received, ignore the response
             return false;
         }
 
@@ -571,47 +561,14 @@ public class DnsClient {
             if (debug) {
                 dprint("XID MATCH:" + xid);
             }
+
             checkResponseCode(hdr);
-            if (!hdr.query && hdr.numQuestions == 1) {
-
-                ResourceRecord rr = new ResourceRecord(pkt, pkt.length,
-                    Header.HEADER_SIZE, true, false);
-
-                // Retrieve the original query
-                ResourceRecord query = reqs.get(xid);
-                int qtype = query.getType();
-                int qclass = query.getRrclass();
-                DnsName qname = query.getName();
-
-                // Check that the type/class/name in the query section of the
-                // response match those in the original query
-                if ((qtype == ResourceRecord.QTYPE_STAR ||
-                    qtype == rr.getType()) &&
-                    (qclass == ResourceRecord.QCLASS_STAR ||
-                    qclass == rr.getRrclass()) &&
-                    qname.equals(rr.getName())) {
-
-                    if (debug) {
-                        dprint("MATCH NAME:" + qname + " QTYPE:" + qtype +
-                            " QCLASS:" + qclass);
-                    }
-
-                    // Remove the response for the xid if received by some other
-                    // thread.
-                    synchronized (queuesLock) {
-                        resps.remove(xid);
-                        reqs.remove(xid);
-                    }
-                    return true;
-
-                } else {
-                    if (debug) {
-                        dprint("NO-MATCH NAME:" + qname + " QTYPE:" + qtype +
-                            " QCLASS:" + qclass);
-                    }
-                }
+            // remove the response for the xid if received by some other thread.
+            synchronized (queuesLock) {
+                resps.remove(xid);
+                reqs.remove(xid);
             }
-            return false;
+            return true;
         }
 
         //
@@ -620,7 +577,7 @@ public class DnsClient {
         // enqueue only the first response, responses for retries are ignored.
         //
         synchronized (queuesLock) {
-            if (reqs.containsKey(hdr.xid)) { // enqueue only the first response
+            if (reqs.contains(hdr.xid)) { // enqueue only the first response
                 resps.put(hdr.xid, pkt);
             }
         }

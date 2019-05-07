@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2003, 2014, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2003, 2013, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -86,7 +86,7 @@ public final class XClipboard extends SunClipboard implements OwnershipListener
     protected synchronized void setContentsNative(Transferable contents) {
         SortedMap<Long,DataFlavor> formatMap =
             DataTransferer.getInstance().getFormatsForTransferable
-                (contents, DataTransferer.adaptFlavorMap(getDefaultFlavorTable()));
+                (contents, DataTransferer.adaptFlavorMap(flavorMap));
         long[] formats = DataTransferer.keysToLongArray(formatMap);
 
         if (!selection.setOwner(contents, formatMap, formats,
@@ -125,7 +125,7 @@ public final class XClipboard extends SunClipboard implements OwnershipListener
     private void checkChangeHere(Transferable contents) {
         if (areFlavorListenersRegistered()) {
             checkChange(DataTransferer.getInstance().
-                        getFormatsForTransferableAsArray(contents, getDefaultFlavorTable()));
+                        getFormatsForTransferableAsArray(contents, flavorMap));
         }
     }
 
@@ -156,29 +156,19 @@ public final class XClipboard extends SunClipboard implements OwnershipListener
         isSelectionNotifyProcessed = true;
 
         boolean mustSchedule = false;
-        XToolkit.awtLock();
-        try {
-            synchronized (XClipboard.classLock) {
-                try {
-                    Thread.sleep(70);
-                } catch (InterruptedException e) {
-                    e.printStackTrace();  //To change body of catch statement use File | Settings | File Templates.
-                }
-                if (targetsAtom2Clipboard == null) {
-                    targetsAtom2Clipboard = new HashMap<Long, XClipboard>(2);
-                }
-                mustSchedule = targetsAtom2Clipboard.isEmpty();
-                targetsAtom2Clipboard.put(getTargetsPropertyAtom().getAtom(), this);
-                if (mustSchedule) {
-                    XToolkit.addEventDispatcher(XWindow.getXAWTRootWindow().getWindow(),
-                                                new SelectionNotifyHandler());
-                }
+        synchronized (XClipboard.classLock) {
+            if (targetsAtom2Clipboard == null) {
+                targetsAtom2Clipboard = new HashMap<Long, XClipboard>(2);
             }
+            mustSchedule = targetsAtom2Clipboard.isEmpty();
+            targetsAtom2Clipboard.put(getTargetsPropertyAtom().getAtom(), this);
             if (mustSchedule) {
-                XToolkit.schedule(new CheckChangeTimerTask(), XClipboard.getPollInterval());
+                XToolkit.addEventDispatcher(XWindow.getXAWTRootWindow().getWindow(),
+                                            new SelectionNotifyHandler());
             }
-        } finally {
-            XToolkit.awtUnlock();
+        }
+        if (mustSchedule) {
+            XToolkit.schedule(new CheckChangeTimerTask(), XClipboard.getPollInterval());
         }
     }
 
@@ -291,11 +281,6 @@ public final class XClipboard extends SunClipboard implements OwnershipListener
             }
         }
 
-        XToolkit.awtUnlock();
-        try {
-            checkChange(formats);
-        } finally {
-            XToolkit.awtLock();
-        }
+        checkChange(formats);
     }
 }

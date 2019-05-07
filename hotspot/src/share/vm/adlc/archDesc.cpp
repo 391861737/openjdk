@@ -172,8 +172,7 @@ ArchDesc::ArchDesc()
     _internalOps(cmpstr,hashstr, Form::arena),
     _internalMatch(cmpstr,hashstr, Form::arena),
     _chainRules(cmpstr,hashstr, Form::arena),
-    _cisc_spill_operand(NULL),
-    _needs_clone_jvms(false) {
+    _cisc_spill_operand(NULL) {
 
       // Initialize the opcode to MatchList table with NULLs
       for( int i=0; i<_last_opcode; ++i ) {
@@ -934,7 +933,7 @@ char *ArchDesc::stack_or_reg_mask(OperandForm  &opForm) {
 void ArchDesc::set_stack_or_reg(const char *reg_class_name) {
   if( _register ) {
     RegClass *reg_class  = _register->getRegClass(reg_class_name);
-    reg_class->set_stack_version(true);
+    reg_class->_stack_or_reg = true;
   }
 }
 
@@ -1189,17 +1188,19 @@ void ArchDesc::buildMustCloneMap(FILE *fp_hpp, FILE *fp_cpp) {
          || strcmp(idealName,"CmpP") == 0
          || strcmp(idealName,"CmpN") == 0
          || strcmp(idealName,"CmpL") == 0
-         || strcmp(idealName,"CmpUL") == 0
          || strcmp(idealName,"CmpD") == 0
          || strcmp(idealName,"CmpF") == 0
          || strcmp(idealName,"FastLock") == 0
          || strcmp(idealName,"FastUnlock") == 0
-         || strcmp(idealName,"OverflowAddI") == 0
-         || strcmp(idealName,"OverflowAddL") == 0
-         || strcmp(idealName,"OverflowSubI") == 0
-         || strcmp(idealName,"OverflowSubL") == 0
-         || strcmp(idealName,"OverflowMulI") == 0
-         || strcmp(idealName,"OverflowMulL") == 0
+         || strcmp(idealName,"AddExactI") == 0
+         || strcmp(idealName,"AddExactL") == 0
+         || strcmp(idealName,"SubExactI") == 0
+         || strcmp(idealName,"SubExactL") == 0
+         || strcmp(idealName,"MulExactI") == 0
+         || strcmp(idealName,"MulExactL") == 0
+         || strcmp(idealName,"NegExactI") == 0
+         || strcmp(idealName,"NegExactL") == 0
+         || strcmp(idealName,"FlagsProj") == 0
          || strcmp(idealName,"Bool") == 0
          || strcmp(idealName,"Binary") == 0 ) {
       // Removed ConI from the must_clone list.  CPUs that cannot use

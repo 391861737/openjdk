@@ -29,9 +29,11 @@ import static java.awt.RenderingHints.*;
 import java.awt.color.ColorSpace;
 import java.awt.image.*;
 import java.security.AccessController;
+import java.security.PrivilegedAction;
 import sun.security.action.GetIntegerAction;
 import com.sun.java.swing.plaf.gtk.GTKConstants.TextDirection;
 import sun.java2d.opengl.OGLRenderQueue;
+import java.lang.reflect.InvocationTargetException;
 
 public abstract class UNIXToolkit extends SunToolkit
 {
@@ -71,16 +73,16 @@ public abstract class UNIXToolkit extends SunToolkit
             if (nativeGTKLoaded != null) {
                 // We've already attempted to load GTK, so just return the
                 // status of that attempt.
-                return nativeGTKLoaded;
+                return nativeGTKLoaded.booleanValue();
 
             } else if (nativeGTKAvailable != null) {
                 // We've already checked the availability of the native GTK
                 // libraries, so just return the status of that attempt.
-                return nativeGTKAvailable;
+                return nativeGTKAvailable.booleanValue();
 
             } else {
                 boolean success = check_gtk();
-                nativeGTKAvailable = success;
+                nativeGTKAvailable = Boolean.valueOf(success);
                 return success;
             }
         }
@@ -97,10 +99,11 @@ public abstract class UNIXToolkit extends SunToolkit
     public boolean loadGTK() {
         synchronized (GTK_LOCK) {
             if (nativeGTKLoaded == null) {
-                nativeGTKLoaded = load_gtk();
+                boolean success = load_gtk();
+                nativeGTKLoaded = Boolean.valueOf(success);
             }
         }
-        return nativeGTKLoaded;
+        return nativeGTKLoaded.booleanValue();
     }
 
     /**
@@ -249,7 +252,6 @@ public abstract class UNIXToolkit extends SunToolkit
 
     private native void nativeSync();
 
-    @Override
     public void sync() {
         // flush the X11 buffer
         nativeSync();
@@ -264,8 +266,6 @@ public abstract class UNIXToolkit extends SunToolkit
      * This requires that the Gnome properties have already been gathered.
      */
     public static final String FONTCONFIGAAHINT = "fontconfig/Antialias";
-
-    @Override
     protected RenderingHints getDesktopAAHints() {
 
         Object aaValue = getDesktopProperty("gnome.Xft/Antialias");
@@ -288,8 +288,8 @@ public abstract class UNIXToolkit extends SunToolkit
          * us to default to "OFF". I don't think that's the best guess.
          * So if its !=0 then lets assume AA.
          */
-        boolean aa = ((aaValue instanceof Number)
-                        && ((Number) aaValue).intValue() != 0);
+        boolean aa = Boolean.valueOf(((aaValue instanceof Number) &&
+                                      ((Number)aaValue).intValue() != 0));
         Object aaHint;
         if (aa) {
             String subpixOrder =

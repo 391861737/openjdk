@@ -837,8 +837,7 @@ class StubGenerator: public StubCodeGenerator {
 
     if (UseUnalignedLoadStores && (UseAVX >= 2)) {
       // clean upper bits of YMM registers
-      __ vpxor(xmm0, xmm0);
-      __ vpxor(xmm1, xmm1);
+      __ vzeroupper();
     }
     __ addl(qword_count, 8);
     __ jccb(Assembler::zero, L_exit);
@@ -2404,9 +2403,6 @@ class StubGenerator: public StubCodeGenerator {
   //   c_rarg3   - r vector byte array address
   //   c_rarg4   - input length
   //
-  // Output:
-  //   rax       - input length
-  //
   address generate_cipherBlockChaining_encryptAESCrypt() {
     assert(UseAES, "need AES instructions and misaligned SSE support");
     __ align(CodeEntryAlignment);
@@ -2487,7 +2483,7 @@ class StubGenerator: public StubCodeGenerator {
     __ movdqu(Address(rvec, 0), xmm_result);     // final value of r stored in rvec of CipherBlockChaining object
 
     handleSOERegisters(false /*restoring*/);
-    __ movptr(rax, len_param); // return length
+    __ movl(rax, 0);                             // return 0 (why?)
     __ leave();                                  // required for proper stackwalking of RuntimeStub frame
     __ ret(0);
 
@@ -2560,9 +2556,6 @@ class StubGenerator: public StubCodeGenerator {
   //   c_rarg2   - K (key) in little endian int array
   //   c_rarg3   - r vector byte array address
   //   c_rarg4   - input length
-  //
-  // Output:
-  //   rax       - input length
   //
 
   address generate_cipherBlockChaining_decryptAESCrypt() {
@@ -2657,7 +2650,7 @@ class StubGenerator: public StubCodeGenerator {
     __ movptr(rvec , rvec_param);                                     // restore this since used in loop
     __ movdqu(Address(rvec, 0), xmm_temp);                            // final value of r stored in rvec of CipherBlockChaining object
     handleSOERegisters(false /*restoring*/);
-    __ movptr(rax, len_param); // return length
+    __ movl(rax, 0);                                                  // return 0 (why?)
     __ leave();                                                       // required for proper stackwalking of RuntimeStub frame
     __ ret(0);
 
@@ -2901,7 +2894,7 @@ class StubGenerator: public StubCodeGenerator {
     // however can use the register value directly if it is callee saved.
     __ get_thread(java_thread);
 
-    __ reset_last_Java_frame(java_thread, true);
+    __ reset_last_Java_frame(java_thread, true, false);
 
     __ leave(); // required for proper stackwalking of RuntimeStub frame
 

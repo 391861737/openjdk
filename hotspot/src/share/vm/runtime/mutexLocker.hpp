@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 1997, 2015, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 1997, 2013, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -36,9 +36,6 @@
 #ifdef TARGET_OS_FAMILY_windows
 # include "os_windows.inline.hpp"
 #endif
-#ifdef TARGET_OS_FAMILY_aix
-# include "os_aix.inline.hpp"
-#endif
 #ifdef TARGET_OS_FAMILY_bsd
 # include "os_bsd.inline.hpp"
 #endif
@@ -66,8 +63,6 @@ extern Mutex*   SignatureHandlerLibrary_lock;    // a lock on the SignatureHandl
 extern Mutex*   VtableStubs_lock;                // a lock on the VtableStubs
 extern Mutex*   SymbolTable_lock;                // a lock on the symbol table
 extern Mutex*   StringTable_lock;                // a lock on the interned string table
-extern Monitor* StringDedupQueue_lock;           // a lock on the string deduplication queue
-extern Mutex*   StringDedupTable_lock;           // a lock on the string deduplication table
 extern Mutex*   CodeCache_lock;                  // a lock on the CodeCache, rank is special, use MutexLockerEx
 extern Mutex*   MethodData_lock;                 // a lock on installation of method data
 extern Mutex*   RetData_lock;                    // a lock on installation of RetData inside method data
@@ -79,7 +74,7 @@ extern Monitor* Threads_lock;                    // a lock on the Threads table 
                                                  // (also used by Safepoints too to block threads creation/destruction)
 extern Monitor* CGC_lock;                        // used for coordination between
                                                  // fore- & background GC threads.
-extern Monitor* STS_lock;                        // used for joining/leaving SuspendibleThreadSet.
+extern Mutex*   STS_init_lock;                   // coordinate initialization of SuspendibleThreadSets.
 extern Monitor* SLT_lock;                        // used in CMS GC for acquiring PLL
 extern Monitor* iCMS_lock;                       // CMS incremental mode start/stop notification
 extern Monitor* FullGCCount_lock;                // in support of "concurrent" full gc
@@ -137,6 +132,7 @@ extern Mutex*   OldSets_lock;                    // protects the old region sets
 extern Monitor* RootRegionScan_lock;             // used to notify that the CM threads have finished scanning the IM snapshot regions
 extern Mutex*   MMUTracker_lock;                 // protects the MMU
                                                  // tracker data structures
+extern Mutex*   HotCardCache_lock;               // protects the hot card cache
 
 extern Mutex*   Management_lock;                 // a lock used to serialize JVM management
 extern Monitor* Service_lock;                    // a lock used for service thread operation
@@ -148,10 +144,6 @@ extern Monitor* JfrMsg_lock;                     // protects JFR messaging
 extern Mutex*   JfrBuffer_lock;                  // protects JFR buffer operations
 extern Mutex*   JfrStream_lock;                  // protects JFR stream access
 extern Mutex*   JfrThreadGroups_lock;            // protects JFR access to Thread Groups
-#endif
-
-#ifndef SUPPORTS_NATIVE_CX8
-extern Mutex*   UnsafeJlong_lock;                // provides Unsafe atomic updates to jlongs on platforms that don't support cx8
 #endif
 
 // A MutexLocker provides mutual exclusion with respect to a given mutex

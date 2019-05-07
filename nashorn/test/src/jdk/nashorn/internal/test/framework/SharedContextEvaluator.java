@@ -25,7 +25,6 @@
 
 package jdk.nashorn.internal.test.framework;
 
-import static jdk.nashorn.internal.runtime.Source.sourceFor;
 import static jdk.nashorn.tools.Shell.COMPILATION_ERROR;
 import static jdk.nashorn.tools.Shell.RUNTIME_ERROR;
 import static jdk.nashorn.tools.Shell.SUCCESS;
@@ -35,11 +34,12 @@ import java.io.IOException;
 import java.io.OutputStream;
 import java.io.PrintWriter;
 import jdk.nashorn.api.scripting.NashornException;
-import jdk.nashorn.internal.objects.Global;
 import jdk.nashorn.internal.runtime.Context;
 import jdk.nashorn.internal.runtime.ErrorManager;
 import jdk.nashorn.internal.runtime.ScriptFunction;
+import jdk.nashorn.internal.runtime.ScriptObject;
 import jdk.nashorn.internal.runtime.ScriptRuntime;
+import jdk.nashorn.internal.runtime.Source;
 import jdk.nashorn.internal.runtime.options.Options;
 
 /**
@@ -74,21 +74,21 @@ public final class SharedContextEvaluator implements ScriptEvaluator {
         }
 
         @Override
-        public void write(final byte[] b) throws IOException {
+        public void write(byte[] b) throws IOException {
             underlying.write(b);
         }
 
         @Override
-        public void write(final byte[] b, final int off, final int len) throws IOException {
+        public void write(byte[] b, int off, int len) throws IOException {
             underlying.write(b, off, len);
         }
 
         @Override
-        public void write(final int b) throws IOException {
+        public void write(int b) throws IOException {
             underlying.write(b);
         }
 
-        void setDelegatee(final OutputStream stream) {
+        void setDelegatee(OutputStream stream) {
             this.underlying = stream;
         }
     }
@@ -100,22 +100,22 @@ public final class SharedContextEvaluator implements ScriptEvaluator {
     public SharedContextEvaluator(final String[] args) {
         this.ctxOut = new DelegatingOutputStream(System.out);
         this.ctxErr = new DelegatingOutputStream(System.err);
-        final PrintWriter wout = new PrintWriter(ctxOut, true);
-        final PrintWriter werr = new PrintWriter(ctxErr, true);
-        final Options options = new Options("nashorn", werr);
+        PrintWriter wout = new PrintWriter(ctxOut, true);
+        PrintWriter werr = new PrintWriter(ctxErr, true);
+        Options options = new Options("nashorn", werr);
         options.process(args);
-        final ErrorManager errors = new ErrorManager(werr);
+        ErrorManager errors = new ErrorManager(werr);
         this.context = new Context(options, errors, wout, werr, Thread.currentThread().getContextClassLoader());
     }
 
     @Override
     public int run(final OutputStream out, final OutputStream err, final String[] args) throws IOException {
-        final Global oldGlobal = Context.getGlobal();
+        final ScriptObject oldGlobal = Context.getGlobal();
         try {
             ctxOut.setDelegatee(out);
             ctxErr.setDelegatee(err);
             final ErrorManager errors = context.getErrorManager();
-            final Global global = context.createGlobal();
+            final ScriptObject global = context.createGlobal();
             Context.setGlobal(global);
 
             // For each file on the command line.
@@ -125,7 +125,7 @@ public final class SharedContextEvaluator implements ScriptEvaluator {
                     continue;
                 }
                 final File file = new File(fileName);
-                final ScriptFunction script = context.compileScript(sourceFor(fileName, file.toURI().toURL()), global);
+                ScriptFunction script = context.compileScript(new Source(fileName, file.toURI().toURL()), global);
 
                 if (script == null || errors.getNumberOfErrors() != 0) {
                     return COMPILATION_ERROR;

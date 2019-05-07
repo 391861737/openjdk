@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2000, 2016, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2000, 2013, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -502,32 +502,18 @@ public class LogRecord implements java.io.Serializable {
             throw new IOException("LogRecord: bad version: " + major + "." + minor);
         }
         int len = in.readInt();
-        if (len < -1) {
-            throw new NegativeArraySizeException();
-        } else if (len == -1) {
+        if (len == -1) {
             parameters = null;
-        } else if (len < 255) {
+        } else {
             parameters = new Object[len];
             for (int i = 0; i < parameters.length; i++) {
                 parameters[i] = in.readObject();
             }
-        } else {
-            List<Object> params = new ArrayList<>(Math.min(len, 1024));
-            for (int i = 0; i < len; i++) {
-                params.add(in.readObject());
-            }
-            parameters = params.toArray(new Object[params.size()]);
         }
         // If necessary, try to regenerate the resource bundle.
         if (resourceBundleName != null) {
             try {
-                // use system class loader to ensure the ResourceBundle
-                // instance is a different instance than null loader uses
-                final ResourceBundle bundle =
-                        ResourceBundle.getBundle(resourceBundleName,
-                                Locale.getDefault(),
-                                ClassLoader.getSystemClassLoader());
-                resourceBundle = bundle;
+                resourceBundle = ResourceBundle.getBundle(resourceBundleName);
             } catch (MissingResourceException ex) {
                 // This is not a good place to throw an exception,
                 // so we simply leave the resourceBundle null.

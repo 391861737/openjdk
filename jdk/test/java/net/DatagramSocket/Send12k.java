@@ -53,7 +53,7 @@ public class Send12k {
         boolean sendOkay = true;
         try {
             s1.send(p1);
-        } catch (IOException e) {
+        } catch (SocketException e) {
             /*
              * Prior to merlin a send of > 12k to loopback address
              * would fail silently.

@@ -17,6 +17,9 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+/*
+ * $Id: ErrorMessages_de.java /st_wptg_1.8.0.0.0jdk/2 2013/09/16 04:56:10 gmolloy Exp $
+ */
 
 package com.sun.org.apache.xalan.internal.xsltc.compiler.util;
 
@@ -596,9 +599,6 @@ public class ErrorMessages_de extends ListResourceBundle {
          */
         {ErrorMsg.JAXP_INVALID_ATTR_ERR,
         "TransformerFactory erkennt Attribut \"{0}\" nicht."},
-
-        {ErrorMsg.JAXP_INVALID_ATTR_VALUE_ERR,
-        "Falscher Wert f\u00FCr Attribut \"{0}\" angegeben."},
 
         /*
          * Note to translators:  "setResult()" and "startDocument()" are Java

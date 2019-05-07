@@ -30,8 +30,6 @@ import static java.lang.Thread.State.*;
  *          Thread.getState().
  *
  * @author  Mandy Chung
- * @library /lib/testlibrary
- * @build jdk.testlibrary.*
  * @build ThreadStateTest ThreadStateController
  * @run main/othervm -Xmixed ThreadStateTest
  */

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 1995, 2014, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 1995, 2012, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -892,10 +892,11 @@ jobject getColorSpace(JNIEnv* env, jint csID) {
     jmethodID mid;
 
     clazz = (*env)->FindClass(env,"java/awt/color/ColorSpace");
-    CHECK_NULL_RETURN(clazz, NULL);
     mid = (*env)->GetStaticMethodID(env, clazz, "getInstance",
                                     "(I)Ljava/awt/color/ColorSpace;");
-    CHECK_NULL_RETURN(mid, NULL);
+    if (mid == NULL) {
+        return NULL;
+    }
 
     /* SECURITY: This is safe, because static methods cannot
      *           be overridden, and this method does not invoke
@@ -918,11 +919,6 @@ jobject awtJNI_GetColorModel(JNIEnv *env, AwtGraphicsConfigDataPtr aData)
         (aData->awt_depth >= 15))
     {
         clazz = (*env)->FindClass(env,"java/awt/image/DirectColorModel");
-        if (clazz == NULL) {
-            (*env)->PopLocalFrame(env, 0);
-            return NULL;
-        }
-
         if (!aData->isTranslucencySupported) {
 
             mid = (*env)->GetMethodID(env,clazz,"<init>","(IIIII)V");
@@ -1009,10 +1005,6 @@ jobject awtJNI_GetColorModel(JNIEnv *env, AwtGraphicsConfigDataPtr aData)
         }
 
         clazz = (*env)->FindClass(env,"java/awt/image/ComponentColorModel");
-        if (clazz == NULL) {
-            (*env)->PopLocalFrame(env, 0);
-            return NULL;
-        }
 
         mid = (*env)->GetMethodID(env,clazz,"<init>",
             "(Ljava/awt/color/ColorSpace;[IZZII)V");
@@ -1261,7 +1253,6 @@ int awtJNI_GetColorForVis (JNIEnv *env,jobject this, AwtGraphicsConfigDataPtr aw
     if (!JNU_IsNull(env,this))
     {
         SYSCLR_class = (*env)->FindClass(env, "java/awt/SystemColor");
-        CHECK_NULL_RETURN(SYSCLR_class, 0);
 
         if ((*env)->IsInstanceOf(env, this, SYSCLR_class)) {
                 /* SECURITY: This is safe, because there is no way
@@ -1273,7 +1264,6 @@ int awtJNI_GetColorForVis (JNIEnv *env,jobject this, AwtGraphicsConfigDataPtr aw
                                           ,this
                                           ,"getRGB"
                                           ,"()I").i;
-                JNU_CHECK_EXCEPTION_RETURN(env, 0);
         } else {
                 col = (int)(*env)->GetIntField(env,this,colorValueID);
         }
@@ -1377,24 +1367,15 @@ awtJNI_CreateColorData(JNIEnv *env, AwtGraphicsConfigDataPtr adata,
 
         /* Unlock now to initialize the SystemColor class */
         if (lock) {
-            AWT_UNLOCK_CHECK_EXCEPTION(env);
+            AWT_UNLOCK ();
         }
         sysColors = (*env)->FindClass (env, "java/awt/SystemColor");
-        CHECK_NULL(sysColors);
-
         if (lock) {
             AWT_LOCK ();
         }
         colorID = (*env)->GetStaticFieldID (env, sysColors,
                                                    "systemColors",
                                                    "[I");
-
-        if (colorID == NULL) {
-            if (lock) {
-                AWT_UNLOCK();
-            }
-            return;
-        }
 
         colors = (jintArray) (*env)->GetStaticObjectField
                                                 (env, sysColors, colorID);

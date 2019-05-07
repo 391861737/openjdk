@@ -35,7 +35,7 @@
 #include <sys/filio.h>
 #endif
 
-#if defined(__linux__) || defined(_ALLBSD_SOURCE) || defined(_AIX)
+#if defined(__linux__) || defined(_ALLBSD_SOURCE)
 #include <sys/ioctl.h>
 #endif
 
@@ -216,6 +216,13 @@ size_t
 getLastErrorString(char *buf, size_t len)
 {
     if (errno == 0 || len < 1) return 0;
-    getErrorString(errno, buf, len);
-    return strlen(buf);
+
+    const char *err = strerror(errno);
+    size_t n = strlen(err);
+    if (n >= len)
+        n = len - 1;
+
+    strncpy(buf, err, n);
+    buf[n] = '\0';
+    return n;
 }

@@ -47,7 +47,6 @@ import java.util.Calendar;
 import java.util.LinkedHashSet;
 import java.util.Locale;
 import java.util.Map;
-import java.util.Objects;
 import java.util.ResourceBundle;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
@@ -251,17 +250,17 @@ public class LocaleResources {
         return (String) localeName;
     }
 
-    String[] getTimeZoneNames(String key) {
+    String[] getTimeZoneNames(String key, int size) {
         String[] names = null;
-        String cacheKey = TIME_ZONE_NAMES + '.' + key;
+        String cacheKey = TIME_ZONE_NAMES + size + '.' + key;
 
         removeEmptyReferences();
         ResourceReference data = cache.get(cacheKey);
 
-        if (Objects.isNull(data) || Objects.isNull((names = (String[]) data.get()))) {
+        if (data == null || ((names = (String[]) data.get()) == null)) {
             TimeZoneNamesBundle tznb = localeData.getTimeZoneNames(locale);
             if (tznb.containsKey(key)) {
-                names = tznb.getStringArray(key);
+                names = tznb.getStringArray(key, size);
                 cache.put(cacheKey,
                           new ResourceReference(cacheKey, (Object) names, referenceQueue));
             }

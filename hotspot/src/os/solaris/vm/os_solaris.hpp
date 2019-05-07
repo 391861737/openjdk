@@ -27,9 +27,6 @@
 
 // Solaris_OS defines the interface to Solaris operating systems
 
-// Information about the protection of the page at address '0' on this os.
-static bool zero_page_read_protected() { return true; }
-
 class Solaris {
   friend class os;
 
@@ -110,8 +107,6 @@ class Solaris {
   static meminfo_func_t _meminfo;
 
   // Large Page Support
-  static bool is_valid_page_size(size_t bytes);
-  static size_t page_size_for_alignment(size_t alignment);
   static bool setup_large_pages(caddr_t start, size_t bytes, size_t align);
 
   static void init_thread_fpu_state(void);

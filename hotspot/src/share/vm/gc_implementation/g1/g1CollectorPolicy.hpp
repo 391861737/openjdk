@@ -26,7 +26,6 @@
 #define SHARE_VM_GC_IMPLEMENTATION_G1_G1COLLECTORPOLICY_HPP
 
 #include "gc_implementation/g1/collectionSetChooser.hpp"
-#include "gc_implementation/g1/g1Allocator.hpp"
 #include "gc_implementation/g1/g1MMUTracker.hpp"
 #include "memory/collectorPolicy.hpp"
 
@@ -300,13 +299,13 @@ public:
   // Accessors
 
   void set_region_eden(HeapRegion* hr, int young_index_in_cset) {
-    hr->set_eden();
+    hr->set_young();
     hr->install_surv_rate_group(_short_lived_surv_rate_group);
     hr->set_young_index_in_cset(young_index_in_cset);
   }
 
   void set_region_survivor(HeapRegion* hr, int young_index_in_cset) {
-    assert(hr->is_survivor(), "pre-condition");
+    assert(hr->is_young() && hr->is_survivor(), "pre-condition");
     hr->install_surv_rate_group(_survivor_surv_rate_group);
     hr->set_young_index_in_cset(young_index_in_cset);
   }
@@ -804,7 +803,7 @@ public:
 
   // If an expansion would be appropriate, because recent GC overhead had
   // exceeded the desired limit, return an amount to expand by.
-  virtual size_t expansion_amount();
+  size_t expansion_amount();
 
   // Print tracing information.
   void print_tracing_info() const;
@@ -821,11 +820,17 @@ public:
     // do that for any other surv rate groups
   }
 
-  size_t young_list_target_length() const { return _young_list_target_length; }
+  bool is_young_list_full() {
+    uint young_list_length = _g1->young_list()->length();
+    uint young_list_target_length = _young_list_target_length;
+    return young_list_length >= young_list_target_length;
+  }
 
-  bool is_young_list_full();
-
-  bool can_expand_young_list();
+  bool can_expand_young_list() {
+    uint young_list_length = _g1->young_list()->length();
+    uint young_list_max_length = _young_list_max_length;
+    return young_list_length < young_list_max_length;
+  }
 
   uint young_list_max_length() {
     return _young_list_max_length;
@@ -877,20 +882,28 @@ private:
 public:
   uint tenuring_threshold() const { return _tenuring_threshold; }
 
+  inline GCAllocPurpose
+    evacuation_destination(HeapRegion* src_region, uint age, size_t word_sz) {
+      if (age < _tenuring_threshold && src_region->is_young()) {
+        return GCAllocForSurvived;
+      } else {
+        return GCAllocForTenured;
+      }
+  }
+
+  inline bool track_object_age(GCAllocPurpose purpose) {
+    return purpose == GCAllocForSurvived;
+  }
+
   static const uint REGIONS_UNLIMITED = (uint) -1;
 
-  uint max_regions(InCSetState dest) {
-    switch (dest.value()) {
-      case InCSetState::Young:
-        return _max_survivor_regions;
-      case InCSetState::Old:
-        return REGIONS_UNLIMITED;
-      default:
-        assert(false, err_msg("Unknown dest state: " CSETSTATE_FORMAT, dest.value()));
-        break;
+  uint max_regions(int purpose);
+
+  // The limit on regions for a particular purpose is reached.
+  void note_alloc_region_limit_reached(int purpose) {
+    if (purpose == GCAllocForSurvived) {
+      _tenuring_threshold = 0;
     }
-    // keep some compilers happy
-    return 0;
   }
 
   void note_start_adding_survivor_regions() {

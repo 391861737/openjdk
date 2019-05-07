@@ -37,10 +37,9 @@ import jdk.internal.dynalink.linker.LinkRequest;
 import jdk.internal.dynalink.linker.LinkerServices;
 import jdk.internal.dynalink.linker.TypeBasedGuardingDynamicLinker;
 import jdk.internal.dynalink.support.TypeUtilities;
-import jdk.nashorn.internal.objects.Global;
 import jdk.nashorn.internal.runtime.ConsString;
-import jdk.nashorn.internal.runtime.JSType;
-import jdk.nashorn.internal.runtime.ScriptRuntime;
+import jdk.nashorn.internal.runtime.Context;
+import jdk.nashorn.internal.runtime.GlobalObject;
 
 /**
  * Internal linker for String, Boolean, and Number objects, only ever used by Nashorn engine and not exposed to other
@@ -48,17 +47,13 @@ import jdk.nashorn.internal.runtime.ScriptRuntime;
  * primitive type conversions for these types when linking to Java methods.
  */
 final class NashornPrimitiveLinker implements TypeBasedGuardingDynamicLinker, GuardingTypeConverterFactory, ConversionComparator {
-    private static final GuardedTypeConversion VOID_TO_OBJECT = new GuardedTypeConversion(
-            new GuardedInvocation(MethodHandles.constant(Object.class, ScriptRuntime.UNDEFINED)), true);
-
     @Override
     public boolean canLinkType(final Class<?> type) {
         return canLinkTypeStatic(type);
     }
 
     private static boolean canLinkTypeStatic(final Class<?> type) {
-        return type == String.class || type == Boolean.class || type == ConsString.class || type == Integer.class
-                || type == Double.class || type == Float.class || type == Short.class || type == Byte.class;
+        return type == String.class || type == Boolean.class || type == ConsString.class || Number.class.isAssignableFrom(type);
     }
 
     @Override
@@ -67,9 +62,10 @@ final class NashornPrimitiveLinker implements TypeBasedGuardingDynamicLinker, Gu
         final LinkRequest request = origRequest.withoutRuntimeContext(); // Nashorn has no runtime context
 
         final Object self = request.getReceiver();
+        final GlobalObject global = (GlobalObject) Context.getGlobal();
         final NashornCallSiteDescriptor desc = (NashornCallSiteDescriptor) request.getCallSiteDescriptor();
 
-        return Bootstrap.asTypeSafeReturn(Global.primitiveLookup(request, self), linkerServices, desc);
+        return Bootstrap.asType(global.primitiveLookup(request, self), linkerServices, desc);
     }
 
     /**
@@ -83,9 +79,6 @@ final class NashornPrimitiveLinker implements TypeBasedGuardingDynamicLinker, Gu
     public GuardedTypeConversion convertToType(final Class<?> sourceType, final Class<?> targetType) {
         final MethodHandle mh = JavaArgumentConverters.getConverter(targetType);
         if (mh == null) {
-            if(targetType == Object.class && sourceType == void.class) {
-                return VOID_TO_OBJECT;
-            }
             return null;
         }
 
@@ -172,7 +165,7 @@ final class NashornPrimitiveLinker implements TypeBasedGuardingDynamicLinker, Gu
 
     @SuppressWarnings("unused")
     private static boolean isJavaScriptPrimitive(final Object o) {
-        return JSType.isString(o) || o instanceof Boolean || JSType.isNumber(o) || o == null;
+        return o instanceof String || o instanceof Boolean || o instanceof Number || o instanceof ConsString || o == null;
     }
 
     private static final MethodHandle GUARD_PRIMITIVE = findOwnMH("isJavaScriptPrimitive", boolean.class, Object.class);

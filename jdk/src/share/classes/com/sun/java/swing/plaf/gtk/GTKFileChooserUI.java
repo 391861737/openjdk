@@ -100,8 +100,7 @@ class GTKFileChooserUI extends SynthFileChooserUI {
     private static Dimension prefListSize = new Dimension(75, 150);
 
     private static Dimension PREF_SIZE = new Dimension(435, 360);
-    private static final int MIN_WIDTH = 200;
-    private static final int MIN_HEIGHT = 300;
+    private static Dimension MIN_SIZE = new Dimension(200, 300);
 
     private static Dimension ZERO_ACC_SIZE = new Dimension(1, 1);
 
@@ -1039,7 +1038,6 @@ class GTKFileChooserUI extends SynthFileChooserUI {
         }
     }
 
-    @Override
     public Dimension getPreferredSize(JComponent c) {
         Dimension prefSize = new Dimension(PREF_SIZE);
         JComponent accessory = getFileChooser().getAccessory();
@@ -1055,12 +1053,10 @@ class GTKFileChooserUI extends SynthFileChooserUI {
         }
     }
 
-    @Override
-    public Dimension getMinimumSize(JComponent x) {
-        return new Dimension(MIN_WIDTH, MIN_HEIGHT);
+    public Dimension getMinimumSize(JComponent x)  {
+        return new Dimension(MIN_SIZE);
     }
 
-    @Override
     public Dimension getMaximumSize(JComponent x) {
         return new Dimension(Integer.MAX_VALUE, Integer.MAX_VALUE);
     }
@@ -1289,7 +1285,7 @@ class GTKFileChooserUI extends SynthFileChooserUI {
     /**
      * Render different filters
      */
-    public class FilterComboBoxRenderer extends DefaultListCellRenderer {
+    public class FilterComboBoxRenderer extends DefaultListCellRenderer implements UIResource {
         public String getName() {
             // As SynthComboBoxRenderer's are asked for a size BEFORE they
             // are parented getName is overriden to force the name to be

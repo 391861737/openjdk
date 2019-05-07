@@ -87,7 +87,7 @@ public class ClipboardTransferable implements Transferable {
                 HashMap cached_data = new HashMap(formats.length, 1.0f);
 
                 Map flavorsForFormats = DataTransferer.getInstance().
-                    getFlavorsForFormats(formats, SunClipboard.getDefaultFlavorTable());
+                    getFlavorsForFormats(formats, SunClipboard.flavorMap);
                 for (Iterator iter = flavorsForFormats.keySet().iterator();
                      iter.hasNext(); )
                 {

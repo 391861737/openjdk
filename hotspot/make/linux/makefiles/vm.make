@@ -1,5 +1,5 @@
 #
-# Copyright (c) 1999, 2015, Oracle and/or its affiliates. All rights reserved.
+# Copyright (c) 1999, 2013, Oracle and/or its affiliates. All rights reserved.
 # DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
 #
 # This code is free software; you can redistribute it and/or modify it
@@ -45,9 +45,8 @@ DEP_DIR       = $(GENERATED)/dependencies
 ifeq ($(findstring true, $(JVM_VARIANT_ZERO) $(JVM_VARIANT_ZEROSHARK)), true)
   include $(MAKEFILES_DIR)/zeroshark.make
 else
-  BUILDARCH_MAKE = $(MAKEFILES_DIR)/$(BUILDARCH).make
-  ALT_BUILDARCH_MAKE = $(HS_ALT_MAKE)/$(Platform_os_family)/makefiles/$(BUILDARCH).make
-  include $(if $(wildcard $(ALT_BUILDARCH_MAKE)),$(ALT_BUILDARCH_MAKE),$(BUILDARCH_MAKE))
+  include $(MAKEFILES_DIR)/$(BUILDARCH).make
+  -include $(HS_ALT_MAKE)/$(Platform_os_family)/makefiles/$(BUILDARCH).make
 endif
 
 # set VPATH so make knows where to look for source files
@@ -234,10 +233,10 @@ JVM_OBJ_FILES = $(Obj_Files)
 
 vm_version.o: $(filter-out vm_version.o,$(JVM_OBJ_FILES))
 
-mapfile : $(MAPFILE) vm.def mapfile_ext
+mapfile : $(MAPFILE) vm.def
 	rm -f $@
 	awk '{ if ($$0 ~ "INSERT VTABLE SYMBOLS HERE")	\
-                 { system ("cat mapfile_ext"); system ("cat vm.def"); } \
+                 { system ("cat vm.def"); }		\
                else					\
                  { print $$0 }				\
              }' > $@ < $(MAPFILE)
@@ -246,21 +245,8 @@ mapfile_reorder : mapfile $(REORDERFILE)
 	rm -f $@
 	cat $^ > $@
 
-VMDEF_PAT  = ^_ZTV
-VMDEF_PAT := ^gHotSpotVM|$(VMDEF_PAT)
-VMDEF_PAT := ^UseSharedSpaces$$|$(VMDEF_PAT)
-VMDEF_PAT := ^_ZN9Arguments17SharedArchivePathE$$|$(VMDEF_PAT)
-
 vm.def: $(Res_Files) $(Obj_Files)
-	$(QUIETLY) $(NM) --defined-only $(Obj_Files) | sort -k3 -u | \
-	awk '$$3 ~ /$(VMDEF_PAT)/ { print "\t" $$3 ";" }' > $@
-
-mapfile_ext:
-	rm -f $@
-	touch $@
-	if [ -f $(HS_ALT_MAKE)/linux/makefiles/mapfile-ext ]; then \
-	  cat $(HS_ALT_MAKE)/linux/makefiles/mapfile-ext > $@; \
-	fi
+	sh $(GAMMADIR)/make/linux/makefiles/build_vm_def.sh *.o > $@
 
 ifeq ($(JVM_VARIANT_ZEROSHARK), true)
   STATIC_CXX = false

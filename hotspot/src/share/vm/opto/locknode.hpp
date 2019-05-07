@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 1999, 2015, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 1999, 2012, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -28,18 +28,23 @@
 #include "opto/node.hpp"
 #include "opto/opcodes.hpp"
 #include "opto/subnode.hpp"
-#if defined AD_MD_HPP
-# include AD_MD_HPP
-#elif defined TARGET_ARCH_MODEL_x86_32
+#ifdef TARGET_ARCH_MODEL_x86_32
 # include "adfiles/ad_x86_32.hpp"
-#elif defined TARGET_ARCH_MODEL_x86_64
+#endif
+#ifdef TARGET_ARCH_MODEL_x86_64
 # include "adfiles/ad_x86_64.hpp"
-#elif defined TARGET_ARCH_MODEL_sparc
+#endif
+#ifdef TARGET_ARCH_MODEL_sparc
 # include "adfiles/ad_sparc.hpp"
-#elif defined TARGET_ARCH_MODEL_zero
+#endif
+#ifdef TARGET_ARCH_MODEL_zero
 # include "adfiles/ad_zero.hpp"
-#elif defined TARGET_ARCH_MODEL_ppc_64
-# include "adfiles/ad_ppc_64.hpp"
+#endif
+#ifdef TARGET_ARCH_MODEL_arm
+# include "adfiles/ad_arm.hpp"
+#endif
+#ifdef TARGET_ARCH_MODEL_ppc
+# include "adfiles/ad_ppc.hpp"
 #endif
 
 //------------------------------BoxLockNode------------------------------------
@@ -84,17 +89,13 @@ public:
 //------------------------------FastLockNode-----------------------------------
 class FastLockNode: public CmpNode {
 private:
-  BiasedLockingCounters*        _counters;
-  RTMLockingCounters*       _rtm_counters; // RTM lock counters for inflated locks
-  RTMLockingCounters* _stack_rtm_counters; // RTM lock counters for stack locks
+  BiasedLockingCounters* _counters;
 
 public:
   FastLockNode(Node *ctrl, Node *oop, Node *box) : CmpNode(oop,box) {
     init_req(0,ctrl);
     init_class_id(Class_FastLock);
     _counters = NULL;
-    _rtm_counters = NULL;
-    _stack_rtm_counters = NULL;
   }
   Node* obj_node() const { return in(1); }
   Node* box_node() const { return in(2); }
@@ -103,17 +104,13 @@ public:
   // FastLock and FastUnlockNode do not hash, we need one for each correspoding
   // LockNode/UnLockNode to avoid creating Phi's.
   virtual uint hash() const ;                  // { return NO_HASH; }
-  virtual uint size_of() const;
   virtual uint cmp( const Node &n ) const ;    // Always fail, except on self
   virtual int Opcode() const;
   virtual const Type *Value( PhaseTransform *phase ) const { return TypeInt::CC; }
   const Type *sub(const Type *t1, const Type *t2) const { return TypeInt::CC;}
 
   void create_lock_counter(JVMState* s);
-  void create_rtm_lock_counter(JVMState* state);
-  BiasedLockingCounters*        counters() const { return _counters; }
-  RTMLockingCounters*       rtm_counters() const { return _rtm_counters; }
-  RTMLockingCounters* stack_rtm_counters() const { return _stack_rtm_counters; }
+  BiasedLockingCounters* counters() const { return _counters; }
 };
 
 

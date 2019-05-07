@@ -157,7 +157,6 @@ AwtChoice* AwtChoice::Create(jobject peer, jobject parent) {
                                                      "preferredSize",
                                                      "()Ljava/awt/Dimension;").l;
             DASSERT(!safe_ExceptionOccurred(env));
-            if (env->ExceptionCheck()) goto done;
 
             if (dimension != NULL && width == 0) {
                 width = env->GetIntField(dimension, AwtDimension::widthID);
@@ -338,8 +337,9 @@ jobject AwtChoice::PreferredItemSize(JNIEnv *env)
                                              "preferredSize",
                                              "()Ljava/awt/Dimension;").l;
     DASSERT(!safe_ExceptionOccurred(env));
-    CHECK_NULL_RETURN(dimension, NULL);
-
+    if (dimension == NULL) {
+        return NULL;
+    }
     /* This size is window size of choice and it's too big for each
      * drop down item height.
      */
@@ -605,8 +605,7 @@ void AwtChoice::_AddItems(void *param)
            for (i = 0; i < itemCount; i++)
            {
                jstring item = (jstring)env->GetObjectArrayElement(items, i);
-               if (env->ExceptionCheck()) goto done;
-               if (item == NULL) goto next_elem;
+               JNI_CHECK_NULL_GOTO(item, "null item", next_elem);
                c->SendMessage(CB_INSERTSTRING, index + i, JavaStringBuffer(env, item));
                env->DeleteLocalRef(item);
 next_elem:

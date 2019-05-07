@@ -1,13 +1,13 @@
 /*
- * Copyright (c) 2007, 2015, Oracle and/or its affiliates. All rights reserved.
+ * reserved comment block
+ * DO NOT REMOVE OR ALTER!
  */
 /*
- * Licensed to the Apache Software Foundation (ASF) under one or more
- * contributor license agreements.  See the NOTICE file distributed with
- * this work for additional information regarding copyright ownership.
- * The ASF licenses this file to You under the Apache License, Version 2.0
- * (the "License"); you may not use this file except in compliance with
- * the License.  You may obtain a copy of the License at
+ * Copyright 1999-2005 The Apache Software Foundation.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
@@ -22,43 +22,26 @@
  */
 package com.sun.org.apache.xml.internal.dtm.ref.sax2dtm;
 
+import java.util.Hashtable;
+import java.util.Vector;
+import javax.xml.transform.Source;
+import javax.xml.transform.SourceLocator;
 
-import com.sun.org.apache.xml.internal.dtm.DTM;
-import com.sun.org.apache.xml.internal.dtm.DTMManager;
-import com.sun.org.apache.xml.internal.dtm.DTMWSFilter;
-import com.sun.org.apache.xml.internal.dtm.ref.DTMDefaultBaseIterators;
-import com.sun.org.apache.xml.internal.dtm.ref.DTMManagerDefault;
-import com.sun.org.apache.xml.internal.dtm.ref.DTMStringPool;
-import com.sun.org.apache.xml.internal.dtm.ref.DTMTreeWalker;
-import com.sun.org.apache.xml.internal.dtm.ref.IncrementalSAXSource;
-import com.sun.org.apache.xml.internal.dtm.ref.NodeLocator;
-import com.sun.org.apache.xml.internal.res.XMLErrorResources;
-import com.sun.org.apache.xml.internal.res.XMLMessages;
+import com.sun.org.apache.xml.internal.dtm.*;
+import com.sun.org.apache.xml.internal.dtm.ref.*;
+import com.sun.org.apache.xml.internal.utils.StringVector;
+import com.sun.org.apache.xml.internal.utils.IntVector;
 import com.sun.org.apache.xml.internal.utils.FastStringBuffer;
 import com.sun.org.apache.xml.internal.utils.IntStack;
-import com.sun.org.apache.xml.internal.utils.IntVector;
-import com.sun.org.apache.xml.internal.utils.StringVector;
 import com.sun.org.apache.xml.internal.utils.SuballocatedIntVector;
 import com.sun.org.apache.xml.internal.utils.SystemIDResolver;
 import com.sun.org.apache.xml.internal.utils.WrappedRuntimeException;
 import com.sun.org.apache.xml.internal.utils.XMLString;
 import com.sun.org.apache.xml.internal.utils.XMLStringFactory;
-import java.util.HashMap;
-import java.util.Map;
-import java.util.Vector;
-import javax.xml.transform.Source;
-import javax.xml.transform.SourceLocator;
-import org.xml.sax.Attributes;
-import org.xml.sax.ContentHandler;
-import org.xml.sax.DTDHandler;
-import org.xml.sax.EntityResolver;
-import org.xml.sax.ErrorHandler;
-import org.xml.sax.InputSource;
-import org.xml.sax.Locator;
-import org.xml.sax.SAXException;
-import org.xml.sax.SAXParseException;
-import org.xml.sax.ext.DeclHandler;
-import org.xml.sax.ext.LexicalHandler;
+import com.sun.org.apache.xml.internal.res.XMLErrorResources;
+import com.sun.org.apache.xml.internal.res.XMLMessages;
+import org.xml.sax.*;
+import org.xml.sax.ext.*;
 
 /**
  * This class implements a DTM that tends to be optimized more for speed than
@@ -162,7 +145,7 @@ public class SAX2DTM extends DTMDefaultBaseIterators
    * This table holds the ID string to node associations, for
    * XML IDs.
    */
-  protected Map<String, Integer> m_idAttributes = new HashMap<>();
+  protected Hashtable m_idAttributes = new Hashtable();
 
   /**
    * fixed dom-style names.
@@ -1392,7 +1375,7 @@ public class SAX2DTM extends DTMDefaultBaseIterators
 
     do
     {
-      intObj = m_idAttributes.get(elementId);
+      intObj = (Integer) m_idAttributes.get(elementId);
 
       if (null != intObj)
         return makeNodeHandle(intObj.intValue());
@@ -1530,7 +1513,7 @@ public class SAX2DTM extends DTMDefaultBaseIterators
    */
   public void setIDAttribute(String id, int elem)
   {
-    m_idAttributes.put(id, elem);
+    m_idAttributes.put(id, new Integer(elem));
   }
 
   /**

@@ -25,22 +25,20 @@
 
 package jdk.nashorn.internal.ir;
 
-import jdk.nashorn.internal.codegen.types.Type;
 import jdk.nashorn.internal.ir.annotations.Immutable;
 import jdk.nashorn.internal.ir.visitor.NodeVisitor;
-import jdk.nashorn.internal.parser.TokenType;
 
 /**
- * TernaryNode represent the ternary operator {@code ?:}. Note that for control-flow calculation reasons its branch
- * expressions (but not its test expression) are always wrapped in instances of {@link JoinPredecessorExpression}.
+ * TernaryNode nodes represent three operand operations (?:).
  */
 @Immutable
 public final class TernaryNode extends Expression {
-    private static final long serialVersionUID = 1L;
-
     private final Expression test;
-    private final JoinPredecessorExpression trueExpr;
-    private final JoinPredecessorExpression falseExpr;
+
+    private final Expression trueExpr;
+
+    /** Third argument. */
+    private final Expression falseExpr;
 
     /**
      * Constructor
@@ -50,15 +48,14 @@ public final class TernaryNode extends Expression {
      * @param trueExpr  expression evaluated when test evaluates to true
      * @param falseExpr expression evaluated when test evaluates to true
      */
-    public TernaryNode(final long token, final Expression test, final JoinPredecessorExpression trueExpr, final JoinPredecessorExpression falseExpr) {
+    public TernaryNode(final long token, final Expression test, final Expression trueExpr, final Expression falseExpr) {
         super(token, falseExpr.getFinish());
         this.test = test;
         this.trueExpr = trueExpr;
         this.falseExpr = falseExpr;
     }
 
-    private TernaryNode(final TernaryNode ternaryNode, final Expression test, final JoinPredecessorExpression trueExpr,
-            final JoinPredecessorExpression falseExpr) {
+    private TernaryNode(final TernaryNode ternaryNode, final Expression test, final Expression trueExpr, final Expression falseExpr) {
         super(ternaryNode);
         this.test = test;
         this.trueExpr = trueExpr;
@@ -69,25 +66,24 @@ public final class TernaryNode extends Expression {
     public Node accept(final NodeVisitor<? extends LexicalContext> visitor) {
         if (visitor.enterTernaryNode(this)) {
             final Expression newTest = (Expression)getTest().accept(visitor);
-            final JoinPredecessorExpression newTrueExpr = (JoinPredecessorExpression)trueExpr.accept(visitor);
-            final JoinPredecessorExpression newFalseExpr = (JoinPredecessorExpression)falseExpr.accept(visitor);
-            return visitor.leaveTernaryNode(setTest(newTest).setTrueExpression(newTrueExpr).setFalseExpression(newFalseExpr));
+            final Expression newTrueExpr = (Expression)getTrueExpression().accept(visitor);
+            final Expression newFalseExpr = (Expression)falseExpr.accept(visitor);
+            return visitor.leaveTernaryNode(setTest(newTest).setTrueExpression(newTrueExpr).setFalseExpression1(newFalseExpr));
         }
 
         return this;
     }
 
     @Override
-    public void toString(final StringBuilder sb, final boolean printType) {
-        final TokenType tokenType  = tokenType();
-        final boolean   testParen  = tokenType.needsParens(getTest().tokenType(), true);
-        final boolean   trueParen  = tokenType.needsParens(getTrueExpression().tokenType(), false);
-        final boolean   falseParen = tokenType.needsParens(getFalseExpression().tokenType(), false);
+    public void toString(final StringBuilder sb) {
+        final boolean testParen  = tokenType().needsParens(getTest().tokenType(), true);
+        final boolean trueParen  = tokenType().needsParens(getTrueExpression().tokenType(), false);
+        final boolean falseParen = tokenType().needsParens(getFalseExpression().tokenType(), false);
 
         if (testParen) {
             sb.append('(');
         }
-        getTest().toString(sb, printType);
+        getTest().toString(sb);
         if (testParen) {
             sb.append(')');
         }
@@ -97,7 +93,7 @@ public final class TernaryNode extends Expression {
         if (trueParen) {
             sb.append('(');
         }
-        getTrueExpression().toString(sb, printType);
+        getTrueExpression().toString(sb);
         if (trueParen) {
             sb.append(')');
         }
@@ -107,7 +103,7 @@ public final class TernaryNode extends Expression {
         if (falseParen) {
             sb.append('(');
         }
-        getFalseExpression().toString(sb, printType);
+        getFalseExpression().toString(sb);
         if (falseParen) {
             sb.append(')');
         }
@@ -119,12 +115,6 @@ public final class TernaryNode extends Expression {
                 && getTrueExpression().isLocal()
                 && getFalseExpression().isLocal();
     }
-
-    @Override
-    public Type getType() {
-        return Type.widestReturnType(getTrueExpression().getType(), getFalseExpression().getType());
-    }
-
 
     /**
      * Get the test expression for this ternary expression, i.e. "x" in x ? y : z
@@ -138,7 +128,7 @@ public final class TernaryNode extends Expression {
      * Get the true expression for this ternary expression, i.e. "y" in x ? y : z
      * @return the true expression
      */
-    public JoinPredecessorExpression getTrueExpression() {
+    public Expression getTrueExpression() {
         return trueExpr;
     }
 
@@ -146,7 +136,7 @@ public final class TernaryNode extends Expression {
      * Get the false expression for this ternary expression, i.e. "z" in x ? y : z
      * @return the false expression
      */
-    public JoinPredecessorExpression getFalseExpression() {
+    public Expression getFalseExpression() {
         return falseExpr;
     }
 
@@ -167,7 +157,7 @@ public final class TernaryNode extends Expression {
      * @param trueExpr new true expression
      * @return a node equivalent to this one except for the requested change.
      */
-    public TernaryNode setTrueExpression(final JoinPredecessorExpression trueExpr) {
+    public TernaryNode setTrueExpression(final Expression trueExpr) {
         if (this.trueExpr == trueExpr) {
             return this;
         }
@@ -179,7 +169,7 @@ public final class TernaryNode extends Expression {
      * @param falseExpr new false expression
      * @return a node equivalent to this one except for the requested change.
      */
-    public TernaryNode setFalseExpression(final JoinPredecessorExpression falseExpr) {
+    public TernaryNode setFalseExpression1(final Expression falseExpr) {
         if (this.falseExpr == falseExpr) {
             return this;
         }

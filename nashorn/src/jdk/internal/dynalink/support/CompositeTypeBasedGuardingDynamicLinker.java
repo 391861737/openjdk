@@ -111,8 +111,8 @@ public class CompositeTypeBasedGuardingDynamicLinker implements TypeBasedGuardin
         private final TypeBasedGuardingDynamicLinker[] linkers;
         private final List<TypeBasedGuardingDynamicLinker>[] singletonLinkers;
 
-        @SuppressWarnings({"unchecked", "rawtypes"})
-        ClassToLinker(final TypeBasedGuardingDynamicLinker[] linkers) {
+        @SuppressWarnings("unchecked")
+        ClassToLinker(TypeBasedGuardingDynamicLinker[] linkers) {
             this.linkers = linkers;
             singletonLinkers = new List[linkers.length];
             for(int i = 0; i < linkers.length; ++i) {
@@ -120,9 +120,8 @@ public class CompositeTypeBasedGuardingDynamicLinker implements TypeBasedGuardin
             }
         }
 
-        @SuppressWarnings("fallthrough")
         @Override
-        protected List<TypeBasedGuardingDynamicLinker> computeValue(final Class<?> clazz) {
+        protected List<TypeBasedGuardingDynamicLinker> computeValue(Class<?> clazz) {
             List<TypeBasedGuardingDynamicLinker> list = NO_LINKER;
             for(int i = 0; i < linkers.length; ++i) {
                 final TypeBasedGuardingDynamicLinker linker = linkers[i];
@@ -135,6 +134,7 @@ public class CompositeTypeBasedGuardingDynamicLinker implements TypeBasedGuardin
                         case 1: {
                             list = new LinkedList<>(list);
                         }
+                        //$FALL-THROUGH$
                         default: {
                             list.add(linker);
                         }
@@ -152,27 +152,27 @@ public class CompositeTypeBasedGuardingDynamicLinker implements TypeBasedGuardin
      *
      * @param linkers the component linkers
      */
-    public CompositeTypeBasedGuardingDynamicLinker(final Iterable<? extends TypeBasedGuardingDynamicLinker> linkers) {
+    public CompositeTypeBasedGuardingDynamicLinker(Iterable<? extends TypeBasedGuardingDynamicLinker> linkers) {
         final List<TypeBasedGuardingDynamicLinker> l = new LinkedList<>();
-        for(final TypeBasedGuardingDynamicLinker linker: linkers) {
+        for(TypeBasedGuardingDynamicLinker linker: linkers) {
             l.add(linker);
         }
         this.classToLinker = new ClassToLinker(l.toArray(new TypeBasedGuardingDynamicLinker[l.size()]));
     }
 
     @Override
-    public boolean canLinkType(final Class<?> type) {
+    public boolean canLinkType(Class<?> type) {
         return !classToLinker.get(type).isEmpty();
     }
 
     @Override
-    public GuardedInvocation getGuardedInvocation(final LinkRequest linkRequest, final LinkerServices linkerServices)
+    public GuardedInvocation getGuardedInvocation(LinkRequest linkRequest, final LinkerServices linkerServices)
             throws Exception {
         final Object obj = linkRequest.getReceiver();
         if(obj == null) {
             return null;
         }
-        for(final TypeBasedGuardingDynamicLinker linker: classToLinker.get(obj.getClass())) {
+        for(TypeBasedGuardingDynamicLinker linker: classToLinker.get(obj.getClass())) {
             final GuardedInvocation invocation = linker.getGuardedInvocation(linkRequest, linkerServices);
             if(invocation != null) {
                 return invocation;
@@ -189,10 +189,10 @@ public class CompositeTypeBasedGuardingDynamicLinker implements TypeBasedGuardin
      * @param linkers the list of linkers to optimize
      * @return the optimized list
      */
-    public static List<GuardingDynamicLinker> optimize(final Iterable<? extends GuardingDynamicLinker> linkers) {
+    public static List<GuardingDynamicLinker> optimize(Iterable<? extends GuardingDynamicLinker> linkers) {
         final List<GuardingDynamicLinker> llinkers = new LinkedList<>();
         final List<TypeBasedGuardingDynamicLinker> tblinkers = new LinkedList<>();
-        for(final GuardingDynamicLinker linker: linkers) {
+        for(GuardingDynamicLinker linker: linkers) {
             if(linker instanceof TypeBasedGuardingDynamicLinker) {
                 tblinkers.add((TypeBasedGuardingDynamicLinker)linker);
             } else {
@@ -204,8 +204,8 @@ public class CompositeTypeBasedGuardingDynamicLinker implements TypeBasedGuardin
         return llinkers;
     }
 
-    private static void addTypeBased(final List<GuardingDynamicLinker> llinkers,
-            final List<TypeBasedGuardingDynamicLinker> tblinkers) {
+    private static void addTypeBased(List<GuardingDynamicLinker> llinkers,
+            List<TypeBasedGuardingDynamicLinker> tblinkers) {
         switch(tblinkers.size()) {
             case 0: {
                 break;

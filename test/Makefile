@@ -33,7 +33,6 @@ TOPDIR=..
 # This makefile depends on the availability of sibling directories.
 LANGTOOLS_DIR=$(TOPDIR)/langtools
 JDK_DIR=$(TOPDIR)/jdk
-HOTSPOT_DIR=$(TOPDIR)/hotspot
 
 # Macro to run a test target in a subdir
 define SUBDIR_TEST # subdirectory target
@@ -62,35 +61,6 @@ langtools_% :
 
 jdk_% core_%s svc_%:
 	@$(NO_STOPPING)$(call SUBDIR_TEST, $(JDK_DIR), TEST="$@" $@)
-
-hotspot_%:
-	@$(NO_STOPPING)$(call SUBDIR_TEST, $(HOTSPOT_DIR), TEST="$@" $@)
-
-#
-# jtreg_tests
-#
-# Invocation:
-#
-# make jtreg_tests TESTDIRS=<test-dirs>
-#
-# where <test-dirs> is something like '../<component>/test/runtime',
-# <component> in turn being one of the top level directories (for
-# example 'hotspot').
-#
-# The below will strip the path prefix and delegate to the
-# corresponding ../<component>/test/Makefile.
-
-ifneq ($(TESTDIRS),)
-# Extract the component from ../<component>/...
-COMPONENT=$(word 2,$(subst /, ,$(TESTDIRS)))
-
-# Strip off the ../<component>/test prefix and pass the rest as TESTDIRS
-# to the delegate Makefile
-TESTDIRS_TESTS=$(patsubst ../$(COMPONENT)/test/%,%,$(TESTDIRS))
-endif
-
-jtreg_tests:
-	@$(NO_STOPPING)$(call SUBDIR_TEST, $(TOPDIR)/$(COMPONENT), TESTDIRS=$(TESTDIRS_TESTS) $@)
 
 ################################################################
 

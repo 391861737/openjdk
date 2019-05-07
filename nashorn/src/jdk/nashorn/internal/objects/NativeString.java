@@ -32,14 +32,12 @@ import static jdk.nashorn.internal.runtime.ScriptRuntime.UNDEFINED;
 
 import java.lang.invoke.MethodHandle;
 import java.lang.invoke.MethodHandles;
-import java.lang.invoke.MethodType;
 import java.text.Collator;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.Locale;
-import java.util.Set;
 import jdk.internal.dynalink.CallSiteDescriptor;
 import jdk.internal.dynalink.linker.GuardedInvocation;
 import jdk.internal.dynalink.linker.LinkRequest;
@@ -49,47 +47,48 @@ import jdk.nashorn.internal.objects.annotations.Constructor;
 import jdk.nashorn.internal.objects.annotations.Function;
 import jdk.nashorn.internal.objects.annotations.Getter;
 import jdk.nashorn.internal.objects.annotations.ScriptClass;
+import jdk.nashorn.internal.objects.annotations.SpecializedConstructor;
 import jdk.nashorn.internal.objects.annotations.SpecializedFunction;
-import jdk.nashorn.internal.objects.annotations.SpecializedFunction.LinkLogic;
 import jdk.nashorn.internal.objects.annotations.Where;
 import jdk.nashorn.internal.runtime.ConsString;
 import jdk.nashorn.internal.runtime.JSType;
-import jdk.nashorn.internal.runtime.OptimisticBuiltins;
 import jdk.nashorn.internal.runtime.PropertyMap;
+import jdk.nashorn.internal.runtime.ScriptFunction;
 import jdk.nashorn.internal.runtime.ScriptObject;
 import jdk.nashorn.internal.runtime.ScriptRuntime;
 import jdk.nashorn.internal.runtime.arrays.ArrayIndex;
-import jdk.nashorn.internal.runtime.linker.Bootstrap;
 import jdk.nashorn.internal.runtime.linker.NashornGuards;
 import jdk.nashorn.internal.runtime.linker.PrimitiveLookup;
+
 
 /**
  * ECMA 15.5 String Objects.
  */
 @ScriptClass("String")
-public final class NativeString extends ScriptObject implements OptimisticBuiltins {
+public final class NativeString extends ScriptObject {
 
     private final CharSequence value;
 
-    /** Method handle to create an object wrapper for a primitive string */
-    static final MethodHandle WRAPFILTER = findOwnMH("wrapFilter", MH.type(NativeString.class, Object.class));
-    /** Method handle to retrieve the String prototype object */
-    private static final MethodHandle PROTOFILTER = findOwnMH("protoFilter", MH.type(Object.class, Object.class));
+    static final MethodHandle WRAPFILTER = findWrapFilter();
 
     // initialized by nasgen
     private static PropertyMap $nasgenmap$;
+
+    static PropertyMap getInitialMap() {
+        return $nasgenmap$;
+    }
 
     private NativeString(final CharSequence value) {
         this(value, Global.instance());
     }
 
     NativeString(final CharSequence value, final Global global) {
-        this(value, global.getStringPrototype(), $nasgenmap$);
+        this(value, global.getStringPrototype(), global.getStringMap());
     }
 
     private NativeString(final CharSequence value, final ScriptObject proto, final PropertyMap map) {
         super(proto, map);
-        assert JSType.isString(value);
+        assert value instanceof String || value instanceof ConsString;
         this.value = value;
     }
 
@@ -154,11 +153,12 @@ public final class NativeString extends ScriptObject implements OptimisticBuilti
         final Object self = request.getReceiver();
         final Class<?> returnType = desc.getMethodType().returnType();
 
-        if (returnType == Object.class && JSType.isString(self)) {
+        if (returnType == Object.class && (self instanceof String || self instanceof ConsString)) {
             try {
-                return new GuardedInvocation(MH.findStatic(MethodHandles.lookup(), NativeString.class, "get", desc.getMethodType()), NashornGuards.getStringGuard());
+                MethodHandle mh = MH.findStatic(MethodHandles.lookup(), NativeString.class, "get", desc.getMethodType());
+                return new GuardedInvocation(mh, NashornGuards.getInstanceOf2Guard(String.class, ConsString.class));
             } catch (final LookupException e) {
-                //empty. Shouldn't happen. Fall back to super
+                // Shouldn't happen. Fall back to super
             }
         }
         return super.findGetIndexMethod(desc, request);
@@ -220,6 +220,14 @@ public final class NativeString extends ScriptObject implements OptimisticBuilti
     }
 
     @Override
+    public Object get(final long key) {
+        if (key >= 0 && key < value.length()) {
+            return String.valueOf(value.charAt((int)key));
+        }
+        return super.get(key);
+    }
+
+    @Override
     public Object get(final int key) {
         if (key >= 0 && key < value.length()) {
             return String.valueOf(value.charAt(key));
@@ -228,74 +236,122 @@ public final class NativeString extends ScriptObject implements OptimisticBuilti
     }
 
     @Override
-    public int getInt(final Object key, final int programPoint) {
-        return JSType.toInt32MaybeOptimistic(get(key), programPoint);
+    public int getInt(final Object key) {
+        return JSType.toInt32(get(key));
     }
 
     @Override
-    public int getInt(final double key, final int programPoint) {
-        return JSType.toInt32MaybeOptimistic(get(key), programPoint);
+    public int getInt(final double key) {
+        return JSType.toInt32(get(key));
     }
 
     @Override
-    public int getInt(final int key, final int programPoint) {
-        return JSType.toInt32MaybeOptimistic(get(key), programPoint);
+    public int getInt(final long key) {
+        return JSType.toInt32(get(key));
     }
 
     @Override
-    public double getDouble(final Object key, final int programPoint) {
-        return JSType.toNumberMaybeOptimistic(get(key), programPoint);
+    public int getInt(final int key) {
+        return JSType.toInt32(get(key));
     }
 
     @Override
-    public double getDouble(final double key, final int programPoint) {
-        return JSType.toNumberMaybeOptimistic(get(key), programPoint);
+    public long getLong(final Object key) {
+        return JSType.toUint32(get(key));
     }
 
     @Override
-    public double getDouble(final int key, final int programPoint) {
-        return JSType.toNumberMaybeOptimistic(get(key), programPoint);
+    public long getLong(final double key) {
+        return JSType.toUint32(get(key));
+    }
+
+    @Override
+    public long getLong(final long key) {
+        return JSType.toUint32(get(key));
+    }
+
+    @Override
+    public long getLong(final int key) {
+        return JSType.toUint32(get(key));
+    }
+
+    @Override
+    public double getDouble(final Object key) {
+        return JSType.toNumber(get(key));
+    }
+
+    @Override
+    public double getDouble(final double key) {
+        return JSType.toNumber(get(key));
+    }
+
+    @Override
+    public double getDouble(final long key) {
+        return JSType.toNumber(get(key));
+    }
+
+    @Override
+    public double getDouble(final int key) {
+        return JSType.toNumber(get(key));
     }
 
     @Override
     public boolean has(final Object key) {
         final Object primitiveKey = JSType.toPrimitive(key, String.class);
         final int index = ArrayIndex.getArrayIndex(primitiveKey);
-        return isValidStringIndex(index) || super.has(primitiveKey);
+        return isValid(index) || super.has(primitiveKey);
     }
 
     @Override
     public boolean has(final int key) {
-        return isValidStringIndex(key) || super.has(key);
+        return isValid(key) || super.has(key);
+    }
+
+    @Override
+    public boolean has(final long key) {
+        final int index = ArrayIndex.getArrayIndex(key);
+        return isValid(index) || super.has(key);
     }
 
     @Override
     public boolean has(final double key) {
         final int index = ArrayIndex.getArrayIndex(key);
-        return isValidStringIndex(index) || super.has(key);
+        return isValid(index) || super.has(key);
     }
 
     @Override
     public boolean hasOwnProperty(final Object key) {
         final Object primitiveKey = JSType.toPrimitive(key, String.class);
         final int index = ArrayIndex.getArrayIndex(primitiveKey);
-        return isValidStringIndex(index) || super.hasOwnProperty(primitiveKey);
+        return isValid(index) || super.hasOwnProperty(primitiveKey);
     }
 
     @Override
     public boolean hasOwnProperty(final int key) {
-        return isValidStringIndex(key) || super.hasOwnProperty(key);
+        return isValid(key) || super.hasOwnProperty(key);
+    }
+
+    @Override
+    public boolean hasOwnProperty(final long key) {
+        final int index = ArrayIndex.getArrayIndex(key);
+        return isValid(index) || super.hasOwnProperty(key);
     }
 
     @Override
     public boolean hasOwnProperty(final double key) {
         final int index = ArrayIndex.getArrayIndex(key);
-        return isValidStringIndex(index) || super.hasOwnProperty(key);
+        return isValid(index) || super.hasOwnProperty(key);
     }
 
     @Override
     public boolean delete(final int key, final boolean strict) {
         return checkDeleteIndex(key, strict)? false : super.delete(key, strict);
+    }
+
+    @Override
+    public boolean delete(final long key, final boolean strict) {
+        final int index = ArrayIndex.getArrayIndex(key);
+        return checkDeleteIndex(index, strict)? false : super.delete(key, strict);
     }
 
     @Override
@@ -312,7 +368,7 @@ public final class NativeString extends ScriptObject implements OptimisticBuilti
     }
 
     private boolean checkDeleteIndex(final int index, final boolean strict) {
-        if (isValidStringIndex(index)) {
+        if (isValid(index)) {
             if (strict) {
                 throw typeError("cant.delete.property", Integer.toString(index), ScriptRuntime.safeToString(this));
             }
@@ -336,12 +392,10 @@ public final class NativeString extends ScriptObject implements OptimisticBuilti
     /**
      * return a List of own keys associated with the object.
      * @param all True if to include non-enumerable keys.
-     * @param nonEnumerable set of non-enumerable properties seen already.Used
-     * to filter out shadowed, but enumerable properties from proto children.
      * @return Array of keys.
      */
     @Override
-    protected String[] getOwnKeys(final boolean all, final Set<String> nonEnumerable) {
+    public String[] getOwnKeys(final boolean all) {
         final List<Object> keys = new ArrayList<>();
 
         // add string index keys
@@ -350,7 +404,7 @@ public final class NativeString extends ScriptObject implements OptimisticBuilti
         }
 
         // add super class properties
-        keys.addAll(Arrays.asList(super.getOwnKeys(all, nonEnumerable)));
+        keys.addAll(Arrays.asList(super.getOwnKeys(all)));
         return keys.toArray(new String[keys.size()]);
     }
 
@@ -371,7 +425,7 @@ public final class NativeString extends ScriptObject implements OptimisticBuilti
      * @return string with arguments translated to charcodes
      */
     @Function(attributes = Attribute.NOT_ENUMERABLE, arity = 1, where = Where.CONSTRUCTOR)
-    public static String fromCharCode(final Object self, final Object... args) {
+    public static Object fromCharCode(final Object self, final Object... args) {
         final char[] buf = new char[args.length];
         int index = 0;
         for (final Object arg : args) {
@@ -388,10 +442,11 @@ public final class NativeString extends ScriptObject implements OptimisticBuilti
      */
     @SpecializedFunction
     public static Object fromCharCode(final Object self, final Object value) {
-        if (value instanceof Integer) {
-            return fromCharCode(self, (int)value);
+        try {
+            return "" + (char)JSType.toUint16(((Number)value).doubleValue());
+        } catch (final ClassCastException e) {
+            return fromCharCode(self, new Object[] { value });
         }
-        return Character.toString((char)JSType.toUint16(value));
     }
 
     /**
@@ -401,47 +456,19 @@ public final class NativeString extends ScriptObject implements OptimisticBuilti
      * @return string with one charcode
      */
     @SpecializedFunction
-    public static String fromCharCode(final Object self, final int value) {
-        return Character.toString((char)(value & 0xffff));
+    public static Object fromCharCode(final Object self, final int value) {
+        return "" + (char)(value & 0xffff);
     }
 
     /**
-     * ECMA 15.5.3.2 - specialization for two chars of int type
+     * ECMA 15.5.3.2 - specialization for one char of long type
      * @param self  self reference
-     * @param ch1 first char
-     * @param ch2 second char
+     * @param value one argument to be interpreted as char
      * @return string with one charcode
      */
     @SpecializedFunction
-    public static Object fromCharCode(final Object self, final int ch1, final int ch2) {
-        return Character.toString((char)(ch1 & 0xffff)) + Character.toString((char)(ch2 & 0xffff));
-    }
-
-    /**
-     * ECMA 15.5.3.2 - specialization for three chars of int type
-     * @param self  self reference
-     * @param ch1 first char
-     * @param ch2 second char
-     * @param ch3 third char
-     * @return string with one charcode
-     */
-    @SpecializedFunction
-    public static Object fromCharCode(final Object self, final int ch1, final int ch2, final int ch3) {
-        return Character.toString((char)(ch1 & 0xffff)) + Character.toString((char)(ch2 & 0xffff)) + Character.toString((char)(ch3 & 0xffff));
-    }
-
-    /**
-     * ECMA 15.5.3.2 - specialization for four chars of int type
-     * @param self  self reference
-     * @param ch1 first char
-     * @param ch2 second char
-     * @param ch3 third char
-     * @param ch4 fourth char
-     * @return string with one charcode
-     */
-    @SpecializedFunction
-    public static String fromCharCode(final Object self, final int ch1, final int ch2, final int ch3, final int ch4) {
-        return Character.toString((char)(ch1 & 0xffff)) + Character.toString((char)(ch2 & 0xffff)) + Character.toString((char)(ch3 & 0xffff)) + Character.toString((char)(ch4 & 0xffff));
+    public static Object fromCharCode(final Object self, final long value) {
+        return "" + (char)((int)value & 0xffff);
     }
 
     /**
@@ -451,8 +478,8 @@ public final class NativeString extends ScriptObject implements OptimisticBuilti
      * @return string with one charcode
      */
     @SpecializedFunction
-    public static String fromCharCode(final Object self, final double value) {
-        return Character.toString((char)JSType.toUint16(value));
+    public static Object fromCharCode(final Object self, final double value) {
+        return "" + (char)JSType.toUint16(value);
     }
 
     /**
@@ -461,7 +488,7 @@ public final class NativeString extends ScriptObject implements OptimisticBuilti
      * @return self as string
      */
     @Function(attributes = Attribute.NOT_ENUMERABLE)
-    public static String toString(final Object self) {
+    public static Object toString(final Object self) {
         return getString(self);
     }
 
@@ -471,7 +498,7 @@ public final class NativeString extends ScriptObject implements OptimisticBuilti
      * @return self as string
      */
     @Function(attributes = Attribute.NOT_ENUMERABLE)
-    public static String valueOf(final Object self) {
+    public static Object valueOf(final Object self) {
         return getString(self);
     }
 
@@ -482,7 +509,7 @@ public final class NativeString extends ScriptObject implements OptimisticBuilti
      * @return string representing the char at the given position
      */
     @Function(attributes = Attribute.NOT_ENUMERABLE)
-    public static String charAt(final Object self, final Object pos) {
+    public static Object charAt(final Object self, final Object pos) {
         return charAtImpl(checkObjectToString(self), JSType.toInteger(pos));
     }
 
@@ -509,15 +536,7 @@ public final class NativeString extends ScriptObject implements OptimisticBuilti
     }
 
     private static String charAtImpl(final String str, final int pos) {
-        return pos < 0 || pos >= str.length() ? "" : String.valueOf(str.charAt(pos));
-    }
-
-    private static int getValidChar(final Object self, final int pos) {
-        try {
-            return ((CharSequence)self).charAt(pos);
-        } catch (final IndexOutOfBoundsException e) {
-            throw new ClassCastException(); //invalid char, out of bounds, force relink
-        }
+        return (pos < 0 || pos >= str.length()) ? "" : String.valueOf(str.charAt(pos));
     }
 
     /**
@@ -527,10 +546,8 @@ public final class NativeString extends ScriptObject implements OptimisticBuilti
      * @return number representing charcode at position
      */
     @Function(attributes = Attribute.NOT_ENUMERABLE)
-    public static double charCodeAt(final Object self, final Object pos) {
-        final String str = checkObjectToString(self);
-        final int    idx = JSType.toInteger(pos);
-        return idx < 0 || idx >= str.length() ? Double.NaN : str.charAt(idx);
+    public static Object charCodeAt(final Object self, final Object pos) {
+        return charCodeAtImpl(checkObjectToString(self), JSType.toInteger(pos));
     }
 
     /**
@@ -539,20 +556,9 @@ public final class NativeString extends ScriptObject implements OptimisticBuilti
      * @param pos  position in string
      * @return number representing charcode at position
      */
-    @SpecializedFunction(linkLogic=CharCodeAtLinkLogic.class)
-    public static int charCodeAt(final Object self, final double pos) {
-        return charCodeAt(self, (int)pos); //toInt pos is ok
-    }
-
-    /**
-     * ECMA 15.5.4.5 String.prototype.charCodeAt (pos) - specialized version for long position
-     * @param self self reference
-     * @param pos  position in string
-     * @return number representing charcode at position
-     */
-    @SpecializedFunction(linkLogic=CharCodeAtLinkLogic.class)
-    public static int charCodeAt(final Object self, final long pos) {
-        return charCodeAt(self, (int)pos);
+    @SpecializedFunction
+    public static double charCodeAt(final Object self, final double pos) {
+        return charCodeAt(self, (int) pos);
     }
 
     /**
@@ -561,10 +567,13 @@ public final class NativeString extends ScriptObject implements OptimisticBuilti
      * @param pos  position in string
      * @return number representing charcode at position
      */
+    @SpecializedFunction
+    public static double charCodeAt(final Object self, final int pos) {
+        return charCodeAtImpl(checkObjectToString(self), pos);
+    }
 
-    @SpecializedFunction(linkLogic=CharCodeAtLinkLogic.class)
-    public static int charCodeAt(final Object self, final int pos) {
-        return getValidChar(self, pos);
+    private static double charCodeAtImpl(final String str, final int pos) {
+        return (pos < 0 || pos >= str.length()) ? Double.NaN :  str.charAt(pos);
     }
 
     /**
@@ -592,7 +601,7 @@ public final class NativeString extends ScriptObject implements OptimisticBuilti
      * @return position of first match or -1
      */
     @Function(attributes = Attribute.NOT_ENUMERABLE, arity = 1)
-    public static int indexOf(final Object self, final Object search, final Object pos) {
+    public static Object indexOf(final Object self, final Object search, final Object pos) {
         final String str = checkObjectToString(self);
         return str.indexOf(JSType.toString(search), JSType.toInteger(pos));
     }
@@ -640,7 +649,7 @@ public final class NativeString extends ScriptObject implements OptimisticBuilti
      * @return last position of match or -1
      */
     @Function(attributes = Attribute.NOT_ENUMERABLE, arity = 1)
-    public static int lastIndexOf(final Object self, final Object search, final Object pos) {
+    public static Object lastIndexOf(final Object self, final Object search, final Object pos) {
 
         final String str       = checkObjectToString(self);
         final String searchStr = JSType.toString(search);
@@ -671,7 +680,7 @@ public final class NativeString extends ScriptObject implements OptimisticBuilti
      * @return result of locale sensitive comparison operation between {@code self} and {@code that}
      */
     @Function(attributes = Attribute.NOT_ENUMERABLE)
-    public static double localeCompare(final Object self, final Object that) {
+    public static Object localeCompare(final Object self, final Object that) {
 
         final String   str      = checkObjectToString(self);
         final Collator collator = Collator.getInstance(Global.getEnv()._locale);
@@ -679,7 +688,7 @@ public final class NativeString extends ScriptObject implements OptimisticBuilti
         collator.setStrength(Collator.IDENTICAL);
         collator.setDecomposition(Collator.CANONICAL_DECOMPOSITION);
 
-        return collator.compare(str, JSType.toString(that));
+        return (double)collator.compare(str, JSType.toString(that));
     }
 
     /**
@@ -689,7 +698,7 @@ public final class NativeString extends ScriptObject implements OptimisticBuilti
      * @return array of regexp matches
      */
     @Function(attributes = Attribute.NOT_ENUMERABLE)
-    public static ScriptObject match(final Object self, final Object regexp) {
+    public static Object match(final Object self, final Object regexp) {
 
         final String str = checkObjectToString(self);
 
@@ -734,10 +743,9 @@ public final class NativeString extends ScriptObject implements OptimisticBuilti
      * @param string      item to replace
      * @param replacement item to replace it with
      * @return string after replacement
-     * @throws Throwable if replacement fails
      */
     @Function(attributes = Attribute.NOT_ENUMERABLE)
-    public static String replace(final Object self, final Object string, final Object replacement) throws Throwable {
+    public static Object replace(final Object self, final Object string, final Object replacement) {
 
         final String str = checkObjectToString(self);
 
@@ -748,8 +756,8 @@ public final class NativeString extends ScriptObject implements OptimisticBuilti
             nativeRegExp = NativeRegExp.flatRegExp(JSType.toString(string));
         }
 
-        if (Bootstrap.isCallable(replacement)) {
-            return nativeRegExp.replace(str, "", replacement);
+        if (replacement instanceof ScriptFunction) {
+            return nativeRegExp.replace(str, "", (ScriptFunction)replacement);
         }
 
         return nativeRegExp.replace(str, JSType.toString(replacement), null);
@@ -763,7 +771,7 @@ public final class NativeString extends ScriptObject implements OptimisticBuilti
      * @return offset where match occurred
      */
     @Function(attributes = Attribute.NOT_ENUMERABLE)
-    public static int search(final Object self, final Object string) {
+    public static Object search(final Object self, final Object string) {
 
         final String       str          = checkObjectToString(self);
         final NativeRegExp nativeRegExp = Global.toRegExp(string == UNDEFINED ? "" : string);
@@ -780,7 +788,7 @@ public final class NativeString extends ScriptObject implements OptimisticBuilti
      * @return sliced out substring
      */
     @Function(attributes = Attribute.NOT_ENUMERABLE)
-    public static String slice(final Object self, final Object start, final Object end) {
+    public static Object slice(final Object self, final Object start, final Object end) {
 
         final String str      = checkObjectToString(self);
         if (end == UNDEFINED) {
@@ -797,9 +805,9 @@ public final class NativeString extends ScriptObject implements OptimisticBuilti
      * @return sliced out substring
      */
     @SpecializedFunction
-    public static String slice(final Object self, final int start) {
+    public static Object slice(final Object self, final int start) {
         final String str = checkObjectToString(self);
-        final int from = start < 0 ? Math.max(str.length() + start, 0) : Math.min(start, str.length());
+        final int from = (start < 0) ? Math.max(str.length() + start, 0) : Math.min(start, str.length());
 
         return str.substring(from);
     }
@@ -812,7 +820,7 @@ public final class NativeString extends ScriptObject implements OptimisticBuilti
      * @return sliced out substring
      */
     @SpecializedFunction
-    public static String slice(final Object self, final double start) {
+    public static Object slice(final Object self, final double start) {
         return slice(self, (int)start);
     }
 
@@ -825,13 +833,13 @@ public final class NativeString extends ScriptObject implements OptimisticBuilti
      * @return sliced out substring
      */
     @SpecializedFunction
-    public static String slice(final Object self, final int start, final int end) {
+    public static Object slice(final Object self, final int start, final int end) {
 
         final String str = checkObjectToString(self);
         final int len    = str.length();
 
-        final int from = start < 0 ? Math.max(len + start, 0) : Math.min(start, len);
-        final int to   = end < 0   ? Math.max(len + end, 0)   : Math.min(end, len);
+        final int from = (start < 0) ? Math.max(len + start, 0) : Math.min(start, len);
+        final int to   = (end < 0)   ? Math.max(len + end, 0)   : Math.min(end, len);
 
         return str.substring(Math.min(from, to), to);
     }
@@ -845,7 +853,7 @@ public final class NativeString extends ScriptObject implements OptimisticBuilti
      * @return sliced out substring
      */
     @SpecializedFunction
-    public static String slice(final Object self, final double start, final double end) {
+    public static Object slice(final Object self, final double start, final double end) {
         return slice(self, (int)start, (int)end);
     }
 
@@ -858,9 +866,9 @@ public final class NativeString extends ScriptObject implements OptimisticBuilti
      * @return array object in which splits have been placed
      */
     @Function(attributes = Attribute.NOT_ENUMERABLE)
-    public static ScriptObject split(final Object self, final Object separator, final Object limit) {
+    public static Object split(final Object self, final Object separator, final Object limit) {
         final String str = checkObjectToString(self);
-        final long lim = limit == UNDEFINED ? JSType.MAX_UINT : JSType.toUint32(limit);
+        final long lim = (limit == UNDEFINED) ? JSType.MAX_UINT : JSType.toUint32(limit);
 
         if (separator == UNDEFINED) {
             return lim == 0 ? new NativeArray() : new NativeArray(new Object[]{str});
@@ -874,7 +882,7 @@ public final class NativeString extends ScriptObject implements OptimisticBuilti
         return splitString(str, JSType.toString(separator), lim);
     }
 
-    private static ScriptObject splitString(final String str, final String separator, final long limit) {
+    private static Object splitString(String str, String separator, long limit) {
         if (separator.isEmpty()) {
             final int length = (int) Math.min(str.length(), limit);
             final Object[] array = new Object[length];
@@ -891,7 +899,7 @@ public final class NativeString extends ScriptObject implements OptimisticBuilti
         int n = 0;
 
         while (pos < strLength && n < limit) {
-            final int found = str.indexOf(separator, pos);
+            int found = str.indexOf(separator, pos);
             if (found == -1) {
                 break;
             }
@@ -915,7 +923,7 @@ public final class NativeString extends ScriptObject implements OptimisticBuilti
      * @return substring given start and length of section
      */
     @Function(attributes = Attribute.NOT_ENUMERABLE)
-    public static String substr(final Object self, final Object start, final Object length) {
+    public static Object substr(final Object self, final Object start, final Object length) {
         final String str       = JSType.toString(self);
         final int    strLength = str.length();
 
@@ -924,7 +932,7 @@ public final class NativeString extends ScriptObject implements OptimisticBuilti
             intStart = Math.max(intStart + strLength, 0);
         }
 
-        final int intLen = Math.min(Math.max(length == UNDEFINED ? Integer.MAX_VALUE : JSType.toInteger(length), 0), strLength - intStart);
+        final int intLen = Math.min(Math.max((length == UNDEFINED) ? Integer.MAX_VALUE : JSType.toInteger(length), 0), strLength - intStart);
 
         return intLen <= 0 ? "" : str.substring(intStart, intStart + intLen);
     }
@@ -938,7 +946,7 @@ public final class NativeString extends ScriptObject implements OptimisticBuilti
      * @return substring given start and end indexes
      */
     @Function(attributes = Attribute.NOT_ENUMERABLE)
-    public static String substring(final Object self, final Object start, final Object end) {
+    public static Object substring(final Object self, final Object start, final Object end) {
 
         final String str = checkObjectToString(self);
         if (end == UNDEFINED) {
@@ -990,8 +998,8 @@ public final class NativeString extends ScriptObject implements OptimisticBuilti
     public static String substring(final Object self, final int start, final int end) {
         final String str = checkObjectToString(self);
         final int len = str.length();
-        final int validStart = start < 0 ? 0 : start > len ? len : start;
-        final int validEnd   = end < 0 ? 0 : end > len ? len : end;
+        final int validStart = start < 0 ? 0 : (start > len ? len : start);
+        final int validEnd   = end < 0 ? 0 : (end > len ? len : end);
 
         if (validStart < validEnd) {
             return str.substring(validStart, validEnd);
@@ -1018,7 +1026,7 @@ public final class NativeString extends ScriptObject implements OptimisticBuilti
      * @return string to lower case
      */
     @Function(attributes = Attribute.NOT_ENUMERABLE)
-    public static String toLowerCase(final Object self) {
+    public static Object toLowerCase(final Object self) {
         return checkObjectToString(self).toLowerCase(Locale.ROOT);
     }
 
@@ -1028,7 +1036,7 @@ public final class NativeString extends ScriptObject implements OptimisticBuilti
      * @return string to locale sensitive lower case
      */
     @Function(attributes = Attribute.NOT_ENUMERABLE)
-    public static String toLocaleLowerCase(final Object self) {
+    public static Object toLocaleLowerCase(final Object self) {
         return checkObjectToString(self).toLowerCase(Global.getEnv()._locale);
     }
 
@@ -1038,7 +1046,7 @@ public final class NativeString extends ScriptObject implements OptimisticBuilti
      * @return string to upper case
      */
     @Function(attributes = Attribute.NOT_ENUMERABLE)
-    public static String toUpperCase(final Object self) {
+    public static Object toUpperCase(final Object self) {
         return checkObjectToString(self).toUpperCase(Locale.ROOT);
     }
 
@@ -1048,7 +1056,7 @@ public final class NativeString extends ScriptObject implements OptimisticBuilti
      * @return string to locale sensitive upper case
      */
     @Function(attributes = Attribute.NOT_ENUMERABLE)
-    public static String toLocaleUpperCase(final Object self) {
+    public static Object toLocaleUpperCase(final Object self) {
         return checkObjectToString(self).toUpperCase(Global.getEnv()._locale);
     }
 
@@ -1058,7 +1066,8 @@ public final class NativeString extends ScriptObject implements OptimisticBuilti
      * @return string trimmed from whitespace
      */
     @Function(attributes = Attribute.NOT_ENUMERABLE)
-    public static String trim(final Object self) {
+    public static Object trim(final Object self) {
+
         final String str = checkObjectToString(self);
         int start = 0;
         int end   = str.length() - 1;
@@ -1079,11 +1088,11 @@ public final class NativeString extends ScriptObject implements OptimisticBuilti
      * @return string trimmed left from whitespace
      */
     @Function(attributes = Attribute.NOT_ENUMERABLE)
-    public static String trimLeft(final Object self) {
+    public static Object trimLeft(final Object self) {
 
         final String str = checkObjectToString(self);
         int start = 0;
-        final int end   = str.length() - 1;
+        int end   = str.length() - 1;
 
         while (start <= end && ScriptRuntime.isJSWhitespace(str.charAt(start))) {
             start++;
@@ -1098,10 +1107,10 @@ public final class NativeString extends ScriptObject implements OptimisticBuilti
      * @return string trimmed right from whitespace
      */
     @Function(attributes = Attribute.NOT_ENUMERABLE)
-    public static String trimRight(final Object self) {
+    public static Object trimRight(final Object self) {
 
         final String str = checkObjectToString(self);
-        final int start = 0;
+        int start = 0;
         int end   = str.length() - 1;
 
         while (end >= start && ScriptRuntime.isJSWhitespace(str.charAt(end))) {
@@ -1111,7 +1120,7 @@ public final class NativeString extends ScriptObject implements OptimisticBuilti
         return str.substring(start, end + 1);
     }
 
-    private static ScriptObject newObj(final CharSequence str) {
+    private static Object newObj(final Object self, final CharSequence str) {
         return new NativeString(str);
     }
 
@@ -1128,8 +1137,8 @@ public final class NativeString extends ScriptObject implements OptimisticBuilti
      */
     @Constructor(arity = 1)
     public static Object constructor(final boolean newObj, final Object self, final Object... args) {
-        final CharSequence str = args.length > 0 ? JSType.toCharSequence(args[0]) : "";
-        return newObj ? newObj(str) : str.toString();
+        final CharSequence str = (args.length > 0) ? JSType.toCharSequence(args[0]) : "";
+        return newObj ? newObj(self, str) : str.toString();
     }
 
     /**
@@ -1142,9 +1151,9 @@ public final class NativeString extends ScriptObject implements OptimisticBuilti
      *
      * @return new NativeString ("")
      */
-    @SpecializedFunction(isConstructor=true)
+    @SpecializedConstructor
     public static Object constructor(final boolean newObj, final Object self) {
-        return newObj ? newObj("") : "";
+        return newObj ? newObj(self, "") : "";
     }
 
     /**
@@ -1158,10 +1167,10 @@ public final class NativeString extends ScriptObject implements OptimisticBuilti
      *
      * @return new NativeString (arg)
      */
-    @SpecializedFunction(isConstructor=true)
+    @SpecializedConstructor
     public static Object constructor(final boolean newObj, final Object self, final Object arg) {
         final CharSequence str = JSType.toCharSequence(arg);
-        return newObj ? newObj(str) : str.toString();
+        return newObj ? newObj(self, str) : str.toString();
     }
 
     /**
@@ -1175,61 +1184,10 @@ public final class NativeString extends ScriptObject implements OptimisticBuilti
      *
      * @return new NativeString containing the string representation of the arg
      */
-    @SpecializedFunction(isConstructor=true)
+    @SpecializedConstructor
     public static Object constructor(final boolean newObj, final Object self, final int arg) {
-        final String str = Integer.toString(arg);
-        return newObj ? newObj(str) : str;
-    }
-
-    /**
-     * ECMA 15.5.2.1 new String ( [ value ] ) - special version with exactly one {@code int} arg
-     *
-     * Constructor
-     *
-     * @param newObj is this constructor invoked with the new operator
-     * @param self   self reference
-     * @param arg    the arg
-     *
-     * @return new NativeString containing the string representation of the arg
-     */
-    @SpecializedFunction(isConstructor=true)
-    public static Object constructor(final boolean newObj, final Object self, final long arg) {
-        final String str = Long.toString(arg);
-        return newObj ? newObj(str) : str;
-    }
-
-    /**
-     * ECMA 15.5.2.1 new String ( [ value ] ) - special version with exactly one {@code int} arg
-     *
-     * Constructor
-     *
-     * @param newObj is this constructor invoked with the new operator
-     * @param self   self reference
-     * @param arg    the arg
-     *
-     * @return new NativeString containing the string representation of the arg
-     */
-    @SpecializedFunction(isConstructor=true)
-    public static Object constructor(final boolean newObj, final Object self, final double arg) {
         final String str = JSType.toString(arg);
-        return newObj ? newObj(str) : str;
-    }
-
-    /**
-     * ECMA 15.5.2.1 new String ( [ value ] ) - special version with exactly one {@code boolean} arg
-     *
-     * Constructor
-     *
-     * @param newObj is this constructor invoked with the new operator
-     * @param self   self reference
-     * @param arg    the arg
-     *
-     * @return new NativeString containing the string representation of the arg
-     */
-    @SpecializedFunction(isConstructor=true)
-    public static Object constructor(final boolean newObj, final Object self, final boolean arg) {
-        final String str = Boolean.toString(arg);
-        return newObj ? newObj(str) : str;
+        return newObj ? newObj(self, str) : str;
     }
 
     /**
@@ -1240,8 +1198,8 @@ public final class NativeString extends ScriptObject implements OptimisticBuilti
      * @return Link to be invoked at call site.
      */
     public static GuardedInvocation lookupPrimitive(final LinkRequest request, final Object receiver) {
-        return PrimitiveLookup.lookupPrimitive(request, NashornGuards.getStringGuard(),
-                new NativeString((CharSequence)receiver), WRAPFILTER, PROTOFILTER);
+        final MethodHandle guard = NashornGuards.getInstanceOf2Guard(String.class, ConsString.class);
+        return PrimitiveLookup.lookupPrimitive(request, guard, new NativeString((CharSequence)receiver), WRAPFILTER);
     }
 
     @SuppressWarnings("unused")
@@ -1249,13 +1207,8 @@ public final class NativeString extends ScriptObject implements OptimisticBuilti
         return new NativeString((CharSequence)receiver);
     }
 
-    @SuppressWarnings("unused")
-    private static Object protoFilter(final Object object) {
-        return Global.instance().getStringPrototype();
-    }
-
     private static CharSequence getCharSequence(final Object self) {
-        if (JSType.isString(self)) {
+        if (self instanceof String || self instanceof ConsString) {
             return (CharSequence)self;
         } else if (self instanceof NativeString) {
             return ((NativeString)self).getValue();
@@ -1276,7 +1229,7 @@ public final class NativeString extends ScriptObject implements OptimisticBuilti
         } else if (self != null && self == Global.instance().getStringPrototype()) {
             return "";
         } else {
-            throw typeError("not.a.string", ScriptRuntime.safeToString(self));
+            throw typeError( "not.a.string", ScriptRuntime.safeToString(self));
         }
     }
 
@@ -1297,57 +1250,11 @@ public final class NativeString extends ScriptObject implements OptimisticBuilti
         }
     }
 
-    private boolean isValidStringIndex(final int key) {
+    private boolean isValid(final int key) {
         return key >= 0 && key < value.length();
     }
 
-    private static MethodHandle findOwnMH(final String name, final MethodType type) {
-        return MH.findStatic(MethodHandles.lookup(), NativeString.class, name, type);
-    }
-
-    @Override
-    public LinkLogic getLinkLogic(final Class<? extends LinkLogic> clazz) {
-        if (clazz == CharCodeAtLinkLogic.class) {
-            return CharCodeAtLinkLogic.INSTANCE;
-        }
-        return null;
-    }
-
-    @Override
-    public boolean hasPerInstanceAssumptions() {
-        return false;
-    }
-
-    /**
-     * This is linker logic charCodeAt - when we specialize further methods in NativeString
-     * It may be expanded. It's link check makes sure that we are dealing with a char
-     * sequence and that we are in range
-     */
-    private static final class CharCodeAtLinkLogic extends SpecializedFunction.LinkLogic {
-        private static final CharCodeAtLinkLogic INSTANCE = new CharCodeAtLinkLogic();
-
-        @Override
-        public boolean canLink(final Object self, final CallSiteDescriptor desc, final LinkRequest request) {
-            try {
-                //check that it's a char sequence or throw cce
-                final CharSequence cs = (CharSequence)self;
-                //check that the index, representable as an int, is inside the array
-                final int intIndex = JSType.toInteger(request.getArguments()[2]);
-                return intIndex >= 0 && intIndex < cs.length(); //can link
-            } catch (final ClassCastException | IndexOutOfBoundsException e) {
-                //fallthru
-            }
-            return false;
-        }
-
-        /**
-         * charCodeAt callsites can throw ClassCastException as a mechanism to have them
-         * relinked - this enabled fast checks of the kind of ((IntArrayData)arrayData).push(x)
-         * for an IntArrayData only push - if this fails, a CCE will be thrown and we will relink
-         */
-        @Override
-        public Class<? extends Throwable> getRelinkException() {
-            return ClassCastException.class;
-        }
+    private static MethodHandle findWrapFilter() {
+        return MH.findStatic(MethodHandles.lookup(), NativeString.class, "wrapFilter", MH.type(NativeString.class, Object.class));
     }
 }

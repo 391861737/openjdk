@@ -128,8 +128,8 @@ public class XMLReaderManager {
                     try {
                         reader.setFeature(XMLConstants.FEATURE_SECURE_PROCESSING, _secureProcessing);
                     } catch (SAXNotRecognizedException e) {
-                        XMLSecurityManager.printWarning(reader.getClass().getName(),
-                                XMLConstants.FEATURE_SECURE_PROCESSING, e);
+                        System.err.println("Warning:  " + reader.getClass().getName() + ": "
+                                + e.getMessage());
                     }
                 } catch (Exception e) {
                    try {
@@ -172,25 +172,23 @@ public class XMLReaderManager {
             //reader is cached, but this property might have been reset
             reader.setProperty(XMLConstants.ACCESS_EXTERNAL_DTD, _accessExternalDTD);
         } catch (SAXException se) {
-            XMLSecurityManager.printWarning(reader.getClass().getName(),
-                    XMLConstants.ACCESS_EXTERNAL_DTD, se);
+            System.err.println("Warning:  " + reader.getClass().getName() + ": "
+                        + se.getMessage());
         }
 
-        String lastProperty = "";
         try {
             if (_xmlSecurityManager != null) {
                 for (XMLSecurityManager.Limit limit : XMLSecurityManager.Limit.values()) {
-                    lastProperty = limit.apiProperty();
-                    reader.setProperty(lastProperty,
+                    reader.setProperty(limit.apiProperty(),
                             _xmlSecurityManager.getLimitValueAsString(limit));
                 }
                 if (_xmlSecurityManager.printEntityCountInfo()) {
-                    lastProperty = XalanConstants.JDK_ENTITY_COUNT_INFO;
                     reader.setProperty(XalanConstants.JDK_ENTITY_COUNT_INFO, XalanConstants.JDK_YES);
                 }
             }
         } catch (SAXException se) {
-            XMLSecurityManager.printWarning(reader.getClass().getName(), lastProperty, se);
+            System.err.println("Warning:  " + reader.getClass().getName() + ": "
+                        + se.getMessage());
         }
 
         return reader;

@@ -26,7 +26,10 @@
  * @key nmt jcmd
  * @summary Verify that jcmd correctly reports that NMT is not enabled
  * @library /testlibrary
- * @run main JcmdWithNMTDisabled 1
+ * First run without enabling NMT
+ * @run main/othervm JcmdWithNMTDisabled
+ * Then run with explicitly disabling NMT, should not be any difference
+ * @run main/othervm -XX:NativeMemoryTracking=off JcmdWithNMTDisabled
  */
 
 import com.oracle.java.testlibrary.*;
@@ -36,27 +39,6 @@ public class JcmdWithNMTDisabled {
   static String pid;
 
   public static void main(String args[]) throws Exception {
-
-    // This test explicitly needs to be run with the exact command lines below, not passing on
-    // arguments from the parent VM is a conscious choice to avoid NMT being turned on.
-    if (args.length > 0) {
-      ProcessBuilder pb;
-      OutputAnalyzer output;
-      String testjdkPath = System.getProperty("test.jdk");
-
-      // First run without enabling NMT
-      pb = ProcessTools.createJavaProcessBuilder("-Dtest.jdk=" + testjdkPath, "JcmdWithNMTDisabled");
-      output = new OutputAnalyzer(pb.start());
-      output.shouldHaveExitValue(0);
-
-      // Then run with explicitly disabling NMT, should not be any difference
-      pb = ProcessTools.createJavaProcessBuilder("-Dtest.jdk=" + testjdkPath, "-XX:NativeMemoryTracking=off", "JcmdWithNMTDisabled");
-      output = new OutputAnalyzer(pb.start());
-      output.shouldHaveExitValue(0);
-
-      return;
-    }
-
     // Grab my own PID
     pid = Integer.toString(ProcessTools.getProcessId());
 

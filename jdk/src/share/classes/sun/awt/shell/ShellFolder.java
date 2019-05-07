@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2000, 2014, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2000, 2009, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -199,23 +199,19 @@ public abstract class ShellFolder extends File {
 
     // Static
 
-    private static final ShellFolderManager shellFolderManager;
+    private static ShellFolderManager shellFolderManager;
 
-    private static final Invoker invoker;
+    private static Invoker invoker;
 
     static {
         String managerClassName = (String)Toolkit.getDefaultToolkit().
                                       getDesktopProperty("Shell.shellFolderManager");
         Class managerClass = null;
         try {
-            managerClass = Class.forName(managerClassName, false, null);
-            if (!ShellFolderManager.class.isAssignableFrom(managerClass)) {
-                managerClass = null;
-            }
+            managerClass = Class.forName(managerClassName);
         // swallow the exceptions below and use default shell folder
         } catch(ClassNotFoundException e) {
         } catch(NullPointerException e) {
-        } catch(SecurityException e) {
         }
 
         if (managerClass == null) {

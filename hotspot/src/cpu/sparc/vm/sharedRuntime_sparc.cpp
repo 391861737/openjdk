@@ -1106,9 +1106,7 @@ static VMReg int_stk_helper( int i ) {
 
 int SharedRuntime::c_calling_convention(const BasicType *sig_bt,
                                          VMRegPair *regs,
-                                         VMRegPair *regs2,
                                          int total_args_passed) {
-    assert(regs2 == NULL, "not needed on sparc");
 
     // Return the number of VMReg stack_slots needed for the args.
     // This value does not include an abi space (like register window
@@ -1128,82 +1126,51 @@ int SharedRuntime::c_calling_convention(const BasicType *sig_bt,
     // Hoist any int/ptr/long's in the first 6 to int regs.
     // Hoist any flt/dbl's in the first 16 dbl regs.
     int j = 0;                  // Count of actual args, not HALVES
-    VMRegPair param_array_reg;  // location of the argument in the parameter array
-    for (int i = 0; i < total_args_passed; i++, j++) {
-      param_array_reg.set_bad();
-      switch (sig_bt[i]) {
+    for( int i=0; i<total_args_passed; i++, j++ ) {
+      switch( sig_bt[i] ) {
       case T_BOOLEAN:
       case T_BYTE:
       case T_CHAR:
       case T_INT:
       case T_SHORT:
-        regs[i].set1(int_stk_helper(j));
-        break;
+        regs[i].set1( int_stk_helper( j ) ); break;
       case T_LONG:
-        assert(sig_bt[i+1] == T_VOID, "expecting half");
+        assert( sig_bt[i+1] == T_VOID, "expecting half" );
       case T_ADDRESS: // raw pointers, like current thread, for VM calls
       case T_ARRAY:
       case T_OBJECT:
       case T_METADATA:
-        regs[i].set2(int_stk_helper(j));
+        regs[i].set2( int_stk_helper( j ) );
         break;
       case T_FLOAT:
-        // Per SPARC Compliance Definition 2.4.1, page 3P-12 available here
-        // http://www.sparc.org/wp-content/uploads/2014/01/SCD.2.4.1.pdf.gz
-        //
-        // "When a callee prototype exists, and does not indicate variable arguments,
-        // floating-point values assigned to locations %sp+BIAS+128 through %sp+BIAS+248
-        // will be promoted to floating-point registers"
-        //
-        // By "promoted" it means that the argument is located in two places, an unused
-        // spill slot in the "parameter array" (starts at %sp+BIAS+128), and a live
-        // float register.  In most cases, there are 6 or fewer arguments of any type,
-        // and the standard parameter array slots (%sp+BIAS+128 to %sp+BIAS+176 exclusive)
-        // serve as shadow slots.  Per the spec floating point registers %d6 to %d16
-        // require slots beyond that (up to %sp+BIAS+248).
-        //
-        {
-          // V9ism: floats go in ODD registers and stack slots
-          int float_index = 1 + (j << 1);
-          param_array_reg.set1(VMRegImpl::stack2reg(float_index));
-          if (j < 16) {
-            regs[i].set1(as_FloatRegister(float_index)->as_VMReg());
-          } else {
-            regs[i] = param_array_reg;
-          }
+        if ( j < 16 ) {
+          // V9ism: floats go in ODD registers
+          regs[i].set1(as_FloatRegister(1 + (j<<1))->as_VMReg());
+        } else {
+          // V9ism: floats go in ODD stack slot
+          regs[i].set1(VMRegImpl::stack2reg(1 + (j<<1)));
         }
         break;
       case T_DOUBLE:
-        {
-          assert(sig_bt[i + 1] == T_VOID, "expecting half");
-          // V9ism: doubles go in EVEN/ODD regs and stack slots
-          int double_index = (j << 1);
-          param_array_reg.set2(VMRegImpl::stack2reg(double_index));
-          if (j < 16) {
-            regs[i].set2(as_FloatRegister(double_index)->as_VMReg());
-          } else {
-            // V9ism: doubles go in EVEN/ODD stack slots
-            regs[i] = param_array_reg;
-          }
+        assert( sig_bt[i+1] == T_VOID, "expecting half" );
+        if ( j < 16 ) {
+          // V9ism: doubles go in EVEN/ODD regs
+          regs[i].set2(as_FloatRegister(j<<1)->as_VMReg());
+        } else {
+          // V9ism: doubles go in EVEN/ODD stack slots
+          regs[i].set2(VMRegImpl::stack2reg(j<<1));
         }
         break;
-      case T_VOID:
-        regs[i].set_bad();
-        j--;
-        break; // Do not count HALVES
+      case T_VOID:  regs[i].set_bad(); j--; break; // Do not count HALVES
       default:
         ShouldNotReachHere();
       }
-      // Keep track of the deepest parameter array slot.
-      if (!param_array_reg.first()->is_valid()) {
-        param_array_reg = regs[i];
-      }
-      if (param_array_reg.first()->is_stack()) {
-        int off = param_array_reg.first()->reg2stack();
+      if (regs[i].first()->is_stack()) {
+        int off =  regs[i].first()->reg2stack();
         if (off > max_stack_slots) max_stack_slots = off;
       }
-      if (param_array_reg.second()->is_stack()) {
-        int off = param_array_reg.second()->reg2stack();
+      if (regs[i].second()->is_stack()) {
+        int off =  regs[i].second()->reg2stack();
         if (off > max_stack_slots) max_stack_slots = off;
       }
     }
@@ -1211,8 +1178,8 @@ int SharedRuntime::c_calling_convention(const BasicType *sig_bt,
 #else // _LP64
     // V8 convention: first 6 things in O-regs, rest on stack.
     // Alignment is willy-nilly.
-    for (int i = 0; i < total_args_passed; i++) {
-      switch (sig_bt[i]) {
+    for( int i=0; i<total_args_passed; i++ ) {
+      switch( sig_bt[i] ) {
       case T_ADDRESS: // raw pointers, like current thread, for VM calls
       case T_ARRAY:
       case T_BOOLEAN:
@@ -1223,23 +1190,23 @@ int SharedRuntime::c_calling_convention(const BasicType *sig_bt,
       case T_OBJECT:
       case T_METADATA:
       case T_SHORT:
-        regs[i].set1(int_stk_helper(i));
+        regs[i].set1( int_stk_helper( i ) );
         break;
       case T_DOUBLE:
       case T_LONG:
-        assert(sig_bt[i + 1] == T_VOID, "expecting half");
-        regs[i].set_pair(int_stk_helper(i + 1), int_stk_helper(i));
+        assert( sig_bt[i+1] == T_VOID, "expecting half" );
+        regs[i].set_pair( int_stk_helper( i+1 ), int_stk_helper( i ) );
         break;
       case T_VOID: regs[i].set_bad(); break;
       default:
         ShouldNotReachHere();
       }
       if (regs[i].first()->is_stack()) {
-        int off = regs[i].first()->reg2stack();
+        int off =  regs[i].first()->reg2stack();
         if (off > max_stack_slots) max_stack_slots = off;
       }
       if (regs[i].second()->is_stack()) {
-        int off = regs[i].second()->reg2stack();
+        int off =  regs[i].second()->reg2stack();
         if (off > max_stack_slots) max_stack_slots = off;
       }
     }
@@ -1326,12 +1293,9 @@ static void move32_64(MacroAssembler* masm, VMRegPair src, VMRegPair dst) {
     }
   } else if (dst.first()->is_stack()) {
     // reg to stack
-    // Some compilers (gcc) expect a clean 32 bit value on function entry
-    __ signx(src.first()->as_Register(), L5);
-    __ st_ptr(L5, SP, reg2offset(dst.first()) + STACK_BIAS);
+    __ st_ptr(src.first()->as_Register(), SP, reg2offset(dst.first()) + STACK_BIAS);
   } else {
-    // Some compilers (gcc) expect a clean 32 bit value on function entry
-    __ signx(src.first()->as_Register(), dst.first()->as_Register());
+    __ mov(src.first()->as_Register(), dst.first()->as_Register());
   }
 }
 
@@ -1391,10 +1355,11 @@ static void object_move(MacroAssembler* masm,
     const Register rOop = src.first()->as_Register();
     const Register rHandle = L5;
     int oop_slot = rOop->input_number() * VMRegImpl::slots_per_word + oop_handle_offset;
-    int offset = oop_slot * VMRegImpl::stack_slot_size;
+    int offset = oop_slot*VMRegImpl::stack_slot_size;
+    Label skip;
     __ st_ptr(rOop, SP, offset + STACK_BIAS);
     if (is_receiver) {
-       *receiver_offset = offset;
+      *receiver_offset = oop_slot * VMRegImpl::stack_slot_size;
     }
     map->set_oop(VMRegImpl::stack2reg(oop_slot));
     __ add(SP, offset + STACK_BIAS, rHandle);
@@ -2119,7 +2084,7 @@ nmethod* SharedRuntime::generate_native_wrapper(MacroAssembler* masm,
   // the 1st six register arguments). It's weird see int_stk_helper.
   //
   int out_arg_slots;
-  out_arg_slots = c_calling_convention(out_sig_bt, out_regs, NULL, total_c_args);
+  out_arg_slots = c_calling_convention(out_sig_bt, out_regs, total_c_args);
 
   if (is_critical_native) {
     // Critical natives may have to call out so they need a save area
@@ -2720,7 +2685,7 @@ nmethod* SharedRuntime::generate_native_wrapper(MacroAssembler* masm,
   if (!is_critical_native) {
     // reset handle block
     __ ld_ptr(G2_thread, in_bytes(JavaThread::active_handles_offset()), L5);
-    __ st(G0, L5, JNIHandleBlock::top_offset_in_bytes());
+    __ st_ptr(G0, L5, JNIHandleBlock::top_offset_in_bytes());
 
     __ ld_ptr(G2_thread, in_bytes(Thread::pending_exception_offset()), G3_scratch);
     check_forward_pending_exception(masm, G3_scratch);
@@ -2866,7 +2831,7 @@ nmethod *SharedRuntime::generate_dtrace_nmethod(
   // the 1st six register arguments). It's weird see int_stk_helper.
   //
   int out_arg_slots;
-  out_arg_slots = c_calling_convention(out_sig_bt, out_regs, NULL, total_c_args);
+  out_arg_slots = c_calling_convention(out_sig_bt, out_regs, total_c_args);
 
   // Calculate the total number of stack slots we will need.
 
@@ -3388,16 +3353,13 @@ static void make_new_frames(MacroAssembler* masm, bool deopt) {
   Register        O4array_size       = O4;
   Label           loop;
 
-#ifdef ASSERT
-  // Compilers generate code that bang the stack by as much as the
-  // interpreter would need. So this stack banging should never
-  // trigger a fault. Verify that it does not on non product builds.
+  // Before we make new frames, check to see if stack is available.
+  // Do this after the caller's return address is on top of stack
   if (UseStackBanging) {
     // Get total frame size for interpreted frames
     __ ld(O2UnrollBlock, Deoptimization::UnrollBlock::total_frame_sizes_offset_in_bytes(), O4);
     __ bang_stack_size(O4, O3, G3_scratch);
   }
-#endif
 
   __ ld(O2UnrollBlock, Deoptimization::UnrollBlock::number_of_frames_offset_in_bytes(), O4array_size);
   __ ld_ptr(O2UnrollBlock, Deoptimization::UnrollBlock::frame_pcs_offset_in_bytes(), G3pcs);
@@ -3445,11 +3407,9 @@ void SharedRuntime::generate_deopt_blob() {
   ResourceMark rm;
   // setup code generation tools
   int pad = VerifyThread ? 512 : 0;// Extra slop space for more verify code
-#ifdef ASSERT
   if (UseStackBanging) {
     pad += StackShadowPages*16 + 32;
   }
-#endif
 #ifdef _LP64
   CodeBuffer buffer("deopt_blob", 2100+pad, 512);
 #else
@@ -3670,11 +3630,9 @@ void SharedRuntime::generate_uncommon_trap_blob() {
   ResourceMark rm;
   // setup code generation tools
   int pad = VerifyThread ? 512 : 0;
-#ifdef ASSERT
   if (UseStackBanging) {
     pad += StackShadowPages*16 + 32;
   }
-#endif
 #ifdef _LP64
   CodeBuffer buffer("uncommon_trap_blob", 2700+pad, 512);
 #else

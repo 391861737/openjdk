@@ -46,7 +46,6 @@ import com.sun.org.apache.xml.internal.security.transforms.implementations.Trans
 import com.sun.org.apache.xml.internal.security.transforms.implementations.TransformXSLT;
 import com.sun.org.apache.xml.internal.security.utils.Constants;
 import com.sun.org.apache.xml.internal.security.utils.HelperNodeList;
-import com.sun.org.apache.xml.internal.security.utils.JavaUtils;
 import com.sun.org.apache.xml.internal.security.utils.SignatureElementProxy;
 import com.sun.org.apache.xml.internal.security.utils.XMLUtils;
 import org.w3c.dom.Document;
@@ -182,14 +181,11 @@ public final class Transform extends SignatureElementProxy {
      * class of {@link TransformSpi}
      * @throws AlgorithmAlreadyRegisteredException if specified algorithmURI
      * is already registered
-     * @throws SecurityException if a security manager is installed and the
-     *    caller does not have permission to register the transform
      */
     @SuppressWarnings("unchecked")
     public static void register(String algorithmURI, String implementingClass)
         throws AlgorithmAlreadyRegisteredException, ClassNotFoundException,
             InvalidTransformException {
-        JavaUtils.checkRegisterPermission();
         // are we already registered?
         Class<? extends TransformSpi> transformSpi = transformSpiHash.get(algorithmURI);
         if (transformSpi != null) {
@@ -210,12 +206,9 @@ public final class Transform extends SignatureElementProxy {
      * class of {@link TransformSpi}
      * @throws AlgorithmAlreadyRegisteredException if specified algorithmURI
      * is already registered
-     * @throws SecurityException if a security manager is installed and the
-     *    caller does not have permission to register the transform
      */
     public static void register(String algorithmURI, Class<? extends TransformSpi> implementingClass)
         throws AlgorithmAlreadyRegisteredException {
-        JavaUtils.checkRegisterPermission();
         // are we already registered?
         Class<? extends TransformSpi> transformSpi = transformSpiHash.get(algorithmURI);
         if (transformSpi != null) {

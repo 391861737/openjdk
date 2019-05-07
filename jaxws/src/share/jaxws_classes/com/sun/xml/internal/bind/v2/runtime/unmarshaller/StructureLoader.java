@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 1997, 2014, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 1997, 2011, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -172,7 +172,7 @@ public final class StructureLoader extends Loader {
 
         context.recordInnerPeer(child);
 
-        state.setTarget(child);
+        state.target = child;
 
         fireBeforeUnmarshal(beanInfo, child, state);
 
@@ -197,7 +197,7 @@ public final class StructureLoader extends Loader {
                         String qname = atts.getQName(i);
                         if(atts.getURI(i).equals(WellKnownNamespace.XML_SCHEMA_INSTANCE))
                             continue;   // xsi:* attributes are meant to be processed by us, not by user apps.
-                        Object o = state.getTarget();
+                        Object o = state.target;
                         Map<QName,String> map = attCatchAll.get(o);
                         if(map==null) {
                             // TODO: use  ClassFactory.inferImplClass(sig,knownImplClasses)
@@ -231,16 +231,27 @@ public final class StructureLoader extends Loader {
     @Override
     public void childElement(UnmarshallingContext.State state, TagName arg) throws SAXException {
         ChildLoader child = childUnmarshallers.get(arg.uri,arg.local);
-        if (child == null) {
-            child = catchAll;
-            if (child==null) {
-                super.childElement(state,arg);
-                return;
+        if(child==null) {
+            if ((beanInfo != null) && (beanInfo.getTypeNames() != null)) {
+                Iterator typeNamesIt = beanInfo.getTypeNames().iterator();
+                QName parentQName = null;
+                if ((typeNamesIt != null) && (typeNamesIt.hasNext()) && (catchAll == null)) {
+                    parentQName = (QName) typeNamesIt.next();
+                    String parentUri = parentQName.getNamespaceURI();
+                    child = childUnmarshallers.get(parentUri, arg.local);
+                }
+            }
+            if (child == null) {
+                child = catchAll;
+                if(child==null) {
+                    super.childElement(state,arg);
+                    return;
+                }
             }
         }
 
-        state.setLoader(child.loader);
-        state.setReceiver(child.receiver);
+        state.loader = child.loader;
+        state.receiver = child.receiver;
     }
 
     @Override
@@ -262,7 +273,7 @@ public final class StructureLoader extends Loader {
     @Override
     public void leaveElement(UnmarshallingContext.State state, TagName ea) throws SAXException {
         state.getContext().endScope(frameSize);
-        fireAfterUnmarshal(beanInfo, state.getTarget(), state.getPrev());
+        fireAfterUnmarshal(beanInfo, state.target, state.prev);
     }
 
     private static final QNameMap<TransducedAccessor> EMPTY = new QNameMap<TransducedAccessor>();

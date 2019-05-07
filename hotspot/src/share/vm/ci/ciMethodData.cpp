@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2001, 2014, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2001, 2013, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -78,36 +78,6 @@ ciMethodData::ciMethodData() : ciMetadata(NULL) {
   _parameters = NULL;
 }
 
-void ciMethodData::load_extra_data() {
-  MethodData* mdo = get_MethodData();
-
-  // speculative trap entries also hold a pointer to a Method so need to be translated
-  DataLayout* dp_src  = mdo->extra_data_base();
-  DataLayout* end_src = mdo->extra_data_limit();
-  DataLayout* dp_dst  = extra_data_base();
-  for (;; dp_src = MethodData::next_extra(dp_src), dp_dst = MethodData::next_extra(dp_dst)) {
-    assert(dp_src < end_src, "moved past end of extra data");
-    // New traps in the MDO can be added as we translate the copy so
-    // look at the entries in the copy.
-    switch(dp_dst->tag()) {
-    case DataLayout::speculative_trap_data_tag: {
-      ciSpeculativeTrapData* data_dst = new ciSpeculativeTrapData(dp_dst);
-      SpeculativeTrapData* data_src = new SpeculativeTrapData(dp_src);
-      data_dst->translate_from(data_src);
-      break;
-    }
-    case DataLayout::bit_data_tag:
-      break;
-    case DataLayout::no_tag:
-    case DataLayout::arg_info_data_tag:
-      // An empty slot or ArgInfoData entry marks the end of the trap data
-      return;
-    default:
-      fatal(err_msg("bad tag = %d", dp_dst->tag()));
-    }
-  }
-}
-
 void ciMethodData::load_data() {
   MethodData* mdo = get_MethodData();
   if (mdo == NULL) {
@@ -146,8 +116,6 @@ void ciMethodData::load_data() {
     parameters->translate_from(mdo->parameters_type_data());
   }
 
-  load_extra_data();
-
   // Note:  Extra data are all BitData, and do not need translation.
   _current_mileage = MethodData::mileage_of(mdo->method());
   _invocation_counter = mdo->invocation_count();
@@ -170,7 +138,6 @@ void ciReceiverTypeData::translate_receiver_data_from(const ProfileData* data) {
     Klass* k = data->as_ReceiverTypeData()->receiver(row);
     if (k != NULL) {
       ciKlass* klass = CURRENT_ENV->get_klass(k);
-      CURRENT_ENV->ensure_metadata_alive(klass);
       set_receiver(row, klass);
     }
   }
@@ -187,13 +154,6 @@ void ciTypeStackSlotEntries::translate_type_data_from(const TypeStackSlotEntries
 void ciReturnTypeEntry::translate_type_data_from(const ReturnTypeEntry* ret) {
   intptr_t k = ret->type();
   set_type(translate_klass(k));
-}
-
-void ciSpeculativeTrapData::translate_from(const ProfileData* data) {
-  Method* m = data->as_SpeculativeTrapData()->method();
-  ciMethod* ci_m = CURRENT_ENV->get_method(m);
-  CURRENT_ENV->ensure_metadata_alive(ci_m);
-  set_method(ci_m);
 }
 
 // Get the data at an arbitrary (sort of) data index.
@@ -243,64 +203,32 @@ ciProfileData* ciMethodData::next_data(ciProfileData* current) {
   return next;
 }
 
-ciProfileData* ciMethodData::bci_to_extra_data(int bci, ciMethod* m, bool& two_free_slots) {
+// Translate a bci to its corresponding data, or NULL.
+ciProfileData* ciMethodData::bci_to_data(int bci) {
+  ciProfileData* data = data_before(bci);
+  for ( ; is_valid(data); data = next_data(data)) {
+    if (data->bci() == bci) {
+      set_hint_di(dp_to_di(data->dp()));
+      return data;
+    } else if (data->bci() > bci) {
+      break;
+    }
+  }
   // bci_to_extra_data(bci) ...
   DataLayout* dp  = data_layout_at(data_size());
   DataLayout* end = data_layout_at(data_size() + extra_data_size());
-  two_free_slots = false;
-  for (;dp < end; dp = MethodData::next_extra(dp)) {
-    switch(dp->tag()) {
-    case DataLayout::no_tag:
+  for (; dp < end; dp = MethodData::next_extra(dp)) {
+    if (dp->tag() == DataLayout::no_tag) {
       _saw_free_extra_data = true;  // observed an empty slot (common case)
-      two_free_slots = (MethodData::next_extra(dp)->tag() == DataLayout::no_tag);
       return NULL;
-    case DataLayout::arg_info_data_tag:
-      return NULL; // ArgInfoData is at the end of extra data section.
-    case DataLayout::bit_data_tag:
-      if (m == NULL && dp->bci() == bci) {
-        return new ciBitData(dp);
-      }
-      break;
-    case DataLayout::speculative_trap_data_tag: {
-      ciSpeculativeTrapData* data = new ciSpeculativeTrapData(dp);
-      // data->method() might be null if the MDO is snapshotted
-      // concurrently with a trap
-      if (m != NULL && data->method() == m && dp->bci() == bci) {
-        return data;
-      }
-      break;
     }
-    default:
-      fatal(err_msg("bad tag = %d", dp->tag()));
+    if (dp->tag() == DataLayout::arg_info_data_tag) {
+      break; // ArgInfoData is at the end of extra data section.
     }
-  }
-  return NULL;
-}
-
-// Translate a bci to its corresponding data, or NULL.
-ciProfileData* ciMethodData::bci_to_data(int bci, ciMethod* m) {
-  // If m is not NULL we look for a SpeculativeTrapData entry
-  if (m == NULL) {
-    ciProfileData* data = data_before(bci);
-    for ( ; is_valid(data); data = next_data(data)) {
-      if (data->bci() == bci) {
-        set_hint_di(dp_to_di(data->dp()));
-        return data;
-      } else if (data->bci() > bci) {
-        break;
-      }
+    if (dp->bci() == bci) {
+      assert(dp->tag() == DataLayout::bit_data_tag, "sane");
+      return new ciBitData(dp);
     }
-  }
-  bool two_free_slots = false;
-  ciProfileData* result = bci_to_extra_data(bci, m, two_free_slots);
-  if (result != NULL) {
-    return result;
-  }
-  if (m != NULL && !two_free_slots) {
-    // We were looking for a SpeculativeTrapData entry we didn't
-    // find. Room is not available for more SpeculativeTrapData
-    // entries, look in the non SpeculativeTrapData entries.
-    return bci_to_data(bci, NULL);
   }
   return NULL;
 }
@@ -391,13 +319,11 @@ void ciMethodData::set_argument_type(int bci, int i, ciKlass* k) {
   MethodData* mdo = get_MethodData();
   if (mdo != NULL) {
     ProfileData* data = mdo->bci_to_data(bci);
-    if (data != NULL) {
-      if (data->is_CallTypeData()) {
-        data->as_CallTypeData()->set_argument_type(i, k->get_Klass());
-      } else {
-        assert(data->is_VirtualCallTypeData(), "no arguments!");
-        data->as_VirtualCallTypeData()->set_argument_type(i, k->get_Klass());
-      }
+    if (data->is_CallTypeData()) {
+      data->as_CallTypeData()->set_argument_type(i, k->get_Klass());
+    } else {
+      assert(data->is_VirtualCallTypeData(), "no arguments!");
+      data->as_VirtualCallTypeData()->set_argument_type(i, k->get_Klass());
     }
   }
 }
@@ -415,13 +341,11 @@ void ciMethodData::set_return_type(int bci, ciKlass* k) {
   MethodData* mdo = get_MethodData();
   if (mdo != NULL) {
     ProfileData* data = mdo->bci_to_data(bci);
-    if (data != NULL) {
-      if (data->is_CallTypeData()) {
-        data->as_CallTypeData()->set_return_type(k->get_Klass());
-      } else {
-        assert(data->is_VirtualCallTypeData(), "no arguments!");
-        data->as_VirtualCallTypeData()->set_return_type(k->get_Klass());
-      }
+    if (data->is_CallTypeData()) {
+      data->as_CallTypeData()->set_return_type(k->get_Klass());
+    } else {
+      assert(data->is_VirtualCallTypeData(), "no arguments!");
+      data->as_VirtualCallTypeData()->set_return_type(k->get_Klass());
     }
   }
 }
@@ -563,7 +487,7 @@ void ciMethodData::dump_replay_data(outputStream* out) {
             if (round == 0) {
               count++;
             } else {
-              out->print(" %d %s", (int)(dp_to_di(vdata->dp() + in_bytes(vdata->receiver_offset(i))) / sizeof(intptr_t)), k->name()->as_quoted_ascii());
+              out->print(" %d %s", dp_to_di(vdata->dp() + in_bytes(vdata->receiver_offset(i))) / sizeof(intptr_t), k->name()->as_quoted_ascii());
             }
           }
         }
@@ -575,7 +499,7 @@ void ciMethodData::dump_replay_data(outputStream* out) {
             if (round == 0) {
               count++;
             } else {
-              out->print(" %d %s", (int)(dp_to_di(vdata->dp() + in_bytes(vdata->receiver_offset(i))) / sizeof(intptr_t)), k->name()->as_quoted_ascii());
+              out->print(" %d %s", dp_to_di(vdata->dp() + in_bytes(vdata->receiver_offset(i))) / sizeof(intptr_t), k->name()->as_quoted_ascii());
             }
           }
         }
@@ -601,25 +525,18 @@ void ciMethodData::print_data_on(outputStream* st) {
   st->print_cr("--- Extra data:");
   DataLayout* dp  = data_layout_at(data_size());
   DataLayout* end = data_layout_at(data_size() + extra_data_size());
-  for (;; dp = MethodData::next_extra(dp)) {
-    assert(dp < end, "moved past end of extra data");
-    switch (dp->tag()) {
-    case DataLayout::no_tag:
-      continue;
-    case DataLayout::bit_data_tag:
+  for (; dp < end; dp = MethodData::next_extra(dp)) {
+    if (dp->tag() == DataLayout::no_tag)  continue;
+    if (dp->tag() == DataLayout::bit_data_tag) {
       data = new BitData(dp);
-      break;
-    case DataLayout::arg_info_data_tag:
+    } else {
+      assert(dp->tag() == DataLayout::arg_info_data_tag, "must be BitData or ArgInfo");
       data = new ciArgInfoData(dp);
       dp = end; // ArgInfoData is at the end of extra data section.
-      break;
-    default:
-      fatal(err_msg("unexpected tag %d", dp->tag()));
     }
     st->print("%d", dp_to_di(data->dp()));
     st->fill_to(6);
     data->print_data_on(st);
-    if (dp >= end) return;
   }
 }
 
@@ -652,8 +569,8 @@ void ciReturnTypeEntry::print_data_on(outputStream* st) const {
   st->cr();
 }
 
-void ciCallTypeData::print_data_on(outputStream* st, const char* extra) const {
-  print_shared(st, "ciCallTypeData", extra);
+void ciCallTypeData::print_data_on(outputStream* st) const {
+  print_shared(st, "ciCallTypeData");
   if (has_arguments()) {
     tab(st, true);
     st->print("argument types");
@@ -682,18 +599,18 @@ void ciReceiverTypeData::print_receiver_data_on(outputStream* st) const {
   }
 }
 
-void ciReceiverTypeData::print_data_on(outputStream* st, const char* extra) const {
-  print_shared(st, "ciReceiverTypeData", extra);
+void ciReceiverTypeData::print_data_on(outputStream* st) const {
+  print_shared(st, "ciReceiverTypeData");
   print_receiver_data_on(st);
 }
 
-void ciVirtualCallData::print_data_on(outputStream* st, const char* extra) const {
-  print_shared(st, "ciVirtualCallData", extra);
+void ciVirtualCallData::print_data_on(outputStream* st) const {
+  print_shared(st, "ciVirtualCallData");
   rtd_super()->print_receiver_data_on(st);
 }
 
-void ciVirtualCallTypeData::print_data_on(outputStream* st, const char* extra) const {
-  print_shared(st, "ciVirtualCallTypeData", extra);
+void ciVirtualCallTypeData::print_data_on(outputStream* st) const {
+  print_shared(st, "ciVirtualCallTypeData");
   rtd_super()->print_receiver_data_on(st);
   if (has_arguments()) {
     tab(st, true);
@@ -707,15 +624,8 @@ void ciVirtualCallTypeData::print_data_on(outputStream* st, const char* extra) c
   }
 }
 
-void ciParametersTypeData::print_data_on(outputStream* st, const char* extra) const {
-  st->print_cr("ciParametersTypeData");
+void ciParametersTypeData::print_data_on(outputStream* st) const {
+  st->print_cr("Parametertypes");
   parameters()->print_data_on(st);
-}
-
-void ciSpeculativeTrapData::print_data_on(outputStream* st, const char* extra) const {
-  st->print_cr("ciSpeculativeTrapData");
-  tab(st);
-  method()->print_short_name(st);
-  st->cr();
 }
 #endif

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 1997, 2015, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 1997, 2013, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -342,7 +342,7 @@ bool frame::safe_for_sender(JavaThread *thread) {
 // constructors
 
 // Construct an unpatchable, deficient frame
-void frame::init(intptr_t* sp, address pc, CodeBlob* cb) {
+frame::frame(intptr_t* sp, unpatchable_t, address pc, CodeBlob* cb) {
 #ifdef _LP64
   assert( (((intptr_t)sp & (wordSize-1)) == 0), "frame constructor passed an invalid sp");
 #endif
@@ -362,10 +362,6 @@ void frame::init(intptr_t* sp, address pc, CodeBlob* cb) {
     assert(!((nmethod*)_cb)->is_deopt_pc(_pc), "invariant broken");
   }
 #endif // ASSERT
-}
-
-frame::frame(intptr_t* sp, unpatchable_t, address pc, CodeBlob* cb) {
-  init(sp, pc, cb);
 }
 
 frame::frame(intptr_t* sp, intptr_t* younger_sp, bool younger_frame_is_interpreted) :
@@ -422,13 +418,6 @@ frame::frame(intptr_t* sp, intptr_t* younger_sp, bool younger_frame_is_interpret
   }
 }
 
-#ifndef PRODUCT
-// This is a generic constructor which is only used by pns() in debug.cpp.
-frame::frame(void* sp, void* fp, void* pc) {
-  init((intptr_t*)sp, (address)pc, NULL);
-}
-#endif
-
 bool frame::is_interpreted_frame() const  {
   return Interpreter::contains(pc());
 }
@@ -446,6 +435,32 @@ void frame::set_interpreter_frame_sender_sp(intptr_t* sender_sp) {
   Unimplemented();
 }
 #endif // CC_INTERP
+
+
+#ifdef ASSERT
+// Debugging aid
+static frame nth_sender(int n) {
+  frame f = JavaThread::current()->last_frame();
+
+  for(int i = 0; i < n; ++i)
+    f = f.sender((RegisterMap*)NULL);
+
+  printf("first frame %d\n",          f.is_first_frame()       ? 1 : 0);
+  printf("interpreted frame %d\n",    f.is_interpreted_frame() ? 1 : 0);
+  printf("java frame %d\n",           f.is_java_frame()        ? 1 : 0);
+  printf("entry frame %d\n",          f.is_entry_frame()       ? 1 : 0);
+  printf("native frame %d\n",         f.is_native_frame()      ? 1 : 0);
+  if (f.is_compiled_frame()) {
+    if (f.is_deoptimized_frame())
+      printf("deoptimized frame 1\n");
+    else
+      printf("compiled frame 1\n");
+  }
+
+  return f;
+}
+#endif
+
 
 frame frame::sender_for_entry_frame(RegisterMap *map) const {
   assert(map != NULL, "map must be set");

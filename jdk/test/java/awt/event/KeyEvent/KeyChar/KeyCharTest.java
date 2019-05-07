@@ -32,7 +32,7 @@ import sun.awt.SunToolkit;
 
 /*
  * @test
- * @bug 8022401 8160623
+ * @bug 8022401
  * @summary Wrong key char
  * @author Alexandr Scherbatiy
  * @run main KeyCharTest

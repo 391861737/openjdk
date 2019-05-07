@@ -344,9 +344,6 @@ public abstract class Entity {
         // to know that prolog is read
         public boolean xmlDeclChunkRead = false;
 
-        // flag to indicate whether the Entity is a General Entity
-        public boolean isGE = false;
-
         /** returns the name of the current encoding
          *  @return current encoding name
          */
@@ -391,11 +388,10 @@ public abstract class Entity {
         //
 
         /** Constructs a scanned entity. */
-        public ScannedEntity(boolean isGE, String name,
+        public ScannedEntity(String name,
                 XMLResourceIdentifier entityLocation,
                 InputStream stream, Reader reader,
                 String encoding, boolean literal, boolean mayReadChunks, boolean isExternal) {
-            this.isGE = isGE;
             this.name = name ;
             this.entityLocation = entityLocation;
             this.stream = stream;

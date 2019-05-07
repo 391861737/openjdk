@@ -41,8 +41,6 @@
     CALayer *windowLayer;
 }
 
-@property (retain) CALayer *windowLayer;
-
 - (id) initWithWindowLayer: (CALayer *)windowLayer;
 - (void) setBounds: (CGRect)rect;
 

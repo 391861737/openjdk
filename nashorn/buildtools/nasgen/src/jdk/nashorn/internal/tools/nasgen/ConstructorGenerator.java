@@ -32,14 +32,18 @@ import static jdk.internal.org.objectweb.asm.Opcodes.V1_7;
 import static jdk.nashorn.internal.tools.nasgen.StringConstants.CONSTRUCTOR_SUFFIX;
 import static jdk.nashorn.internal.tools.nasgen.StringConstants.DEFAULT_INIT_DESC;
 import static jdk.nashorn.internal.tools.nasgen.StringConstants.INIT;
-import static jdk.nashorn.internal.tools.nasgen.StringConstants.OBJECT_DESC;
 import static jdk.nashorn.internal.tools.nasgen.StringConstants.PROPERTYMAP_DESC;
+import static jdk.nashorn.internal.tools.nasgen.StringConstants.PROPERTYMAP_DUPLICATE;
+import static jdk.nashorn.internal.tools.nasgen.StringConstants.PROPERTYMAP_DUPLICATE_DESC;
 import static jdk.nashorn.internal.tools.nasgen.StringConstants.PROPERTYMAP_FIELD_NAME;
+import static jdk.nashorn.internal.tools.nasgen.StringConstants.PROPERTYMAP_TYPE;
+import static jdk.nashorn.internal.tools.nasgen.StringConstants.OBJECT_DESC;
 import static jdk.nashorn.internal.tools.nasgen.StringConstants.PROTOTYPEOBJECT_SETCONSTRUCTOR;
 import static jdk.nashorn.internal.tools.nasgen.StringConstants.PROTOTYPEOBJECT_SETCONSTRUCTOR_DESC;
 import static jdk.nashorn.internal.tools.nasgen.StringConstants.PROTOTYPEOBJECT_TYPE;
-import static jdk.nashorn.internal.tools.nasgen.StringConstants.SCRIPTFUNCTION_INIT_DESC3;
-import static jdk.nashorn.internal.tools.nasgen.StringConstants.SCRIPTFUNCTION_INIT_DESC4;
+import static jdk.nashorn.internal.tools.nasgen.StringConstants.SCRIPTFUNCTIONIMPL_INIT_DESC3;
+import static jdk.nashorn.internal.tools.nasgen.StringConstants.SCRIPTFUNCTIONIMPL_INIT_DESC4;
+import static jdk.nashorn.internal.tools.nasgen.StringConstants.SCRIPTFUNCTIONIMPL_TYPE;
 import static jdk.nashorn.internal.tools.nasgen.StringConstants.SCRIPTFUNCTION_SETARITY;
 import static jdk.nashorn.internal.tools.nasgen.StringConstants.SCRIPTFUNCTION_SETARITY_DESC;
 import static jdk.nashorn.internal.tools.nasgen.StringConstants.SCRIPTFUNCTION_SETPROTOTYPE;
@@ -54,7 +58,7 @@ import java.util.List;
 import jdk.internal.org.objectweb.asm.Handle;
 
 /**
- * This class generates constructor class for a @ScriptClass annotated class.
+ * This class generates constructor class for a @ClassInfo annotated class.
  *
  */
 public class ConstructorGenerator extends ClassGenerator {
@@ -74,8 +78,8 @@ public class ConstructorGenerator extends ClassGenerator {
     }
 
     byte[] getClassBytes() {
-        // new class extending from ScriptObject
-        final String superClass = (constructor != null)? SCRIPTFUNCTION_TYPE : SCRIPTOBJECT_TYPE;
+        // new class extensing from ScriptObject
+        final String superClass = (constructor != null)? SCRIPTFUNCTIONIMPL_TYPE : SCRIPTOBJECT_TYPE;
         cw.visit(V1_7, ACC_FINAL, className, null, superClass, null);
         if (memberCount > 0) {
             // add fields
@@ -151,7 +155,6 @@ public class ConstructorGenerator extends ClassGenerator {
         }
 
         if (constructor != null) {
-            initPrototype(mi);
             final int arity = constructor.getArity();
             if (arity != MemberInfo.DEFAULT_ARITY) {
                 mi.loadThis();
@@ -168,6 +171,9 @@ public class ConstructorGenerator extends ClassGenerator {
     private void loadMap(final MethodGenerator mi) {
         if (memberCount > 0) {
             mi.getStatic(className, PROPERTYMAP_FIELD_NAME, PROPERTYMAP_DESC);
+            // make sure we use duplicated PropertyMap so that original map
+            // stays intact and so can be used for many globals.
+            mi.invokeVirtual(PROPERTYMAP_TYPE, PROPERTYMAP_DUPLICATE, PROPERTYMAP_DUPLICATE_DESC);
         }
     }
 
@@ -181,8 +187,8 @@ public class ConstructorGenerator extends ClassGenerator {
             loadMap(mi);
         } else {
             // call Function.<init>
-            superClass = SCRIPTFUNCTION_TYPE;
-            superDesc = (memberCount > 0) ? SCRIPTFUNCTION_INIT_DESC4 : SCRIPTFUNCTION_INIT_DESC3;
+            superClass = SCRIPTFUNCTIONIMPL_TYPE;
+            superDesc = (memberCount > 0) ? SCRIPTFUNCTIONIMPL_INIT_DESC4 : SCRIPTFUNCTIONIMPL_INIT_DESC3;
             mi.loadLiteral(constructor.getName());
             mi.visitLdcInsn(new Handle(H_INVOKESTATIC, scriptClassInfo.getJavaName(), constructor.getJavaName(), constructor.getJavaDesc()));
             loadMap(mi);
@@ -193,7 +199,6 @@ public class ConstructorGenerator extends ClassGenerator {
     }
 
     private void initFunctionFields(final MethodGenerator mi) {
-        assert memberCount > 0;
         for (final MemberInfo memInfo : scriptClassInfo.getMembers()) {
             if (!memInfo.isConstructorFunction()) {
                 continue;
@@ -205,39 +210,37 @@ public class ConstructorGenerator extends ClassGenerator {
     }
 
     private void initDataFields(final MethodGenerator mi) {
-        assert memberCount > 0;
-        for (final MemberInfo memInfo : scriptClassInfo.getMembers()) {
-           if (!memInfo.isConstructorProperty() || memInfo.isFinal()) {
-               continue;
-           }
-           final Object value = memInfo.getValue();
-           if (value != null) {
-               mi.loadThis();
-               mi.loadLiteral(value);
-               mi.putField(className, memInfo.getJavaName(), memInfo.getJavaDesc());
-           } else if (!memInfo.getInitClass().isEmpty()) {
-               final String clazz = memInfo.getInitClass();
-               mi.loadThis();
-               mi.newObject(clazz);
-               mi.dup();
-               mi.invokeSpecial(clazz, INIT, DEFAULT_INIT_DESC);
-               mi.putField(className, memInfo.getJavaName(), memInfo.getJavaDesc());
-           }
+         for (final MemberInfo memInfo : scriptClassInfo.getMembers()) {
+            if (!memInfo.isConstructorProperty() || memInfo.isFinal()) {
+                continue;
+            }
+            final Object value = memInfo.getValue();
+            if (value != null) {
+                mi.loadThis();
+                mi.loadLiteral(value);
+                mi.putField(className, memInfo.getJavaName(), memInfo.getJavaDesc());
+            } else if (!memInfo.getInitClass().isEmpty()) {
+                final String clazz = memInfo.getInitClass();
+                mi.loadThis();
+                mi.newObject(clazz);
+                mi.dup();
+                mi.invokeSpecial(clazz, INIT, DEFAULT_INIT_DESC);
+                mi.putField(className, memInfo.getJavaName(), memInfo.getJavaDesc());
+            }
         }
-    }
 
-    private void initPrototype(final MethodGenerator mi) {
-        assert constructor != null;
-        mi.loadThis();
-        final String protoName = scriptClassInfo.getPrototypeClassName();
-        mi.newObject(protoName);
-        mi.dup();
-        mi.invokeSpecial(protoName, INIT, DEFAULT_INIT_DESC);
-        mi.dup();
-        mi.loadThis();
-        mi.invokeStatic(PROTOTYPEOBJECT_TYPE, PROTOTYPEOBJECT_SETCONSTRUCTOR,
-                PROTOTYPEOBJECT_SETCONSTRUCTOR_DESC);
-        mi.invokeVirtual(SCRIPTFUNCTION_TYPE, SCRIPTFUNCTION_SETPROTOTYPE, SCRIPTFUNCTION_SETPROTOTYPE_DESC);
+        if (constructor != null) {
+            mi.loadThis();
+            final String protoName = scriptClassInfo.getPrototypeClassName();
+            mi.newObject(protoName);
+            mi.dup();
+            mi.invokeSpecial(protoName, INIT, DEFAULT_INIT_DESC);
+            mi.dup();
+            mi.loadThis();
+            mi.invokeStatic(PROTOTYPEOBJECT_TYPE, PROTOTYPEOBJECT_SETCONSTRUCTOR,
+                    PROTOTYPEOBJECT_SETCONSTRUCTOR_DESC);
+            mi.invokeVirtual(SCRIPTFUNCTION_TYPE, SCRIPTFUNCTION_SETPROTOTYPE, SCRIPTFUNCTION_SETPROTOTYPE_DESC);
+        }
     }
 
     /**

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2000, 2016, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2000, 2012, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -54,8 +54,6 @@ public class OopUtilities implements /* imports */ JVMTIThreadState {
   private static OopField threadNameField;
   private static OopField threadGroupField;
   private static LongField threadEETopField;
-  //tid field is new since 1.5
-  private static LongField threadTIDField;
   // threadStatus field is new since 1.5
   private static IntField threadStatusField;
   // parkBlocker field is new since 1.6
@@ -219,10 +217,9 @@ public class OopUtilities implements /* imports */ JVMTIThreadState {
     if (threadNameField == null) {
       SystemDictionary sysDict = VM.getVM().getSystemDictionary();
       InstanceKlass k = sysDict.getThreadKlass();
-      threadNameField  = (OopField) k.findField("name", "Ljava/lang/String;");
+      threadNameField  = (OopField) k.findField("name", "[C");
       threadGroupField = (OopField) k.findField("group", "Ljava/lang/ThreadGroup;");
       threadEETopField = (LongField) k.findField("eetop", "J");
-      threadTIDField = (LongField) k.findField("tid", "J");
       threadStatusField = (IntField) k.findField("threadStatus", "I");
       threadParkBlockerField = (OopField) k.findField("parkBlocker",
                                      "Ljava/lang/Object;");
@@ -258,7 +255,7 @@ public class OopUtilities implements /* imports */ JVMTIThreadState {
 
   public static String threadOopGetName(Oop threadOop) {
     initThreadFields();
-    return stringOopToString(threadNameField.getValue(threadOop));
+    return charArrayToString((TypeArray) threadNameField.getValue(threadOop));
   }
 
   /** May return null if, e.g., thread was not started */
@@ -269,15 +266,6 @@ public class OopUtilities implements /* imports */ JVMTIThreadState {
       return null;
     }
     return VM.getVM().getThreads().createJavaThreadWrapper(addr);
-  }
-
-  public static long threadOopGetTID(Oop threadOop) {
-    initThreadFields();
-    if (threadTIDField != null) {
-      return threadTIDField.getValue(threadOop);
-    } else {
-      return 0;
-    }
   }
 
   /** returns value of java.lang.Thread.threadStatus field */

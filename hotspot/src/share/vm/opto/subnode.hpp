@@ -50,7 +50,6 @@ public:
   // Compute a new Type for this node.  Basically we just do the pre-check,
   // then call the virtual add() to set the type.
   virtual const Type *Value( PhaseTransform *phase ) const;
-  const Type* Value_common( PhaseTransform *phase ) const;
 
   // Supplied function returns the subtractend of the inputs.
   // This also type-checks the inputs for sanity.  Guaranteed never to
@@ -159,7 +158,6 @@ public:
   CmpUNode( Node *in1, Node *in2 ) : CmpNode(in1,in2) {}
   virtual int Opcode() const;
   virtual const Type *sub( const Type *, const Type * ) const;
-  const Type *Value( PhaseTransform *phase ) const;
   bool is_index_range_check() const;
 };
 
@@ -190,15 +188,6 @@ public:
   CmpLNode( Node *in1, Node *in2 ) : CmpNode(in1,in2) {}
   virtual int    Opcode() const;
   virtual const Type *sub( const Type *, const Type * ) const;
-};
-
-//------------------------------CmpULNode---------------------------------------
-// Compare 2 unsigned long values, returning condition codes (-1, 0 or 1).
-class CmpULNode : public CmpNode {
-public:
-  CmpULNode(Node* in1, Node* in2) : CmpNode(in1, in2) { }
-  virtual int Opcode() const;
-  virtual const Type* sub(const Type*, const Type*) const;
 };
 
 //------------------------------CmpL3Node--------------------------------------
@@ -284,7 +273,9 @@ struct BoolTest VALUE_OBJ_CLASS_SPEC {
   mask commute( ) const { return mask("032147658"[_test]-'0'); }
   mask negate( ) const { return mask(_test^4); }
   bool is_canonical( ) const { return (_test == BoolTest::ne || _test == BoolTest::lt || _test == BoolTest::le || _test == BoolTest::overflow); }
+#ifndef PRODUCT
   void dump_on(outputStream *st) const;
+#endif
 };
 
 //------------------------------BoolNode---------------------------------------

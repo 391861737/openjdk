@@ -25,7 +25,6 @@
 
 package jdk.nashorn.test.models;
 
-@SuppressWarnings("javadoc")
 public class PropertyBind {
     public static int publicStaticInt;
     public static final int publicStaticFinalInt = 2112;
@@ -38,14 +37,14 @@ public class PropertyBind {
     public final int publicFinalInt = 42;
 
     private int readWrite;
-    private final int readOnly = 123;
+    private int readOnly = 123;
     private int writeOnly;
 
     public int getReadWrite() {
         return readWrite;
     }
 
-    public void setReadWrite(final int readWrite) {
+    public void setReadWrite(int readWrite) {
         this.readWrite = readWrite;
     }
 
@@ -53,7 +52,7 @@ public class PropertyBind {
         return readOnly;
     }
 
-    public void setWriteOnly(final int writeOnly) {
+    public void setWriteOnly(int writeOnly) {
         this.writeOnly = writeOnly;
     }
 
@@ -65,7 +64,7 @@ public class PropertyBind {
         return staticReadWrite;
     }
 
-    public static void setStaticReadWrite(final int staticReadWrite) {
+    public static void setStaticReadWrite(int staticReadWrite) {
         PropertyBind.staticReadWrite = staticReadWrite;
     }
 
@@ -73,7 +72,7 @@ public class PropertyBind {
         return staticReadOnly;
     }
 
-    public static void setStaticWriteOnly(final int staticWriteOnly) {
+    public static void setStaticWriteOnly(int staticWriteOnly) {
         PropertyBind.staticWriteOnly = staticWriteOnly;
     }
 

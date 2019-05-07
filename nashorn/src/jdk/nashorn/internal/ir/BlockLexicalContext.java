@@ -34,20 +34,20 @@ import java.util.List;
  * This is a subclass of lexical context used for filling
  * blocks (and function nodes) with statements. When popping
  * a block from the lexical context, any statements that have
- * been generated in it are committed to the block. This saves
+ * been generated in it are commited to the block. This saves
  * unnecessary object mutations and lexical context replacement
  */
 public class BlockLexicalContext extends LexicalContext {
     /** statement stack, each block on the lexical context maintains one of these, which is
      *  committed to the block on pop */
-    private final Deque<List<Statement>> sstack = new ArrayDeque<>();
+    private Deque<List<Statement>> sstack = new ArrayDeque<>();
 
     /** Last non debug statement emitted in this context */
     protected Statement lastStatement;
 
     @Override
     public <T extends LexicalContextNode> T push(final T node) {
-        final T pushed = super.push(node);
+        T pushed = super.push(node);
         if (node instanceof Block) {
             sstack.push(new ArrayList<Statement>());
         }
@@ -68,13 +68,13 @@ public class BlockLexicalContext extends LexicalContext {
      * @param block the block to operate on
      * @return a modified block.
      */
-    protected Block afterSetStatements(final Block block) {
+    protected Block afterSetStatements(Block block) {
         return block;
     }
 
     @SuppressWarnings("unchecked")
     @Override
-    public <T extends Node> T pop(final T node) {
+    public <T extends LexicalContextNode> T pop(final T node) {
         T expected = node;
         if (node instanceof Block) {
             final List<Statement> newStatements = popStatements();
@@ -107,16 +107,6 @@ public class BlockLexicalContext extends LexicalContext {
         sstack.peek().add(0, statement);
         return statement;
     }
-
-    /**
-     * Prepend a list of statement to the block being generated
-     * @param statements a list of statements to prepend
-     */
-    public void prependStatements(final List<Statement> statements) {
-        assert statements != null;
-        sstack.peek().addAll(0, statements);
-    }
-
 
     /**
      * Get the last statement that was emitted into a block

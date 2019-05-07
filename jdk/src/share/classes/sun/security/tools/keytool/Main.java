@@ -79,7 +79,6 @@ import sun.security.pkcs.PKCS9Attribute;
 import sun.security.tools.KeyStoreUtil;
 import sun.security.tools.PathList;
 import sun.security.util.DerValue;
-import sun.security.util.Pem;
 import sun.security.x509.*;
 
 import static java.security.KeyStore.*;
@@ -99,8 +98,6 @@ import static sun.security.tools.keytool.Main.Option.*;
  * @since 1.2
  */
 public final class Main {
-
-    private static final byte[] CRLF = new byte[] {'\r', '\n'};
 
     private boolean debug = false;
     private Command command = null;
@@ -1208,7 +1205,7 @@ public final class Main {
                 sb.append(s);
             }
         }
-        byte[] rawReq = Pem.decode(new String(sb));
+        byte[] rawReq = Base64.getMimeDecoder().decode(new String(sb));
         PKCS10 req = new PKCS10(rawReq);
 
         info.set(X509CertInfo.KEY, new CertificateX509Key(req.getSubjectPublicKeyInfo()));
@@ -1285,7 +1282,7 @@ public final class Main {
         crl.sign(privateKey, sigAlgName);
         if (rfc) {
             out.println("-----BEGIN X509 CRL-----");
-            out.println(Base64.getMimeEncoder(64, CRLF).encodeToString(crl.getEncodedInternal()));
+            out.println(Base64.getMimeEncoder().encodeToString(crl.getEncodedInternal()));
             out.println("-----END X509 CRL-----");
         } else {
             out.write(crl.getEncodedInternal());
@@ -1497,7 +1494,7 @@ public final class Main {
         boolean useDefaultPBEAlgorithm = true;
         SecretKey secKey = null;
 
-        if (keyAlgName.toUpperCase(Locale.ENGLISH).startsWith("PBE")) {
+        if (keyAlgName.toUpperCase().startsWith("PBE")) {
             SecretKeyFactory factory = SecretKeyFactory.getInstance("PBE");
 
             // User is prompted for PBE credential
@@ -2254,7 +2251,7 @@ public final class Main {
         if (rfc) {
             X509CRL xcrl = (X509CRL)crl;
             out.println("-----BEGIN X509 CRL-----");
-            out.println(Base64.getMimeEncoder(64, CRLF).encodeToString(xcrl.getEncoded()));
+            out.println(Base64.getMimeEncoder().encodeToString(xcrl.getEncoded()));
             out.println("-----END X509 CRL-----");
         } else {
             out.println(crl.toString());
@@ -2281,7 +2278,7 @@ public final class Main {
                 sb.append(s);
             }
         }
-        PKCS10 req = new PKCS10(Pem.decode(new String(sb)));
+        PKCS10 req = new PKCS10(Base64.getMimeDecoder().decode(new String(sb)));
 
         PublicKey pkey = req.getSubjectPublicKeyInfo();
         out.printf(rb.getString("PKCS.10.Certificate.Request.Version.1.0.Subject.s.Public.Key.s.format.s.key."),
@@ -3062,7 +3059,7 @@ public final class Main {
     {
         if (rfc) {
             out.println(X509Factory.BEGIN_CERT);
-            out.println(Base64.getMimeEncoder(64, CRLF).encodeToString(cert.getEncoded()));
+            out.println(Base64.getMimeEncoder().encodeToString(cert.getEncoded()));
             out.println(X509Factory.END_CERT);
         } else {
             out.write(cert.getEncoded()); // binary

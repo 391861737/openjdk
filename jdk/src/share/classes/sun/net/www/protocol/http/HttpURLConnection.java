@@ -25,7 +25,6 @@
 
 package sun.net.www.protocol.http;
 
-import java.security.PrivilegedAction;
 import java.util.Arrays;
 import java.net.URL;
 import java.net.URLConnection;
@@ -104,14 +103,6 @@ public class HttpURLConnection extends java.net.HttpURLConnection {
      */
     static final boolean validateProxy;
     static final boolean validateServer;
-
-    /** A, possibly empty, set of authentication schemes that are disabled
-     *  when proxying plain HTTP ( not HTTPS ). */
-    static final Set<String> disabledProxyingSchemes;
-
-    /** A, possibly empty, set of authentication schemes that are disabled
-     *  when setting up a tunnel for HTTPS ( HTTP CONNECT ). */
-    static final Set<String> disabledTunnelingSchemes;
 
     private StreamingOutputStream strOutputStream;
     private final static String RETRY_MSG1 =
@@ -210,22 +201,6 @@ public class HttpURLConnection extends java.net.HttpURLConnection {
         "Via"
     };
 
-    private static String getNetProperty(String name) {
-        PrivilegedAction<String> pa = () -> NetProperties.get(name);
-        return AccessController.doPrivileged(pa);
-    }
-
-    private static Set<String> schemesListToSet(String list) {
-        if (list == null || list.isEmpty())
-            return Collections.emptySet();
-
-        Set<String> s = new HashSet<>();
-        String[] parts = list.split("\\s*,\\s*");
-        for (String part : parts)
-            s.add(part.toLowerCase(Locale.ROOT));
-        return s;
-    }
-
     static {
         maxRedirects = java.security.AccessController.doPrivileged(
             new sun.security.action.GetIntegerAction(
@@ -240,14 +215,6 @@ public class HttpURLConnection extends java.net.HttpURLConnection {
             agent = agent + " Java/"+version;
         }
         userAgent = agent;
-
-        // A set of net properties to control the use of authentication schemes
-        // when proxing/tunneling.
-        String p = getNetProperty("jdk.http.auth.tunneling.disabledSchemes");
-        disabledTunnelingSchemes = schemesListToSet(p);
-        p = getNetProperty("jdk.http.auth.proxying.disabledSchemes");
-        disabledProxyingSchemes = schemesListToSet(p);
-
         validateProxy = java.security.AccessController.doPrivileged(
                 new sun.security.action.GetBooleanAction(
                     "http.auth.digest.validateProxy")).booleanValue();
@@ -369,7 +336,6 @@ public class HttpURLConnection extends java.net.HttpURLConnection {
     /* try auth without calling Authenticator. Used for transparent NTLM authentication */
     private boolean tryTransparentNTLMServer = true;
     private boolean tryTransparentNTLMProxy = true;
-    private boolean useProxyResponseCode = false;
 
     /* Used by Windows specific code */
     private Object authObj;
@@ -517,8 +483,7 @@ public class HttpURLConnection extends java.net.HttpURLConnection {
     private void checkMessageHeader(String key, String value) {
         char LF = '\n';
         int index = key.indexOf(LF);
-        int index1 = key.indexOf(':');
-        if (index != -1 || index1 != -1) {
+        if (index != -1) {
             throw new IllegalArgumentException(
                 "Illegal character(s) in message header field: " + key);
         }
@@ -1016,7 +981,7 @@ public class HttpURLConnection extends java.net.HttpURLConnection {
         SocketPermission p = URLtoSocketPermission(this.url);
         if (p != null) {
             try {
-                AccessController.doPrivilegedWithCombiner(
+                AccessController.doPrivileged(
                     new PrivilegedExceptionAction<Void>() {
                         public Void run() throws IOException {
                             plainConnect0();
@@ -1080,7 +1045,7 @@ public class HttpURLConnection extends java.net.HttpURLConnection {
             try {
                 URI uri = ParseUtil.toURI(url);
                 if (uri != null) {
-                    cachedResponse = cacheHandler.get(uri, getRequestMethod(), getUserSetHeaders().getHeaders());
+                    cachedResponse = cacheHandler.get(uri, getRequestMethod(), requests.getHeaders(EXCLUDE_HEADERS));
                     if ("https".equalsIgnoreCase(uri.getScheme())
                         && !(cachedResponse instanceof SecureCacheResponse)) {
                         cachedResponse = null;
@@ -1277,7 +1242,7 @@ public class HttpURLConnection extends java.net.HttpURLConnection {
 
         if (p != null) {
             try {
-                return AccessController.doPrivilegedWithCombiner(
+                return AccessController.doPrivileged(
                     new PrivilegedExceptionAction<OutputStream>() {
                         public OutputStream run() throws IOException {
                             return getOutputStream0();
@@ -1460,7 +1425,7 @@ public class HttpURLConnection extends java.net.HttpURLConnection {
 
         if (p != null) {
             try {
-                return AccessController.doPrivilegedWithCombiner(
+                return AccessController.doPrivileged(
                     new PrivilegedExceptionAction<InputStream>() {
                         public InputStream run() throws IOException {
                             return getInputStream0();
@@ -1619,13 +1584,10 @@ public class HttpURLConnection extends java.net.HttpURLConnection {
                     // altered in similar ways.
 
                     AuthenticationHeader authhdr = new AuthenticationHeader (
-                            "Proxy-Authenticate",
-                            responses,
-                            new HttpCallerInfo(url,
-                                               http.getProxyHostUsed(),
+                            "Proxy-Authenticate", responses,
+                            new HttpCallerInfo(url, http.getProxyHostUsed(),
                                 http.getProxyPortUsed()),
-                            dontUseNegotiate,
-                            disabledProxyingSchemes
+                            dontUseNegotiate
                     );
 
                     if (!doingNTLMp2ndStage) {
@@ -2072,13 +2034,10 @@ public class HttpURLConnection extends java.net.HttpURLConnection {
                     }
 
                     AuthenticationHeader authhdr = new AuthenticationHeader (
-                            "Proxy-Authenticate",
-                            responses,
-                            new HttpCallerInfo(url,
-                                               http.getProxyHostUsed(),
+                            "Proxy-Authenticate", responses,
+                            new HttpCallerInfo(url, http.getProxyHostUsed(),
                                 http.getProxyPortUsed()),
-                            dontUseNegotiate,
-                            disabledTunnelingSchemes
+                            dontUseNegotiate
                     );
                     if (!doingNTLMp2ndStage) {
                         proxyAuthentication =
@@ -2284,14 +2243,6 @@ public class HttpURLConnection extends java.net.HttpURLConnection {
                         if (tryTransparentNTLMProxy) {
                             tryTransparentNTLMProxy =
                                     NTLMAuthenticationProxy.supportsTransparentAuth;
-                            /* If the platform supports transparent authentication
-                             * then normally it's ok to do transparent auth to a proxy
-                             * because we generally trust proxies (chosen by the user)
-                             * But not in the case of 305 response where the server
-                             * chose it. */
-                            if (tryTransparentNTLMProxy && useProxyResponseCode) {
-                                tryTransparentNTLMProxy = false;
-                            }
                         }
                         a = null;
                         if (tryTransparentNTLMProxy) {
@@ -2608,7 +2559,7 @@ public class HttpURLConnection extends java.net.HttpURLConnection {
 
         if (p != null) {
             try {
-                return AccessController.doPrivilegedWithCombiner(
+                return AccessController.doPrivileged(
                     new PrivilegedExceptionAction<Boolean>() {
                         public Boolean run() throws IOException {
                             return followRedirect0(loc, stat, locUrl0);
@@ -2663,10 +2614,6 @@ public class HttpURLConnection extends java.net.HttpURLConnection {
             requests.set(0, method + " " + getRequestURI()+" "  +
                              httpVersion, null);
             connected = true;
-            // need to remember this in case NTLM proxy authentication gets
-            // used. We can't use transparent authentication when user
-            // doesn't know about proxy.
-            useProxyResponseCode = true;
         } else {
             // maintain previous headers, just change the name
             // of the file we're getting

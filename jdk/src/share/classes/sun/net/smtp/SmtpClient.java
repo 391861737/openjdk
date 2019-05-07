@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 1995, 2017, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 1995, 2011, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -43,7 +43,6 @@ import sun.net.TransferProtocolClient;
 
 public class SmtpClient extends TransferProtocolClient {
 
-    private static int DEFAULT_SMTP_PORT = 25;
     String mailhost;
     SmtpPrintStream message;
 
@@ -75,10 +74,6 @@ public class SmtpClient extends TransferProtocolClient {
     }
 
     public void to(String s) throws IOException {
-        if (s.indexOf('\n') != -1) {
-            throw new IOException("Illegal SMTP command",
-                    new IllegalArgumentException("Illegal carriage return"));
-        }
         int st = 0;
         int limit = s.length();
         int pos = 0;
@@ -121,21 +116,16 @@ public class SmtpClient extends TransferProtocolClient {
     }
 
     public void from(String s) throws IOException {
-        if (s.indexOf('\n') != -1) {
-            throw new IOException("Illegal SMTP command",
-                    new IllegalArgumentException("Illegal carriage return"));
-        }
-        if (s.startsWith("<")) {
+        if (s.startsWith("<"))
             issueCommand("mail from: " + s + "\r\n", 250);
-        } else {
+        else
             issueCommand("mail from: <" + s + ">\r\n", 250);
-        }
     }
 
     /** open a SMTP connection to host <i>host</i>. */
     private void openServer(String host) throws IOException {
         mailhost = host;
-        openServer(mailhost, DEFAULT_SMTP_PORT);
+        openServer(mailhost, 25);
         issueCommand("helo "+InetAddress.getLocalHost().getHostName()+"\r\n", 250);
     }
 

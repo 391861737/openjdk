@@ -93,35 +93,19 @@ public class G1HeapRegionTable extends VMObject {
     private class HeapRegionIterator implements Iterator<HeapRegion> {
         private long index;
         private long length;
-        private HeapRegion next;
-
-        public HeapRegion positionToNext() {
-          HeapRegion result = next;
-          while (index < length && at(index) == null) {
-            index++;
-          }
-          if (index < length) {
-            next = at(index);
-            index++; // restart search at next element
-          } else {
-            next = null;
-          }
-          return result;
-        }
 
         @Override
-        public boolean hasNext() { return next != null;     }
+        public boolean hasNext() { return index < length; }
 
         @Override
-        public HeapRegion next() { return positionToNext(); }
+        public HeapRegion next() { return at(index++);    }
 
         @Override
-        public void remove()     { /* not supported */      }
+        public void remove()     { /* not supported */    }
 
-        HeapRegionIterator(long totalLength) {
+        HeapRegionIterator(long committedLength) {
             index = 0;
-            length = totalLength;
-            positionToNext();
+            length = committedLength;
         }
     }
 

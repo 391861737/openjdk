@@ -37,7 +37,6 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import com.sun.tools.javac.util.StringUtils;
 
 /**
  * Annotate instructions with details about type annotations.
@@ -116,7 +115,7 @@ public class TypeAnnotationWriter extends InstructionDetailWriter {
                 print("@");
                 annotationWriter.write(n.anno, false, true);
                 print(", ");
-                println(StringUtils.toLowerCase(n.kind.toString()));
+                println(n.kind.toString().toLowerCase());
             }
         }
     }

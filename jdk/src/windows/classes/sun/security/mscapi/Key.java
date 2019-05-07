@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2005, 2016, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2005, 2013, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -30,6 +30,7 @@ import sun.security.util.Length;
 /**
  * The handle for an RSA or DSA key using the Microsoft Crypto API.
  *
+ * @see DSAPrivateKey
  * @see RSAPrivateKey
  * @see RSAPublicKey
  *
@@ -40,35 +41,9 @@ abstract class Key implements java.security.Key, Length
 {
     private static final long serialVersionUID = -1088859394025049194L;
 
-    static class NativeHandles {
-        long hCryptProv = 0;
-        long hCryptKey = 0;
-
-        public NativeHandles(long hCryptProv, long hCryptKey) {
-            this.hCryptProv = hCryptProv;
-            this.hCryptKey = hCryptKey;
-        }
-
-        /**
-         * Finalization method
-         */
-        protected void finalize() throws Throwable
-        {
-            try {
-                synchronized(this)
-                {
-                    cleanUp(hCryptProv, hCryptKey);
-                    hCryptProv = 0;
-                    hCryptKey = 0;
-                }
-
-            } finally {
-                super.finalize();
-            }
-        }
-    }
-
-    protected NativeHandles handles;
+    // Native handle
+    protected long hCryptProv = 0;
+    protected long hCryptKey = 0;
 
     // Key length
     protected int keyLength = 0;
@@ -76,10 +51,29 @@ abstract class Key implements java.security.Key, Length
     /**
      * Construct a Key object.
      */
-    protected Key(NativeHandles handles, int keyLength)
+    protected Key(long hCryptProv, long hCryptKey, int keyLength)
     {
-        this.handles = handles;
+        this.hCryptProv = hCryptProv;
+        this.hCryptKey = hCryptKey;
         this.keyLength = keyLength;
+    }
+
+    /**
+     * Finalization method
+     */
+    protected void finalize() throws Throwable
+    {
+        try {
+            synchronized(this)
+            {
+                cleanUp(hCryptProv, hCryptKey);
+                hCryptProv = 0;
+                hCryptKey = 0;
+            }
+
+        } finally {
+            super.finalize();
+        }
     }
 
     /**
@@ -102,7 +96,7 @@ abstract class Key implements java.security.Key, Length
      */
     public long getHCryptKey()
     {
-        return handles.hCryptKey;
+        return hCryptKey;
     }
 
     /**
@@ -110,12 +104,12 @@ abstract class Key implements java.security.Key, Length
      */
     public long getHCryptProvider()
     {
-        return handles.hCryptProv;
+        return hCryptProv;
     }
 
     /**
      * Returns the standard algorithm name for this key. For
-     * example, "RSA" would indicate that this key is a RSA key.
+     * example, "DSA" would indicate that this key is a DSA key.
      * See Appendix A in the <a href=
      * "../../../guide/security/CryptoSpec.html#AppA">
      * Java Cryptography Architecture API Specification &amp; Reference </a>

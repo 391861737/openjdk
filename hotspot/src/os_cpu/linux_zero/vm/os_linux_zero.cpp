@@ -55,8 +55,8 @@
 #include "utilities/vmError.hpp"
 
 address os::current_stack_pointer() {
-  // return the address of the current function
-  return (address)__builtin_frame_address(0);
+  address dummy = (address) &dummy;
+  return dummy;
 }
 
 frame os::get_sender_for_C_frame(frame* fr) {

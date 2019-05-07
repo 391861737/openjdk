@@ -52,6 +52,8 @@ AC_DEFUN([HELP_MSG_MISSING_DEPENDENCY],
         pkgutil_help $MISSING_DEPENDENCY ;;
       pkgadd)
         pkgadd_help  $MISSING_DEPENDENCY ;;
+      * )
+        break ;;
     esac
 
     if test "x$PKGHANDLER_COMMAND" != x; then
@@ -90,6 +92,8 @@ http://www.freetype.org/
 If you put the resulting build in \"C:\Program Files\GnuWin32\", it will be found automatically."
       fi
       ;;
+    * )
+      break ;;
   esac
 }
 
@@ -115,6 +119,8 @@ apt_help() {
       PKGHANDLER_COMMAND="sudo apt-get install libX11-dev libxext-dev libxrender-dev libxtst-dev libxt-dev" ;;
     ccache)
       PKGHANDLER_COMMAND="sudo apt-get install ccache" ;;
+    * )
+      break ;;
   esac
 }
 
@@ -136,6 +142,8 @@ yum_help() {
       PKGHANDLER_COMMAND="sudo yum install libXtst-devel libXt-devel libXrender-devel" ;;
     ccache)
       PKGHANDLER_COMMAND="sudo yum install ccache" ;;
+    * )
+      break ;;
   esac
 }
 

@@ -26,7 +26,6 @@
  * Ensure that all parseable files can be parsed using parser API.
  *
  * @test
- * @option --const-as-var
  * @option -scripting
  * @run
  */

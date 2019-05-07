@@ -107,17 +107,16 @@ class CallerSensitiveDynamicMethod extends SingleDynamicMethod {
     private final AccessibleObject target;
     private final MethodType type;
 
-    CallerSensitiveDynamicMethod(final AccessibleObject target) {
+    public CallerSensitiveDynamicMethod(AccessibleObject target) {
         super(getName(target));
         this.target = target;
         this.type = getMethodType(target);
     }
 
-    private static String getName(final AccessibleObject target) {
+    private static String getName(AccessibleObject target) {
         final Member m = (Member)target;
-        final boolean constructor = m instanceof Constructor;
-        return getMethodNameWithSignature(getMethodType(target), constructor ? m.getName() :
-            getClassAndMethodName(m.getDeclaringClass(), m.getName()), !constructor);
+        return getMethodNameWithSignature(getMethodType(target), getClassAndMethodName(m.getDeclaringClass(),
+                m.getName()));
     }
 
     @Override
@@ -125,7 +124,7 @@ class CallerSensitiveDynamicMethod extends SingleDynamicMethod {
         return type;
     }
 
-    private static MethodType getMethodType(final AccessibleObject ao) {
+    private static MethodType getMethodType(AccessibleObject ao) {
         final boolean isMethod = ao instanceof Method;
         final Class<?> rtype = isMethod ? ((Method)ao).getReturnType() : ((Constructor<?>)ao).getDeclaringClass();
         final Class<?>[] ptypes = isMethod ? ((Method)ao).getParameterTypes() : ((Constructor<?>)ao).getParameterTypes();
@@ -145,7 +144,7 @@ class CallerSensitiveDynamicMethod extends SingleDynamicMethod {
     }
 
     @Override
-    MethodHandle getTarget(final MethodHandles.Lookup lookup) {
+    MethodHandle getTarget(MethodHandles.Lookup lookup) {
         if(target instanceof Method) {
             final MethodHandle mh = Lookup.unreflect(lookup, (Method)target);
             if(Modifier.isStatic(((Member)target).getModifiers())) {
@@ -155,10 +154,5 @@ class CallerSensitiveDynamicMethod extends SingleDynamicMethod {
         }
         return StaticClassIntrospector.editConstructorMethodHandle(Lookup.unreflectConstructor(lookup,
                 (Constructor<?>)target));
-    }
-
-    @Override
-    boolean isConstructor() {
-        return target instanceof Constructor;
     }
 }

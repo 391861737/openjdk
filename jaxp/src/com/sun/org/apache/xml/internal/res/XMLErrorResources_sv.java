@@ -17,6 +17,9 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+/*
+ * $Id: XMLErrorResources_sv.java /st_wptg_1.8.0.0.0jdk/2 2013/09/16 06:50:58 gmolloy Exp $
+ */
 package com.sun.org.apache.xml.internal.res;
 
 
@@ -230,7 +233,7 @@ public class XMLErrorResources_sv extends ListResourceBundle
       "Axeltravers underst\u00F6ds inte: {0}"},
 
     { ER_NO_DTMIDS_AVAIL,
-      "Inga fler DTM-id:n \u00E4r tillg\u00E4ngliga"},
+      "Inga fler DTM-ID:n \u00E4r tillg\u00E4ngliga"},
 
     { ER_NOT_SUPPORTED,
       "Underst\u00F6ds inte: {0}"},
@@ -375,8 +378,8 @@ public class XMLErrorResources_sv extends ListResourceBundle
 
     { "BAD_CODE", "Parameter f\u00F6r createMessage ligger utanf\u00F6r gr\u00E4nsv\u00E4rdet"},
     { "FORMAT_FAILED", "Undantag utl\u00F6st vid messageFormat-anrop"},
-    { "line", "Rad nr"},
-    { "column","Kolumn nr"},
+    { "line", "Rad #"},
+    { "column","Kolumn #"},
 
     {ER_SERIALIZER_NOT_CONTENTHANDLER,
       "Serializerklassen ''{0}'' implementerar inte org.xml.sax.ContentHandler."},

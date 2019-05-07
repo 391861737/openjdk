@@ -26,7 +26,6 @@
 package jdk.nashorn.internal.runtime;
 
 import jdk.nashorn.api.scripting.NashornException;
-import jdk.nashorn.internal.objects.Global;
 import jdk.nashorn.internal.parser.Token;
 
 /**
@@ -38,7 +37,7 @@ public final class ParserException extends NashornException {
     private final Source source;
     // token responsible for this exception
     private final long token;
-    // if this is translated as ECMA error, which type should be used?
+    // if this is traslated as ECMA error, which type should be used?
     private final JSErrorType errorType;
 
     /**
@@ -111,7 +110,7 @@ public final class ParserException extends NashornException {
      * Throw this {@code ParserException} as one of the 7 native JavaScript errors
      * @param global global scope object
      */
-    public void throwAsEcmaException(final Global global) {
+    public void throwAsEcmaException(final ScriptObject global) {
         throw ECMAErrors.asEcmaException(global, this);
     }
 }

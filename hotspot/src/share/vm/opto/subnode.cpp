@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 1997, 2014, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 1997, 2013, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -80,7 +80,7 @@ Node *SubNode::Identity( PhaseTransform *phase ) {
 
 //------------------------------Value------------------------------------------
 // A subtract node differences it's two inputs.
-const Type* SubNode::Value_common(PhaseTransform *phase) const {
+const Type *SubNode::Value( PhaseTransform *phase ) const {
   const Node* in1 = in(1);
   const Node* in2 = in(2);
   // Either input is TOP ==> the result is TOP
@@ -97,16 +97,6 @@ const Type* SubNode::Value_common(PhaseTransform *phase) const {
   if( t1 == Type::BOTTOM || t2 == Type::BOTTOM )
     return bottom_type();
 
-  return NULL;
-}
-
-const Type* SubNode::Value(PhaseTransform *phase) const {
-  const Type* t = Value_common(phase);
-  if (t != NULL) {
-    return t;
-  }
-  const Type* t1 = phase->type(in(1));
-  const Type* t2 = phase->type(in(2));
   return sub(t1,t2);            // Local flavor of type subtraction
 
 }
@@ -547,12 +537,8 @@ const Type *CmpUNode::sub( const Type *t1, const Type *t2 ) const {
     // All unsigned values are LE -1 and GE 0.
     if (lo0 == 0 && hi0 == 0) {
       return TypeInt::CC_LE;            //   0 <= bot
-    } else if ((jint)lo0 == -1 && (jint)hi0 == -1) {
-      return TypeInt::CC_GE;            // -1 >= bot
     } else if (lo1 == 0 && hi1 == 0) {
       return TypeInt::CC_GE;            // bot >= 0
-    } else if ((jint)lo1 == -1 && (jint)hi1 == -1) {
-      return TypeInt::CC_LE;            // bot <= -1
     }
   } else {
     // We can use ranges of the form [lo..hi] if signs are the same.
@@ -582,81 +568,6 @@ const Type *CmpUNode::sub( const Type *t1, const Type *t2 ) const {
   if ((jint)lo0 >= 0 && (jint)lo1 >= 0 && is_index_range_check())
     return TypeInt::CC_LT;
   return TypeInt::CC;                   // else use worst case results
-}
-
-const Type* CmpUNode::Value(PhaseTransform *phase) const {
-  const Type* t = SubNode::Value_common(phase);
-  if (t != NULL) {
-    return t;
-  }
-  const Node* in1 = in(1);
-  const Node* in2 = in(2);
-  const Type* t1 = phase->type(in1);
-  const Type* t2 = phase->type(in2);
-  assert(t1->isa_int(), "CmpU has only Int type inputs");
-  if (t2 == TypeInt::INT) { // Compare to bottom?
-    return bottom_type();
-  }
-  uint in1_op = in1->Opcode();
-  if (in1_op == Op_AddI || in1_op == Op_SubI) {
-    // The problem rise when result of AddI(SubI) may overflow
-    // signed integer value. Let say the input type is
-    // [256, maxint] then +128 will create 2 ranges due to
-    // overflow: [minint, minint+127] and [384, maxint].
-    // But C2 type system keep only 1 type range and as result
-    // it use general [minint, maxint] for this case which we
-    // can't optimize.
-    //
-    // Make 2 separate type ranges based on types of AddI(SubI) inputs
-    // and compare results of their compare. If results are the same
-    // CmpU node can be optimized.
-    const Node* in11 = in1->in(1);
-    const Node* in12 = in1->in(2);
-    const Type* t11 = (in11 == in1) ? Type::TOP : phase->type(in11);
-    const Type* t12 = (in12 == in1) ? Type::TOP : phase->type(in12);
-    // Skip cases when input types are top or bottom.
-    if ((t11 != Type::TOP) && (t11 != TypeInt::INT) &&
-        (t12 != Type::TOP) && (t12 != TypeInt::INT)) {
-      const TypeInt *r0 = t11->is_int();
-      const TypeInt *r1 = t12->is_int();
-      jlong lo_r0 = r0->_lo;
-      jlong hi_r0 = r0->_hi;
-      jlong lo_r1 = r1->_lo;
-      jlong hi_r1 = r1->_hi;
-      if (in1_op == Op_SubI) {
-        jlong tmp = hi_r1;
-        hi_r1 = -lo_r1;
-        lo_r1 = -tmp;
-        // Note, for substructing [minint,x] type range
-        // long arithmetic provides correct overflow answer.
-        // The confusion come from the fact that in 32-bit
-        // -minint == minint but in 64-bit -minint == maxint+1.
-      }
-      jlong lo_long = lo_r0 + lo_r1;
-      jlong hi_long = hi_r0 + hi_r1;
-      int lo_tr1 = min_jint;
-      int hi_tr1 = (int)hi_long;
-      int lo_tr2 = (int)lo_long;
-      int hi_tr2 = max_jint;
-      bool underflow = lo_long != (jlong)lo_tr2;
-      bool overflow  = hi_long != (jlong)hi_tr1;
-      // Use sub(t1, t2) when there is no overflow (one type range)
-      // or when both overflow and underflow (too complex).
-      if ((underflow != overflow) && (hi_tr1 < lo_tr2)) {
-        // Overflow only on one boundary, compare 2 separate type ranges.
-        int w = MAX2(r0->_widen, r1->_widen); // _widen does not matter here
-        const TypeInt* tr1 = TypeInt::make(lo_tr1, hi_tr1, w);
-        const TypeInt* tr2 = TypeInt::make(lo_tr2, hi_tr2, w);
-        const Type* cmp1 = sub(tr1, t2);
-        const Type* cmp2 = sub(tr2, t2);
-        if (cmp1 == cmp2) {
-          return cmp1; // Hit!
-        }
-      }
-    }
-  }
-
-  return sub(t1, t2);            // Local flavor of type subtraction
 }
 
 bool CmpUNode::is_index_range_check() const {
@@ -705,60 +616,6 @@ const Type *CmpLNode::sub( const Type *t1, const Type *t2 ) const {
   else if( r0->_lo == r1->_hi ) // Range is never low?
     return TypeInt::CC_GE;
   return TypeInt::CC;           // else use worst case results
-}
-
-
-// Simplify a CmpUL (compare 2 unsigned longs) node, based on local information.
-// If both inputs are constants, compare them.
-const Type* CmpULNode::sub(const Type* t1, const Type* t2) const {
-  assert(!t1->isa_ptr(), "obsolete usage of CmpUL");
-
-  // comparing two unsigned longs
-  const TypeLong* r0 = t1->is_long();   // Handy access
-  const TypeLong* r1 = t2->is_long();
-
-  // Current installed version
-  // Compare ranges for non-overlap
-  julong lo0 = r0->_lo;
-  julong hi0 = r0->_hi;
-  julong lo1 = r1->_lo;
-  julong hi1 = r1->_hi;
-
-  // If either one has both negative and positive values,
-  // it therefore contains both 0 and -1, and since [0..-1] is the
-  // full unsigned range, the type must act as an unsigned bottom.
-  bool bot0 = ((jlong)(lo0 ^ hi0) < 0);
-  bool bot1 = ((jlong)(lo1 ^ hi1) < 0);
-
-  if (bot0 || bot1) {
-    // All unsigned values are LE -1 and GE 0.
-    if (lo0 == 0 && hi0 == 0) {
-      return TypeInt::CC_LE;            //   0 <= bot
-    } else if ((jlong)lo0 == -1 && (jlong)hi0 == -1) {
-      return TypeInt::CC_GE;            // -1 >= bot
-    } else if (lo1 == 0 && hi1 == 0) {
-      return TypeInt::CC_GE;            // bot >= 0
-    } else if ((jlong)lo1 == -1 && (jlong)hi1 == -1) {
-      return TypeInt::CC_LE;            // bot <= -1
-    }
-  } else {
-    // We can use ranges of the form [lo..hi] if signs are the same.
-    assert(lo0 <= hi0 && lo1 <= hi1, "unsigned ranges are valid");
-    // results are reversed, '-' > '+' for unsigned compare
-    if (hi0 < lo1) {
-      return TypeInt::CC_LT;            // smaller
-    } else if (lo0 > hi1) {
-      return TypeInt::CC_GT;            // greater
-    } else if (hi0 == lo1 && lo0 == hi1) {
-      return TypeInt::CC_EQ;            // Equal results
-    } else if (lo0 >= hi1) {
-      return TypeInt::CC_GE;
-    } else if (hi0 <= lo1) {
-      return TypeInt::CC_LE;
-    }
-  }
-
-  return TypeInt::CC;                   // else use worst case results
 }
 
 //=============================================================================
@@ -1205,10 +1062,12 @@ const Type *BoolTest::cc2logical( const Type *CC ) const {
 
 //------------------------------dump_spec-------------------------------------
 // Print special per-node info
+#ifndef PRODUCT
 void BoolTest::dump_on(outputStream *st) const {
   const char *msg[] = {"eq","gt","of","lt","ne","le","nof","ge"};
-  st->print("%s", msg[_test]);
+  st->print(msg[_test]);
 }
+#endif
 
 //=============================================================================
 uint BoolNode::hash() const { return (Node::hash() << 3)|(_test._test+1); }
@@ -1267,14 +1126,10 @@ Node *BoolNode::Ideal(PhaseGVN *phase, bool can_reshape) {
   Node *cmp = in(1);
   if( !cmp->is_Sub() ) return NULL;
   int cop = cmp->Opcode();
-  if( cop == Op_FastLock || cop == Op_FastUnlock) return NULL;
+  if( cop == Op_FastLock || cop == Op_FastUnlock || cop == Op_FlagsProj) return NULL;
   Node *cmp1 = cmp->in(1);
   Node *cmp2 = cmp->in(2);
   if( !cmp1 ) return NULL;
-
-  if (_test._test == BoolTest::overflow || _test._test == BoolTest::no_overflow) {
-    return NULL;
-  }
 
   // Constant on left?
   Node *con = cmp1;

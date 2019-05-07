@@ -36,11 +36,8 @@ import java.util.List;
 import jdk.nashorn.internal.ir.BinaryNode;
 import jdk.nashorn.internal.ir.Block;
 import jdk.nashorn.internal.ir.Expression;
-import jdk.nashorn.internal.ir.IdentNode;
 import jdk.nashorn.internal.ir.Node;
-import jdk.nashorn.internal.ir.Statement;
 import jdk.nashorn.internal.ir.Symbol;
-import jdk.nashorn.internal.ir.Terminal;
 import jdk.nashorn.internal.ir.TernaryNode;
 import jdk.nashorn.internal.ir.annotations.Ignore;
 import jdk.nashorn.internal.ir.annotations.Reference;
@@ -107,31 +104,23 @@ public final class ASTWriter {
 
         final boolean isReference = field != null && field.isAnnotationPresent(Reference.class);
 
-        final Class<?> clazz = node.getClass();
+        Class<?> clazz = node.getClass();
         String   type  = clazz.getName();
 
         type = type.substring(type.lastIndexOf('.') + 1, type.length());
-        int truncate = type.indexOf("Node");
-        if (truncate == -1) {
-            truncate = type.indexOf("Statement");
-        }
-        if (truncate != -1) {
-            type = type.substring(0, truncate);
-        }
-        type = type.toLowerCase();
-
         if (isReference) {
             type = "ref: " + type;
         }
+        type += "@" + Debug.id(node);
         final Symbol symbol;
-        if (node instanceof IdentNode) {
-            symbol = ((IdentNode)node).getSymbol();
+        if(node instanceof Expression) {
+            symbol = ((Expression)node).getSymbol();
         } else {
             symbol = null;
         }
 
         if (symbol != null) {
-            type += ">" + symbol;
+            type += "#" + symbol;
         }
 
         if (node instanceof Block && ((Block)node).needsScope()) {
@@ -146,11 +135,11 @@ public final class ASTWriter {
 
         String status = "";
 
-        if (node instanceof Terminal && ((Terminal)node).isTerminal()) {
+        if (node.isTerminal()) {
             status += " Terminal";
         }
 
-        if (node instanceof Statement && ((Statement)node).hasGoto()) {
+        if (node.hasGoto()) {
             status += " Goto ";
         }
 
@@ -170,8 +159,6 @@ public final class ASTWriter {
             }
             status += " (" + tname + ")";
         }
-
-        status += " @" + Debug.id(node);
 
         if (children.isEmpty()) {
             sb.append("[").
@@ -213,7 +200,7 @@ public final class ASTWriter {
                 } else if (value instanceof Collection) {
                     int pos = 0;
                     ASTWriter.indent(sb, indent + 1);
-                    sb.append('[').
+                    sb.append("[Collection ").
                         append(child.getName()).
                         append("[0..").
                         append(((Collection<Node>)value).size()).

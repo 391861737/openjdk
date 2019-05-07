@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 1997, 2015, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 1997, 2013, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -254,14 +254,6 @@
 #define NOT_LINUX(code) code
 #endif
 
-#ifdef AIX
-#define AIX_ONLY(code) code
-#define NOT_AIX(code)
-#else
-#define AIX_ONLY(code)
-#define NOT_AIX(code) code
-#endif
-
 #ifdef SOLARIS
 #define SOLARIS_ONLY(code) code
 #define NOT_SOLARIS(code)
@@ -328,11 +320,7 @@
 #define NOT_IA32(code) code
 #endif
 
-// This is a REALLY BIG HACK, but on AIX <sys/systemcfg.h> unconditionally defines IA64.
-// At least on AIX 7.1 this is a real problem because 'systemcfg.h' is indirectly included
-// by 'pthread.h' and other common system headers.
-
-#if defined(IA64) && !defined(AIX)
+#ifdef IA64
 #define IA64_ONLY(code) code
 #define NOT_IA64(code)
 #else
@@ -356,32 +344,12 @@
 #define NOT_SPARC(code) code
 #endif
 
-#if defined(PPC32) || defined(PPC64)
-#ifndef PPC
-#define PPC
-#endif
+#ifdef PPC
 #define PPC_ONLY(code) code
 #define NOT_PPC(code)
 #else
-#undef PPC
 #define PPC_ONLY(code)
 #define NOT_PPC(code) code
-#endif
-
-#ifdef PPC32
-#define PPC32_ONLY(code) code
-#define NOT_PPC32(code)
-#else
-#define PPC32_ONLY(code)
-#define NOT_PPC32(code) code
-#endif
-
-#ifdef PPC64
-#define PPC64_ONLY(code) code
-#define NOT_PPC64(code)
-#else
-#define PPC64_ONLY(code)
-#define NOT_PPC64(code) code
 #endif
 
 #ifdef E500V2
@@ -392,20 +360,13 @@
 #define NOT_E500V2(code) code
 #endif
 
+
 #ifdef ARM
 #define ARM_ONLY(code) code
 #define NOT_ARM(code)
 #else
 #define ARM_ONLY(code)
 #define NOT_ARM(code) code
-#endif
-
-#ifdef ARM32
-#define ARM32_ONLY(code) code
-#define NOT_ARM32(code)
-#else
-#define ARM32_ONLY(code)
-#define NOT_ARM32(code) code
 #endif
 
 #ifdef JAVASE_EMBEDDED

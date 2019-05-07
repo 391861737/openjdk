@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2001, 2014, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2001, 2012, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -53,7 +53,6 @@ import java.io.DataOutputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.InvalidClassException;
 import java.io.Serializable;
-import java.io.Externalizable;
 
 import java.util.Arrays;
 import java.util.Comparator;
@@ -89,7 +88,7 @@ public class ObjectStreamClass_1_3_1 implements java.io.Serializable {
     public static final long kDefaultUID = -1;
 
     private static Object noArgsList[] = {};
-    private static Class<?> noTypesList[] = {};
+    private static Class noTypesList[] = {};
 
     private static Hashtable translatedFields;
 
@@ -97,7 +96,7 @@ public class ObjectStreamClass_1_3_1 implements java.io.Serializable {
      * is returned if the specified class does not implement
      * java.io.Serializable or java.io.Externalizable.
      */
-    static final ObjectStreamClass_1_3_1 lookup(Class<?> cl)
+    static final ObjectStreamClass_1_3_1 lookup(Class cl)
     {
         ObjectStreamClass_1_3_1 desc = lookupInternal(cl);
         if (desc.isSerializable() || desc.isExternalizable())
@@ -109,7 +108,7 @@ public class ObjectStreamClass_1_3_1 implements java.io.Serializable {
      * Find the class descriptor for the specified class.
      * Package access only so it can be called from ObjectIn/OutStream.
      */
-    static ObjectStreamClass_1_3_1 lookupInternal(Class<?> cl)
+    static ObjectStreamClass_1_3_1 lookupInternal(Class cl)
     {
         /* Synchronize on the hashtable so no two threads will do
          * this at the same time.
@@ -123,13 +122,13 @@ public class ObjectStreamClass_1_3_1 implements java.io.Serializable {
             }
 
                 /* Check if it's serializable */
-                boolean serializable = Serializable.class.isAssignableFrom(cl);
+                boolean serializable = classSerializable.isAssignableFrom(cl);
                 /* If the class is only Serializable,
                  * lookup the descriptor for the superclass.
                  */
                 ObjectStreamClass_1_3_1 superdesc = null;
                 if (serializable) {
-                    Class<?> superclass = cl.getSuperclass();
+                    Class superclass = cl.getSuperclass();
                     if (superclass != null)
                         superdesc = lookup(superclass);
                 }
@@ -142,7 +141,7 @@ public class ObjectStreamClass_1_3_1 implements java.io.Serializable {
                 if (serializable) {
                     externalizable =
                         ((superdesc != null) && superdesc.isExternalizable()) ||
-                        Externalizable.class.isAssignableFrom(cl);
+                        classExternalizable.isAssignableFrom(cl);
                     if (externalizable) {
                         serializable = false;
                     }
@@ -171,7 +170,7 @@ public class ObjectStreamClass_1_3_1 implements java.io.Serializable {
      * that have evolved from a common root class and agree to be serialized
      * and deserialized using a common format.
      */
-    public static final long getSerialVersionUID( java.lang.Class<?> clazz) {
+    public static final long getSerialVersionUID( java.lang.Class clazz) {
         ObjectStreamClass_1_3_1 theosc = ObjectStreamClass_1_3_1.lookup( clazz );
         if( theosc != null )
         {
@@ -205,7 +204,7 @@ public class ObjectStreamClass_1_3_1 implements java.io.Serializable {
     /**
      * Return the actual (computed) serialVersionUID for this class.
      */
-    public static final long getActualSerialVersionUID( java.lang.Class<?> clazz )
+    public static final long getActualSerialVersionUID( java.lang.Class clazz )
     {
         ObjectStreamClass_1_3_1 theosc = ObjectStreamClass_1_3_1.lookup( clazz );
         if( theosc != null )
@@ -235,7 +234,7 @@ public class ObjectStreamClass_1_3_1 implements java.io.Serializable {
      * Return the class in the local VM that this version is mapped to.
      * Null is returned if there is no corresponding local class.
      */
-    public final Class<?> forClass() {
+    public final Class forClass() {
         return ofClass;
     }
 
@@ -334,7 +333,7 @@ public class ObjectStreamClass_1_3_1 implements java.io.Serializable {
      * Create a new ObjectStreamClass_1_3_1 from a loaded class.
      * Don't call this directly, call lookup instead.
      */
-    private ObjectStreamClass_1_3_1(java.lang.Class<?> cl, ObjectStreamClass_1_3_1 superdesc,
+    private ObjectStreamClass_1_3_1(java.lang.Class cl, ObjectStreamClass_1_3_1 superdesc,
                               boolean serial, boolean extern)
     {
         ofClass = cl;           /* created from this class */
@@ -377,7 +376,7 @@ public class ObjectStreamClass_1_3_1 implements java.io.Serializable {
     private void init() {
       synchronized (lock) {
 
-        final Class<?> cl = ofClass;
+        final Class cl = ofClass;
 
         if (fields != null) // already initialized
                 return;
@@ -559,7 +558,7 @@ public class ObjectStreamClass_1_3_1 implements java.io.Serializable {
                      * will call it as necessary.
                      */
                     try {
-                      Class<?>[] args = {java.io.ObjectOutputStream.class};
+                      Class[] args = {java.io.ObjectOutputStream.class};
                       writeObjectMethod = cl.getDeclaredMethod("writeObject", args);
                       hasWriteObjectMethod = true;
                       int mods = writeObjectMethod.getModifiers();
@@ -579,7 +578,7 @@ public class ObjectStreamClass_1_3_1 implements java.io.Serializable {
                      * ObjectInputStream so it can all the method directly.
                      */
                     try {
-                      Class<?>[] args = {java.io.ObjectInputStream.class};
+                      Class[] args = {java.io.ObjectInputStream.class};
                       readObjectMethod = cl.getDeclaredMethod("readObject", args);
                       int mods = readObjectMethod.getModifiers();
 
@@ -630,11 +629,11 @@ public class ObjectStreamClass_1_3_1 implements java.io.Serializable {
             if (translation != null)
                 return translation;
             else {
-                Class<?> osfClass = com.sun.corba.se.impl.orbutil.ObjectStreamField.class;
+                Class osfClass = com.sun.corba.se.impl.orbutil.ObjectStreamField.class;
 
                 translation = (Object[])java.lang.reflect.Array.newInstance(osfClass, objs.length);
                 Object arg[] = new Object[2];
-                Class<?> types[] = {String.class, Class.class};
+                Class types[] = {String.class, Class.class};
                 Constructor constructor = osfClass.getDeclaredConstructor(types);
                 for (int i = fields.length -1; i >= 0; i--){
                     arg[0] = fields[i].getName();
@@ -805,7 +804,7 @@ public class ObjectStreamClass_1_3_1 implements java.io.Serializable {
         }
     }
 
-    private static long computeStructuralUID(ObjectStreamClass_1_3_1 osc, Class<?> cl) {
+    private static long computeStructuralUID(ObjectStreamClass_1_3_1 osc, Class cl) {
         ByteArrayOutputStream devnull = new ByteArrayOutputStream(512);
 
         long h = 0;
@@ -825,7 +824,7 @@ public class ObjectStreamClass_1_3_1 implements java.io.Serializable {
             DataOutputStream data = new DataOutputStream(mdo);
 
             // Get SUID of parent
-            Class<?> parent = cl.getSuperclass();
+            Class parent = cl.getSuperclass();
             if ((parent != null))
             // SerialBug 1; acc. to spec the one for
             // java.lang.object
@@ -911,10 +910,10 @@ public class ObjectStreamClass_1_3_1 implements java.io.Serializable {
     /**
      * Compute the JVM signature for the class.
      */
-    static String getSignature(Class<?> clazz) {
+    static String getSignature(Class clazz) {
         String type = null;
         if (clazz.isArray()) {
-            Class<?> cl = clazz;
+            Class cl = clazz;
             int dimensions = 0;
             while (cl.isArray()) {
                 dimensions++;
@@ -960,7 +959,7 @@ public class ObjectStreamClass_1_3_1 implements java.io.Serializable {
 
         sb.append("(");
 
-        Class<?>[] params = meth.getParameterTypes(); // avoid clone
+        Class[] params = meth.getParameterTypes(); // avoid clone
         for (int j = 0; j < params.length; j++) {
             sb.append(getSignature(params[j]));
         }
@@ -977,7 +976,7 @@ public class ObjectStreamClass_1_3_1 implements java.io.Serializable {
 
         sb.append("(");
 
-        Class<?>[] params = cons.getParameterTypes(); // avoid clone
+        Class[] params = cons.getParameterTypes(); // avoid clone
         for (int j = 0; j < params.length; j++) {
             sb.append(getSignature(params[j]));
         }
@@ -997,7 +996,7 @@ public class ObjectStreamClass_1_3_1 implements java.io.Serializable {
      * The entries are extended from java.lang.ref.SoftReference so the
      * gc will be able to free them if needed.
      */
-    private static ObjectStreamClass_1_3_1 findDescriptorFor(Class<?> cl) {
+    private static ObjectStreamClass_1_3_1 findDescriptorFor(Class cl) {
 
         int hash = cl.hashCode();
         int index = (hash & 0x7FFFFFFF) % descriptorFor.length;
@@ -1078,7 +1077,7 @@ public class ObjectStreamClass_1_3_1 implements java.io.Serializable {
     /*
      * Class that is a descriptor for in this virtual machine.
      */
-    private Class<?> ofClass;
+    private Class ofClass;
 
     /*
      * True if descriptor for a proxy class.
@@ -1131,6 +1130,22 @@ public class ObjectStreamClass_1_3_1 implements java.io.Serializable {
     /* Get the private static final field for serial version UID */
     // private static native long getSerialVersionUIDField(Class cl);
 
+    /* The Class Object for java.io.Serializable */
+    private static Class classSerializable = null;
+    private static Class classExternalizable = null;
+
+    /*
+     * Resolve java.io.Serializable at load time.
+     */
+    static {
+        try {
+            classSerializable = Class.forName("java.io.Serializable");
+            classExternalizable = Class.forName("java.io.Externalizable");
+        } catch (Throwable e) {
+            System.err.println("Could not load java.io.Serializable or java.io.Externalizable.");
+        }
+    }
+
     /** use serialVersionUID from JDK 1.1. for interoperability */
     private static final long serialVersionUID = -6120832682080437368L;
 
@@ -1168,8 +1183,8 @@ public class ObjectStreamClass_1_3_1 implements java.io.Serializable {
 
     private static class CompareClassByName implements Comparator {
         public int compare(Object o1, Object o2) {
-            Class<?> c1 = (Class)o1;
-            Class<?> c2 = (Class)o2;
+            Class c1 = (Class)o1;
+            Class c2 = (Class)o2;
             return (c1.getName()).compareTo(c2.getName());
         }
     }

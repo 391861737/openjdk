@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 1998, 2016, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 1998, 2013, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -33,15 +33,13 @@
 #include "prims/jvmtiRedefineClassesTrace.hpp"
 #include "prims/methodHandles.hpp"
 #include "runtime/handles.inline.hpp"
-#include "runtime/orderAccess.inline.hpp"
 #include "utilities/macros.hpp"
 #if INCLUDE_ALL_GCS
 # include "gc_implementation/parallelScavenge/psPromotionManager.hpp"
 #endif // INCLUDE_ALL_GCS
 
-PRAGMA_FORMAT_MUTE_WARNINGS_FOR_GCC
 
-// Implementation of ConstantPoolCacheEntry
+// Implememtation of ConstantPoolCacheEntry
 
 void ConstantPoolCacheEntry::initialize_entry(int index) {
   assert(0 < index && index < 0x10000, "sanity check");
@@ -144,8 +142,7 @@ void ConstantPoolCacheEntry::set_parameter_size(int value) {
 
 void ConstantPoolCacheEntry::set_direct_or_vtable_call(Bytecodes::Code invoke_code,
                                                        methodHandle method,
-                                                       int vtable_index,
-                                                       bool sender_is_interface) {
+                                                       int vtable_index) {
   bool is_vtable_call = (vtable_index >= 0);  // FIXME: split this method on this boolean
   assert(method->interpreter_entry() != NULL, "should have been set at this point");
   assert(!method->is_obsolete(),  "attempt to write obsolete method to cpCache");
@@ -209,13 +206,7 @@ void ConstantPoolCacheEntry::set_direct_or_vtable_call(Bytecodes::Code invoke_co
   if (byte_no == 1) {
     assert(invoke_code != Bytecodes::_invokevirtual &&
            invoke_code != Bytecodes::_invokeinterface, "");
-    // Don't mark invokespecial to method as resolved if sender is an interface.  The receiver
-    // has to be checked that it is a subclass of the current class every time this bytecode
-    // is executed.
-    if (invoke_code != Bytecodes::_invokespecial || !sender_is_interface ||
-        method->name() == vmSymbols::object_initializer_name()) {
     set_bytecode_1(invoke_code);
-    }
   } else if (byte_no == 2)  {
     if (change_to_virtual) {
       assert(invoke_code == Bytecodes::_invokeinterface, "");
@@ -245,18 +236,17 @@ void ConstantPoolCacheEntry::set_direct_or_vtable_call(Bytecodes::Code invoke_co
   NOT_PRODUCT(verify(tty));
 }
 
-void ConstantPoolCacheEntry::set_direct_call(Bytecodes::Code invoke_code, methodHandle method,
-                                             bool sender_is_interface) {
+void ConstantPoolCacheEntry::set_direct_call(Bytecodes::Code invoke_code, methodHandle method) {
   int index = Method::nonvirtual_vtable_index;
   // index < 0; FIXME: inline and customize set_direct_or_vtable_call
-  set_direct_or_vtable_call(invoke_code, method, index, sender_is_interface);
+  set_direct_or_vtable_call(invoke_code, method, index);
 }
 
 void ConstantPoolCacheEntry::set_vtable_call(Bytecodes::Code invoke_code, methodHandle method, int index) {
   // either the method is a miranda or its holder should accept the given index
   assert(method->method_holder()->is_interface() || method->method_holder()->verify_vtable_index(index), "");
   // index >= 0; FIXME: inline and customize set_direct_or_vtable_call
-  set_direct_or_vtable_call(invoke_code, method, index, false);
+  set_direct_or_vtable_call(invoke_code, method, index);
 }
 
 void ConstantPoolCacheEntry::set_itable_call(Bytecodes::Code invoke_code, methodHandle method, int index) {
@@ -313,7 +303,7 @@ void ConstantPoolCacheEntry::set_method_handle_common(constantPoolHandle cpool,
                    adapter->size_of_parameters());
 
   if (TraceInvokeDynamic) {
-    tty->print_cr("set_method_handle bc=%d appendix="PTR_FORMAT"%s method_type="PTR_FORMAT"%s method="PTR_FORMAT" ",
+    tty->print_cr("set_method_handle bc=%d appendix=" PTR_FORMAT"%s method_type=" PTR_FORMAT"%s method=" PTR_FORMAT" ",
                   invoke_code,
                   (void *)appendix(),    (has_appendix    ? "" : " (unused)"),
                   (void *)method_type(), (has_method_type ? "" : " (unused)"),
@@ -373,7 +363,7 @@ Method* ConstantPoolCacheEntry::method_if_resolved(constantPoolHandle cpool) {
   // Decode the action of set_method and set_interface_call
   Bytecodes::Code invoke_code = bytecode_1();
   if (invoke_code != (Bytecodes::Code)0) {
-    Metadata* f1 = f1_ord();
+    Metadata* f1 = (Metadata*)_f1;
     if (f1 != NULL) {
       switch (invoke_code) {
       case Bytecodes::_invokeinterface:
@@ -415,7 +405,7 @@ Method* ConstantPoolCacheEntry::method_if_resolved(constantPoolHandle cpool) {
 
 
 oop ConstantPoolCacheEntry::appendix_if_resolved(constantPoolHandle cpool) {
-  if (!has_appendix())
+  if (is_f1_null() || !has_appendix())
     return NULL;
   const int ref_index = f2_as_index() + _indy_resolved_references_appendix_offset;
   objArrayOop resolved_references = cpool->resolved_references();
@@ -424,7 +414,7 @@ oop ConstantPoolCacheEntry::appendix_if_resolved(constantPoolHandle cpool) {
 
 
 oop ConstantPoolCacheEntry::method_type_if_resolved(constantPoolHandle cpool) {
-  if (!has_method_type())
+  if (is_f1_null() || !has_method_type())
     return NULL;
   const int ref_index = f2_as_index() + _indy_resolved_references_method_type_offset;
   objArrayOop resolved_references = cpool->resolved_references();
@@ -457,6 +447,7 @@ bool ConstantPoolCacheEntry::adjust_method_entry(Method* old_method,
           new_method->name()->as_C_string(),
           new_method->signature()->as_C_string()));
       }
+
       return true;
     }
 
@@ -484,6 +475,7 @@ bool ConstantPoolCacheEntry::adjust_method_entry(Method* old_method,
         new_method->name()->as_C_string(),
         new_method->signature()->as_C_string()));
     }
+
     return true;
   }
 
@@ -504,39 +496,41 @@ bool ConstantPoolCacheEntry::check_no_old_or_obsolete_entries() {
     // _f1 == NULL || !_f1->is_method() are OK here
     return true;
   }
-  // return false if _f1 refers to a non-deleted old or obsolete method
+  // return false if _f1 refers to an old or an obsolete method
   return (NOT_PRODUCT(_f1->is_valid() &&) _f1->is_method() &&
-          (f1_as_method()->is_deleted() ||
-          (!f1_as_method()->is_old() && !f1_as_method()->is_obsolete())));
+          !((Method*)_f1)->is_old() && !((Method*)_f1)->is_obsolete());
 }
 
-Method* ConstantPoolCacheEntry::get_interesting_method_entry(Klass* k) {
+bool ConstantPoolCacheEntry::is_interesting_method_entry(Klass* k) {
   if (!is_method_entry()) {
     // not a method entry so not interesting by default
-    return NULL;
+    return false;
   }
+
   Method* m = NULL;
   if (is_vfinal()) {
     // virtual and final so _f2 contains method ptr instead of vtable index
     m = f2_as_vfinal_method();
   } else if (is_f1_null()) {
     // NULL _f1 means this is a virtual entry so also not interesting
-    return NULL;
+    return false;
   } else {
     if (!(_f1->is_method())) {
       // _f1 can also contain a Klass* for an interface
-      return NULL;
+      return false;
     }
     m = f1_as_method();
   }
+
   assert(m != NULL && m->is_method(), "sanity check");
   if (m == NULL || !m->is_method() || (k != NULL && m->method_holder() != k)) {
     // robustness for above sanity checks or method is not in
     // the interesting class
-    return NULL;
+    return false;
   }
+
   // the method is in the interesting class so the entry is interesting
-  return m;
+  return true;
 }
 #endif // INCLUDE_JVMTI
 
@@ -544,12 +538,12 @@ void ConstantPoolCacheEntry::print(outputStream* st, int index) const {
   // print separator
   if (index == 0) st->print_cr("                 -------------");
   // print entry
-  st->print("%3d  ("PTR_FORMAT")  ", index, (intptr_t)this);
+  st->print("%3d  (" PTR_FORMAT")  ", index, (intptr_t)this);
   st->print_cr("[%02x|%02x|%5d]", bytecode_2(), bytecode_1(),
                constant_pool_index());
-  st->print_cr("                 [   "PTR_FORMAT"]", (intptr_t)_f1);
-  st->print_cr("                 [   "PTR_FORMAT"]", (intptr_t)_f2);
-  st->print_cr("                 [   "PTR_FORMAT"]", (intptr_t)_flags);
+  st->print_cr("                 [   " PTR_FORMAT"]", (intptr_t)_f1);
+  st->print_cr("                 [   " PTR_FORMAT"]", (intptr_t)_f2);
+  st->print_cr("                 [   " PTR_FORMAT"]", (intptr_t)_flags);
   st->print_cr("                 -------------");
 }
 
@@ -612,31 +606,46 @@ void ConstantPoolCache::initialize(const intArray& inverse_index_map,
 // RedefineClasses() API support:
 // If any entry of this ConstantPoolCache points to any of
 // old_methods, replace it with the corresponding new_method.
-void ConstantPoolCache::adjust_method_entries(InstanceKlass* holder, bool * trace_name_printed) {
+void ConstantPoolCache::adjust_method_entries(Method** old_methods, Method** new_methods,
+                                                     int methods_length, bool * trace_name_printed) {
+
+  if (methods_length == 0) {
+    // nothing to do if there are no methods
+    return;
+  }
+
+  // get shorthand for the interesting class
+  Klass* old_holder = old_methods[0]->method_holder();
+
   for (int i = 0; i < length(); i++) {
-    ConstantPoolCacheEntry* entry = entry_at(i);
-    Method* old_method = entry->get_interesting_method_entry(holder);
-    if (old_method == NULL || !old_method->is_old()) {
-      continue; // skip uninteresting entries
-    }
-    if (old_method->is_deleted()) {
-      // clean up entries with deleted methods
-      entry->initialize_entry(entry->constant_pool_index());
+    if (!entry_at(i)->is_interesting_method_entry(old_holder)) {
+      // skip uninteresting methods
       continue;
     }
-    Method* new_method = holder->method_with_idnum(old_method->orig_method_idnum());
 
-    assert(new_method != NULL, "method_with_idnum() should not be NULL");
-    assert(old_method != new_method, "sanity check");
+    // The ConstantPoolCache contains entries for several different
+    // things, but we only care about methods. In fact, we only care
+    // about methods in the same class as the one that contains the
+    // old_methods. At this point, we have an interesting entry.
 
-    entry_at(i)->adjust_method_entry(old_method, new_method, trace_name_printed);
+    for (int j = 0; j < methods_length; j++) {
+      Method* old_method = old_methods[j];
+      Method* new_method = new_methods[j];
+
+      if (entry_at(i)->adjust_method_entry(old_method, new_method,
+          trace_name_printed)) {
+        // current old_method matched this entry and we updated it so
+        // break out and get to the next interesting entry if there one
+        break;
+      }
+    }
   }
 }
 
 // the constant pool cache should never contain old or obsolete methods
 bool ConstantPoolCache::check_no_old_or_obsolete_entries() {
   for (int i = 1; i < length(); i++) {
-    if (entry_at(i)->get_interesting_method_entry(NULL) != NULL &&
+    if (entry_at(i)->is_interesting_method_entry(NULL) &&
         !entry_at(i)->check_no_old_or_obsolete_entries()) {
       return false;
     }
@@ -646,7 +655,7 @@ bool ConstantPoolCache::check_no_old_or_obsolete_entries() {
 
 void ConstantPoolCache::dump_cache() {
   for (int i = 1; i < length(); i++) {
-    if (entry_at(i)->get_interesting_method_entry(NULL) != NULL) {
+    if (entry_at(i)->is_interesting_method_entry(NULL)) {
       entry_at(i)->print(tty, i);
     }
   }
@@ -658,7 +667,7 @@ void ConstantPoolCache::dump_cache() {
 
 void ConstantPoolCache::print_on(outputStream* st) const {
   assert(is_constantPoolCache(), "obj must be constant pool cache");
-  st->print_cr("%s", internal_name());
+  st->print_cr(internal_name());
   // print constant pool cache entries
   for (int i = 0; i < length(); i++) entry_at(i)->print(st, i);
 }

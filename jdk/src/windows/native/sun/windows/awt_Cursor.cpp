@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 1997, 2014, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 1997, 2013, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -209,54 +209,42 @@ void AwtCursor::UpdateCursor(AwtComponent *comp) {
         return;
     }
     jobject jcomp = comp->GetTarget(env);
-    try {
-        //4372119:Disappearing of busy cursor on JDK 1.3
-        HWND captureWnd = GetCapture();
-        if ( !AwtComponent::isMenuLoopActive() &&
-            (captureWnd==NULL || captureWnd==comp->GetHWnd()))
+
+    //4372119:Disappearing of busy cursor on JDK 1.3
+    HWND captureWnd = GetCapture();
+    if ( !AwtComponent::isMenuLoopActive() &&
+        (captureWnd==NULL || captureWnd==comp->GetHWnd()))
+    {
+        if (IsWindow(AwtWindow::GetModalBlocker(
+                                AwtComponent::GetTopLevelParentForWindow(
+                                comp->GetHWnd()))))
         {
-            if (IsWindow(AwtWindow::GetModalBlocker(
-                                    AwtComponent::GetTopLevelParentForWindow(
-                                    comp->GetHWnd()))))
-            {
-                static HCURSOR hArrowCursor = LoadCursor(NULL, IDC_ARROW);
-                SetCursor(hArrowCursor);
-            } else {
-                HCURSOR cur = comp->getCursorCache();
-                if (cur == NULL) {
-                    cur = GetCursor(env , comp);
-                }
-                if (cur != NULL) {
-                    ::SetCursor(cur);
-                } else {
-                    if (safe_ExceptionOccurred(env)) {
-                        env->ExceptionClear();
-                    }
-                }
-                if (AwtCursor::updateCursorID == NULL) {
-                    jclass cls =
-                    env->FindClass("sun/awt/windows/WGlobalCursorManager");
-                    if(cls != NULL){
-                        AwtCursor::globalCursorManagerClass =
-                            (jclass)env->NewGlobalRef(cls);
-                        AwtCursor::updateCursorID =
-                            env->GetStaticMethodID(cls, "nativeUpdateCursor",
-                            "(Ljava/awt/Component;)V");
-                        env->DeleteLocalRef(cls);
-                        DASSERT(AwtCursor::globalCursorManagerClass != NULL);
-                        DASSERT(AwtCursor::updateCursorID != NULL);
-                    }
-                }
-                if (AwtCursor::updateCursorID != NULL
-                    && AwtCursor::globalCursorManagerClass != NULL) {
-                    env->CallStaticVoidMethod(AwtCursor::globalCursorManagerClass,
-                        AwtCursor::updateCursorID, jcomp);
-                }
+            static HCURSOR hArrowCursor = LoadCursor(NULL, IDC_ARROW);
+            SetCursor(hArrowCursor);
+        } else {
+            HCURSOR cur = comp->getCursorCache();
+            if (cur == NULL) {
+                cur = GetCursor(env , comp);
             }
+            if (cur != NULL) {
+                ::SetCursor(cur);
+            }
+
+            if (AwtCursor::updateCursorID == NULL) {
+                jclass cls =
+                    env->FindClass("sun/awt/windows/WGlobalCursorManager");
+                AwtCursor::globalCursorManagerClass =
+                    (jclass)env->NewGlobalRef(cls);
+                AwtCursor::updateCursorID =
+                    env->GetStaticMethodID(cls, "nativeUpdateCursor",
+                    "(Ljava/awt/Component;)V");
+                DASSERT(AwtCursor::globalCursorManagerClass != NULL);
+                DASSERT(AwtCursor::updateCursorID != NULL);
+            }
+
+            env->CallStaticVoidMethod(AwtCursor::globalCursorManagerClass,
+                AwtCursor::updateCursorID, jcomp);
         }
-    } catch (...) {
-        env->DeleteLocalRef(jcomp);
-        throw;
     }
     env->DeleteLocalRef(jcomp);
 }
@@ -306,22 +294,15 @@ Java_java_awt_Cursor_initIDs(JNIEnv *env, jclass cls)
     TRY;
 
     AwtCursor::mSetPDataID = env->GetMethodID(cls, "setPData", "(J)V");
-    DASSERT(AwtCursor::mSetPDataID != NULL);
-    CHECK_NULL(AwtCursor::mSetPDataID);
     AwtCursor::pDataID = env->GetFieldID(cls, "pData", "J");
-    DASSERT(AwtCursor::pDataID != NULL);
-    CHECK_NULL(AwtCursor::pDataID);
     AwtCursor::typeID = env->GetFieldID(cls, "type", "I");
+    DASSERT(AwtCursor::pDataID != NULL);
     DASSERT(AwtCursor::typeID != NULL);
-    CHECK_NULL(AwtCursor::typeID);
 
     cls = env->FindClass("java/awt/Point");
-    CHECK_NULL(cls);
-
     AwtCursor::pointXID = env->GetFieldID(cls, "x", "I");
-    DASSERT(AwtCursor::pointXID != NULL);
-    CHECK_NULL(AwtCursor::pointXID);
     AwtCursor::pointYID = env->GetFieldID(cls, "y", "I");
+    DASSERT(AwtCursor::pointXID != NULL);
     DASSERT(AwtCursor::pointYID != NULL);
 
     AwtCursor::updateCursorID = NULL;

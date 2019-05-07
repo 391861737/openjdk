@@ -21,11 +21,6 @@
  * questions.
  */
 
-//
-// SunJSSE does not support dynamic system properties, no way to re-use
-// system properties in samevm/agentvm mode.
-//
-
 /*
  * @test
  * @bug 4416068 4478803 4479736
@@ -36,6 +31,9 @@
  *          4701722 protocol mismatch exceptions should be consistent between
  *                  SSLv3 and TLSv1
  * @run main/othervm testEnabledProtocols
+ *
+ *     SunJSSE does not support dynamic system properties, no way to re-use
+ *     system properties in samevm/agentvm mode.
  * @author Ram Marti
  */
 
@@ -122,10 +120,6 @@ public class testEnabledProtocols {
     volatile Exception clientException = null;
 
     public static void main(String[] args) throws Exception {
-        // reset the security property to make sure that the algorithms
-        // and keys used in this test are not disabled.
-        Security.setProperty("jdk.tls.disabledAlgorithms", "");
-
         String keyFilename =
             System.getProperty("test.src", "./") + "/" + pathToStores +
                 "/" + keyStoreFile;

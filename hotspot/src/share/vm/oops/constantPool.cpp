@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 1997, 2014, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 1997, 2013, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -42,8 +42,6 @@
 #include "runtime/signature.hpp"
 #include "runtime/vframe.hpp"
 
-PRAGMA_FORMAT_MUTE_WARNINGS_FOR_GCC
-
 ConstantPool* ConstantPool::allocate(ClassLoaderData* loader_data, int length, TRAPS) {
   // Tags are RW but comment below applies to tags also.
   Array<u1>* tags = MetadataFactory::new_writeable_array<u1>(loader_data, length, 0, CHECK_NULL);
@@ -84,9 +82,6 @@ ConstantPool::ConstantPool(Array<u1>* tags) {
 void ConstantPool::deallocate_contents(ClassLoaderData* loader_data) {
   MetadataFactory::free_metadata(loader_data, cache());
   set_cache(NULL);
-  MetadataFactory::free_array<u2>(loader_data, reference_map());
-  set_reference_map(NULL);
-
   MetadataFactory::free_array<jushort>(loader_data, operands());
   set_operands(NULL);
 
@@ -145,10 +140,6 @@ void ConstantPool::initialize_resolved_references(ClassLoaderData* loader_data,
 
 // CDS support. Create a new resolved_references array.
 void ConstantPool::restore_unshareable_info(TRAPS) {
-
-  // Only create the new resolved references array and lock if it hasn't been
-  // attempted before
-  if (resolved_references() != NULL) return;
 
   // restore the C++ vtable from the shared archive
   restore_vtable();
@@ -1301,7 +1292,6 @@ void ConstantPool::copy_entry_to(constantPoolHandle from_cp, int from_i,
   } break;
 
   case JVM_CONSTANT_UnresolvedClass:
-  case JVM_CONSTANT_UnresolvedClassInError:
   {
     // Can be resolved after checking tag, so check the slot first.
     CPSlot entry = from_cp->slot_at(from_i);
@@ -1494,7 +1484,7 @@ static void print_cpool_bytes(jint cnt, u1 *bytes) {
       }
       case JVM_CONSTANT_Long: {
         u8 val = Bytes::get_Java_u8(bytes);
-        printf("long         "INT64_FORMAT, (int64_t) *(jlong *) &val);
+        printf("long         " INT64_FORMAT, (int64_t) *(jlong *) &val);
         ent_size = 8;
         idx++; // Long takes two cpool slots
         break;
@@ -1817,22 +1807,11 @@ int ConstantPool::copy_cpool_bytes(int cpool_size,
 
 void ConstantPool::set_on_stack(const bool value) {
   if (value) {
-    int old_flags = *const_cast<volatile int *>(&_flags);
-    while ((old_flags & _on_stack) == 0) {
-      int new_flags = old_flags | _on_stack;
-      int result = Atomic::cmpxchg(new_flags, &_flags, old_flags);
-
-      if (result == old_flags) {
-        // Succeeded.
-        MetadataOnStackMark::record(this, Thread::current());
-        return;
-      }
-      old_flags = result;
-    }
+    _flags |= _on_stack;
   } else {
-    // Clearing is done single-threadedly.
     _flags &= ~_on_stack;
   }
+  if (value) MetadataOnStackMark::record(this);
 }
 
 // JSR 292 support for patching constant pool oops after the class is linked and
@@ -1897,7 +1876,7 @@ void ConstantPool::preload_and_initialize_all_classes(ConstantPool* obj, TRAPS) 
 void ConstantPool::print_on(outputStream* st) const {
   EXCEPTION_MARK;
   assert(is_constantPool(), "must be constantPool");
-  st->print_cr("%s", internal_name());
+  st->print_cr(internal_name());
   if (flags() != 0) {
     st->print(" - flags: 0x%x", flags());
     if (has_preresolution()) st->print(" has_preresolution");

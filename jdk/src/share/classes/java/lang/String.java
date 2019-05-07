@@ -135,7 +135,7 @@ public final class String
      * unnecessary since Strings are immutable.
      */
     public String() {
-        this.value = "".value;
+        this.value = new char[0];
     }
 
     /**
@@ -191,14 +191,8 @@ public final class String
         if (offset < 0) {
             throw new StringIndexOutOfBoundsException(offset);
         }
-        if (count <= 0) {
-            if (count < 0) {
-                throw new StringIndexOutOfBoundsException(count);
-            }
-            if (offset <= value.length) {
-                this.value = "".value;
-                return;
-            }
+        if (count < 0) {
+            throw new StringIndexOutOfBoundsException(count);
         }
         // Note: offset or count might be near -1>>>1.
         if (offset > value.length - count) {
@@ -239,14 +233,8 @@ public final class String
         if (offset < 0) {
             throw new StringIndexOutOfBoundsException(offset);
         }
-        if (count <= 0) {
-            if (count < 0) {
-                throw new StringIndexOutOfBoundsException(count);
-            }
-            if (offset <= codePoints.length) {
-                this.value = "".value;
-                return;
-            }
+        if (count < 0) {
+            throw new StringIndexOutOfBoundsException(count);
         }
         // Note: offset or count might be near -1>>>1.
         if (offset > codePoints.length - count) {
@@ -794,7 +782,7 @@ public final class String
      * subarray of {@code dst} starting at index {@code dstBegin}
      * and ending at index:
      * <blockquote><pre>
-     *     dstBegin + (srcEnd-srcBegin) - 1
+     *     dstbegin + (srcEnd-srcBegin) - 1
      * </pre></blockquote>
      *
      * @param      srcBegin   index of the first character in the string
@@ -839,7 +827,7 @@ public final class String
      * dst} starting at index {@code dstBegin} and ending at index:
      *
      * <blockquote><pre>
-     *     dstBegin + (srcEnd-srcBegin) - 1
+     *     dstbegin + (srcEnd-srcBegin) - 1
      * </pre></blockquote>
      *
      * @deprecated  This method does not properly convert characters into
@@ -1057,9 +1045,8 @@ public final class String
             }
         }
         // Argument is a String
-        if (cs instanceof String) {
-            return equals(cs);
-        }
+        if (cs.equals(this))
+            return true;
         // Argument is a generic CharSequence
         char v1[] = value;
         int n = v1.length;
@@ -2610,9 +2597,7 @@ public final class String
             } else {
                 srcCount = 1;
             }
-            if (localeDependent ||
-                srcChar == '\u03A3' || // GREEK CAPITAL LETTER SIGMA
-                srcChar == '\u0130') { // LATIN CAPITAL LETTER I WITH DOT ABOVE
+            if (localeDependent || srcChar == '\u03A3') { // GREEK CAPITAL LETTER SIGMA
                 lowerChar = ConditionalSpecialCasing.toLowerCaseEx(this, i, locale);
             } else {
                 lowerChar = Character.toLowerCase(srcChar);

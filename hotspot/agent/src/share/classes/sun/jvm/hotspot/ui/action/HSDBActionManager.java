@@ -32,12 +32,10 @@ import com.sun.java.swing.action.ActionManager;
 public class HSDBActionManager extends ActionManager {
 
     public static ActionManager getInstance() {
-        ActionManager m = ActionManager.getInstance();
-        if (m == null) {
-            m = new HSDBActionManager();
-            ActionManager.setInstance(m);
+        if (manager == null) {
+            manager = new HSDBActionManager();
         }
-        return m;
+        return manager;
     }
 
     protected void addActions() {

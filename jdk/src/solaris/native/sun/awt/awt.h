@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 1995, 2014, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 1995, 2011, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -34,9 +34,9 @@
 #include "jni_util.h"
 #include "debug_util.h"
 
-#if !defined(HEADLESS) && !defined(MACOSX)
+#ifndef HEADLESS
 #include <X11/Intrinsic.h>
-#endif /* !HEADLESS && !MACOSX */
+#endif /* !HEADLESS */
 
 
 /* The JVM instance: defined in awt_MToolkit.c */
@@ -75,30 +75,10 @@ extern void awt_output_flush();
     AWT_NOFLUSH_UNLOCK();                       \
 } while (0)
 
-#define AWT_UNLOCK_CHECK_EXCEPTION(env) \
-    do { \
-      AWT_UNLOCK(); \
-      JNU_CHECK_EXCEPTION(env); \
-    } while (0)
-
 #define AWT_LOCK_IMPL() \
     (*env)->CallStaticVoidMethod(env, tkClass, awtLockMID)
-
 #define AWT_NOFLUSH_UNLOCK_IMPL() \
-    do { \
-      jthrowable pendingException; \
-      if ((pendingException = (*env)->ExceptionOccurred(env)) != NULL) { \
-         (*env)->ExceptionClear(env); \
-      } \
-      (*env)->CallStaticVoidMethod(env, tkClass, awtUnlockMID); \
-      if (pendingException) { \
-         if ((*env)->ExceptionCheck(env)) { \
-            (*env)->ExceptionDescribe(env); \
-            (*env)->ExceptionClear(env); \
-         } \
-         (*env)->Throw(env, pendingException); \
-      } \
-    } while (0)
+    (*env)->CallStaticVoidMethod(env, tkClass, awtUnlockMID)
 #define AWT_WAIT_IMPL(tm) \
     (*env)->CallStaticVoidMethod(env, tkClass, awtWaitMID, (jlong)(tm))
 #define AWT_NOTIFY_IMPL() \
@@ -116,9 +96,9 @@ extern void awt_output_flush();
 #define AWT_NOTIFY()         AWT_NOTIFY_IMPL()
 #define AWT_NOTIFY_ALL()     AWT_NOTIFY_ALL_IMPL()
 
-#if !defined(HEADLESS) && !defined(MACOSX)
+#ifndef HEADLESS
 extern Display         *awt_display; /* awt_GraphicsEnv.c */
 extern Boolean          awt_ModLockIsShiftLock; /* XToolkit.c */
-#endif /* !HEADLESS && !MACOSX */
+#endif /* !HEADLESS */
 
 #endif /* ! _AWT_ */

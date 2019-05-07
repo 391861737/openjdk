@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 1996, 2016, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 1996, 2013, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -66,33 +66,35 @@ abstract class Handshaker {
     ProtocolVersion protocolVersion;
 
     // the currently active protocol version during a renegotiation
-    ProtocolVersion activeProtocolVersion;
+    ProtocolVersion     activeProtocolVersion;
 
     // security parameters for secure renegotiation.
-    boolean secureRenegotiation;
-    byte[] clientVerifyData;
-    byte[] serverVerifyData;
+    boolean             secureRenegotiation;
+    byte[]              clientVerifyData;
+    byte[]              serverVerifyData;
 
     // Is it an initial negotiation  or a renegotiation?
-    boolean isInitialHandshake;
+    boolean                     isInitialHandshake;
 
     // List of enabled protocols
-    private ProtocolList enabledProtocols;
+    private ProtocolList        enabledProtocols;
 
     // List of enabled CipherSuites
-    private CipherSuiteList enabledCipherSuites;
+    private CipherSuiteList     enabledCipherSuites;
 
     // The endpoint identification protocol
-    String identificationProtocol;
+    String              identificationProtocol;
 
     // The cryptographic algorithm constraints
-    AlgorithmConstraints algorithmConstraints = null;
+    private AlgorithmConstraints    algorithmConstraints = null;
 
     // Local supported signature and algorithms
-    private Collection<SignatureAndHashAlgorithm> localSupportedSignAlgs;
+    Collection<SignatureAndHashAlgorithm> localSupportedSignAlgs;
 
     // Peer supported signature and algorithms
     Collection<SignatureAndHashAlgorithm> peerSupportedSignAlgs;
+
+    /*
 
     /*
      * List of active protocols
@@ -101,7 +103,7 @@ abstract class Handshaker {
      * contain only those protocols that have vaild cipher suites
      * enabled.
      */
-    private ProtocolList activeProtocols;
+    private ProtocolList       activeProtocols;
 
     /*
      * List of active cipher suites
@@ -109,41 +111,39 @@ abstract class Handshaker {
      * Active cipher suites is a subset of enabled cipher suites, and will
      * contain only those cipher suites available for the active protocols.
      */
-    private CipherSuiteList activeCipherSuites;
+    private CipherSuiteList    activeCipherSuites;
 
     // The server name indication and matchers
-    List<SNIServerName> serverNames = Collections.<SNIServerName>emptyList();
-    Collection<SNIMatcher> sniMatchers = Collections.<SNIMatcher>emptyList();
+    List<SNIServerName>         serverNames =
+                                    Collections.<SNIServerName>emptyList();
+    Collection<SNIMatcher>      sniMatchers =
+                                    Collections.<SNIMatcher>emptyList();
 
-    private boolean isClient;
-    private boolean needCertVerify;
+    private boolean             isClient;
+    private boolean             needCertVerify;
 
-    SSLSocketImpl conn = null;
-    SSLEngineImpl engine = null;
+    SSLSocketImpl               conn = null;
+    SSLEngineImpl               engine = null;
 
-    HandshakeHash handshakeHash;
-    HandshakeInStream input;
-    HandshakeOutStream output;
-    int state;
-    SSLContextImpl sslContext;
-    RandomCookie clnt_random, svr_random;
-    SSLSessionImpl session;
+    HandshakeHash               handshakeHash;
+    HandshakeInStream           input;
+    HandshakeOutStream          output;
+    int                         state;
+    SSLContextImpl              sslContext;
+    RandomCookie                clnt_random, svr_random;
+    SSLSessionImpl              session;
 
     // current CipherSuite. Never null, initially SSL_NULL_WITH_NULL_NULL
-    CipherSuite cipherSuite;
+    CipherSuite         cipherSuite;
 
     // current key exchange. Never null, initially K_NULL
-    KeyExchange keyExchange;
+    KeyExchange         keyExchange;
 
-    // True if this session is being resumed (fast handshake)
-    boolean resumingSession;
+    /* True if this session is being resumed (fast handshake) */
+    boolean             resumingSession;
 
-    // True if it's OK to start a new SSL session
-    boolean enableNewSession;
-
-    // True if session keys have been calculated and the caller may receive
-    // and process a ChangeCipherSpec message
-    private boolean sessKeysCalculated;
+    /* True if it's OK to start a new SSL session */
+    boolean             enableNewSession;
 
     // Whether local cipher suites preference should be honored during
     // handshaking?
@@ -176,7 +176,7 @@ abstract class Handshaker {
     // here instead of using this lock.  Consider changing.
     private Object thrownLock = new Object();
 
-    // Class and subclass dynamic debugging support
+    /* Class and subclass dynamic debugging support */
     static final Debug debug = Debug.getInstance("ssl");
 
     // By default, disable the unsafe legacy session renegotiation
@@ -253,7 +253,6 @@ abstract class Handshaker {
         this.serverVerifyData = serverVerifyData;
         enableNewSession = true;
         invalidated = false;
-        sessKeysCalculated = false;
 
         setCipherSuite(CipherSuite.C_NULL);
         setEnabledProtocols(enabledProtocols);
@@ -358,25 +357,6 @@ abstract class Handshaker {
         } else {
             return engine.getAcc();
         }
-    }
-
-    final boolean receivedChangeCipherSpec() {
-        if (conn != null) {
-            return conn.receivedChangeCipherSpec();
-        } else {
-            return engine.receivedChangeCipherSpec();
-        }
-    }
-
-    String getEndpointIdentificationAlgorithmSE() {
-        SSLParameters paras;
-        if (conn != null) {
-            paras = conn.getSSLParameters();
-        } else {
-            paras = engine.getSSLParameters();
-        }
-
-        return paras.getEndpointIdentificationAlgorithm();
     }
 
     private void setVersionSE(ProtocolVersion protocolVersion) {
@@ -500,9 +480,7 @@ abstract class Handshaker {
 
         if (activeProtocols.collection().isEmpty() ||
                 activeProtocols.max.v == ProtocolVersion.NONE.v) {
-            throw new SSLHandshakeException(
-                    "No appropriate protocol (protocol is disabled or " +
-                    "cipher suites are inappropriate)");
+            throw new SSLHandshakeException("No appropriate protocol");
         }
 
         if (activeCipherSuites == null) {
@@ -636,41 +614,13 @@ abstract class Handshaker {
             ArrayList<CipherSuite> suites = new ArrayList<>();
             if (!(activeProtocols.collection().isEmpty()) &&
                     activeProtocols.min.v != ProtocolVersion.NONE.v) {
-                boolean checkedCurves = false;
-                boolean hasCurves = false;
                 for (CipherSuite suite : enabledCipherSuites.collection()) {
                     if (suite.obsoleted > activeProtocols.min.v &&
                             suite.supported <= activeProtocols.max.v) {
                         if (algorithmConstraints.permits(
                                 EnumSet.of(CryptoPrimitive.KEY_AGREEMENT),
                                 suite.name, null)) {
-                            boolean available = true;
-                            if (suite.keyExchange.isEC) {
-                                if (!checkedCurves) {
-                                    hasCurves = SupportedEllipticCurvesExtension
-                                        .hasActiveCurves(algorithmConstraints);
-                                    checkedCurves = true;
-
-                                    if (!hasCurves && debug != null &&
-                                                Debug.isOn("verbose")) {
-                                        System.out.println(
-                                           "No available elliptic curves");
-                                    }
-                                }
-
-                                available = hasCurves;
-
-                               if (!available && debug != null &&
-                                        Debug.isOn("verbose")) {
-                                    System.out.println(
-                                        "No active elliptic curves, ignore " +
-                                       suite);
-                                }
-                            }
-
-                            if (available) {
-                                suites.add(suite);
-                            }
+                            suites.add(suite);
                         }
                     } else if (debug != null && Debug.isOn("verbose")) {
                         if (suite.obsoleted <= activeProtocols.min.v) {
@@ -706,27 +656,8 @@ abstract class Handshaker {
      */
     ProtocolList getActiveProtocols() {
         if (activeProtocols == null) {
-            boolean enabledSSL20Hello = false;
-            boolean checkedCurves = false;
-            boolean hasCurves = false;
             ArrayList<ProtocolVersion> protocols = new ArrayList<>(4);
             for (ProtocolVersion protocol : enabledProtocols.collection()) {
-                // Need not to check the SSL20Hello protocol.
-                if (protocol.v == ProtocolVersion.SSL20Hello.v) {
-                    enabledSSL20Hello = true;
-                    continue;
-                }
-
-                if (!algorithmConstraints.permits(
-                        EnumSet.of(CryptoPrimitive.KEY_AGREEMENT),
-                        protocol.name, null)) {
-                    if (debug != null && Debug.isOn("verbose")) {
-                        System.out.println(
-                            "Ignoring disabled protocol: " + protocol);
-                    }
-
-                    continue;
-                }
                 boolean found = false;
                 for (CipherSuite suite : enabledCipherSuites.collection()) {
                     if (suite.isAvailable() && suite.obsoleted > protocol.v &&
@@ -734,36 +665,9 @@ abstract class Handshaker {
                         if (algorithmConstraints.permits(
                                 EnumSet.of(CryptoPrimitive.KEY_AGREEMENT),
                                 suite.name, null)) {
-
-                            boolean available = true;
-                            if (suite.keyExchange.isEC) {
-                                if (!checkedCurves) {
-                                    hasCurves = SupportedEllipticCurvesExtension
-                                        .hasActiveCurves(algorithmConstraints);
-                                    checkedCurves = true;
-
-                                    if (!hasCurves && debug != null &&
-                                                Debug.isOn("verbose")) {
-                                        System.out.println(
-                                            "No activated elliptic curves");
-                                    }
-                                }
-
-                                available = hasCurves;
-
-                                if (!available && debug != null &&
-                                        Debug.isOn("verbose")) {
-                                    System.out.println(
-                                        "No active elliptic curves, ignore " +
-                                        suite + " for " + protocol);
-                                }
-                            }
-
-                            if (available) {
-                                protocols.add(protocol);
-                                found = true;
-                                break;
-                            }
+                            protocols.add(protocol);
+                            found = true;
+                            break;
                         } else if (debug != null && Debug.isOn("verbose")) {
                             System.out.println(
                                 "Ignoring disabled cipher suite: " + suite +
@@ -780,11 +684,6 @@ abstract class Handshaker {
                         "No available cipher suite for " + protocol);
                 }
             }
-
-            if (!protocols.isEmpty() && enabledSSL20Hello) {
-                protocols.add(ProtocolVersion.SSL20Hello);
-            }
-
             activeProtocols = new ProtocolList(protocols);
         }
 
@@ -1302,10 +1201,6 @@ abstract class Handshaker {
             throw new ProviderException(e);
         }
 
-        // Mark a flag that allows outside entities (like SSLSocket/SSLEngine)
-        // determine if a ChangeCipherSpec message could be processed.
-        sessKeysCalculated = true;
-
         //
         // Dump the connection keys as they're generated.
         //
@@ -1358,15 +1253,6 @@ abstract class Handshaker {
                 System.out.flush();
             }
         }
-    }
-
-    /**
-     * Return whether or not the Handshaker has derived session keys for
-     * this handshake.  This is used for determining readiness to process
-     * an incoming ChangeCipherSpec message.
-     */
-    boolean sessionKeysCalculated() {
-        return sessKeysCalculated;
     }
 
     private static void printHex(HexDumpEncoder dump, byte[] bytes) {

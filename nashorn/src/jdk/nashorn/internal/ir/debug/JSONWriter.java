@@ -25,10 +25,10 @@
 
 package jdk.nashorn.internal.ir.debug;
 
-import static jdk.nashorn.internal.runtime.Source.sourceFor;
-
-import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
+import java.util.ArrayList;
+import jdk.nashorn.internal.codegen.CompilerConstants;
 import jdk.nashorn.internal.ir.AccessNode;
 import jdk.nashorn.internal.ir.BinaryNode;
 import jdk.nashorn.internal.ir.Block;
@@ -39,15 +39,14 @@ import jdk.nashorn.internal.ir.CaseNode;
 import jdk.nashorn.internal.ir.CatchNode;
 import jdk.nashorn.internal.ir.ContinueNode;
 import jdk.nashorn.internal.ir.EmptyNode;
-import jdk.nashorn.internal.ir.Expression;
 import jdk.nashorn.internal.ir.ExpressionStatement;
 import jdk.nashorn.internal.ir.ForNode;
 import jdk.nashorn.internal.ir.FunctionNode;
 import jdk.nashorn.internal.ir.IdentNode;
 import jdk.nashorn.internal.ir.IfNode;
 import jdk.nashorn.internal.ir.IndexNode;
-import jdk.nashorn.internal.ir.JoinPredecessorExpression;
 import jdk.nashorn.internal.ir.LabelNode;
+import jdk.nashorn.internal.ir.LexicalContext;
 import jdk.nashorn.internal.ir.LiteralNode;
 import jdk.nashorn.internal.ir.Node;
 import jdk.nashorn.internal.ir.ObjectNode;
@@ -64,51 +63,41 @@ import jdk.nashorn.internal.ir.UnaryNode;
 import jdk.nashorn.internal.ir.VarNode;
 import jdk.nashorn.internal.ir.WhileNode;
 import jdk.nashorn.internal.ir.WithNode;
-import jdk.nashorn.internal.ir.visitor.SimpleNodeVisitor;
+import jdk.nashorn.internal.ir.visitor.NodeVisitor;
 import jdk.nashorn.internal.parser.JSONParser;
 import jdk.nashorn.internal.parser.Lexer.RegexToken;
 import jdk.nashorn.internal.parser.Parser;
 import jdk.nashorn.internal.parser.TokenType;
 import jdk.nashorn.internal.runtime.Context;
 import jdk.nashorn.internal.runtime.ParserException;
+import jdk.nashorn.internal.runtime.ScriptEnvironment;
 import jdk.nashorn.internal.runtime.Source;
 
 /**
  * This IR writer produces a JSON string that represents AST as a JSON string.
  */
-public final class JSONWriter extends SimpleNodeVisitor {
+public final class JSONWriter extends NodeVisitor<LexicalContext> {
 
     /**
      * Returns AST as JSON compatible string.
      *
-     * @param context context
+     * @param env  script environment to use
      * @param code code to be parsed
      * @param name name of the code source (used for location)
      * @param includeLoc tells whether to include location information for nodes or not
      * @return JSON string representation of AST of the supplied code
      */
-    public static String parse(final Context context, final String code, final String name, final boolean includeLoc) {
-        final Parser       parser     = new Parser(context.getEnv(), sourceFor(name, code), new Context.ThrowErrorManager(), context.getEnv()._strict, context.getLogger(Parser.class));
+    public static String parse(final ScriptEnvironment env, final String code, final String name, final boolean includeLoc) {
+        final Parser       parser     = new Parser(env, new Source(name, code), new Context.ThrowErrorManager(), env._strict);
         final JSONWriter   jsonWriter = new JSONWriter(includeLoc);
         try {
-            final FunctionNode functionNode = parser.parse(); //symbol name is ":program", default
+            final FunctionNode functionNode = parser.parse(CompilerConstants.RUN_SCRIPT.symbolName());
             functionNode.accept(jsonWriter);
             return jsonWriter.getString();
         } catch (final ParserException e) {
             e.throwAsEcmaException();
             return null;
         }
-    }
-
-    @Override
-    public boolean enterJoinPredecessorExpression(final JoinPredecessorExpression joinPredecessorExpression) {
-        final Expression expr = joinPredecessorExpression.getExpression();
-        if(expr != null) {
-            expr.accept(this);
-        } else {
-            nullValue();
-        }
-        return false;
     }
 
     @Override
@@ -141,7 +130,8 @@ public final class JSONWriter extends SimpleNodeVisitor {
         accessNode.getBase().accept(this);
         comma();
 
-        property("property", accessNode.getProperty());
+        property("property");
+        accessNode.getProperty().accept(this);
         comma();
 
         property("computed", false);
@@ -161,6 +151,16 @@ public final class JSONWriter extends SimpleNodeVisitor {
         return leave();
     }
 
+    private static boolean isLogical(final TokenType tt) {
+        switch (tt) {
+        case AND:
+        case OR:
+            return true;
+        default:
+            return false;
+        }
+    }
+
     @Override
     public boolean enterBinaryNode(final BinaryNode binaryNode) {
         enterDefault(binaryNode);
@@ -168,7 +168,7 @@ public final class JSONWriter extends SimpleNodeVisitor {
         final String name;
         if (binaryNode.isAssignment()) {
             name = "AssignmentExpression";
-        } else if (binaryNode.isLogical()) {
+        } else if (isLogical(binaryNode.tokenType())) {
             name = "LogicalExpression";
         } else {
             name = "BinaryExpression";
@@ -197,11 +197,11 @@ public final class JSONWriter extends SimpleNodeVisitor {
         type("BreakStatement");
         comma();
 
-        final String label = breakNode.getLabelName();
-        if(label != null) {
-            property("label", label);
+        final IdentNode label = breakNode.getLabel();
+        property("label");
+        if (label != null) {
+            label.accept(this);
         } else {
-            property("label");
             nullValue();
         }
 
@@ -276,11 +276,11 @@ public final class JSONWriter extends SimpleNodeVisitor {
         type("ContinueStatement");
         comma();
 
-        final String label = continueNode.getLabelName();
-        if(label != null) {
-            property("label", label);
+        final IdentNode label = continueNode.getLabel();
+        property("label");
+        if (label != null) {
+            label.accept(this);
         } else {
-            property("label");
             nullValue();
         }
 
@@ -317,7 +317,7 @@ public final class JSONWriter extends SimpleNodeVisitor {
     }
 
     @Override
-    public boolean enterBlockStatement(final BlockStatement blockStatement) {
+    public boolean enterBlockStatement(BlockStatement blockStatement) {
         enterDefault(blockStatement);
 
         type("BlockStatement");
@@ -337,13 +337,13 @@ public final class JSONWriter extends SimpleNodeVisitor {
             type("ForInStatement");
             comma();
 
-            final Node init = forNode.getInit();
+            Node init = forNode.getInit();
             assert init != null;
             property("left");
             init.accept(this);
             comma();
 
-            final Node modify = forNode.getModify();
+            Node modify = forNode.getModify();
             assert modify != null;
             property("right");
             modify.accept(this);
@@ -533,7 +533,8 @@ public final class JSONWriter extends SimpleNodeVisitor {
         type("LabeledStatement");
         comma();
 
-        property("label", labelNode.getLabelName());
+        property("label");
+        labelNode.getLabel().accept(this);
         comma();
 
         property("body");
@@ -551,7 +552,8 @@ public final class JSONWriter extends SimpleNodeVisitor {
             type("ArrayExpression");
             comma();
 
-            array("elements", ((LiteralNode.ArrayLiteralNode)literalNode).getElementExpressions());
+            final Node[] value = literalNode.getArray();
+            array("elements", Arrays.asList(value));
         } else {
             type("Literal");
             comma();
@@ -758,8 +760,8 @@ public final class JSONWriter extends SimpleNodeVisitor {
         final List<CatchNode> guarded = new ArrayList<>();
         CatchNode unguarded = null;
         if (catches != null) {
-            for (final Node n : catches) {
-                final CatchNode cn = (CatchNode)n;
+            for (Node n : catches) {
+                CatchNode cn = (CatchNode)n;
                 if (cn.getExceptionCondition() != null) {
                     guarded.add(cn);
                 } else {
@@ -800,7 +802,7 @@ public final class JSONWriter extends SimpleNodeVisitor {
             type("NewExpression");
             comma();
 
-            final CallNode callNode = (CallNode)unaryNode.getExpression();
+            final CallNode callNode = (CallNode)unaryNode.rhs();
             property("callee");
             callNode.getFunction().accept(this);
             comma();
@@ -842,7 +844,7 @@ public final class JSONWriter extends SimpleNodeVisitor {
             comma();
 
             property("argument");
-            unaryNode.getExpression().accept(this);
+            unaryNode.rhs().accept(this);
         }
 
         return leave();
@@ -938,6 +940,7 @@ public final class JSONWriter extends SimpleNodeVisitor {
     // Internals below
 
     private JSONWriter(final boolean includeLocation) {
+        super(new LexicalContext());
         this.buf             = new StringBuilder();
         this.includeLocation = includeLocation;
     }
@@ -954,13 +957,9 @@ public final class JSONWriter extends SimpleNodeVisitor {
         buf.append(key);
         buf.append("\":");
         if (value != null) {
-            if (escape) {
-                buf.append('"');
-            }
+            if (escape) buf.append('"');
             buf.append(value);
-            if (escape) {
-                buf.append('"');
-            }
+            if (escape) buf.append('"');
         }
     }
 

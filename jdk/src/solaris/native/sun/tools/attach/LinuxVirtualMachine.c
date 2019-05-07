@@ -416,14 +416,14 @@ JNIEXPORT jint JNICALL Java_sun_tools_attach_LinuxVirtualMachine_read
         len = remaining;
     }
 
-    RESTARTABLE(read(fd, buf, len), n);
+    RESTARTABLE(read(fd, buf+off, len), n);
     if (n == -1) {
         JNU_ThrowIOExceptionWithLastError(env, "read");
     } else {
         if (n == 0) {
             n = -1;     // EOF
         } else {
-            (*env)->SetByteArrayRegion(env, ba, off, (jint)n, (jbyte *)(buf));
+            (*env)->SetByteArrayRegion(env, ba, off, (jint)n, (jbyte *)(buf+off));
         }
     }
     return n;

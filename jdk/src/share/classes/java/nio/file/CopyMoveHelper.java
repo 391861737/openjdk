@@ -130,7 +130,7 @@ class CopyMoveHelper {
         // copy basic attributes to target
         if (opts.copyAttributes) {
             BasicFileAttributeView view =
-                Files.getFileAttributeView(target, BasicFileAttributeView.class);
+                Files.getFileAttributeView(target, BasicFileAttributeView.class, linkOptions);
             try {
                 view.setTimes(attrs.lastModifiedTime(),
                               attrs.lastAccessTime(),

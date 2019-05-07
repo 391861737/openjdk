@@ -25,10 +25,7 @@
 
 package jdk.nashorn.test.models;
 
-@SuppressWarnings("javadoc")
 public class ClassWithFinalFinalizer {
-    @Override
     protected final void finalize() {
-        //empty
     }
 }

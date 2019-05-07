@@ -26,18 +26,16 @@
 package jdk.nashorn.internal.runtime;
 
 import java.io.PrintWriter;
-import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
-import java.util.Map;
+import java.util.Set;
 import java.util.StringTokenizer;
 import java.util.TimeZone;
-import java.util.logging.Level;
+
 import jdk.nashorn.internal.codegen.Namespace;
 import jdk.nashorn.internal.runtime.linker.NashornCallSiteDescriptor;
 import jdk.nashorn.internal.runtime.options.KeyValueOption;
-import jdk.nashorn.internal.runtime.options.LoggingOption;
-import jdk.nashorn.internal.runtime.options.LoggingOption.LoggerInfo;
 import jdk.nashorn.internal.runtime.options.Option;
 import jdk.nashorn.internal.runtime.options.Options;
 
@@ -46,11 +44,6 @@ import jdk.nashorn.internal.runtime.options.Options;
  * and output and error writers, top level Namespace etc.
  */
 public final class ScriptEnvironment {
-    // Primarily intended to be used in test environments so that eager compilation tests work without an
-    // error when tested with optimistic compilation.
-    private static final boolean ALLOW_EAGER_COMPILATION_SILENT_OVERRIDE = Options.getBooleanProperty(
-            "nashorn.options.allowEagerCompilationSilentOverride", false);
-
     /** Output writer for this environment */
     private final PrintWriter out;
 
@@ -69,16 +62,13 @@ public final class ScriptEnvironment {
     /** Only compile script, do not run it or generate other ScriptObjects */
     public final boolean _compile_only;
 
-    /** Accept "const" keyword and treat it as variable. Interim feature */
-    public final boolean _const_as_var;
-
     /** Accumulated callsite flags that will be used when bootstrapping script callsites */
     public final int     _callsite_flags;
 
     /** Generate line number table in class files */
     public final boolean _debug_lines;
 
-    /** Directory in which source files and generated class files are dumped */
+    /** Package to which generated class files are added */
     public final String  _dest_dir;
 
     /** Display stack trace upon error, default is false */
@@ -99,14 +89,8 @@ public final class ScriptEnvironment {
     /** Use single Global instance per jsr223 engine instance. */
     public final boolean _global_per_engine;
 
-    /** Enable experimental ECMAScript 6 features. */
-    public final boolean _es6;
-
-    /** Argument passed to compile only if optimistic compilation should take place */
-    public static final String COMPILE_ONLY_OPTIMISTIC_ARG = "optimistic";
-
     /**
-     *  Behavior when encountering a function declaration in a lexical context where only statements are acceptable
+     * Behavior when encountering a function declaration in a lexical context where only statements are acceptable
      * (function declarations are source elements, but not statements).
      */
     public enum FunctionStatementBehavior {
@@ -135,9 +119,6 @@ public final class ScriptEnvironment {
     /** Should lazy compilation take place */
     public final boolean _lazy_compilation;
 
-    /** Should optimistic types be used */
-    public final boolean _optimistic_types;
-
     /** Create a new class loaded for each compilation */
     public final boolean _loader_per_compile;
 
@@ -153,9 +134,6 @@ public final class ScriptEnvironment {
     /** Only parse the source code, do not compile */
     public final boolean _parse_only;
 
-    /** Enable disk cache for compiled scripts */
-    public final boolean _persistent_cache;
-
     /** Print the AST before lowering */
     public final boolean _print_ast;
 
@@ -164,12 +142,6 @@ public final class ScriptEnvironment {
 
     /** Print resulting bytecode for script */
     public final boolean _print_code;
-
-    /** Directory (optional) to print files to */
-    public final String _print_code_dir;
-
-    /** List of functions to write to the print code dir, optional */
-    public final String _print_code_func;
 
     /** Print memory usage for IR after each phase */
     public final boolean _print_mem_usage;
@@ -186,8 +158,14 @@ public final class ScriptEnvironment {
     /** print symbols and their contents for the script */
     public final boolean _print_symbols;
 
+    /** range analysis for known types */
+    public final boolean _range_analysis;
+
     /** is this environment in scripting mode? */
     public final boolean _scripting;
+
+    /** is the JIT allowed to specializ calls based on callsite types? */
+    public final Set<String> _specialize_calls;
 
     /** is this environment in strict mode? */
     public final boolean _strict;
@@ -204,12 +182,6 @@ public final class ScriptEnvironment {
     /** Local for error messages */
     public final Locale _locale;
 
-    /** Logging */
-    public final Map<String, LoggerInfo> _loggers;
-
-    /** Timing */
-    public final Timing _timing;
-
     /**
      * Constructor
      *
@@ -217,7 +189,6 @@ public final class ScriptEnvironment {
      * @param out output print writer
      * @param err error print writer
      */
-    @SuppressWarnings("unused")
     public ScriptEnvironment(final Options options, final PrintWriter out, final PrintWriter err) {
         this.out = out;
         this.err = err;
@@ -226,83 +197,51 @@ public final class ScriptEnvironment {
 
         _class_cache_size     = options.getInteger("class.cache.size");
         _compile_only         = options.getBoolean("compile.only");
-        _const_as_var         = options.getBoolean("const.as.var");
         _debug_lines          = options.getBoolean("debug.lines");
         _dest_dir             = options.getString("d");
         _dump_on_error        = options.getBoolean("doe");
         _early_lvalue_error   = options.getBoolean("early.lvalue.error");
         _empty_statements     = options.getBoolean("empty.statements");
         _fullversion          = options.getBoolean("fullversion");
-        if (options.getBoolean("function.statement.error")) {
+        if(options.getBoolean("function.statement.error")) {
             _function_statement = FunctionStatementBehavior.ERROR;
-        } else if (options.getBoolean("function.statement.warning")) {
+        } else if(options.getBoolean("function.statement.warning")) {
             _function_statement = FunctionStatementBehavior.WARNING;
         } else {
             _function_statement = FunctionStatementBehavior.ACCEPT;
         }
         _fx                   = options.getBoolean("fx");
         _global_per_engine    = options.getBoolean("global.per.engine");
-        _optimistic_types     = options.getBoolean("optimistic.types");
-        final boolean lazy_compilation = options.getBoolean("lazy.compilation");
-        if (!lazy_compilation && _optimistic_types) {
-            if (!ALLOW_EAGER_COMPILATION_SILENT_OVERRIDE) {
-                throw new IllegalStateException(
-                        ECMAErrors.getMessage(
-                                "config.error.eagerCompilationConflictsWithOptimisticTypes",
-                                options.getOptionTemplateByKey("lazy.compilation").getName(),
-                                options.getOptionTemplateByKey("optimistic.types").getName()));
-            }
-            _lazy_compilation = true;
-        } else {
-            _lazy_compilation = lazy_compilation;
-        }
+        _lazy_compilation     = options.getBoolean("lazy.compilation");
         _loader_per_compile   = options.getBoolean("loader.per.compile");
         _no_java              = options.getBoolean("no.java");
         _no_syntax_extensions = options.getBoolean("no.syntax.extensions");
         _no_typed_arrays      = options.getBoolean("no.typed.arrays");
         _parse_only           = options.getBoolean("parse.only");
-        _persistent_cache     = options.getBoolean("persistent.code.cache");
         _print_ast            = options.getBoolean("print.ast");
         _print_lower_ast      = options.getBoolean("print.lower.ast");
-        _print_code           = options.getString("print.code") != null;
+        _print_code           = options.getBoolean("print.code");
         _print_mem_usage      = options.getBoolean("print.mem.usage");
         _print_no_newline     = options.getBoolean("print.no.newline");
         _print_parse          = options.getBoolean("print.parse");
         _print_lower_parse    = options.getBoolean("print.lower.parse");
         _print_symbols        = options.getBoolean("print.symbols");
+        _range_analysis       = options.getBoolean("range.analysis");
         _scripting            = options.getBoolean("scripting");
         _strict               = options.getBoolean("strict");
         _version              = options.getBoolean("version");
         _verify_code          = options.getBoolean("verify.code");
 
-        final String language = options.getString("language");
-        if (language == null || language.equals("es5")) {
-            _es6 = false;
-        } else if (language.equals("es6")) {
-            _es6 = true;
+        final String specialize = options.getString("specialize.calls");
+        if (specialize == null) {
+            _specialize_calls = null;
         } else {
-            throw new RuntimeException("Unsupported language: " + language);
-        }
-
-        String dir = null;
-        String func = null;
-        final String pc = options.getString("print.code");
-        if (pc != null) {
-            final StringTokenizer st = new StringTokenizer(pc, ",");
-            while (st.hasMoreTokens()) {
-                final StringTokenizer st2 = new StringTokenizer(st.nextToken(), ":");
-                while (st2.hasMoreTokens()) {
-                    final String cmd = st2.nextToken();
-                    if ("dir".equals(cmd)) {
-                        dir = st2.nextToken();
-                    } else if ("function".equals(cmd)) {
-                        func = st2.nextToken();
-                    }
-                }
+            _specialize_calls = new HashSet<>();
+            final StringTokenizer st = new StringTokenizer(specialize, ",");
+            while (st.hasMoreElements()) {
+                _specialize_calls.add(st.nextToken());
             }
         }
-        _print_code_dir = dir;
-        _print_code_func = func;
 
         int callSiteFlags = 0;
         if (options.getBoolean("profile.callsites")) {
@@ -321,6 +260,9 @@ public final class ScriptEnvironment {
             if (kv.hasValue("objects")) {
                 callSiteFlags |= NashornCallSiteDescriptor.CALLSITE_TRACE_VALUES;
             }
+            if (kv.hasValue("scope")) {
+                callSiteFlags |= NashornCallSiteDescriptor.CALLSITE_TRACE_SCOPE;
+            }
         }
         this._callsite_flags = callSiteFlags;
 
@@ -337,12 +279,18 @@ public final class ScriptEnvironment {
         } else {
             this._locale = Locale.getDefault();
         }
+    }
 
-        final LoggingOption loggingOption = (LoggingOption)options.get("log");
-        this._loggers = loggingOption == null ? new HashMap<String, LoggerInfo>() : loggingOption.getLoggers();
-
-        final LoggerInfo timeLoggerInfo = _loggers.get(Timing.getLoggerName());
-        this._timing = new Timing(timeLoggerInfo != null && timeLoggerInfo.getLevel() != Level.OFF);
+    /**
+     * Can we specialize a particular method name?
+     * @param functionName method name
+     * @return true if we are allowed to generate versions of this method
+     */
+    public boolean canSpecialize(final String functionName) {
+        if (_specialize_calls == null) {
+            return false;
+        }
+        return _specialize_calls.isEmpty() || _specialize_calls.contains(functionName);
     }
 
     /**
@@ -387,24 +335,4 @@ public final class ScriptEnvironment {
     public List<String> getArguments() {
         return options.getArguments();
     }
-
-    /**
-     * Check if there is a logger registered for a particular name: typically
-     * the "name" attribute of a Loggable annotation on a class
-     *
-     * @param name logger name
-     * @return true, if a logger exists for that name, false otherwise
-     */
-    public boolean hasLogger(final String name) {
-        return _loggers.get(name) != null;
-    }
-
-    /**
-     * Check if compilation/runtime timings are enabled
-     * @return true if enabled
-     */
-    public boolean isTimingEnabled() {
-        return _timing != null ? _timing.isEnabled() : false;
-    }
-
 }

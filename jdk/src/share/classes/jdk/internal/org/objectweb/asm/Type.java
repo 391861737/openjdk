@@ -585,11 +585,11 @@ public class Type {
         case DOUBLE:
             return "double";
         case ARRAY:
-            StringBuilder sb = new StringBuilder(getElementType().getClassName());
+            StringBuffer b = new StringBuffer(getElementType().getClassName());
             for (int i = getDimensions(); i > 0; --i) {
-                sb.append("[]");
+                b.append("[]");
             }
-            return sb.toString();
+            return b.toString();
         case OBJECT:
             return new String(buf, off, len).replace('/', '.');
         default:

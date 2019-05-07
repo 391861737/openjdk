@@ -28,8 +28,6 @@ package jdk.nashorn.internal.ir;
 import jdk.nashorn.internal.ir.visitor.NodeVisitor;
 
 abstract class LexicalContextStatement extends Statement implements LexicalContextNode {
-    private static final long serialVersionUID = 1L;
-
     /**
      * Constructor
      *

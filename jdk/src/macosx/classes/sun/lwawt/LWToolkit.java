@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2011, 2014, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2011, 2013, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -28,17 +28,17 @@ package sun.lwawt;
 import java.awt.*;
 import java.awt.List;
 import java.awt.datatransfer.*;
+import java.awt.dnd.*;
+import java.awt.dnd.peer.*;
 import java.awt.image.*;
 import java.awt.peer.*;
 import java.security.*;
 import java.util.*;
 
 import sun.awt.*;
+import sun.lwawt.macosx.*;
 import sun.print.*;
 import sun.security.util.SecurityConstants;
-import sun.misc.ThreadGroupUtils;
-
-import static sun.lwawt.LWWindowPeer.PeerType;
 
 public abstract class LWToolkit extends SunToolkit implements Runnable {
 
@@ -72,17 +72,30 @@ public abstract class LWToolkit extends SunToolkit implements Runnable {
     protected final void init() {
         AWTAutoShutdown.notifyToolkitThreadBusy();
 
-        ThreadGroup rootTG = AccessController.doPrivileged(
-                (PrivilegedAction<ThreadGroup>) ThreadGroupUtils::getRootThreadGroup);
+        ThreadGroup mainTG = AccessController.doPrivileged(
+            new PrivilegedAction<ThreadGroup>() {
+                public ThreadGroup run() {
+                    ThreadGroup currentTG = Thread.currentThread().getThreadGroup();
+                    ThreadGroup parentTG = currentTG.getParent();
+                    while (parentTG != null) {
+                        currentTG = parentTG;
+                        parentTG = currentTG.getParent();
+                    }
+                    return currentTG;
+                }
+            }
+        );
 
         Runtime.getRuntime().addShutdownHook(
-            new Thread(rootTG, () -> {
-                shutdown();
-                waitForRunState(STATE_CLEANUP);
+            new Thread(mainTG, new Runnable() {
+                public void run() {
+                    shutdown();
+                    waitForRunState(STATE_CLEANUP);
+                }
             })
         );
 
-        Thread toolkitThread = new Thread(rootTG, this, "AWT-LW");
+        Thread toolkitThread = new Thread(mainTG, this, "AWT-LW");
         toolkitThread.setDaemon(true);
         toolkitThread.setPriority(Thread.NORM_PRIORITY + 1);
         toolkitThread.start();
@@ -102,7 +115,7 @@ public abstract class LWToolkit extends SunToolkit implements Runnable {
     /*
      * Sends a request to stop the message pump.
      */
-    public final void shutdown() {
+    public void shutdown() {
         setRunState(STATE_SHUTDOWN);
         platformShutdown();
     }
@@ -133,7 +146,7 @@ public abstract class LWToolkit extends SunToolkit implements Runnable {
         notifyAll();
     }
 
-    public final boolean isTerminating() {
+    public boolean isTerminating() {
         return getRunState() >= STATE_SHUTDOWN;
     }
 
@@ -150,8 +163,7 @@ public abstract class LWToolkit extends SunToolkit implements Runnable {
         }
     }
 
-    @Override
-    public final void run() {
+    public void run() {
         setRunState(STATE_INIT);
         platformInit();
         AWTAutoShutdown.notifyToolkitThreadFree();
@@ -203,51 +215,80 @@ public abstract class LWToolkit extends SunToolkit implements Runnable {
      * Note that LWWindowPeer implements WindowPeer, FramePeer
      * and DialogPeer interfaces.
      */
-    protected LWWindowPeer createDelegatedPeer(Window target,
-                                               PlatformComponent platformComponent,
-                                               PlatformWindow platformWindow,
-                                               PeerType peerType) {
+    private LWWindowPeer createDelegatedPeer(Window target, PlatformComponent platformComponent,
+                                             PlatformWindow platformWindow, LWWindowPeer.PeerType peerType)
+    {
         LWWindowPeer peer = new LWWindowPeer(target, platformComponent, platformWindow, peerType);
         targetCreatedPeer(target, peer);
         peer.initialize();
         return peer;
     }
 
-    @Override
-    public final FramePeer createLightweightFrame(LightweightFrame target) {
-        PlatformComponent platformComponent = createLwPlatformComponent();
-        PlatformWindow platformWindow = createPlatformWindow(PeerType.LW_FRAME);
-        LWLightweightFramePeer peer = new LWLightweightFramePeer(target,
-                                                                 platformComponent,
-                                                                 platformWindow);
+    private LWLightweightFramePeer createDelegatedLwPeer(LightweightFrame target,
+                                                         PlatformComponent platformComponent,
+                                                         PlatformWindow platformWindow)
+    {
+        LWLightweightFramePeer peer = new LWLightweightFramePeer(target, platformComponent, platformWindow);
         targetCreatedPeer(target, peer);
         peer.initialize();
         return peer;
     }
 
     @Override
-    public final WindowPeer createWindow(Window target) {
-        PlatformComponent platformComponent = createPlatformComponent();
-        PlatformWindow platformWindow = createPlatformWindow(PeerType.SIMPLEWINDOW);
-        return createDelegatedPeer(target, platformComponent, platformWindow, PeerType.SIMPLEWINDOW);
+    public FramePeer createLightweightFrame(LightweightFrame target) {
+        PlatformComponent platformComponent = createLwPlatformComponent();
+        PlatformWindow platformWindow = createPlatformWindow(LWWindowPeer.PeerType.LW_FRAME);
+        return createDelegatedLwPeer(target, platformComponent, platformWindow);
     }
 
     @Override
-    public final FramePeer createFrame(Frame target) {
+    public WindowPeer createWindow(Window target) {
         PlatformComponent platformComponent = createPlatformComponent();
-        PlatformWindow platformWindow = createPlatformWindow(PeerType.FRAME);
-        return createDelegatedPeer(target, platformComponent, platformWindow, PeerType.FRAME);
+        PlatformWindow platformWindow = createPlatformWindow(LWWindowPeer.PeerType.SIMPLEWINDOW);
+        return createDelegatedPeer(target, platformComponent, platformWindow, LWWindowPeer.PeerType.SIMPLEWINDOW);
+    }
+
+    @Override
+    public FramePeer createFrame(Frame target) {
+        PlatformComponent platformComponent = createPlatformComponent();
+        PlatformWindow platformWindow = createPlatformWindow(LWWindowPeer.PeerType.FRAME);
+        return createDelegatedPeer(target, platformComponent, platformWindow, LWWindowPeer.PeerType.FRAME);
+    }
+
+    public LWWindowPeer createEmbeddedFrame(CEmbeddedFrame target) {
+        PlatformComponent platformComponent = createPlatformComponent();
+        PlatformWindow platformWindow = createPlatformWindow(LWWindowPeer.PeerType.EMBEDDED_FRAME);
+        return createDelegatedPeer(target, platformComponent, platformWindow, LWWindowPeer.PeerType.EMBEDDED_FRAME);
+    }
+
+    public LWWindowPeer createEmbeddedFrame(CViewEmbeddedFrame target) {
+        PlatformComponent platformComponent = createPlatformComponent();
+        PlatformWindow platformWindow = createPlatformWindow(LWWindowPeer.PeerType.VIEW_EMBEDDED_FRAME);
+        return createDelegatedPeer(target, platformComponent, platformWindow, LWWindowPeer.PeerType.VIEW_EMBEDDED_FRAME);
+    }
+
+
+    CPrinterDialogPeer createCPrinterDialog(CPrinterDialog target) {
+        PlatformComponent platformComponent = createPlatformComponent();
+        PlatformWindow platformWindow = createPlatformWindow(LWWindowPeer.PeerType.DIALOG);
+        CPrinterDialogPeer peer = new CPrinterDialogPeer(target, platformComponent, platformWindow);
+        targetCreatedPeer(target, peer);
+        return peer;
     }
 
     @Override
     public DialogPeer createDialog(Dialog target) {
+        if (target instanceof CPrinterDialog) {
+            return createCPrinterDialog((CPrinterDialog)target);
+        }
+
         PlatformComponent platformComponent = createPlatformComponent();
-        PlatformWindow platformWindow = createPlatformWindow(PeerType.DIALOG);
-        return createDelegatedPeer(target, platformComponent, platformWindow, PeerType.DIALOG);
+        PlatformWindow platformWindow = createPlatformWindow(LWWindowPeer.PeerType.DIALOG);
+        return createDelegatedPeer(target, platformComponent, platformWindow, LWWindowPeer.PeerType.DIALOG);
     }
 
     @Override
-    public final FileDialogPeer createFileDialog(FileDialog target) {
+    public FileDialogPeer createFileDialog(FileDialog target) {
         FileDialogPeer peer = createFileDialogPeer(target);
         targetCreatedPeer(target, peer);
         return peer;
@@ -256,7 +297,7 @@ public abstract class LWToolkit extends SunToolkit implements Runnable {
     // ---- LIGHTWEIGHT COMPONENT PEERS ---- //
 
     @Override
-    public final ButtonPeer createButton(Button target) {
+    public ButtonPeer createButton(Button target) {
         PlatformComponent platformComponent = createPlatformComponent();
         LWButtonPeer peer = new LWButtonPeer(target, platformComponent);
         targetCreatedPeer(target, peer);
@@ -265,7 +306,7 @@ public abstract class LWToolkit extends SunToolkit implements Runnable {
     }
 
     @Override
-    public final CheckboxPeer createCheckbox(Checkbox target) {
+    public CheckboxPeer createCheckbox(Checkbox target) {
         PlatformComponent platformComponent = createPlatformComponent();
         LWCheckboxPeer peer = new LWCheckboxPeer(target, platformComponent);
         targetCreatedPeer(target, peer);
@@ -274,7 +315,12 @@ public abstract class LWToolkit extends SunToolkit implements Runnable {
     }
 
     @Override
-    public final ChoicePeer createChoice(Choice target) {
+    public CheckboxMenuItemPeer createCheckboxMenuItem(CheckboxMenuItem target) {
+        throw new RuntimeException("not implemented");
+    }
+
+    @Override
+    public ChoicePeer createChoice(Choice target) {
         PlatformComponent platformComponent = createPlatformComponent();
         LWChoicePeer peer = new LWChoicePeer(target, platformComponent);
         targetCreatedPeer(target, peer);
@@ -283,7 +329,7 @@ public abstract class LWToolkit extends SunToolkit implements Runnable {
     }
 
     @Override
-    public final LabelPeer createLabel(Label target) {
+    public LabelPeer createLabel(Label target) {
         PlatformComponent platformComponent = createPlatformComponent();
         LWLabelPeer peer = new LWLabelPeer(target, platformComponent);
         targetCreatedPeer(target, peer);
@@ -292,7 +338,7 @@ public abstract class LWToolkit extends SunToolkit implements Runnable {
     }
 
     @Override
-    public final CanvasPeer createCanvas(Canvas target) {
+    public CanvasPeer createCanvas(Canvas target) {
         PlatformComponent platformComponent = createPlatformComponent();
         LWCanvasPeer<?, ?> peer = new LWCanvasPeer<>(target, platformComponent);
         targetCreatedPeer(target, peer);
@@ -301,7 +347,7 @@ public abstract class LWToolkit extends SunToolkit implements Runnable {
     }
 
     @Override
-    public final ListPeer createList(List target) {
+    public ListPeer createList(List target) {
         PlatformComponent platformComponent = createPlatformComponent();
         LWListPeer peer = new LWListPeer(target, platformComponent);
         targetCreatedPeer(target, peer);
@@ -310,7 +356,22 @@ public abstract class LWToolkit extends SunToolkit implements Runnable {
     }
 
     @Override
-    public final PanelPeer createPanel(Panel target) {
+    public MenuPeer createMenu(Menu target) {
+        throw new RuntimeException("not implemented");
+    }
+
+    @Override
+    public MenuBarPeer createMenuBar(MenuBar target) {
+        throw new RuntimeException("not implemented");
+    }
+
+    @Override
+    public MenuItemPeer createMenuItem(MenuItem target) {
+        throw new RuntimeException("not implemented");
+    }
+
+    @Override
+    public PanelPeer createPanel(Panel target) {
         PlatformComponent platformComponent = createPlatformComponent();
         LWPanelPeer peer = new LWPanelPeer(target, platformComponent);
         targetCreatedPeer(target, peer);
@@ -319,7 +380,12 @@ public abstract class LWToolkit extends SunToolkit implements Runnable {
     }
 
     @Override
-    public final ScrollPanePeer createScrollPane(ScrollPane target) {
+    public PopupMenuPeer createPopupMenu(PopupMenu target) {
+        throw new RuntimeException("not implemented");
+    }
+
+    @Override
+    public ScrollPanePeer createScrollPane(ScrollPane target) {
         PlatformComponent platformComponent = createPlatformComponent();
         LWScrollPanePeer peer = new LWScrollPanePeer(target, platformComponent);
         targetCreatedPeer(target, peer);
@@ -328,7 +394,7 @@ public abstract class LWToolkit extends SunToolkit implements Runnable {
     }
 
     @Override
-    public final ScrollbarPeer createScrollbar(Scrollbar target) {
+    public ScrollbarPeer createScrollbar(Scrollbar target) {
         PlatformComponent platformComponent = createPlatformComponent();
         LWScrollBarPeer peer = new LWScrollBarPeer(target, platformComponent);
         targetCreatedPeer(target, peer);
@@ -337,7 +403,7 @@ public abstract class LWToolkit extends SunToolkit implements Runnable {
     }
 
     @Override
-    public final TextAreaPeer createTextArea(TextArea target) {
+    public TextAreaPeer createTextArea(TextArea target) {
         PlatformComponent platformComponent = createPlatformComponent();
         LWTextAreaPeer peer = new LWTextAreaPeer(target, platformComponent);
         targetCreatedPeer(target, peer);
@@ -346,7 +412,7 @@ public abstract class LWToolkit extends SunToolkit implements Runnable {
     }
 
     @Override
-    public final TextFieldPeer createTextField(TextField target) {
+    public TextFieldPeer createTextField(TextField target) {
         PlatformComponent platformComponent = createPlatformComponent();
         LWTextFieldPeer peer = new LWTextFieldPeer(target, platformComponent);
         targetCreatedPeer(target, peer);
@@ -357,53 +423,56 @@ public abstract class LWToolkit extends SunToolkit implements Runnable {
     // ---- NON-COMPONENT PEERS ---- //
 
     @Override
-    public final ColorModel getColorModel() throws HeadlessException {
-        return GraphicsEnvironment.getLocalGraphicsEnvironment()
-                                  .getDefaultScreenDevice()
-                                  .getDefaultConfiguration().getColorModel();
+    public ColorModel getColorModel() throws HeadlessException {
+        return GraphicsEnvironment.getLocalGraphicsEnvironment().getDefaultScreenDevice().getDefaultConfiguration().getColorModel();
     }
 
     @Override
-    public final boolean isDesktopSupported() {
+    public boolean isDesktopSupported() {
         return true;
     }
 
     @Override
-    public final KeyboardFocusManagerPeer getKeyboardFocusManagerPeer() {
+    protected DesktopPeer createDesktopPeer(Desktop target) {
+       return new CDesktopPeer();
+    }
+
+    @Override
+    public DragSourceContextPeer createDragSourceContextPeer(DragGestureEvent dge) {
+        DragSourceContextPeer dscp = CDragSourceContextPeer.createDragSourceContextPeer(dge);
+
+        return dscp;
+    }
+
+    @Override
+    public KeyboardFocusManagerPeer getKeyboardFocusManagerPeer() {
         return LWKeyboardFocusManagerPeer.getInstance();
     }
 
     @Override
-    public final synchronized MouseInfoPeer getMouseInfoPeer() {
+    public synchronized MouseInfoPeer getMouseInfoPeer() {
         if (mouseInfoPeer == null) {
             mouseInfoPeer = createMouseInfoPeerImpl();
         }
         return mouseInfoPeer;
     }
 
-    protected final MouseInfoPeer createMouseInfoPeerImpl() {
+    protected MouseInfoPeer createMouseInfoPeerImpl() {
         return new LWMouseInfoPeer();
     }
 
-    protected abstract PlatformWindow getPlatformWindowUnderMouse();
-
-    @Override
-    public final PrintJob getPrintJob(Frame frame, String doctitle,
-                                      Properties props) {
+    public PrintJob getPrintJob(Frame frame, String doctitle, Properties props) {
         return getPrintJob(frame, doctitle, null, null);
     }
 
-    @Override
-    public final PrintJob getPrintJob(Frame frame, String doctitle,
-                                      JobAttributes jobAttributes,
-                                      PageAttributes pageAttributes) {
+    public PrintJob getPrintJob(Frame frame, String doctitle, JobAttributes jobAttributes, PageAttributes pageAttributes) {
         if (GraphicsEnvironment.isHeadless()) {
             throw new IllegalArgumentException();
         }
 
         PrintJob2D printJob = new PrintJob2D(frame, doctitle, jobAttributes, pageAttributes);
 
-        if (!printJob.printDialog()) {
+        if (printJob.printDialog() == false) {
             printJob = null;
         }
 
@@ -411,7 +480,27 @@ public abstract class LWToolkit extends SunToolkit implements Runnable {
     }
 
     @Override
-    public final Clipboard getSystemClipboard() {
+    public RobotPeer createRobot(Robot target, GraphicsDevice screen) {
+        throw new RuntimeException("not implemented");
+    }
+
+    @Override
+    public boolean isTraySupported() {
+        throw new RuntimeException("not implemented");
+    }
+
+    @Override
+    public SystemTrayPeer createSystemTray(SystemTray target) {
+        throw new RuntimeException("not implemented");
+    }
+
+    @Override
+    public TrayIconPeer createTrayIcon(TrayIcon target) {
+        throw new RuntimeException("not implemented");
+    }
+
+    @Override
+    public Clipboard getSystemClipboard() {
         SecurityManager security = System.getSecurityManager();
         if (security != null) {
             security.checkPermission(SecurityConstants.AWT.ACCESS_CLIPBOARD_PERMISSION);
@@ -425,8 +514,7 @@ public abstract class LWToolkit extends SunToolkit implements Runnable {
         return clipboard;
     }
 
-    protected abstract SecurityWarningWindow createSecurityWarning(
-            Window ownerWindow, LWWindowPeer ownerPeer);
+    protected abstract SecurityWarningWindow createSecurityWarning(Window ownerWindow, LWWindowPeer ownerPeer);
 
     // ---- DELEGATES ---- //
 
@@ -435,7 +523,7 @@ public abstract class LWToolkit extends SunToolkit implements Runnable {
     /*
      * Creates a delegate for the given peer type (window, frame, dialog, etc.)
      */
-    protected abstract PlatformWindow createPlatformWindow(PeerType peerType);
+    protected abstract PlatformWindow createPlatformWindow(LWWindowPeer.PeerType peerType);
 
     protected abstract PlatformComponent createPlatformComponent();
 
@@ -469,7 +557,7 @@ public abstract class LWToolkit extends SunToolkit implements Runnable {
     }
 
     @Override
-    public final void grab(final Window w) {
+    public void grab(final Window w) {
         final Object peer = AWTAccessor.getComponentAccessor().getPeer(w);
         if (peer != null) {
             ((LWWindowPeer) peer).grab();
@@ -477,7 +565,7 @@ public abstract class LWToolkit extends SunToolkit implements Runnable {
     }
 
     @Override
-    public final void ungrab(final Window w) {
+    public void ungrab(final Window w) {
         final Object peer = AWTAccessor.getComponentAccessor().getPeer(w);
         if (peer != null) {
             ((LWWindowPeer) peer).ungrab(false);

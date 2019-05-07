@@ -19,7 +19,6 @@
  */
 package jdk.nashorn.internal.runtime.regexp.joni.constants;
 
-@SuppressWarnings("javadoc")
 public interface Traverse {
     final int TRAVERSE_CALLBACK_AT_FIRST = 1;
     final int TRAVERSE_CALLBACK_AT_LAST = 2;

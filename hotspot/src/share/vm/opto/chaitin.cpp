@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2000, 2015, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2000, 2013, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -575,9 +575,6 @@ void PhaseChaitin::Register_Allocate() {
   // Peephole remove copies
   post_allocate_copy_removal();
 
-  // Merge multidefs if multiple defs representing the same value are used in a single block.
-  merge_multidefs();
-
 #ifdef ASSERT
   // Veify the graph after RA.
   verify(&live_arena);
@@ -764,7 +761,7 @@ void PhaseChaitin::gather_lrg_masks( bool after_aggressive ) {
         // processes as vector in RA.
         if (RegMask::is_vector(ireg))
           lrg._is_vector = 1;
-        assert(n_type->isa_vect() == NULL || lrg._is_vector || ireg == Op_RegD || ireg == Op_RegL,
+        assert(n_type->isa_vect() == NULL || lrg._is_vector || ireg == Op_RegD,
                "vector must be in vector registers");
 
         // Check for bound register masks
@@ -840,7 +837,7 @@ void PhaseChaitin::gather_lrg_masks( bool after_aggressive ) {
         case Op_RegD:
           lrg.set_num_regs(2);
           // Define platform specific register pressure
-#if defined(SPARC) || defined(ARM32)
+#if defined(SPARC) || defined(ARM)
           lrg.set_reg_pressure(2);
 #elif defined(IA32)
           if( ireg == Op_RegL ) {
@@ -964,7 +961,7 @@ void PhaseChaitin::gather_lrg_masks( bool after_aggressive ) {
         int kreg = n->in(k)->ideal_reg();
         bool is_vect = RegMask::is_vector(kreg);
         assert(n->in(k)->bottom_type()->isa_vect() == NULL ||
-               is_vect || kreg == Op_RegD || kreg == Op_RegL,
+               is_vect || kreg == Op_RegD,
                "vector must be in vector registers");
         if (lrgmask.is_bound(kreg))
           lrg._is_bound = 1;
@@ -1685,21 +1682,9 @@ Node *PhaseChaitin::find_base_for_derived( Node **derived_base_map, Node *derive
       // (where top() node is placed).
       base->init_req(0, _cfg.get_root_node());
       Block *startb = _cfg.get_block_for_node(C->top());
-      uint node_pos = startb->find_node(C->top());
-      startb->insert_node(base, node_pos);
+      startb->insert_node(base, startb->find_node(C->top()));
       _cfg.map_node_to_block(base, startb);
       assert(_lrg_map.live_range_id(base) == 0, "should not have LRG yet");
-
-      // The loadConP0 might have projection nodes depending on architecture
-      // Add the projection nodes to the CFG
-      for (DUIterator_Fast imax, i = base->fast_outs(imax); i < imax; i++) {
-        Node* use = base->fast_out(i);
-        if (use->is_MachProj()) {
-          startb->insert_node(use, ++node_pos);
-          _cfg.map_node_to_block(use, startb);
-          new_lrg(use, maxlrg++);
-        }
-      }
     }
     if (_lrg_map.live_range_id(base) == 0) {
       new_lrg(base, maxlrg++);
@@ -2022,25 +2007,25 @@ void PhaseChaitin::dump() const {
       tty->print_cr("new LRG");
     }
   }
-  tty->cr();
+  tty->print_cr("");
 
   // Dump lo-degree list
   tty->print("Lo degree: ");
   for(uint i3 = _lo_degree; i3; i3 = lrgs(i3)._next )
     tty->print("L%d ",i3);
-  tty->cr();
+  tty->print_cr("");
 
   // Dump lo-stk-degree list
   tty->print("Lo stk degree: ");
   for(uint i4 = _lo_stk_degree; i4; i4 = lrgs(i4)._next )
     tty->print("L%d ",i4);
-  tty->cr();
+  tty->print_cr("");
 
   // Dump lo-degree list
   tty->print("Hi degree: ");
   for(uint i5 = _hi_degree; i5; i5 = lrgs(i5)._next )
     tty->print("L%d ",i5);
-  tty->cr();
+  tty->print_cr("");
 }
 
 void PhaseChaitin::dump_degree_lists() const {
@@ -2048,26 +2033,26 @@ void PhaseChaitin::dump_degree_lists() const {
   tty->print("Lo degree: ");
   for( uint i = _lo_degree; i; i = lrgs(i)._next )
     tty->print("L%d ",i);
-  tty->cr();
+  tty->print_cr("");
 
   // Dump lo-stk-degree list
   tty->print("Lo stk degree: ");
   for(uint i2 = _lo_stk_degree; i2; i2 = lrgs(i2)._next )
     tty->print("L%d ",i2);
-  tty->cr();
+  tty->print_cr("");
 
   // Dump lo-degree list
   tty->print("Hi degree: ");
   for(uint i3 = _hi_degree; i3; i3 = lrgs(i3)._next )
     tty->print("L%d ",i3);
-  tty->cr();
+  tty->print_cr("");
 }
 
 void PhaseChaitin::dump_simplified() const {
   tty->print("Simplified: ");
   for( uint i = _simplified; i; i = lrgs(i)._next )
     tty->print("L%d ",i);
-  tty->cr();
+  tty->print_cr("");
 }
 
 static char *print_reg( OptoReg::Name reg, const PhaseChaitin *pc, char *buf ) {
@@ -2146,7 +2131,7 @@ void PhaseChaitin::dump_frame() const {
       }
       tty->print("   : parm %d: ", k);
       domain->field_at(k + TypeFunc::Parms)->dump();
-      tty->cr();
+      tty->print_cr("");
     }
   }
 
@@ -2168,7 +2153,7 @@ void PhaseChaitin::dump_frame() const {
           _matcher._parm_regs[j].second() == reg ) {
         tty->print("parm %d: ",j);
         domain->field_at(j + TypeFunc::Parms)->dump();
-        tty->cr();
+        tty->print_cr("");
         break;
       }
     }

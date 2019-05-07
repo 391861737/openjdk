@@ -71,16 +71,12 @@ Java_java_awt_AWTEvent_initIDs(JNIEnv *env, jclass cls)
     TRY;
 
     AwtAWTEvent::bdataID = env->GetFieldID(cls, "bdata", "[B");
-    DASSERT(AwtAWTEvent::bdataID != NULL);
-    CHECK_NULL(AwtAWTEvent::bdataID);
-
     AwtAWTEvent::idID = env->GetFieldID(cls, "id", "I");
-    DASSERT(AwtAWTEvent::idID != NULL);
-    CHECK_NULL(AwtAWTEvent::idID);
-
     AwtAWTEvent::consumedID = env->GetFieldID(cls, "consumed", "Z");
+
+    DASSERT(AwtAWTEvent::bdataID != NULL);
+    DASSERT(AwtAWTEvent::idID != NULL);
     DASSERT(AwtAWTEvent::consumedID != NULL);
-    CHECK_NULL(AwtAWTEvent::consumedID);
 
     CATCH_BAD_ALLOC;
 }

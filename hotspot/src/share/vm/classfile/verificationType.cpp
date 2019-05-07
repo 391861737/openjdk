@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2003, 2016, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2003, 2012, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -24,7 +24,6 @@
 
 #include "precompiled.hpp"
 #include "classfile/symbolTable.hpp"
-#include "classfile/systemDictionaryShared.hpp"
 #include "classfile/verificationType.hpp"
 #include "classfile/verifier.hpp"
 
@@ -43,8 +42,7 @@ VerificationType VerificationType::from_tag(u1 tag) {
 }
 
 bool VerificationType::is_reference_assignable_from(
-    const VerificationType& from, ClassVerifier* context,
-    bool from_field_is_protected, TRAPS) const {
+    const VerificationType& from, ClassVerifier* context, TRAPS) const {
   instanceKlassHandle klass = context->current_class();
   if (from.is_null()) {
     // null is assignable to any reference
@@ -64,40 +62,21 @@ bool VerificationType::is_reference_assignable_from(
         Handle(THREAD, klass->protection_domain()), true, CHECK_false);
     KlassHandle this_class(THREAD, obj);
 
-    if (this_class->is_interface() && (!from_field_is_protected ||
-        from.name() != vmSymbols::java_lang_Object())) {
-      // If we are not trying to access a protected field or method in
-      // java.lang.Object then we treat interfaces as java.lang.Object,
-      // including java.lang.Cloneable and java.io.Serializable.
+    if (this_class->is_interface()) {
+      // We treat interfaces as java.lang.Object, including
+      // java.lang.Cloneable and java.io.Serializable
       return true;
     } else if (from.is_object()) {
       Klass* from_class = SystemDictionary::resolve_or_fail(
           from.name(), Handle(THREAD, klass->class_loader()),
           Handle(THREAD, klass->protection_domain()), true, CHECK_false);
-      bool result = InstanceKlass::cast(from_class)->is_subclass_of(this_class());
-      if (result && DumpSharedSpaces) {
-        if (klass()->is_subclass_of(from_class) && klass()->is_subclass_of(this_class())) {
-          // No need to save verification dependency. At run time, <klass> will be
-          // loaded from the archived only if <from_class> and <this_class> are
-          // also loaded from the archive. I.e., all 3 classes are exactly the same
-          // as we saw at archive creation time.
-        } else {
-          // Save the dependency. At run time, we need to check that the condition
-          // from_class->is_subclass_of(this_class() is still true.
-          Symbol* accessor_clsname = from.name();
-          Symbol* target_clsname = this_class()->name();
-          SystemDictionaryShared::add_verification_dependency(klass(),
-                       accessor_clsname, target_clsname);
-        }
-      }
-      return result;
+      return InstanceKlass::cast(from_class)->is_subclass_of(this_class());
     }
   } else if (is_array() && from.is_array()) {
     VerificationType comp_this = get_component(context, CHECK_false);
     VerificationType comp_from = from.get_component(context, CHECK_false);
     if (!comp_this.is_bogus() && !comp_from.is_bogus()) {
-      return comp_this.is_assignable_from(comp_from, context,
-                                          from_field_is_protected, CHECK_false);
+      return comp_this.is_assignable_from(comp_from, context, CHECK_false);
     }
   }
   return false;

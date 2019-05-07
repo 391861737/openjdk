@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2003, 2015, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2003, 2013, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -22,7 +22,6 @@
  *
  */
 
-#include <fcntl.h>
 #include "precompiled.hpp"
 #include "compiler/compileBroker.hpp"
 #include "gc_interface/collectedHeap.hpp"
@@ -31,7 +30,7 @@
 #include "runtime/frame.inline.hpp"
 #include "runtime/init.hpp"
 #include "runtime/os.hpp"
-#include "runtime/thread.inline.hpp"
+#include "runtime/thread.hpp"
 #include "runtime/vmThread.hpp"
 #include "runtime/vm_operations.hpp"
 #include "services/memTracker.hpp"
@@ -42,8 +41,6 @@
 #include "utilities/events.hpp"
 #include "utilities/top.hpp"
 #include "utilities/vmError.hpp"
-
-PRAGMA_FORMAT_MUTE_WARNINGS_FOR_GCC
 
 // List of environment variables that should be reported in error log file.
 const char *env_list[] = {
@@ -229,7 +226,7 @@ char* VMError::error_string(char* buf, int buflen) {
 
   if (signame) {
     jio_snprintf(buf, buflen,
-                 "%s (0x%x) at pc=" PTR_FORMAT ", pid=%d, tid=" INTPTR_FORMAT,
+                 "%s (0x%x) at pc=" PTR_FORMAT ", pid=%d, tid=" UINTX_FORMAT,
                  signame, _id, _pc,
                  os::current_process_id(), os::current_thread_id());
   } else if (_filename != NULL && _lineno > 0) {
@@ -237,7 +234,7 @@ char* VMError::error_string(char* buf, int buflen) {
     char separator = os::file_separator()[0];
     const char *p = strrchr(_filename, separator);
     int n = jio_snprintf(buf, buflen,
-                         "Internal Error at %s:%d, pid=%d, tid=" INTPTR_FORMAT,
+                         "Internal Error at %s:%d, pid=%d, tid=" UINTX_FORMAT,
                          p ? p + 1 : _filename, _lineno,
                          os::current_process_id(), os::current_thread_id());
     if (n >= 0 && n < buflen && _message) {
@@ -251,7 +248,7 @@ char* VMError::error_string(char* buf, int buflen) {
     }
   } else {
     jio_snprintf(buf, buflen,
-                 "Internal Error (0x%x), pid=%d, tid=" INTPTR_FORMAT,
+                 "Internal Error (0x%x), pid=%d, tid=" UINTX_FORMAT,
                  _id, os::current_process_id(), os::current_thread_id());
   }
 
@@ -361,17 +358,17 @@ void VMError::report(outputStream* st) {
            st->print((_id == (int)OOM_MALLOC_ERROR) ? "(malloc) failed to allocate " :
                                                  "(mmap) failed to map ");
            jio_snprintf(buf, sizeof(buf), SIZE_FORMAT, _size);
-           st->print("%s", buf);
+           st->print(buf);
            st->print(" bytes");
            if (_message != NULL) {
              st->print(" for ");
-             st->print("%s", _message);
+             st->print(_message);
            }
            st->cr();
          } else {
            if (_message != NULL)
              st->print("# ");
-             st->print_cr("%s", _message);
+             st->print_cr(_message);
          }
          // In error file give some solutions
          if (_verbose) {
@@ -438,7 +435,7 @@ void VMError::report(outputStream* st) {
 
      // process id, thread id
      st->print(", pid=%d", os::current_process_id());
-     st->print(", tid=" INTPTR_FORMAT, os::current_thread_id());
+     st->print(", tid=" UINTX_FORMAT, os::current_thread_id());
      st->cr();
 
   STEP(40, "(printing error message)")
@@ -488,7 +485,7 @@ void VMError::report(outputStream* st) {
     } else {
       st->print("Failed to write core dump. %s", coredump_message);
     }
-    st->cr();
+    st->print_cr("");
     st->print_cr("#");
 
   STEP(65, "(printing bug submit message)")
@@ -576,7 +573,7 @@ void VMError::report(outputStream* st) {
 
   STEP(120, "(printing native stack)" )
 
-   if (_verbose) {
+     if (_verbose) {
      if (os::platform_print_native_stack(st, _context, buf, sizeof(buf))) {
        // We have printed the native stack in platform-specific code
        // Windows/x64 needs special handling.
@@ -584,7 +581,32 @@ void VMError::report(outputStream* st) {
        frame fr = _context ? os::fetch_frame_from_context(_context)
                            : os::current_frame();
 
-       print_native_stack(st, fr, _thread, buf, sizeof(buf));
+       // see if it's a valid frame
+       if (fr.pc()) {
+          st->print_cr("Native frames: (J=compiled Java code, j=interpreted, Vv=VM code, C=native code)");
+
+
+          int count = 0;
+          while (count++ < StackPrintLimit) {
+             fr.print_on_error(st, buf, sizeof(buf));
+             st->cr();
+             // Compiled code may use EBP register on x86 so it looks like
+             // non-walkable C frame. Use frame.sender() for java frames.
+             if (_thread && _thread->is_Java_thread() && fr.is_java_frame()) {
+               RegisterMap map((JavaThread*)_thread, false); // No update
+               fr = fr.sender(&map);
+               continue;
+             }
+             if (os::is_first_C_frame(&fr)) break;
+             fr = os::get_sender_for_C_frame(&fr);
+          }
+
+          if (count > StackPrintLimit) {
+             st->print_cr("...<more frames>...");
+          }
+
+          st->cr();
+       }
      }
    }
 
@@ -737,11 +759,6 @@ void VMError::report(outputStream* st) {
        st->cr();
      }
 
-  STEP(228, "(Native Memory Tracking)" )
-     if (_verbose) {
-       MemTracker::error_report(st);
-     }
-
   STEP(230, "" )
 
      if (_verbose) {
@@ -806,8 +823,7 @@ fdStream VMError::log; // error log used by VMError::report_and_die()
 static int expand_and_open(const char* pattern, char* buf, size_t buflen, size_t pos) {
   int fd = -1;
   if (Arguments::copy_expand_pid(pattern, strlen(pattern), &buf[pos], buflen - pos)) {
-    // the O_EXCL flag will cause the open to fail if the file exists
-    fd = open(buf, O_RDWR | O_CREAT | O_EXCL, 0666);
+    fd = open(buf, O_RDWR | O_CREAT | O_TRUNC, 0666);
   }
   return fd;
 }
@@ -865,6 +881,9 @@ void VMError::report_and_die() {
   static bool out_done = false;         // done printing to standard out
   static bool log_done = false;         // done saving error log
   static bool transmit_report_done = false; // done error reporting
+
+  // disble NMT to avoid further exception
+  MemTracker::shutdown(MemTracker::NMT_error_reporting);
 
   if (SuppressFatalErrorMessage) {
       os::abort();
@@ -956,6 +975,7 @@ void VMError::report_and_die() {
       if (fd != -1) {
         out.print_raw("# An error report file with more information is saved as:\n# ");
         out.print_raw_cr(buffer);
+        os::set_error_file(buffer);
 
         log.set_fd(fd);
       } else {
@@ -1013,16 +1033,14 @@ void VMError::report_and_die() {
       out.print_raw   (cmd);
       out.print_raw_cr("\" ...");
 
-      if (os::fork_and_exec(cmd) < 0) {
-        out.print_cr("os::fork_and_exec failed: %s (%d)", strerror(errno), errno);
-      }
+      os::fork_and_exec(cmd);
     }
 
     // done with OnError
     OnError = NULL;
   }
 
-  static bool skip_replay = ReplayCompiles; // Do not overwrite file during replay
+  static bool skip_replay = false;
   if (DumpReplayDataOnError && _thread && _thread->is_Compiler_thread() && !skip_replay) {
     skip_replay = true;
     ciEnv* env = ciEnv::current();
@@ -1100,9 +1118,7 @@ void VM_ReportJavaOutOfMemory::doit() {
 #endif
     tty->print_cr("\"%s\"...", cmd);
 
-    if (os::fork_and_exec(cmd) < 0) {
-      tty->print_cr("os::fork_and_exec failed: %s (%d)", strerror(errno), errno);
-    }
+    os::fork_and_exec(cmd);
   }
 }
 

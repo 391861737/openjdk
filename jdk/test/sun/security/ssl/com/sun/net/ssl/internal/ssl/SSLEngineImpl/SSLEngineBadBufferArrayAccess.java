@@ -148,14 +148,14 @@ public class SSLEngineBadBufferArrayAccess {
             "SSLv3", "TLSv1", "TLSv1.1", "TLSv1.2" };
 
         for (String protocol : protocols) {
+            log("Testing " + protocol);
             /*
              * Run the tests with direct and indirect buffers.
              */
-            log("Testing " + protocol + ":true");
-            new SSLEngineBadBufferArrayAccess(protocol).runTest(true);
-
-            log("Testing " + protocol + ":false");
-            new SSLEngineBadBufferArrayAccess(protocol).runTest(false);
+            SSLEngineBadBufferArrayAccess test =
+                new SSLEngineBadBufferArrayAccess(protocol);
+            test.runTest(true);
+            test.runTest(false);
         }
 
         System.out.println("Test Passed.");

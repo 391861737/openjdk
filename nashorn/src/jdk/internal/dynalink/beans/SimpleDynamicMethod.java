@@ -98,7 +98,6 @@ import java.lang.invoke.MethodType;
  */
 class SimpleDynamicMethod extends SingleDynamicMethod {
     private final MethodHandle target;
-    private final boolean constructor;
 
     /**
      * Creates a new simple dynamic method, with a name constructed from the class name, method name, and handle
@@ -108,27 +107,13 @@ class SimpleDynamicMethod extends SingleDynamicMethod {
      * @param clazz the class declaring the method
      * @param name the simple name of the method
      */
-    SimpleDynamicMethod(final MethodHandle target, final Class<?> clazz, final String name) {
-        this(target, clazz, name, false);
-    }
-
-    /**
-     * Creates a new simple dynamic method, with a name constructed from the class name, method name, and handle
-     * signature.
-     *
-     * @param target the target method handle
-     * @param clazz the class declaring the method
-     * @param name the simple name of the method
-     * @param constructor does this represent a constructor?
-     */
-    SimpleDynamicMethod(final MethodHandle target, final Class<?> clazz, final String name, final boolean constructor) {
-        super(getName(target, clazz, name, constructor));
+    SimpleDynamicMethod(MethodHandle target, Class<?> clazz, String name) {
+        super(getName(target, clazz, name));
         this.target = target;
-        this.constructor = constructor;
     }
 
-    private static String getName(final MethodHandle target, final Class<?> clazz, final String name, final boolean constructor) {
-        return getMethodNameWithSignature(target.type(), constructor ? name : getClassAndMethodName(clazz, name), !constructor);
+    private static String getName(MethodHandle target, Class<?> clazz, String name) {
+        return getMethodNameWithSignature(target.type(), getClassAndMethodName(clazz, name));
     }
 
     @Override
@@ -142,12 +127,7 @@ class SimpleDynamicMethod extends SingleDynamicMethod {
     }
 
     @Override
-    MethodHandle getTarget(final Lookup lookup) {
+    MethodHandle getTarget(Lookup lookup) {
         return target;
-    }
-
-    @Override
-    boolean isConstructor() {
-        return constructor;
     }
 }

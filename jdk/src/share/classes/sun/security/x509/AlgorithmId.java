@@ -588,7 +588,7 @@ public class AlgorithmId implements Serializable, DerEncoder {
             }
 
             if (oidTable == null) {
-                oidTable = Collections.<String,ObjectIdentifier>emptyMap();
+                oidTable = new HashMap<String,ObjectIdentifier>(1);
             }
             initOidTable = true;
         }

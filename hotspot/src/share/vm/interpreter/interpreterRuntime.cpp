@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 1997, 2016, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 1997, 2013, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -74,8 +74,6 @@
 #ifdef COMPILER2
 #include "opto/runtime.hpp"
 #endif
-
-PRAGMA_FORMAT_MUTE_WARNINGS_FOR_GCC
 
 class UnlockFlagSaver {
   private:
@@ -243,15 +241,18 @@ IRT_END
 //------------------------------------------------------------------------------------------------------------------------
 // Exceptions
 
-void InterpreterRuntime::note_trap_inner(JavaThread* thread, int reason,
-                                         methodHandle trap_method, int trap_bci, TRAPS) {
+// Assume the compiler is (or will be) interested in this event.
+// If necessary, create an MDO to hold the information, and record it.
+void InterpreterRuntime::note_trap(JavaThread* thread, int reason, TRAPS) {
+  assert(ProfileTraps, "call me only if profiling");
+  methodHandle trap_method(thread, method(thread));
+
   if (trap_method.not_null()) {
     MethodData* trap_mdo = trap_method->method_data();
     if (trap_mdo == NULL) {
       Method::build_interpreter_method_data(trap_method, THREAD);
       if (HAS_PENDING_EXCEPTION) {
-        assert((PENDING_EXCEPTION->is_a(SystemDictionary::OutOfMemoryError_klass())),
-               "we expect only an OOM error here");
+        assert((PENDING_EXCEPTION->is_a(SystemDictionary::OutOfMemoryError_klass())), "we expect only an OOM error here");
         CLEAR_PENDING_EXCEPTION;
       }
       trap_mdo = trap_method->method_data();
@@ -260,41 +261,11 @@ void InterpreterRuntime::note_trap_inner(JavaThread* thread, int reason,
     if (trap_mdo != NULL) {
       // Update per-method count of trap events.  The interpreter
       // is updating the MDO to simulate the effect of compiler traps.
+      int trap_bci = trap_method->bci_from(bcp(thread));
       Deoptimization::update_method_data_from_interpreter(trap_mdo, trap_bci, reason);
     }
   }
 }
-
-// Assume the compiler is (or will be) interested in this event.
-// If necessary, create an MDO to hold the information, and record it.
-void InterpreterRuntime::note_trap(JavaThread* thread, int reason, TRAPS) {
-  assert(ProfileTraps, "call me only if profiling");
-  methodHandle trap_method(thread, method(thread));
-  int trap_bci = trap_method->bci_from(bcp(thread));
-  note_trap_inner(thread, reason, trap_method, trap_bci, THREAD);
-}
-
-#ifdef CC_INTERP
-// As legacy note_trap, but we have more arguments.
-IRT_ENTRY(void, InterpreterRuntime::note_trap(JavaThread* thread, int reason, Method *method, int trap_bci))
-  methodHandle trap_method(method);
-  note_trap_inner(thread, reason, trap_method, trap_bci, THREAD);
-IRT_END
-
-// Class Deoptimization is not visible in BytecodeInterpreter, so we need a wrapper
-// for each exception.
-void InterpreterRuntime::note_nullCheck_trap(JavaThread* thread, Method *method, int trap_bci)
-  { if (ProfileTraps) note_trap(thread, Deoptimization::Reason_null_check, method, trap_bci); }
-void InterpreterRuntime::note_div0Check_trap(JavaThread* thread, Method *method, int trap_bci)
-  { if (ProfileTraps) note_trap(thread, Deoptimization::Reason_div0_check, method, trap_bci); }
-void InterpreterRuntime::note_rangeCheck_trap(JavaThread* thread, Method *method, int trap_bci)
-  { if (ProfileTraps) note_trap(thread, Deoptimization::Reason_range_check, method, trap_bci); }
-void InterpreterRuntime::note_classCheck_trap(JavaThread* thread, Method *method, int trap_bci)
-  { if (ProfileTraps) note_trap(thread, Deoptimization::Reason_class_check, method, trap_bci); }
-void InterpreterRuntime::note_arrayCheck_trap(JavaThread* thread, Method *method, int trap_bci)
-  { if (ProfileTraps) note_trap(thread, Deoptimization::Reason_array_check, method, trap_bci); }
-#endif // CC_INTERP
-
 
 static Handle get_preinitialized_exception(Klass* k, TRAPS) {
   // get klass
@@ -397,22 +368,6 @@ IRT_ENTRY(address, InterpreterRuntime::exception_handler_for_exception(JavaThrea
   bool               should_repeat;
   int                handler_bci;
   int                current_bci = bci(thread);
-
-  if (thread->frames_to_pop_failed_realloc() > 0) {
-    // Allocation of scalar replaced object used in this frame
-    // failed. Unconditionally pop the frame.
-    thread->dec_frames_to_pop_failed_realloc();
-    thread->set_vm_result(h_exception());
-    // If the method is synchronized we already unlocked the monitor
-    // during deoptimization so the interpreter needs to skip it when
-    // the frame is popped.
-    thread->set_do_not_unlock_if_synchronized(true);
-#ifdef CC_INTERP
-    return (address) -1;
-#else
-    return Interpreter::remove_activation_entry();
-#endif
-  }
 
   // Need to do this check first since when _do_not_unlock_if_synchronized
   // is set, we don't want to trigger any classloading which may make calls
@@ -690,8 +645,7 @@ IRT_END
 IRT_ENTRY(void, InterpreterRuntime::resolve_invoke(JavaThread* thread, Bytecodes::Code bytecode)) {
   // extract receiver from the outgoing argument list if necessary
   Handle receiver(thread, NULL);
-  if (bytecode == Bytecodes::_invokevirtual || bytecode == Bytecodes::_invokeinterface ||
-      bytecode == Bytecodes::_invokespecial) {
+  if (bytecode == Bytecodes::_invokevirtual || bytecode == Bytecodes::_invokeinterface) {
     ResourceMark rm(thread);
     methodHandle m (thread, method(thread));
     Bytecode_invoke call(m, bci(thread));
@@ -757,25 +711,16 @@ IRT_ENTRY(void, InterpreterRuntime::resolve_invoke(JavaThread* thread, Bytecodes
       int index = info.resolved_method()->itable_index();
       assert(info.itable_index() == index, "");
     }
-  } else if (bytecode == Bytecodes::_invokespecial) {
-    assert(info.call_kind() == CallInfo::direct_call, "must be direct call");
   } else {
     assert(info.call_kind() == CallInfo::direct_call ||
            info.call_kind() == CallInfo::vtable_call, "");
   }
 #endif
-  // Get sender or sender's host_klass, and only set cpCache entry to resolved if
-  // it is not an interface.  The receiver for invokespecial calls within interface
-  // methods must be checked for every call.
-  InstanceKlass* sender = pool->pool_holder();
-  sender = sender->is_anonymous() ? InstanceKlass::cast(sender->host_klass()) : sender;
-
   switch (info.call_kind()) {
   case CallInfo::direct_call:
     cache_entry(thread)->set_direct_call(
       bytecode,
-      info.resolved_method(),
-      sender->is_interface());
+      info.resolved_method());
     break;
   case CallInfo::vtable_call:
     cache_entry(thread)->set_vtable_call(
@@ -1021,7 +966,6 @@ ConstantPoolCacheEntry *cp_entry))
 
   switch(cp_entry->flag_state()) {
     case btos:    // fall through
-    case ztos:    // fall through
     case ctos:    // fall through
     case stos:    // fall through
     case itos:    // fall through
@@ -1058,8 +1002,7 @@ IRT_ENTRY(void, InterpreterRuntime::post_field_modification(JavaThread *thread,
   char sig_type = '\0';
 
   switch(cp_entry->flag_state()) {
-    case btos: sig_type = 'B'; break;
-    case ztos: sig_type = 'Z'; break;
+    case btos: sig_type = 'Z'; break;
     case ctos: sig_type = 'C'; break;
     case stos: sig_type = 'S'; break;
     case itos: sig_type = 'I'; break;
@@ -1297,10 +1240,8 @@ IRT_END
 // This is a support of the JVMTI PopFrame interface.
 // Make sure it is an invokestatic of a polymorphic intrinsic that has a member_name argument
 // and return it as a vm_result so that it can be reloaded in the list of invokestatic parameters.
-// The member_name argument is a saved reference (in local#0) to the member_name.
-// For backward compatibility with some JDK versions (7, 8) it can also be a direct method handle.
-// FIXME: remove DMH case after j.l.i.InvokerBytecodeGenerator code shape is updated.
-IRT_ENTRY(void, InterpreterRuntime::member_name_arg_or_null(JavaThread* thread, address member_name,
+// The dmh argument is a reference to a DirectMethoHandle that has a member name field.
+IRT_ENTRY(void, InterpreterRuntime::member_name_arg_or_null(JavaThread* thread, address dmh,
                                                             Method* method, address bcp))
   Bytecodes::Code code = Bytecodes::code_at(method, bcp);
   if (code != Bytecodes::_invokestatic) {
@@ -1312,14 +1253,8 @@ IRT_ENTRY(void, InterpreterRuntime::member_name_arg_or_null(JavaThread* thread, 
   Symbol* mname = cpool->name_ref_at(cp_index);
 
   if (MethodHandles::has_member_arg(cname, mname)) {
-    oop member_name_oop = (oop) member_name;
-    if (java_lang_invoke_DirectMethodHandle::is_instance(member_name_oop)) {
-      // FIXME: remove after j.l.i.InvokerBytecodeGenerator code shape is updated.
-      member_name_oop = java_lang_invoke_DirectMethodHandle::member(member_name_oop);
-    }
-    thread->set_vm_result(member_name_oop);
-  } else {
-    thread->set_vm_result(NULL);
+    oop member_name = java_lang_invoke_DirectMethodHandle::member((oop)dmh);
+    thread->set_vm_result(member_name);
   }
 IRT_END
 #endif // INCLUDE_JVMTI

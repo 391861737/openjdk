@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 1997, 2015, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 1997, 2011, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -33,9 +33,7 @@
 
 
 # include <ctype.h>
-#define __USE_LEGACY_PROTOTYPES__
 # include <dirent.h>
-#undef __USE_LEGACY_PROTOTYPES__
 # include <string.h>
 # include <strings.h>     // for bsd'isms
 # include <stdarg.h>
@@ -48,6 +46,15 @@
 # include <ieeefp.h>
 #endif
 # include <math.h>
+#ifdef LINUX
+#ifndef FP_PZERO
+  // Linux doesn't have positive/negative zero
+  #define FP_PZERO FP_ZERO
+#endif
+#ifndef fpclass
+  #define fpclass fpclassify
+#endif
+#endif
 # include <time.h>
 # include <fcntl.h>
 # include <dlfcn.h>
@@ -176,6 +183,15 @@ typedef unsigned short     jushort;
 typedef unsigned int       juint;
 typedef unsigned long long julong;
 
+//----------------------------------------------------------------------------------------------------
+// Special (possibly not-portable) casts
+// Cast floats into same-size integers and vice-versa w/o changing bit-pattern
+
+inline jint    jint_cast   (jfloat  x)           { return *(jint*   )&x; }
+inline jlong   jlong_cast  (jdouble x)           { return *(jlong*  )&x; }
+
+inline jfloat  jfloat_cast (jint    x)           { return *(jfloat* )&x; }
+inline jdouble jdouble_cast(jlong   x)           { return *(jdouble*)&x; }
 
 //----------------------------------------------------------------------------------------------------
 // Constant for jlong (specifying an long long constant is C++ compiler specific)
@@ -263,7 +279,7 @@ inline int wcslen(const jchar* x) { return wcslen((const wchar_t*)x); }
 // NOTE: This one leads to an infinite recursion on Linux
 #ifndef LINUX
 int local_vsnprintf(char* buf, size_t count, const char* fmt, va_list argptr);
-#define vsnprintf local_vsnprintf
+#define jvsnprintf local_vsnprintf
 #endif
 
 // Portability macros

@@ -802,8 +802,7 @@ public class PKCS7 {
                                             byte[] content,
                                             String signatureAlgorithm,
                                             URI tsaURI,
-                                            String tSAPolicyID,
-                                            String tSADigestAlg)
+                                            String tSAPolicyID)
         throws CertificateException, IOException, NoSuchAlgorithmException
     {
 
@@ -812,8 +811,7 @@ public class PKCS7 {
         if (tsaURI != null) {
             // Timestamp the signature
             HttpTimestamper tsa = new HttpTimestamper(tsaURI);
-            byte[] tsToken = generateTimestampToken(
-                    tsa, tSAPolicyID, tSADigestAlg, signature);
+            byte[] tsToken = generateTimestampToken(tsa, tSAPolicyID, signature);
 
             // Insert the timestamp token into the PKCS #7 signer info element
             // (as an unsigned attribute)
@@ -871,7 +869,6 @@ public class PKCS7 {
      */
     private static byte[] generateTimestampToken(Timestamper tsa,
                                                  String tSAPolicyID,
-                                                 String tSADigestAlg,
                                                  byte[] toBeTimestamped)
         throws IOException, CertificateException
     {
@@ -879,10 +876,11 @@ public class PKCS7 {
         MessageDigest messageDigest = null;
         TSRequest tsQuery = null;
         try {
-            messageDigest = MessageDigest.getInstance(tSADigestAlg);
+            // SHA-1 is always used.
+            messageDigest = MessageDigest.getInstance("SHA-1");
             tsQuery = new TSRequest(tSAPolicyID, toBeTimestamped, messageDigest);
         } catch (NoSuchAlgorithmException e) {
-            throw new IllegalArgumentException(e);
+            // ignore
         }
 
         // Generate a nonce
@@ -910,13 +908,9 @@ public class PKCS7 {
         PKCS7 tsToken = tsReply.getToken();
 
         TimestampToken tst = tsReply.getTimestampToken();
-        try {
-            if (!tst.getHashAlgorithm().equals(AlgorithmId.get(tSADigestAlg))) {
-                throw new IOException("Digest algorithm not " + tSADigestAlg + " in "
-                                      + "timestamp token");
-            }
-        } catch (NoSuchAlgorithmException nase) {
-            throw new IllegalArgumentException();   // should have been caught before
+        if (!tst.getHashAlgorithm().getName().equals("SHA-1")) {
+            throw new IOException("Digest algorithm not SHA-1 in "
+                                  + "timestamp token");
         }
         if (!MessageDigest.isEqual(tst.getHashedMessage(),
                                    tsQuery.getHashedMessage())) {

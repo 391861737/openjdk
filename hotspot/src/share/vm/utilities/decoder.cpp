@@ -32,8 +32,6 @@
   #include "decoder_windows.hpp"
 #elif defined(__APPLE__)
   #include "decoder_machO.hpp"
-#elif defined(AIX)
-  #include "decoder_aix.hpp"
 #else
   #include "decoder_elf.hpp"
 #endif
@@ -68,8 +66,6 @@ AbstractDecoder* Decoder::create_decoder() {
   decoder = new (std::nothrow) WindowsDecoder();
 #elif defined (__APPLE__)
   decoder = new (std::nothrow)MachODecoder();
-#elif defined(AIX)
-  decoder = new (std::nothrow)AIXDecoder();
 #else
   decoder = new (std::nothrow)ElfDecoder();
 #endif

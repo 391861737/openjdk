@@ -30,7 +30,7 @@
 //---------------------------------------------------------------------------------
 //
 //  Little Color Management System
-//  Copyright (c) 1998-2016 Marti Maria Saguer
+//  Copyright (c) 1998-2011 Marti Maria Saguer
 //
 // Permission is hereby granted, free of charge, to any person obtaining
 // a copy of this software and associated documentation files (the "Software"),
@@ -157,7 +157,7 @@ struct _cms_io_handler {
                                                                    const void* Buffer);
 };
 
-// Endianness adjust functions
+// Endianess adjust functions
 CMSAPI cmsUInt16Number   CMSEXPORT  _cmsAdjustEndianess16(cmsUInt16Number Word);
 CMSAPI cmsUInt32Number   CMSEXPORT  _cmsAdjustEndianess32(cmsUInt32Number Value);
 CMSAPI void              CMSEXPORT  _cmsAdjustEndianess64(cmsUInt64Number* Result, cmsUInt64Number* QWord);
@@ -231,7 +231,6 @@ typedef void*    (* _cmsDupUserDataFn)(cmsContext ContextID, const void* Data);
 #define cmsPluginMultiProcessElementSig      0x6D706548     // 'mpeH'
 #define cmsPluginOptimizationSig             0x6F707448     // 'optH'
 #define cmsPluginTransformSig                0x7A666D48     // 'xfmH'
-#define cmsPluginMutexSig                    0x6D747A48     // 'mtxH'
 
 typedef struct _cmsPluginBaseStruct {
 
@@ -248,28 +247,19 @@ typedef struct _cmsPluginBaseStruct {
 //----------------------------------------------------------------------------------------------------------
 
 // Memory handler. Each new plug-in type replaces current behaviour
-
-typedef void* (* _cmsMallocFnPtrType)(cmsContext ContextID, cmsUInt32Number size);
-typedef void  (* _cmsFreeFnPtrType)(cmsContext ContextID, void *Ptr);
-typedef void* (* _cmsReallocFnPtrType)(cmsContext ContextID, void* Ptr, cmsUInt32Number NewSize);
-
-typedef void* (* _cmsMalloZerocFnPtrType)(cmsContext ContextID, cmsUInt32Number size);
-typedef void* (* _cmsCallocFnPtrType)(cmsContext ContextID, cmsUInt32Number num, cmsUInt32Number size);
-typedef void* (* _cmsDupFnPtrType)(cmsContext ContextID, const void* Org, cmsUInt32Number size);
-
 typedef struct {
 
         cmsPluginBase base;
 
         // Required
-        _cmsMallocFnPtrType  MallocPtr;
-        _cmsFreeFnPtrType    FreePtr;
-        _cmsReallocFnPtrType ReallocPtr;
+        void * (* MallocPtr)(cmsContext ContextID, cmsUInt32Number size);
+        void   (* FreePtr)(cmsContext ContextID, void *Ptr);
+        void * (* ReallocPtr)(cmsContext ContextID, void* Ptr, cmsUInt32Number NewSize);
 
         // Optional
-       _cmsMalloZerocFnPtrType MallocZeroPtr;
-       _cmsCallocFnPtrType     CallocPtr;
-       _cmsDupFnPtrType        DupPtr;
+        void * (* MallocZeroPtr)(cmsContext ContextID, cmsUInt32Number size);
+        void * (* CallocPtr)(cmsContext ContextID, cmsUInt32Number num, cmsUInt32Number size);
+        void * (* DupPtr)(cmsContext ContextID, const void* Org, cmsUInt32Number size);
 
 } cmsPluginMemHandler;
 
@@ -371,8 +361,8 @@ struct _cmstransform_struct;
 
 typedef cmsUInt8Number* (* cmsFormatter16)(register struct _cmstransform_struct* CMMcargo,
                                            register cmsUInt16Number Values[],
-                                           register cmsUInt8Number* Buffer,
-                                           register cmsUInt32Number Stride);
+                                           register cmsUInt8Number*  Buffer,
+                                           register cmsUInt32Number  Stride);
 
 typedef cmsUInt8Number* (* cmsFormatterFloat)(struct _cmstransform_struct* CMMcargo,
                                               cmsFloat32Number Values[],
@@ -600,38 +590,13 @@ typedef struct {
 
 //----------------------------------------------------------------------------------------------------------
 // Full xform
-
-typedef struct {
-       cmsUInt32Number BytesPerLineIn;
-       cmsUInt32Number BytesPerLineOut;
-       cmsUInt32Number BytesPerPlaneIn;
-       cmsUInt32Number BytesPerPlaneOut;
-
-} cmsStride;
-
-typedef void     (* _cmsTransformFn)(struct _cmstransform_struct *CMMcargo,   // Legacy function, handles just ONE scanline.
+typedef void     (* _cmsTransformFn)(struct _cmstransform_struct *CMMcargo,
                                      const void* InputBuffer,
                                      void* OutputBuffer,
                                      cmsUInt32Number Size,
-                                     cmsUInt32Number Stride);                 // Stride in bytes to the next plana in planar formats
-
-
-typedef void     (*_cmsTransform2Fn)(struct _cmstransform_struct *CMMcargo,
-                                     const void* InputBuffer,
-                                     void* OutputBuffer,
-                                     cmsUInt32Number PixelsPerLine,
-                                     cmsUInt32Number LineCount,
-                                     const cmsStride* Stride);
+                                     cmsUInt32Number Stride);
 
 typedef cmsBool  (* _cmsTransformFactory)(_cmsTransformFn* xform,
-                                         void** UserData,
-                                         _cmsFreeUserDataFn* FreePrivateDataFn,
-                                         cmsPipeline** Lut,
-                                         cmsUInt32Number* InputFormat,
-                                         cmsUInt32Number* OutputFormat,
-                                         cmsUInt32Number* dwFlags);
-
-typedef cmsBool  (* _cmsTransform2Factory)(_cmsTransform2Fn* xform,
                                          void** UserData,
                                          _cmsFreeUserDataFn* FreePrivateDataFn,
                                          cmsPipeline** Lut,
@@ -653,35 +618,9 @@ typedef struct {
       cmsPluginBase     base;
 
       // Transform entry point
-      union {
-             _cmsTransformFactory        legacy_xform;
-             _cmsTransform2Factory       xform;
-      } factories;
+      _cmsTransformFactory  Factory;
 
 }  cmsPluginTransform;
-
-//----------------------------------------------------------------------------------------------------------
-// Mutex
-
-typedef void*    (* _cmsCreateMutexFnPtrType)(cmsContext ContextID);
-typedef void     (* _cmsDestroyMutexFnPtrType)(cmsContext ContextID, void* mtx);
-typedef cmsBool  (* _cmsLockMutexFnPtrType)(cmsContext ContextID, void* mtx);
-typedef void     (* _cmsUnlockMutexFnPtrType)(cmsContext ContextID, void* mtx);
-
-typedef struct {
-      cmsPluginBase     base;
-
-     _cmsCreateMutexFnPtrType  CreateMutexPtr;
-     _cmsDestroyMutexFnPtrType DestroyMutexPtr;
-     _cmsLockMutexFnPtrType    LockMutexPtr;
-     _cmsUnlockMutexFnPtrType  UnlockMutexPtr;
-
-}  cmsPluginMutex;
-
-CMSAPI void*   CMSEXPORT _cmsCreateMutex(cmsContext ContextID);
-CMSAPI void    CMSEXPORT _cmsDestroyMutex(cmsContext ContextID, void* mtx);
-CMSAPI cmsBool CMSEXPORT _cmsLockMutex(cmsContext ContextID, void* mtx);
-CMSAPI void    CMSEXPORT _cmsUnlockMutex(cmsContext ContextID, void* mtx);
 
 
 #ifndef CMS_USE_CPP_API

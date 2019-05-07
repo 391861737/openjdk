@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2011, 2014, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2011, 2013, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -72,9 +72,7 @@ OGLGC_DestroyOGLGraphicsConfig(jlong pConfigInfo)
             }
             [pool drain];
             free(ctxinfo);
-            oglc->ctxInfo = NULL;
         }
-        cglinfo->context = NULL;
     }
 
     free(cglinfo);
@@ -236,7 +234,6 @@ Java_sun_java2d_opengl_CGLGraphicsConfig_getCGLConfigInfo
         }
 
         NSOpenGLPixelFormatAttribute attrs[] = {
-            NSOpenGLPFAAllowOfflineRenderers,
             NSOpenGLPFAClosestPolicy,
             NSOpenGLPFAWindow,
             NSOpenGLPFAPixelBuffer,
@@ -436,18 +433,18 @@ Java_sun_java2d_opengl_CGLGraphicsConfig_getOGLCapabilities
 }
 
 JNIEXPORT jint JNICALL
-Java_sun_java2d_opengl_CGLGraphicsConfig_nativeGetMaxTextureSize
+Java_sun_java2d_opengl_CGLGraphicsConfig_getMaxTextureSize
     (JNIEnv *env, jclass cglgc)
 {
-    J2dTraceLn(J2D_TRACE_INFO, "CGLGraphicsConfig_nativeGetMaxTextureSize");
+    J2dTraceLn(J2D_TRACE_INFO, "CGLGraphicsConfig_getMaxTextureSize");
 
     __block int max = 0;
 
-    [ThreadUtilities performOnMainThreadWaiting:YES block:^(){
+    [JNFRunLoop performOnMainThreadWaiting:YES withBlock:^(){
         [sharedContext makeCurrentContext];
         j2d_glGetIntegerv(GL_MAX_TEXTURE_SIZE, &max);
-        [NSOpenGLContext clearCurrentContext];
     }];
 
     return (jint)max;
 }
+

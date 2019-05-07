@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 1997, 2014, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 1997, 2013, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -37,13 +37,9 @@
 
 int VM_Version::_features = VM_Version::unknown_m;
 const char* VM_Version::_features_str = "";
-unsigned int VM_Version::_L2_data_cache_line_size = 0;
 
 void VM_Version::initialize() {
-
-  assert(_features != VM_Version::unknown_m, "System pre-initialization is not complete.");
-  guarantee(VM_Version::has_v9(), "only SPARC v9 is supported");
-
+  _features = determine_features();
   PrefetchCopyIntervalInBytes = prefetch_copy_interval_in_bytes();
   PrefetchScanIntervalInBytes = prefetch_scan_interval_in_bytes();
   PrefetchFieldsAhead         = prefetch_fields_ahead();
@@ -74,10 +70,12 @@ void VM_Version::initialize() {
     AllocatePrefetchDistance = AllocatePrefetchStepSize;
   }
 
-  if (AllocatePrefetchStyle == 3 && (!has_blk_init() || cache_line_size <= 0)) {
+  if (AllocatePrefetchStyle == 3 && !has_blk_init()) {
     warning("BIS instructions are not available on this CPU");
     FLAG_SET_DEFAULT(AllocatePrefetchStyle, 1);
   }
+
+  guarantee(VM_Version::has_v9(), "only SPARC v9 is supported");
 
   assert(ArraycopySrcPrefetchDistance < 4096, "invalid value");
   if (ArraycopySrcPrefetchDistance >= 4096)
@@ -138,7 +136,7 @@ void VM_Version::initialize() {
       FLAG_SET_DEFAULT(InteriorEntryAlignment, 4);
     }
     if (is_niagara_plus()) {
-      if (has_blk_init() && (cache_line_size > 0) && UseTLAB &&
+      if (has_blk_init() && UseTLAB &&
           FLAG_IS_DEFAULT(AllocatePrefetchInstr)) {
         // Use BIS instruction for TLAB allocation prefetch.
         FLAG_SET_ERGO(intx, AllocatePrefetchInstr, 1);
@@ -199,7 +197,7 @@ void VM_Version::initialize() {
   }
 
   assert(BlockZeroingLowLimit > 0, "invalid value");
-  if (has_block_zeroing() && cache_line_size > 0) {
+  if (has_block_zeroing()) {
     if (FLAG_IS_DEFAULT(UseBlockZeroing)) {
       FLAG_SET_DEFAULT(UseBlockZeroing, true);
     }
@@ -209,7 +207,7 @@ void VM_Version::initialize() {
   }
 
   assert(BlockCopyLowLimit > 0, "invalid value");
-  if (has_block_zeroing() && cache_line_size > 0) { // has_blk_init() && is_T4(): core's local L2 cache
+  if (has_block_zeroing()) { // has_blk_init() && is_T4(): core's local L2 cache
     if (FLAG_IS_DEFAULT(UseBlockCopy)) {
       FLAG_SET_DEFAULT(UseBlockCopy, true);
     }
@@ -236,7 +234,7 @@ void VM_Version::initialize() {
   assert((OptoLoopAlignment % relocInfo::addr_unit()) == 0, "alignment is not a multiple of NOP size");
 
   char buf[512];
-  jio_snprintf(buf, sizeof(buf), "%s%s%s%s%s%s%s%s%s%s%s%s%s%s%s%s%s%s%s",
+  jio_snprintf(buf, sizeof(buf), "%s%s%s%s%s%s%s%s%s%s%s%s%s%s",
                (has_v9() ? ", v9" : (has_v8() ? ", v8" : "")),
                (has_hardware_popc() ? ", popc" : ""),
                (has_vis1() ? ", vis1" : ""),
@@ -244,12 +242,7 @@ void VM_Version::initialize() {
                (has_vis3() ? ", vis3" : ""),
                (has_blk_init() ? ", blk_init" : ""),
                (has_cbcond() ? ", cbcond" : ""),
-               (has_aes() ? ", aes" : ""),
-               (has_sha1() ? ", sha1" : ""),
-               (has_sha256() ? ", sha256" : ""),
-               (has_sha512() ? ", sha512" : ""),
                (is_ultra3() ? ", ultra3" : ""),
-               (has_sparc5_instr() ? ", sparc5" : ""),
                (is_sun4v() ? ", sun4v" : ""),
                (is_niagara_plus() ? ", niagara_plus" : (is_niagara() ? ", niagara" : "")),
                (is_sparc64() ? ", sparc64" : ""),
@@ -272,101 +265,12 @@ void VM_Version::initialize() {
   if (!has_vis1()) // Drop to 0 if no VIS1 support
     UseVIS = 0;
 
-  // SPARC T4 and above should have support for AES instructions
-  if (has_aes()) {
-    if (UseVIS > 2) { // AES intrinsics use MOVxTOd/MOVdTOx which are VIS3
-      if (FLAG_IS_DEFAULT(UseAES)) {
-        FLAG_SET_DEFAULT(UseAES, true);
-      }
-      if (FLAG_IS_DEFAULT(UseAESIntrinsics)) {
-        FLAG_SET_DEFAULT(UseAESIntrinsics, true);
-      }
-      // we disable both the AES flags if either of them is disabled on the command line
-      if (!UseAES || !UseAESIntrinsics) {
-        FLAG_SET_DEFAULT(UseAES, false);
-        FLAG_SET_DEFAULT(UseAESIntrinsics, false);
-      }
-    } else {
-        if (UseAES || UseAESIntrinsics) {
-          warning("SPARC AES intrinsics require VIS3 instruction support. Intrinsics will be disabled.");
-          if (UseAES) {
-            FLAG_SET_DEFAULT(UseAES, false);
-          }
-          if (UseAESIntrinsics) {
-            FLAG_SET_DEFAULT(UseAESIntrinsics, false);
-          }
-        }
-    }
-  } else if (UseAES || UseAESIntrinsics) {
-    warning("AES instructions are not available on this CPU");
-    if (UseAES) {
-      FLAG_SET_DEFAULT(UseAES, false);
-    }
-    if (UseAESIntrinsics) {
-      FLAG_SET_DEFAULT(UseAESIntrinsics, false);
-    }
-  }
-
-  // SHA1, SHA256, and SHA512 instructions were added to SPARC T-series at different times
-  if (has_sha1() || has_sha256() || has_sha512()) {
-    if (UseVIS > 0) { // SHA intrinsics use VIS1 instructions
-      if (FLAG_IS_DEFAULT(UseSHA)) {
-        FLAG_SET_DEFAULT(UseSHA, true);
-      }
-    } else {
-      if (UseSHA) {
-        warning("SPARC SHA intrinsics require VIS1 instruction support. Intrinsics will be disabled.");
-        FLAG_SET_DEFAULT(UseSHA, false);
-      }
-    }
-  } else if (UseSHA) {
-    warning("SHA instructions are not available on this CPU");
-    FLAG_SET_DEFAULT(UseSHA, false);
-  }
-
-  if (!UseSHA) {
-    FLAG_SET_DEFAULT(UseSHA1Intrinsics, false);
-    FLAG_SET_DEFAULT(UseSHA256Intrinsics, false);
-    FLAG_SET_DEFAULT(UseSHA512Intrinsics, false);
-  } else {
-    if (has_sha1()) {
-      if (FLAG_IS_DEFAULT(UseSHA1Intrinsics)) {
-        FLAG_SET_DEFAULT(UseSHA1Intrinsics, true);
-      }
-    } else if (UseSHA1Intrinsics) {
-      warning("SHA1 instruction is not available on this CPU.");
-      FLAG_SET_DEFAULT(UseSHA1Intrinsics, false);
-    }
-    if (has_sha256()) {
-      if (FLAG_IS_DEFAULT(UseSHA256Intrinsics)) {
-        FLAG_SET_DEFAULT(UseSHA256Intrinsics, true);
-      }
-    } else if (UseSHA256Intrinsics) {
-      warning("SHA256 instruction (for SHA-224 and SHA-256) is not available on this CPU.");
-      FLAG_SET_DEFAULT(UseSHA256Intrinsics, false);
-    }
-
-    if (has_sha512()) {
-      if (FLAG_IS_DEFAULT(UseSHA512Intrinsics)) {
-        FLAG_SET_DEFAULT(UseSHA512Intrinsics, true);
-      }
-    } else if (UseSHA512Intrinsics) {
-      warning("SHA512 instruction (for SHA-384 and SHA-512) is not available on this CPU.");
-      FLAG_SET_DEFAULT(UseSHA512Intrinsics, false);
-    }
-    if (!(UseSHA1Intrinsics || UseSHA256Intrinsics || UseSHA512Intrinsics)) {
-      FLAG_SET_DEFAULT(UseSHA, false);
-    }
-  }
-
   if (FLAG_IS_DEFAULT(ContendedPaddingWidth) &&
     (cache_line_size > ContendedPaddingWidth))
     ContendedPaddingWidth = cache_line_size;
 
 #ifndef PRODUCT
   if (PrintMiscellaneous && Verbose) {
-    tty->print_cr("L1 data cache line size: %u", L1_data_cache_line_size());
-    tty->print_cr("L2 data cache line size: %u", L2_data_cache_line_size());
     tty->print("Allocation");
     if (AllocatePrefetchStyle <= 0) {
       tty->print_cr(": no prefetching");
@@ -378,22 +282,22 @@ void VM_Version::initialize() {
           tty->print("BIS");
       }
       if (AllocatePrefetchLines > 1) {
-        tty->print_cr(" at distance %d, %d lines of %d bytes", (int) AllocatePrefetchDistance, (int) AllocatePrefetchLines, (int) AllocatePrefetchStepSize);
+        tty->print_cr(" at distance %d, %d lines of %d bytes", AllocatePrefetchDistance, AllocatePrefetchLines, AllocatePrefetchStepSize);
       } else {
-        tty->print_cr(" at distance %d, one line of %d bytes", (int) AllocatePrefetchDistance, (int) AllocatePrefetchStepSize);
+        tty->print_cr(" at distance %d, one line of %d bytes", AllocatePrefetchDistance, AllocatePrefetchStepSize);
       }
     }
     if (PrefetchCopyIntervalInBytes > 0) {
-      tty->print_cr("PrefetchCopyIntervalInBytes %d", (int) PrefetchCopyIntervalInBytes);
+      tty->print_cr("PrefetchCopyIntervalInBytes %d", PrefetchCopyIntervalInBytes);
     }
     if (PrefetchScanIntervalInBytes > 0) {
-      tty->print_cr("PrefetchScanIntervalInBytes %d", (int) PrefetchScanIntervalInBytes);
+      tty->print_cr("PrefetchScanIntervalInBytes %d", PrefetchScanIntervalInBytes);
     }
     if (PrefetchFieldsAhead > 0) {
-      tty->print_cr("PrefetchFieldsAhead %d", (int) PrefetchFieldsAhead);
+      tty->print_cr("PrefetchFieldsAhead %d", PrefetchFieldsAhead);
     }
     if (ContendedPaddingWidth > 0) {
-      tty->print_cr("ContendedPaddingWidth %d", (int) ContendedPaddingWidth);
+      tty->print_cr("ContendedPaddingWidth %d", ContendedPaddingWidth);
     }
   }
 #endif // PRODUCT
@@ -449,10 +353,9 @@ void VM_Version::revert() {
 
 unsigned int VM_Version::calc_parallel_worker_threads() {
   unsigned int result;
-  if (is_M_series() || is_S_series()) {
-    // for now, use same gc thread calculation for M-series and S-series as for
-    // niagara-plus. In future, we may want to tweak parameters for
-    // nof_parallel_worker_thread
+  if (is_M_series()) {
+    // for now, use same gc thread calculation for M-series as for niagara-plus
+    // in future, we may want to tweak parameters for nof_parallel_worker_thread
     result = nof_parallel_worker_threads(5, 16, 8);
   } else if (is_niagara_plus()) {
     result = nof_parallel_worker_threads(5, 16, 8);
@@ -460,38 +363,4 @@ unsigned int VM_Version::calc_parallel_worker_threads() {
     result = nof_parallel_worker_threads(5, 8, 8);
   }
   return result;
-}
-
-
-int VM_Version::parse_features(const char* implementation) {
-  int features = unknown_m;
-  // Convert to UPPER case before compare.
-  char* impl = os::strdup(implementation);
-
-  for (int i = 0; impl[i] != 0; i++)
-    impl[i] = (char)toupper((uint)impl[i]);
-
-  if (strstr(impl, "SPARC64") != NULL) {
-    features |= sparc64_family_m;
-  } else if (strstr(impl, "SPARC-M") != NULL) {
-    // M-series SPARC is based on T-series.
-    features |= (M_family_m | T_family_m);
-  } else if (strstr(impl, "SPARC-S") != NULL) {
-    // S-series SPARC is based on T-series.
-    features |= (S_family_m | T_family_m);
-  } else if (strstr(impl, "SPARC-T") != NULL) {
-    features |= T_family_m;
-    if (strstr(impl, "SPARC-T1") != NULL) {
-      features |= T1_model_m;
-    }
-  } else if (strstr(impl, "SUN4V-CPU") != NULL) {
-    // Generic or migration class LDOM
-    features |= T_family_m;
-  } else {
-#ifndef PRODUCT
-    warning("Failed to parse CPU implementation = '%s'", impl);
-#endif
-  }
-  os::free((void*)impl);
-  return features;
 }

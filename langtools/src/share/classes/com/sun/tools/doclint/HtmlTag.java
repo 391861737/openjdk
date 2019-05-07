@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2010, 2016, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2010, 2013, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -36,7 +36,6 @@ import java.util.Map;
 import javax.lang.model.element.Name;
 
 import static com.sun.tools.doclint.HtmlTag.Attr.*;
-import com.sun.tools.javac.util.StringUtils;
 
 /**
  * Enum representing HTML tags.
@@ -183,8 +182,7 @@ public enum HtmlTag {
         }
     },
 
-    SCRIPT(BlockType.OTHER, EndKind.REQUIRED,
-            attrs(AttrKind.OK, SRC)),
+    SCRIPT(BlockType.OTHER, EndKind.REQUIRED),
 
     SMALL(BlockType.INLINE, EndKind.REQUIRED,
             EnumSet.of(Flag.EXPECT_CONTENT)),
@@ -354,7 +352,7 @@ public enum HtmlTag {
         WIDTH;
 
         public String getText() {
-            return StringUtils.toLowerCase(name());
+            return toLowerCase(name());
         }
 
         static final Map<String,Attr> index = new HashMap<String,Attr>();
@@ -433,11 +431,11 @@ public enum HtmlTag {
     }
 
     public String getText() {
-        return StringUtils.toLowerCase(name());
+        return toLowerCase(name());
     }
 
     public Attr getAttr(Name attrName) {
-        return Attr.index.get(StringUtils.toLowerCase(attrName.toString()));
+        return Attr.index.get(toLowerCase(attrName.toString()));
     }
 
     public AttrKind getAttrKind(Name attrName) {
@@ -459,7 +457,10 @@ public enum HtmlTag {
     }
 
     static HtmlTag get(Name tagName) {
-        return index.get(StringUtils.toLowerCase(tagName.toString()));
+        return index.get(toLowerCase(tagName.toString()));
     }
 
+    private static String toLowerCase(String s) {
+        return s.toLowerCase(Locale.US);
+    }
 }

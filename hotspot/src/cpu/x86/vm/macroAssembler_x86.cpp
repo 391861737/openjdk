@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 1997, 2014, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 1997, 2013, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -55,7 +55,6 @@
 
 #define BIND(label) bind(label); BLOCK_COMMENT(#label ":")
 
-PRAGMA_FORMAT_MUTE_WARNINGS_FOR_GCC
 
 #ifdef ASSERT
 bool AbstractAssembler::pd_check_instruction_mark() { return true; }
@@ -99,6 +98,217 @@ Address MacroAssembler::as_Address(ArrayAddress adr) {
   return Address::make_array(adr);
 }
 
+int MacroAssembler::biased_locking_enter(Register lock_reg,
+                                         Register obj_reg,
+                                         Register swap_reg,
+                                         Register tmp_reg,
+                                         bool swap_reg_contains_mark,
+                                         Label& done,
+                                         Label* slow_case,
+                                         BiasedLockingCounters* counters) {
+  assert(UseBiasedLocking, "why call this otherwise?");
+  assert(swap_reg == rax, "swap_reg must be rax, for cmpxchg");
+  assert_different_registers(lock_reg, obj_reg, swap_reg);
+
+  if (PrintBiasedLockingStatistics && counters == NULL)
+    counters = BiasedLocking::counters();
+
+  bool need_tmp_reg = false;
+  if (tmp_reg == noreg) {
+    need_tmp_reg = true;
+    tmp_reg = lock_reg;
+  } else {
+    assert_different_registers(lock_reg, obj_reg, swap_reg, tmp_reg);
+  }
+  assert(markOopDesc::age_shift == markOopDesc::lock_bits + markOopDesc::biased_lock_bits, "biased locking makes assumptions about bit layout");
+  Address mark_addr      (obj_reg, oopDesc::mark_offset_in_bytes());
+  Address klass_addr     (obj_reg, oopDesc::klass_offset_in_bytes());
+  Address saved_mark_addr(lock_reg, 0);
+
+  // Biased locking
+  // See whether the lock is currently biased toward our thread and
+  // whether the epoch is still valid
+  // Note that the runtime guarantees sufficient alignment of JavaThread
+  // pointers to allow age to be placed into low bits
+  // First check to see whether biasing is even enabled for this object
+  Label cas_label;
+  int null_check_offset = -1;
+  if (!swap_reg_contains_mark) {
+    null_check_offset = offset();
+    movl(swap_reg, mark_addr);
+  }
+  if (need_tmp_reg) {
+    push(tmp_reg);
+  }
+  movl(tmp_reg, swap_reg);
+  andl(tmp_reg, markOopDesc::biased_lock_mask_in_place);
+  cmpl(tmp_reg, markOopDesc::biased_lock_pattern);
+  if (need_tmp_reg) {
+    pop(tmp_reg);
+  }
+  jcc(Assembler::notEqual, cas_label);
+  // The bias pattern is present in the object's header. Need to check
+  // whether the bias owner and the epoch are both still current.
+  // Note that because there is no current thread register on x86 we
+  // need to store off the mark word we read out of the object to
+  // avoid reloading it and needing to recheck invariants below. This
+  // store is unfortunate but it makes the overall code shorter and
+  // simpler.
+  movl(saved_mark_addr, swap_reg);
+  if (need_tmp_reg) {
+    push(tmp_reg);
+  }
+  get_thread(tmp_reg);
+  xorl(swap_reg, tmp_reg);
+  if (swap_reg_contains_mark) {
+    null_check_offset = offset();
+  }
+  movl(tmp_reg, klass_addr);
+  xorl(swap_reg, Address(tmp_reg, Klass::prototype_header_offset()));
+  andl(swap_reg, ~((int) markOopDesc::age_mask_in_place));
+  if (need_tmp_reg) {
+    pop(tmp_reg);
+  }
+  if (counters != NULL) {
+    cond_inc32(Assembler::zero,
+               ExternalAddress((address)counters->biased_lock_entry_count_addr()));
+  }
+  jcc(Assembler::equal, done);
+
+  Label try_revoke_bias;
+  Label try_rebias;
+
+  // At this point we know that the header has the bias pattern and
+  // that we are not the bias owner in the current epoch. We need to
+  // figure out more details about the state of the header in order to
+  // know what operations can be legally performed on the object's
+  // header.
+
+  // If the low three bits in the xor result aren't clear, that means
+  // the prototype header is no longer biased and we have to revoke
+  // the bias on this object.
+  testl(swap_reg, markOopDesc::biased_lock_mask_in_place);
+  jcc(Assembler::notZero, try_revoke_bias);
+
+  // Biasing is still enabled for this data type. See whether the
+  // epoch of the current bias is still valid, meaning that the epoch
+  // bits of the mark word are equal to the epoch bits of the
+  // prototype header. (Note that the prototype header's epoch bits
+  // only change at a safepoint.) If not, attempt to rebias the object
+  // toward the current thread. Note that we must be absolutely sure
+  // that the current epoch is invalid in order to do this because
+  // otherwise the manipulations it performs on the mark word are
+  // illegal.
+  testl(swap_reg, markOopDesc::epoch_mask_in_place);
+  jcc(Assembler::notZero, try_rebias);
+
+  // The epoch of the current bias is still valid but we know nothing
+  // about the owner; it might be set or it might be clear. Try to
+  // acquire the bias of the object using an atomic operation. If this
+  // fails we will go in to the runtime to revoke the object's bias.
+  // Note that we first construct the presumed unbiased header so we
+  // don't accidentally blow away another thread's valid bias.
+  movl(swap_reg, saved_mark_addr);
+  andl(swap_reg,
+       markOopDesc::biased_lock_mask_in_place | markOopDesc::age_mask_in_place | markOopDesc::epoch_mask_in_place);
+  if (need_tmp_reg) {
+    push(tmp_reg);
+  }
+  get_thread(tmp_reg);
+  orl(tmp_reg, swap_reg);
+  if (os::is_MP()) {
+    lock();
+  }
+  cmpxchgptr(tmp_reg, Address(obj_reg, 0));
+  if (need_tmp_reg) {
+    pop(tmp_reg);
+  }
+  // If the biasing toward our thread failed, this means that
+  // another thread succeeded in biasing it toward itself and we
+  // need to revoke that bias. The revocation will occur in the
+  // interpreter runtime in the slow case.
+  if (counters != NULL) {
+    cond_inc32(Assembler::zero,
+               ExternalAddress((address)counters->anonymously_biased_lock_entry_count_addr()));
+  }
+  if (slow_case != NULL) {
+    jcc(Assembler::notZero, *slow_case);
+  }
+  jmp(done);
+
+  bind(try_rebias);
+  // At this point we know the epoch has expired, meaning that the
+  // current "bias owner", if any, is actually invalid. Under these
+  // circumstances _only_, we are allowed to use the current header's
+  // value as the comparison value when doing the cas to acquire the
+  // bias in the current epoch. In other words, we allow transfer of
+  // the bias from one thread to another directly in this situation.
+  //
+  // FIXME: due to a lack of registers we currently blow away the age
+  // bits in this situation. Should attempt to preserve them.
+  if (need_tmp_reg) {
+    push(tmp_reg);
+  }
+  get_thread(tmp_reg);
+  movl(swap_reg, klass_addr);
+  orl(tmp_reg, Address(swap_reg, Klass::prototype_header_offset()));
+  movl(swap_reg, saved_mark_addr);
+  if (os::is_MP()) {
+    lock();
+  }
+  cmpxchgptr(tmp_reg, Address(obj_reg, 0));
+  if (need_tmp_reg) {
+    pop(tmp_reg);
+  }
+  // If the biasing toward our thread failed, then another thread
+  // succeeded in biasing it toward itself and we need to revoke that
+  // bias. The revocation will occur in the runtime in the slow case.
+  if (counters != NULL) {
+    cond_inc32(Assembler::zero,
+               ExternalAddress((address)counters->rebiased_lock_entry_count_addr()));
+  }
+  if (slow_case != NULL) {
+    jcc(Assembler::notZero, *slow_case);
+  }
+  jmp(done);
+
+  bind(try_revoke_bias);
+  // The prototype mark in the klass doesn't have the bias bit set any
+  // more, indicating that objects of this data type are not supposed
+  // to be biased any more. We are going to try to reset the mark of
+  // this object to the prototype value and fall through to the
+  // CAS-based locking scheme. Note that if our CAS fails, it means
+  // that another thread raced us for the privilege of revoking the
+  // bias of this particular object, so it's okay to continue in the
+  // normal locking code.
+  //
+  // FIXME: due to a lack of registers we currently blow away the age
+  // bits in this situation. Should attempt to preserve them.
+  movl(swap_reg, saved_mark_addr);
+  if (need_tmp_reg) {
+    push(tmp_reg);
+  }
+  movl(tmp_reg, klass_addr);
+  movl(tmp_reg, Address(tmp_reg, Klass::prototype_header_offset()));
+  if (os::is_MP()) {
+    lock();
+  }
+  cmpxchgptr(tmp_reg, Address(obj_reg, 0));
+  if (need_tmp_reg) {
+    pop(tmp_reg);
+  }
+  // Fall through to the normal CAS-based lock, because no matter what
+  // the result of the above CAS, some thread must have succeeded in
+  // removing the bias bit from the object's header.
+  if (counters != NULL) {
+    cond_inc32(Assembler::zero,
+               ExternalAddress((address)counters->revoked_lock_entry_count_addr()));
+  }
+
+  bind(cas_label);
+
+  return null_check_offset;
+}
 void MacroAssembler::call_VM_leaf_base(address entry_point,
                                        int number_of_arguments) {
   call(RuntimeAddress(entry_point));
@@ -302,9 +512,7 @@ void MacroAssembler::mov_metadata(Address dst, Metadata* obj) {
   mov_literal32(dst, (int32_t)obj, metadata_Relocation::spec_for_immediate());
 }
 
-void MacroAssembler::movptr(Register dst, AddressLiteral src, Register scratch) {
-  // scratch register is not used,
-  // it is defined to match parameters of 64-bit version of this method.
+void MacroAssembler::movptr(Register dst, AddressLiteral src) {
   if (src.is_lval()) {
     mov_literal32(dst, (intptr_t)src.target(), src.rspec());
   } else {
@@ -518,6 +726,165 @@ Address MacroAssembler::as_Address(ArrayAddress adr) {
   return array;
 }
 
+int MacroAssembler::biased_locking_enter(Register lock_reg,
+                                         Register obj_reg,
+                                         Register swap_reg,
+                                         Register tmp_reg,
+                                         bool swap_reg_contains_mark,
+                                         Label& done,
+                                         Label* slow_case,
+                                         BiasedLockingCounters* counters) {
+  assert(UseBiasedLocking, "why call this otherwise?");
+  assert(swap_reg == rax, "swap_reg must be rax for cmpxchgq");
+  assert(tmp_reg != noreg, "tmp_reg must be supplied");
+  assert_different_registers(lock_reg, obj_reg, swap_reg, tmp_reg);
+  assert(markOopDesc::age_shift == markOopDesc::lock_bits + markOopDesc::biased_lock_bits, "biased locking makes assumptions about bit layout");
+  Address mark_addr      (obj_reg, oopDesc::mark_offset_in_bytes());
+  Address saved_mark_addr(lock_reg, 0);
+
+  if (PrintBiasedLockingStatistics && counters == NULL)
+    counters = BiasedLocking::counters();
+
+  // Biased locking
+  // See whether the lock is currently biased toward our thread and
+  // whether the epoch is still valid
+  // Note that the runtime guarantees sufficient alignment of JavaThread
+  // pointers to allow age to be placed into low bits
+  // First check to see whether biasing is even enabled for this object
+  Label cas_label;
+  int null_check_offset = -1;
+  if (!swap_reg_contains_mark) {
+    null_check_offset = offset();
+    movq(swap_reg, mark_addr);
+  }
+  movq(tmp_reg, swap_reg);
+  andq(tmp_reg, markOopDesc::biased_lock_mask_in_place);
+  cmpq(tmp_reg, markOopDesc::biased_lock_pattern);
+  jcc(Assembler::notEqual, cas_label);
+  // The bias pattern is present in the object's header. Need to check
+  // whether the bias owner and the epoch are both still current.
+  load_prototype_header(tmp_reg, obj_reg);
+  orq(tmp_reg, r15_thread);
+  xorq(tmp_reg, swap_reg);
+  andq(tmp_reg, ~((int) markOopDesc::age_mask_in_place));
+  if (counters != NULL) {
+    cond_inc32(Assembler::zero,
+               ExternalAddress((address) counters->anonymously_biased_lock_entry_count_addr()));
+  }
+  jcc(Assembler::equal, done);
+
+  Label try_revoke_bias;
+  Label try_rebias;
+
+  // At this point we know that the header has the bias pattern and
+  // that we are not the bias owner in the current epoch. We need to
+  // figure out more details about the state of the header in order to
+  // know what operations can be legally performed on the object's
+  // header.
+
+  // If the low three bits in the xor result aren't clear, that means
+  // the prototype header is no longer biased and we have to revoke
+  // the bias on this object.
+  testq(tmp_reg, markOopDesc::biased_lock_mask_in_place);
+  jcc(Assembler::notZero, try_revoke_bias);
+
+  // Biasing is still enabled for this data type. See whether the
+  // epoch of the current bias is still valid, meaning that the epoch
+  // bits of the mark word are equal to the epoch bits of the
+  // prototype header. (Note that the prototype header's epoch bits
+  // only change at a safepoint.) If not, attempt to rebias the object
+  // toward the current thread. Note that we must be absolutely sure
+  // that the current epoch is invalid in order to do this because
+  // otherwise the manipulations it performs on the mark word are
+  // illegal.
+  testq(tmp_reg, markOopDesc::epoch_mask_in_place);
+  jcc(Assembler::notZero, try_rebias);
+
+  // The epoch of the current bias is still valid but we know nothing
+  // about the owner; it might be set or it might be clear. Try to
+  // acquire the bias of the object using an atomic operation. If this
+  // fails we will go in to the runtime to revoke the object's bias.
+  // Note that we first construct the presumed unbiased header so we
+  // don't accidentally blow away another thread's valid bias.
+  andq(swap_reg,
+       markOopDesc::biased_lock_mask_in_place | markOopDesc::age_mask_in_place | markOopDesc::epoch_mask_in_place);
+  movq(tmp_reg, swap_reg);
+  orq(tmp_reg, r15_thread);
+  if (os::is_MP()) {
+    lock();
+  }
+  cmpxchgq(tmp_reg, Address(obj_reg, 0));
+  // If the biasing toward our thread failed, this means that
+  // another thread succeeded in biasing it toward itself and we
+  // need to revoke that bias. The revocation will occur in the
+  // interpreter runtime in the slow case.
+  if (counters != NULL) {
+    cond_inc32(Assembler::zero,
+               ExternalAddress((address) counters->anonymously_biased_lock_entry_count_addr()));
+  }
+  if (slow_case != NULL) {
+    jcc(Assembler::notZero, *slow_case);
+  }
+  jmp(done);
+
+  bind(try_rebias);
+  // At this point we know the epoch has expired, meaning that the
+  // current "bias owner", if any, is actually invalid. Under these
+  // circumstances _only_, we are allowed to use the current header's
+  // value as the comparison value when doing the cas to acquire the
+  // bias in the current epoch. In other words, we allow transfer of
+  // the bias from one thread to another directly in this situation.
+  //
+  // FIXME: due to a lack of registers we currently blow away the age
+  // bits in this situation. Should attempt to preserve them.
+  load_prototype_header(tmp_reg, obj_reg);
+  orq(tmp_reg, r15_thread);
+  if (os::is_MP()) {
+    lock();
+  }
+  cmpxchgq(tmp_reg, Address(obj_reg, 0));
+  // If the biasing toward our thread failed, then another thread
+  // succeeded in biasing it toward itself and we need to revoke that
+  // bias. The revocation will occur in the runtime in the slow case.
+  if (counters != NULL) {
+    cond_inc32(Assembler::zero,
+               ExternalAddress((address) counters->rebiased_lock_entry_count_addr()));
+  }
+  if (slow_case != NULL) {
+    jcc(Assembler::notZero, *slow_case);
+  }
+  jmp(done);
+
+  bind(try_revoke_bias);
+  // The prototype mark in the klass doesn't have the bias bit set any
+  // more, indicating that objects of this data type are not supposed
+  // to be biased any more. We are going to try to reset the mark of
+  // this object to the prototype value and fall through to the
+  // CAS-based locking scheme. Note that if our CAS fails, it means
+  // that another thread raced us for the privilege of revoking the
+  // bias of this particular object, so it's okay to continue in the
+  // normal locking code.
+  //
+  // FIXME: due to a lack of registers we currently blow away the age
+  // bits in this situation. Should attempt to preserve them.
+  load_prototype_header(tmp_reg, obj_reg);
+  if (os::is_MP()) {
+    lock();
+  }
+  cmpxchgq(tmp_reg, Address(obj_reg, 0));
+  // Fall through to the normal CAS-based lock, because no matter what
+  // the result of the above CAS, some thread must have succeeded in
+  // removing the bias bit from the object's header.
+  if (counters != NULL) {
+    cond_inc32(Assembler::zero,
+               ExternalAddress((address) counters->revoked_lock_entry_count_addr()));
+  }
+
+  bind(cas_label);
+
+  return null_check_offset;
+}
+
 void MacroAssembler::call_VM_leaf_base(address entry_point, int num_args) {
   Label L, E;
 
@@ -616,15 +983,6 @@ void MacroAssembler::decrementq(Address dst, int value) {
   /* else */      { subq(dst, value)       ; return; }
 }
 
-void MacroAssembler::incrementq(AddressLiteral dst) {
-  if (reachable(dst)) {
-    incrementq(as_Address(dst));
-  } else {
-    lea(rscratch1, dst);
-    incrementq(Address(rscratch1, 0));
-  }
-}
-
 void MacroAssembler::incrementq(Register reg, int value) {
   if (value == min_jint) { addq(reg, value); return; }
   if (value <  0) { decrementq(reg, -value); return; }
@@ -693,15 +1051,15 @@ void MacroAssembler::mov_metadata(Address dst, Metadata* obj) {
   movq(dst, rscratch1);
 }
 
-void MacroAssembler::movptr(Register dst, AddressLiteral src, Register scratch) {
+void MacroAssembler::movptr(Register dst, AddressLiteral src) {
   if (src.is_lval()) {
     mov_literal64(dst, (intptr_t)src.target(), src.rspec());
   } else {
     if (reachable(src)) {
       movq(dst, as_Address(src));
     } else {
-      lea(scratch, src);
-      movq(dst, Address(scratch, 0));
+      lea(rscratch1, src);
+      movq(dst, Address(rscratch1,0));
     }
   }
 }
@@ -748,7 +1106,8 @@ void MacroAssembler::pushptr(AddressLiteral src) {
   }
 }
 
-void MacroAssembler::reset_last_Java_frame(bool clear_fp) {
+void MacroAssembler::reset_last_Java_frame(bool clear_fp,
+                                           bool clear_pc) {
   // we must set sp to zero to clear frame
   movptr(Address(r15_thread, JavaThread::last_Java_sp_offset()), NULL_WORD);
   // must clear fp, so that compiled frames are not confused; it is
@@ -757,8 +1116,9 @@ void MacroAssembler::reset_last_Java_frame(bool clear_fp) {
     movptr(Address(r15_thread, JavaThread::last_Java_fp_offset()), NULL_WORD);
   }
 
-  // Always clear the pc because it could have been set by make_walkable()
-  movptr(Address(r15_thread, JavaThread::last_Java_pc_offset()), NULL_WORD);
+  if (clear_pc) {
+    movptr(Address(r15_thread, JavaThread::last_Java_pc_offset()), NULL_WORD);
+  }
 }
 
 void MacroAssembler::set_last_Java_frame(Register last_java_sp,
@@ -998,37 +1358,13 @@ void MacroAssembler::andptr(Register dst, int32_t imm32) {
   LP64_ONLY(andq(dst, imm32)) NOT_LP64(andl(dst, imm32));
 }
 
-void MacroAssembler::atomic_incl(Address counter_addr) {
+void MacroAssembler::atomic_incl(AddressLiteral counter_addr) {
+  pushf();
   if (os::is_MP())
     lock();
   incrementl(counter_addr);
+  popf();
 }
-
-void MacroAssembler::atomic_incl(AddressLiteral counter_addr, Register scr) {
-  if (reachable(counter_addr)) {
-    atomic_incl(as_Address(counter_addr));
-  } else {
-    lea(scr, counter_addr);
-    atomic_incl(Address(scr, 0));
-  }
-}
-
-#ifdef _LP64
-void MacroAssembler::atomic_incq(Address counter_addr) {
-  if (os::is_MP())
-    lock();
-  incrementq(counter_addr);
-}
-
-void MacroAssembler::atomic_incq(AddressLiteral counter_addr, Register scr) {
-  if (reachable(counter_addr)) {
-    atomic_incq(as_Address(counter_addr));
-  } else {
-    lea(scr, counter_addr);
-    atomic_incq(Address(scr, 0));
-  }
-}
-#endif
 
 // Writes to stack successive pages until offset reached to check for
 // stack overflow + shadow pages.  This clobbers tmp.
@@ -1050,239 +1386,11 @@ void MacroAssembler::bang_stack_size(Register size, Register tmp) {
   // was post-decremented.)  Skip this address by starting at i=1, and
   // touch a few more pages below.  N.B.  It is important to touch all
   // the way down to and including i=StackShadowPages.
-  for (int i = 1; i < StackShadowPages; i++) {
+  for (int i = 1; i <= StackShadowPages; i++) {
     // this could be any sized move but this is can be a debugging crumb
     // so the bigger the better.
     movptr(Address(tmp, (-i*os::vm_page_size())), size );
   }
-}
-
-int MacroAssembler::biased_locking_enter(Register lock_reg,
-                                         Register obj_reg,
-                                         Register swap_reg,
-                                         Register tmp_reg,
-                                         bool swap_reg_contains_mark,
-                                         Label& done,
-                                         Label* slow_case,
-                                         BiasedLockingCounters* counters) {
-  assert(UseBiasedLocking, "why call this otherwise?");
-  assert(swap_reg == rax, "swap_reg must be rax for cmpxchgq");
-  LP64_ONLY( assert(tmp_reg != noreg, "tmp_reg must be supplied"); )
-  bool need_tmp_reg = false;
-  if (tmp_reg == noreg) {
-    need_tmp_reg = true;
-    tmp_reg = lock_reg;
-    assert_different_registers(lock_reg, obj_reg, swap_reg);
-  } else {
-    assert_different_registers(lock_reg, obj_reg, swap_reg, tmp_reg);
-  }
-  assert(markOopDesc::age_shift == markOopDesc::lock_bits + markOopDesc::biased_lock_bits, "biased locking makes assumptions about bit layout");
-  Address mark_addr      (obj_reg, oopDesc::mark_offset_in_bytes());
-  Address saved_mark_addr(lock_reg, 0);
-
-  if (PrintBiasedLockingStatistics && counters == NULL) {
-    counters = BiasedLocking::counters();
-  }
-  // Biased locking
-  // See whether the lock is currently biased toward our thread and
-  // whether the epoch is still valid
-  // Note that the runtime guarantees sufficient alignment of JavaThread
-  // pointers to allow age to be placed into low bits
-  // First check to see whether biasing is even enabled for this object
-  Label cas_label;
-  int null_check_offset = -1;
-  if (!swap_reg_contains_mark) {
-    null_check_offset = offset();
-    movptr(swap_reg, mark_addr);
-  }
-  if (need_tmp_reg) {
-    push(tmp_reg);
-  }
-  movptr(tmp_reg, swap_reg);
-  andptr(tmp_reg, markOopDesc::biased_lock_mask_in_place);
-  cmpptr(tmp_reg, markOopDesc::biased_lock_pattern);
-  if (need_tmp_reg) {
-    pop(tmp_reg);
-  }
-  jcc(Assembler::notEqual, cas_label);
-  // The bias pattern is present in the object's header. Need to check
-  // whether the bias owner and the epoch are both still current.
-#ifndef _LP64
-  // Note that because there is no current thread register on x86_32 we
-  // need to store off the mark word we read out of the object to
-  // avoid reloading it and needing to recheck invariants below. This
-  // store is unfortunate but it makes the overall code shorter and
-  // simpler.
-  movptr(saved_mark_addr, swap_reg);
-#endif
-  if (need_tmp_reg) {
-    push(tmp_reg);
-  }
-  if (swap_reg_contains_mark) {
-    null_check_offset = offset();
-  }
-  load_prototype_header(tmp_reg, obj_reg);
-#ifdef _LP64
-  orptr(tmp_reg, r15_thread);
-  xorptr(tmp_reg, swap_reg);
-  Register header_reg = tmp_reg;
-#else
-  xorptr(tmp_reg, swap_reg);
-  get_thread(swap_reg);
-  xorptr(swap_reg, tmp_reg);
-  Register header_reg = swap_reg;
-#endif
-  andptr(header_reg, ~((int) markOopDesc::age_mask_in_place));
-  if (need_tmp_reg) {
-    pop(tmp_reg);
-  }
-  if (counters != NULL) {
-    cond_inc32(Assembler::zero,
-               ExternalAddress((address) counters->biased_lock_entry_count_addr()));
-  }
-  jcc(Assembler::equal, done);
-
-  Label try_revoke_bias;
-  Label try_rebias;
-
-  // At this point we know that the header has the bias pattern and
-  // that we are not the bias owner in the current epoch. We need to
-  // figure out more details about the state of the header in order to
-  // know what operations can be legally performed on the object's
-  // header.
-
-  // If the low three bits in the xor result aren't clear, that means
-  // the prototype header is no longer biased and we have to revoke
-  // the bias on this object.
-  testptr(header_reg, markOopDesc::biased_lock_mask_in_place);
-  jccb(Assembler::notZero, try_revoke_bias);
-
-  // Biasing is still enabled for this data type. See whether the
-  // epoch of the current bias is still valid, meaning that the epoch
-  // bits of the mark word are equal to the epoch bits of the
-  // prototype header. (Note that the prototype header's epoch bits
-  // only change at a safepoint.) If not, attempt to rebias the object
-  // toward the current thread. Note that we must be absolutely sure
-  // that the current epoch is invalid in order to do this because
-  // otherwise the manipulations it performs on the mark word are
-  // illegal.
-  testptr(header_reg, markOopDesc::epoch_mask_in_place);
-  jccb(Assembler::notZero, try_rebias);
-
-  // The epoch of the current bias is still valid but we know nothing
-  // about the owner; it might be set or it might be clear. Try to
-  // acquire the bias of the object using an atomic operation. If this
-  // fails we will go in to the runtime to revoke the object's bias.
-  // Note that we first construct the presumed unbiased header so we
-  // don't accidentally blow away another thread's valid bias.
-  NOT_LP64( movptr(swap_reg, saved_mark_addr); )
-  andptr(swap_reg,
-         markOopDesc::biased_lock_mask_in_place | markOopDesc::age_mask_in_place | markOopDesc::epoch_mask_in_place);
-  if (need_tmp_reg) {
-    push(tmp_reg);
-  }
-#ifdef _LP64
-  movptr(tmp_reg, swap_reg);
-  orptr(tmp_reg, r15_thread);
-#else
-  get_thread(tmp_reg);
-  orptr(tmp_reg, swap_reg);
-#endif
-  if (os::is_MP()) {
-    lock();
-  }
-  cmpxchgptr(tmp_reg, mark_addr); // compare tmp_reg and swap_reg
-  if (need_tmp_reg) {
-    pop(tmp_reg);
-  }
-  // If the biasing toward our thread failed, this means that
-  // another thread succeeded in biasing it toward itself and we
-  // need to revoke that bias. The revocation will occur in the
-  // interpreter runtime in the slow case.
-  if (counters != NULL) {
-    cond_inc32(Assembler::zero,
-               ExternalAddress((address) counters->anonymously_biased_lock_entry_count_addr()));
-  }
-  if (slow_case != NULL) {
-    jcc(Assembler::notZero, *slow_case);
-  }
-  jmp(done);
-
-  bind(try_rebias);
-  // At this point we know the epoch has expired, meaning that the
-  // current "bias owner", if any, is actually invalid. Under these
-  // circumstances _only_, we are allowed to use the current header's
-  // value as the comparison value when doing the cas to acquire the
-  // bias in the current epoch. In other words, we allow transfer of
-  // the bias from one thread to another directly in this situation.
-  //
-  // FIXME: due to a lack of registers we currently blow away the age
-  // bits in this situation. Should attempt to preserve them.
-  if (need_tmp_reg) {
-    push(tmp_reg);
-  }
-  load_prototype_header(tmp_reg, obj_reg);
-#ifdef _LP64
-  orptr(tmp_reg, r15_thread);
-#else
-  get_thread(swap_reg);
-  orptr(tmp_reg, swap_reg);
-  movptr(swap_reg, saved_mark_addr);
-#endif
-  if (os::is_MP()) {
-    lock();
-  }
-  cmpxchgptr(tmp_reg, mark_addr); // compare tmp_reg and swap_reg
-  if (need_tmp_reg) {
-    pop(tmp_reg);
-  }
-  // If the biasing toward our thread failed, then another thread
-  // succeeded in biasing it toward itself and we need to revoke that
-  // bias. The revocation will occur in the runtime in the slow case.
-  if (counters != NULL) {
-    cond_inc32(Assembler::zero,
-               ExternalAddress((address) counters->rebiased_lock_entry_count_addr()));
-  }
-  if (slow_case != NULL) {
-    jcc(Assembler::notZero, *slow_case);
-  }
-  jmp(done);
-
-  bind(try_revoke_bias);
-  // The prototype mark in the klass doesn't have the bias bit set any
-  // more, indicating that objects of this data type are not supposed
-  // to be biased any more. We are going to try to reset the mark of
-  // this object to the prototype value and fall through to the
-  // CAS-based locking scheme. Note that if our CAS fails, it means
-  // that another thread raced us for the privilege of revoking the
-  // bias of this particular object, so it's okay to continue in the
-  // normal locking code.
-  //
-  // FIXME: due to a lack of registers we currently blow away the age
-  // bits in this situation. Should attempt to preserve them.
-  NOT_LP64( movptr(swap_reg, saved_mark_addr); )
-  if (need_tmp_reg) {
-    push(tmp_reg);
-  }
-  load_prototype_header(tmp_reg, obj_reg);
-  if (os::is_MP()) {
-    lock();
-  }
-  cmpxchgptr(tmp_reg, mark_addr); // compare tmp_reg and swap_reg
-  if (need_tmp_reg) {
-    pop(tmp_reg);
-  }
-  // Fall through to the normal CAS-based lock, because no matter what
-  // the result of the above CAS, some thread must have succeeded in
-  // removing the bias bit from the object's header.
-  if (counters != NULL) {
-    cond_inc32(Assembler::zero,
-               ExternalAddress((address) counters->revoked_lock_entry_count_addr()));
-  }
-
-  bind(cas_label);
-
-  return null_check_offset;
 }
 
 void MacroAssembler::biased_locking_exit(Register obj_reg, Register temp_reg, Label& done) {
@@ -1299,992 +1407,6 @@ void MacroAssembler::biased_locking_exit(Register obj_reg, Register temp_reg, La
   cmpptr(temp_reg, markOopDesc::biased_lock_pattern);
   jcc(Assembler::equal, done);
 }
-
-#ifdef COMPILER2
-
-#if INCLUDE_RTM_OPT
-
-// Update rtm_counters based on abort status
-// input: abort_status
-//        rtm_counters (RTMLockingCounters*)
-// flags are killed
-void MacroAssembler::rtm_counters_update(Register abort_status, Register rtm_counters) {
-
-  atomic_incptr(Address(rtm_counters, RTMLockingCounters::abort_count_offset()));
-  if (PrintPreciseRTMLockingStatistics) {
-    for (int i = 0; i < RTMLockingCounters::ABORT_STATUS_LIMIT; i++) {
-      Label check_abort;
-      testl(abort_status, (1<<i));
-      jccb(Assembler::equal, check_abort);
-      atomic_incptr(Address(rtm_counters, RTMLockingCounters::abortX_count_offset() + (i * sizeof(uintx))));
-      bind(check_abort);
-    }
-  }
-}
-
-// Branch if (random & (count-1) != 0), count is 2^n
-// tmp, scr and flags are killed
-void MacroAssembler::branch_on_random_using_rdtsc(Register tmp, Register scr, int count, Label& brLabel) {
-  assert(tmp == rax, "");
-  assert(scr == rdx, "");
-  rdtsc(); // modifies EDX:EAX
-  andptr(tmp, count-1);
-  jccb(Assembler::notZero, brLabel);
-}
-
-// Perform abort ratio calculation, set no_rtm bit if high ratio
-// input:  rtm_counters_Reg (RTMLockingCounters* address)
-// tmpReg, rtm_counters_Reg and flags are killed
-void MacroAssembler::rtm_abort_ratio_calculation(Register tmpReg,
-                                                 Register rtm_counters_Reg,
-                                                 RTMLockingCounters* rtm_counters,
-                                                 Metadata* method_data) {
-  Label L_done, L_check_always_rtm1, L_check_always_rtm2;
-
-  if (RTMLockingCalculationDelay > 0) {
-    // Delay calculation
-    movptr(tmpReg, ExternalAddress((address) RTMLockingCounters::rtm_calculation_flag_addr()), tmpReg);
-    testptr(tmpReg, tmpReg);
-    jccb(Assembler::equal, L_done);
-  }
-  // Abort ratio calculation only if abort_count > RTMAbortThreshold
-  //   Aborted transactions = abort_count * 100
-  //   All transactions = total_count *  RTMTotalCountIncrRate
-  //   Set no_rtm bit if (Aborted transactions >= All transactions * RTMAbortRatio)
-
-  movptr(tmpReg, Address(rtm_counters_Reg, RTMLockingCounters::abort_count_offset()));
-  cmpptr(tmpReg, RTMAbortThreshold);
-  jccb(Assembler::below, L_check_always_rtm2);
-  imulptr(tmpReg, tmpReg, 100);
-
-  Register scrReg = rtm_counters_Reg;
-  movptr(scrReg, Address(rtm_counters_Reg, RTMLockingCounters::total_count_offset()));
-  imulptr(scrReg, scrReg, RTMTotalCountIncrRate);
-  imulptr(scrReg, scrReg, RTMAbortRatio);
-  cmpptr(tmpReg, scrReg);
-  jccb(Assembler::below, L_check_always_rtm1);
-  if (method_data != NULL) {
-    // set rtm_state to "no rtm" in MDO
-    mov_metadata(tmpReg, method_data);
-    if (os::is_MP()) {
-      lock();
-    }
-    orl(Address(tmpReg, MethodData::rtm_state_offset_in_bytes()), NoRTM);
-  }
-  jmpb(L_done);
-  bind(L_check_always_rtm1);
-  // Reload RTMLockingCounters* address
-  lea(rtm_counters_Reg, ExternalAddress((address)rtm_counters));
-  bind(L_check_always_rtm2);
-  movptr(tmpReg, Address(rtm_counters_Reg, RTMLockingCounters::total_count_offset()));
-  cmpptr(tmpReg, RTMLockingThreshold / RTMTotalCountIncrRate);
-  jccb(Assembler::below, L_done);
-  if (method_data != NULL) {
-    // set rtm_state to "always rtm" in MDO
-    mov_metadata(tmpReg, method_data);
-    if (os::is_MP()) {
-      lock();
-    }
-    orl(Address(tmpReg, MethodData::rtm_state_offset_in_bytes()), UseRTM);
-  }
-  bind(L_done);
-}
-
-// Update counters and perform abort ratio calculation
-// input:  abort_status_Reg
-// rtm_counters_Reg, flags are killed
-void MacroAssembler::rtm_profiling(Register abort_status_Reg,
-                                   Register rtm_counters_Reg,
-                                   RTMLockingCounters* rtm_counters,
-                                   Metadata* method_data,
-                                   bool profile_rtm) {
-
-  assert(rtm_counters != NULL, "should not be NULL when profiling RTM");
-  // update rtm counters based on rax value at abort
-  // reads abort_status_Reg, updates flags
-  lea(rtm_counters_Reg, ExternalAddress((address)rtm_counters));
-  rtm_counters_update(abort_status_Reg, rtm_counters_Reg);
-  if (profile_rtm) {
-    // Save abort status because abort_status_Reg is used by following code.
-    if (RTMRetryCount > 0) {
-      push(abort_status_Reg);
-    }
-    assert(rtm_counters != NULL, "should not be NULL when profiling RTM");
-    rtm_abort_ratio_calculation(abort_status_Reg, rtm_counters_Reg, rtm_counters, method_data);
-    // restore abort status
-    if (RTMRetryCount > 0) {
-      pop(abort_status_Reg);
-    }
-  }
-}
-
-// Retry on abort if abort's status is 0x6: can retry (0x2) | memory conflict (0x4)
-// inputs: retry_count_Reg
-//       : abort_status_Reg
-// output: retry_count_Reg decremented by 1
-// flags are killed
-void MacroAssembler::rtm_retry_lock_on_abort(Register retry_count_Reg, Register abort_status_Reg, Label& retryLabel) {
-  Label doneRetry;
-  assert(abort_status_Reg == rax, "");
-  // The abort reason bits are in eax (see all states in rtmLocking.hpp)
-  // 0x6 = conflict on which we can retry (0x2) | memory conflict (0x4)
-  // if reason is in 0x6 and retry count != 0 then retry
-  andptr(abort_status_Reg, 0x6);
-  jccb(Assembler::zero, doneRetry);
-  testl(retry_count_Reg, retry_count_Reg);
-  jccb(Assembler::zero, doneRetry);
-  pause();
-  decrementl(retry_count_Reg);
-  jmp(retryLabel);
-  bind(doneRetry);
-}
-
-// Spin and retry if lock is busy,
-// inputs: box_Reg (monitor address)
-//       : retry_count_Reg
-// output: retry_count_Reg decremented by 1
-//       : clear z flag if retry count exceeded
-// tmp_Reg, scr_Reg, flags are killed
-void MacroAssembler::rtm_retry_lock_on_busy(Register retry_count_Reg, Register box_Reg,
-                                            Register tmp_Reg, Register scr_Reg, Label& retryLabel) {
-  Label SpinLoop, SpinExit, doneRetry;
-  // Clean monitor_value bit to get valid pointer
-  int owner_offset = ObjectMonitor::owner_offset_in_bytes() - markOopDesc::monitor_value;
-
-  testl(retry_count_Reg, retry_count_Reg);
-  jccb(Assembler::zero, doneRetry);
-  decrementl(retry_count_Reg);
-  movptr(scr_Reg, RTMSpinLoopCount);
-
-  bind(SpinLoop);
-  pause();
-  decrementl(scr_Reg);
-  jccb(Assembler::lessEqual, SpinExit);
-  movptr(tmp_Reg, Address(box_Reg, owner_offset));
-  testptr(tmp_Reg, tmp_Reg);
-  jccb(Assembler::notZero, SpinLoop);
-
-  bind(SpinExit);
-  jmp(retryLabel);
-  bind(doneRetry);
-  incrementl(retry_count_Reg); // clear z flag
-}
-
-// Use RTM for normal stack locks
-// Input: objReg (object to lock)
-void MacroAssembler::rtm_stack_locking(Register objReg, Register tmpReg, Register scrReg,
-                                       Register retry_on_abort_count_Reg,
-                                       RTMLockingCounters* stack_rtm_counters,
-                                       Metadata* method_data, bool profile_rtm,
-                                       Label& DONE_LABEL, Label& IsInflated) {
-  assert(UseRTMForStackLocks, "why call this otherwise?");
-  assert(!UseBiasedLocking, "Biased locking is not supported with RTM locking");
-  assert(tmpReg == rax, "");
-  assert(scrReg == rdx, "");
-  Label L_rtm_retry, L_decrement_retry, L_on_abort;
-
-  if (RTMRetryCount > 0) {
-    movl(retry_on_abort_count_Reg, RTMRetryCount); // Retry on abort
-    bind(L_rtm_retry);
-  }
-  movptr(tmpReg, Address(objReg, 0));
-  testptr(tmpReg, markOopDesc::monitor_value);  // inflated vs stack-locked|neutral|biased
-  jcc(Assembler::notZero, IsInflated);
-
-  if (PrintPreciseRTMLockingStatistics || profile_rtm) {
-    Label L_noincrement;
-    if (RTMTotalCountIncrRate > 1) {
-      // tmpReg, scrReg and flags are killed
-      branch_on_random_using_rdtsc(tmpReg, scrReg, (int)RTMTotalCountIncrRate, L_noincrement);
-    }
-    assert(stack_rtm_counters != NULL, "should not be NULL when profiling RTM");
-    atomic_incptr(ExternalAddress((address)stack_rtm_counters->total_count_addr()), scrReg);
-    bind(L_noincrement);
-  }
-  xbegin(L_on_abort);
-  movptr(tmpReg, Address(objReg, 0));       // fetch markword
-  andptr(tmpReg, markOopDesc::biased_lock_mask_in_place); // look at 3 lock bits
-  cmpptr(tmpReg, markOopDesc::unlocked_value);            // bits = 001 unlocked
-  jcc(Assembler::equal, DONE_LABEL);        // all done if unlocked
-
-  Register abort_status_Reg = tmpReg; // status of abort is stored in RAX
-  if (UseRTMXendForLockBusy) {
-    xend();
-    movptr(abort_status_Reg, 0x2);   // Set the abort status to 2 (so we can retry)
-    jmp(L_decrement_retry);
-  }
-  else {
-    xabort(0);
-  }
-  bind(L_on_abort);
-  if (PrintPreciseRTMLockingStatistics || profile_rtm) {
-    rtm_profiling(abort_status_Reg, scrReg, stack_rtm_counters, method_data, profile_rtm);
-  }
-  bind(L_decrement_retry);
-  if (RTMRetryCount > 0) {
-    // retry on lock abort if abort status is 'can retry' (0x2) or 'memory conflict' (0x4)
-    rtm_retry_lock_on_abort(retry_on_abort_count_Reg, abort_status_Reg, L_rtm_retry);
-  }
-}
-
-// Use RTM for inflating locks
-// inputs: objReg (object to lock)
-//         boxReg (on-stack box address (displaced header location) - KILLED)
-//         tmpReg (ObjectMonitor address + 2(monitor_value))
-void MacroAssembler::rtm_inflated_locking(Register objReg, Register boxReg, Register tmpReg,
-                                          Register scrReg, Register retry_on_busy_count_Reg,
-                                          Register retry_on_abort_count_Reg,
-                                          RTMLockingCounters* rtm_counters,
-                                          Metadata* method_data, bool profile_rtm,
-                                          Label& DONE_LABEL) {
-  assert(UseRTMLocking, "why call this otherwise?");
-  assert(tmpReg == rax, "");
-  assert(scrReg == rdx, "");
-  Label L_rtm_retry, L_decrement_retry, L_on_abort;
-  // Clean monitor_value bit to get valid pointer
-  int owner_offset = ObjectMonitor::owner_offset_in_bytes() - markOopDesc::monitor_value;
-
-  // Without cast to int32_t a movptr will destroy r10 which is typically obj
-  movptr(Address(boxReg, 0), (int32_t)intptr_t(markOopDesc::unused_mark()));
-  movptr(boxReg, tmpReg); // Save ObjectMonitor address
-
-  if (RTMRetryCount > 0) {
-    movl(retry_on_busy_count_Reg, RTMRetryCount);  // Retry on lock busy
-    movl(retry_on_abort_count_Reg, RTMRetryCount); // Retry on abort
-    bind(L_rtm_retry);
-  }
-  if (PrintPreciseRTMLockingStatistics || profile_rtm) {
-    Label L_noincrement;
-    if (RTMTotalCountIncrRate > 1) {
-      // tmpReg, scrReg and flags are killed
-      branch_on_random_using_rdtsc(tmpReg, scrReg, (int)RTMTotalCountIncrRate, L_noincrement);
-    }
-    assert(rtm_counters != NULL, "should not be NULL when profiling RTM");
-    atomic_incptr(ExternalAddress((address)rtm_counters->total_count_addr()), scrReg);
-    bind(L_noincrement);
-  }
-  xbegin(L_on_abort);
-  movptr(tmpReg, Address(objReg, 0));
-  movptr(tmpReg, Address(tmpReg, owner_offset));
-  testptr(tmpReg, tmpReg);
-  jcc(Assembler::zero, DONE_LABEL);
-  if (UseRTMXendForLockBusy) {
-    xend();
-    jmp(L_decrement_retry);
-  }
-  else {
-    xabort(0);
-  }
-  bind(L_on_abort);
-  Register abort_status_Reg = tmpReg; // status of abort is stored in RAX
-  if (PrintPreciseRTMLockingStatistics || profile_rtm) {
-    rtm_profiling(abort_status_Reg, scrReg, rtm_counters, method_data, profile_rtm);
-  }
-  if (RTMRetryCount > 0) {
-    // retry on lock abort if abort status is 'can retry' (0x2) or 'memory conflict' (0x4)
-    rtm_retry_lock_on_abort(retry_on_abort_count_Reg, abort_status_Reg, L_rtm_retry);
-  }
-
-  movptr(tmpReg, Address(boxReg, owner_offset)) ;
-  testptr(tmpReg, tmpReg) ;
-  jccb(Assembler::notZero, L_decrement_retry) ;
-
-  // Appears unlocked - try to swing _owner from null to non-null.
-  // Invariant: tmpReg == 0.  tmpReg is EAX which is the implicit cmpxchg comparand.
-#ifdef _LP64
-  Register threadReg = r15_thread;
-#else
-  get_thread(scrReg);
-  Register threadReg = scrReg;
-#endif
-  if (os::is_MP()) {
-    lock();
-  }
-  cmpxchgptr(threadReg, Address(boxReg, owner_offset)); // Updates tmpReg
-
-  if (RTMRetryCount > 0) {
-    // success done else retry
-    jccb(Assembler::equal, DONE_LABEL) ;
-    bind(L_decrement_retry);
-    // Spin and retry if lock is busy.
-    rtm_retry_lock_on_busy(retry_on_busy_count_Reg, boxReg, tmpReg, scrReg, L_rtm_retry);
-  }
-  else {
-    bind(L_decrement_retry);
-  }
-}
-
-#endif //  INCLUDE_RTM_OPT
-
-// Fast_Lock and Fast_Unlock used by C2
-
-// Because the transitions from emitted code to the runtime
-// monitorenter/exit helper stubs are so slow it's critical that
-// we inline both the stack-locking fast-path and the inflated fast path.
-//
-// See also: cmpFastLock and cmpFastUnlock.
-//
-// What follows is a specialized inline transliteration of the code
-// in slow_enter() and slow_exit().  If we're concerned about I$ bloat
-// another option would be to emit TrySlowEnter and TrySlowExit methods
-// at startup-time.  These methods would accept arguments as
-// (rax,=Obj, rbx=Self, rcx=box, rdx=Scratch) and return success-failure
-// indications in the icc.ZFlag.  Fast_Lock and Fast_Unlock would simply
-// marshal the arguments and emit calls to TrySlowEnter and TrySlowExit.
-// In practice, however, the # of lock sites is bounded and is usually small.
-// Besides the call overhead, TrySlowEnter and TrySlowExit might suffer
-// if the processor uses simple bimodal branch predictors keyed by EIP
-// Since the helper routines would be called from multiple synchronization
-// sites.
-//
-// An even better approach would be write "MonitorEnter()" and "MonitorExit()"
-// in java - using j.u.c and unsafe - and just bind the lock and unlock sites
-// to those specialized methods.  That'd give us a mostly platform-independent
-// implementation that the JITs could optimize and inline at their pleasure.
-// Done correctly, the only time we'd need to cross to native could would be
-// to park() or unpark() threads.  We'd also need a few more unsafe operators
-// to (a) prevent compiler-JIT reordering of non-volatile accesses, and
-// (b) explicit barriers or fence operations.
-//
-// TODO:
-//
-// *  Arrange for C2 to pass "Self" into Fast_Lock and Fast_Unlock in one of the registers (scr).
-//    This avoids manifesting the Self pointer in the Fast_Lock and Fast_Unlock terminals.
-//    Given TLAB allocation, Self is usually manifested in a register, so passing it into
-//    the lock operators would typically be faster than reifying Self.
-//
-// *  Ideally I'd define the primitives as:
-//       fast_lock   (nax Obj, nax box, EAX tmp, nax scr) where box, tmp and scr are KILLED.
-//       fast_unlock (nax Obj, EAX box, nax tmp) where box and tmp are KILLED
-//    Unfortunately ADLC bugs prevent us from expressing the ideal form.
-//    Instead, we're stuck with a rather awkward and brittle register assignments below.
-//    Furthermore the register assignments are overconstrained, possibly resulting in
-//    sub-optimal code near the synchronization site.
-//
-// *  Eliminate the sp-proximity tests and just use "== Self" tests instead.
-//    Alternately, use a better sp-proximity test.
-//
-// *  Currently ObjectMonitor._Owner can hold either an sp value or a (THREAD *) value.
-//    Either one is sufficient to uniquely identify a thread.
-//    TODO: eliminate use of sp in _owner and use get_thread(tr) instead.
-//
-// *  Intrinsify notify() and notifyAll() for the common cases where the
-//    object is locked by the calling thread but the waitlist is empty.
-//    avoid the expensive JNI call to JVM_Notify() and JVM_NotifyAll().
-//
-// *  use jccb and jmpb instead of jcc and jmp to improve code density.
-//    But beware of excessive branch density on AMD Opterons.
-//
-// *  Both Fast_Lock and Fast_Unlock set the ICC.ZF to indicate success
-//    or failure of the fast-path.  If the fast-path fails then we pass
-//    control to the slow-path, typically in C.  In Fast_Lock and
-//    Fast_Unlock we often branch to DONE_LABEL, just to find that C2
-//    will emit a conditional branch immediately after the node.
-//    So we have branches to branches and lots of ICC.ZF games.
-//    Instead, it might be better to have C2 pass a "FailureLabel"
-//    into Fast_Lock and Fast_Unlock.  In the case of success, control
-//    will drop through the node.  ICC.ZF is undefined at exit.
-//    In the case of failure, the node will branch directly to the
-//    FailureLabel
-
-
-// obj: object to lock
-// box: on-stack box address (displaced header location) - KILLED
-// rax,: tmp -- KILLED
-// scr: tmp -- KILLED
-void MacroAssembler::fast_lock(Register objReg, Register boxReg, Register tmpReg,
-                               Register scrReg, Register cx1Reg, Register cx2Reg,
-                               BiasedLockingCounters* counters,
-                               RTMLockingCounters* rtm_counters,
-                               RTMLockingCounters* stack_rtm_counters,
-                               Metadata* method_data,
-                               bool use_rtm, bool profile_rtm) {
-  // Ensure the register assignents are disjoint
-  assert(tmpReg == rax, "");
-
-  if (use_rtm) {
-    assert_different_registers(objReg, boxReg, tmpReg, scrReg, cx1Reg, cx2Reg);
-  } else {
-    assert(cx1Reg == noreg, "");
-    assert(cx2Reg == noreg, "");
-    assert_different_registers(objReg, boxReg, tmpReg, scrReg);
-  }
-
-  if (counters != NULL) {
-    atomic_incl(ExternalAddress((address)counters->total_entry_count_addr()), scrReg);
-  }
-  if (EmitSync & 1) {
-      // set box->dhw = unused_mark (3)
-      // Force all sync thru slow-path: slow_enter() and slow_exit()
-      movptr (Address(boxReg, 0), (int32_t)intptr_t(markOopDesc::unused_mark()));
-      cmpptr (rsp, (int32_t)NULL_WORD);
-  } else
-  if (EmitSync & 2) {
-      Label DONE_LABEL ;
-      if (UseBiasedLocking) {
-         // Note: tmpReg maps to the swap_reg argument and scrReg to the tmp_reg argument.
-         biased_locking_enter(boxReg, objReg, tmpReg, scrReg, false, DONE_LABEL, NULL, counters);
-      }
-
-      movptr(tmpReg, Address(objReg, 0));           // fetch markword
-      orptr (tmpReg, 0x1);
-      movptr(Address(boxReg, 0), tmpReg);           // Anticipate successful CAS
-      if (os::is_MP()) {
-        lock();
-      }
-      cmpxchgptr(boxReg, Address(objReg, 0));       // Updates tmpReg
-      jccb(Assembler::equal, DONE_LABEL);
-      // Recursive locking
-      subptr(tmpReg, rsp);
-      andptr(tmpReg, (int32_t) (NOT_LP64(0xFFFFF003) LP64_ONLY(7 - os::vm_page_size())) );
-      movptr(Address(boxReg, 0), tmpReg);
-      bind(DONE_LABEL);
-  } else {
-    // Possible cases that we'll encounter in fast_lock
-    // ------------------------------------------------
-    // * Inflated
-    //    -- unlocked
-    //    -- Locked
-    //       = by self
-    //       = by other
-    // * biased
-    //    -- by Self
-    //    -- by other
-    // * neutral
-    // * stack-locked
-    //    -- by self
-    //       = sp-proximity test hits
-    //       = sp-proximity test generates false-negative
-    //    -- by other
-    //
-
-    Label IsInflated, DONE_LABEL;
-
-    // it's stack-locked, biased or neutral
-    // TODO: optimize away redundant LDs of obj->mark and improve the markword triage
-    // order to reduce the number of conditional branches in the most common cases.
-    // Beware -- there's a subtle invariant that fetch of the markword
-    // at [FETCH], below, will never observe a biased encoding (*101b).
-    // If this invariant is not held we risk exclusion (safety) failure.
-    if (UseBiasedLocking && !UseOptoBiasInlining) {
-      biased_locking_enter(boxReg, objReg, tmpReg, scrReg, false, DONE_LABEL, NULL, counters);
-    }
-
-#if INCLUDE_RTM_OPT
-    if (UseRTMForStackLocks && use_rtm) {
-      rtm_stack_locking(objReg, tmpReg, scrReg, cx2Reg,
-                        stack_rtm_counters, method_data, profile_rtm,
-                        DONE_LABEL, IsInflated);
-    }
-#endif // INCLUDE_RTM_OPT
-
-    movptr(tmpReg, Address(objReg, 0));          // [FETCH]
-    testptr(tmpReg, markOopDesc::monitor_value); // inflated vs stack-locked|neutral|biased
-    jccb(Assembler::notZero, IsInflated);
-
-    // Attempt stack-locking ...
-    orptr (tmpReg, markOopDesc::unlocked_value);
-    movptr(Address(boxReg, 0), tmpReg);          // Anticipate successful CAS
-    if (os::is_MP()) {
-      lock();
-    }
-    cmpxchgptr(boxReg, Address(objReg, 0));      // Updates tmpReg
-    if (counters != NULL) {
-      cond_inc32(Assembler::equal,
-                 ExternalAddress((address)counters->fast_path_entry_count_addr()));
-    }
-    jcc(Assembler::equal, DONE_LABEL);           // Success
-
-    // Recursive locking.
-    // The object is stack-locked: markword contains stack pointer to BasicLock.
-    // Locked by current thread if difference with current SP is less than one page.
-    subptr(tmpReg, rsp);
-    // Next instruction set ZFlag == 1 (Success) if difference is less then one page.
-    andptr(tmpReg, (int32_t) (NOT_LP64(0xFFFFF003) LP64_ONLY(7 - os::vm_page_size())) );
-    movptr(Address(boxReg, 0), tmpReg);
-    if (counters != NULL) {
-      cond_inc32(Assembler::equal,
-                 ExternalAddress((address)counters->fast_path_entry_count_addr()));
-    }
-    jmp(DONE_LABEL);
-
-    bind(IsInflated);
-    // The object is inflated. tmpReg contains pointer to ObjectMonitor* + 2(monitor_value)
-
-#if INCLUDE_RTM_OPT
-    // Use the same RTM locking code in 32- and 64-bit VM.
-    if (use_rtm) {
-      rtm_inflated_locking(objReg, boxReg, tmpReg, scrReg, cx1Reg, cx2Reg,
-                           rtm_counters, method_data, profile_rtm, DONE_LABEL);
-    } else {
-#endif // INCLUDE_RTM_OPT
-
-#ifndef _LP64
-    // The object is inflated.
-    //
-    // TODO-FIXME: eliminate the ugly use of manifest constants:
-    //   Use markOopDesc::monitor_value instead of "2".
-    //   use markOop::unused_mark() instead of "3".
-    // The tmpReg value is an objectMonitor reference ORed with
-    // markOopDesc::monitor_value (2).   We can either convert tmpReg to an
-    // objectmonitor pointer by masking off the "2" bit or we can just
-    // use tmpReg as an objectmonitor pointer but bias the objectmonitor
-    // field offsets with "-2" to compensate for and annul the low-order tag bit.
-    //
-    // I use the latter as it avoids AGI stalls.
-    // As such, we write "mov r, [tmpReg+OFFSETOF(Owner)-2]"
-    // instead of "mov r, [tmpReg+OFFSETOF(Owner)]".
-    //
-    #define OFFSET_SKEWED(f) ((ObjectMonitor::f ## _offset_in_bytes())-2)
-
-    // boxReg refers to the on-stack BasicLock in the current frame.
-    // We'd like to write:
-    //   set box->_displaced_header = markOop::unused_mark().  Any non-0 value suffices.
-    // This is convenient but results a ST-before-CAS penalty.  The following CAS suffers
-    // additional latency as we have another ST in the store buffer that must drain.
-
-    if (EmitSync & 8192) {
-       movptr(Address(boxReg, 0), 3);            // results in ST-before-CAS penalty
-       get_thread (scrReg);
-       movptr(boxReg, tmpReg);                    // consider: LEA box, [tmp-2]
-       movptr(tmpReg, NULL_WORD);                 // consider: xor vs mov
-       if (os::is_MP()) {
-         lock();
-       }
-       cmpxchgptr(scrReg, Address(boxReg, ObjectMonitor::owner_offset_in_bytes()-2));
-    } else
-    if ((EmitSync & 128) == 0) {                      // avoid ST-before-CAS
-       movptr(scrReg, boxReg);
-       movptr(boxReg, tmpReg);                   // consider: LEA box, [tmp-2]
-
-       // Using a prefetchw helps avoid later RTS->RTO upgrades and cache probes
-       if ((EmitSync & 2048) && VM_Version::supports_3dnow_prefetch() && os::is_MP()) {
-          // prefetchw [eax + Offset(_owner)-2]
-          prefetchw(Address(tmpReg, ObjectMonitor::owner_offset_in_bytes()-2));
-       }
-
-       if ((EmitSync & 64) == 0) {
-         // Optimistic form: consider XORL tmpReg,tmpReg
-         movptr(tmpReg, NULL_WORD);
-       } else {
-         // Can suffer RTS->RTO upgrades on shared or cold $ lines
-         // Test-And-CAS instead of CAS
-         movptr(tmpReg, Address (tmpReg, ObjectMonitor::owner_offset_in_bytes()-2));   // rax, = m->_owner
-         testptr(tmpReg, tmpReg);                   // Locked ?
-         jccb  (Assembler::notZero, DONE_LABEL);
-       }
-
-       // Appears unlocked - try to swing _owner from null to non-null.
-       // Ideally, I'd manifest "Self" with get_thread and then attempt
-       // to CAS the register containing Self into m->Owner.
-       // But we don't have enough registers, so instead we can either try to CAS
-       // rsp or the address of the box (in scr) into &m->owner.  If the CAS succeeds
-       // we later store "Self" into m->Owner.  Transiently storing a stack address
-       // (rsp or the address of the box) into  m->owner is harmless.
-       // Invariant: tmpReg == 0.  tmpReg is EAX which is the implicit cmpxchg comparand.
-       if (os::is_MP()) {
-         lock();
-       }
-       cmpxchgptr(scrReg, Address(boxReg, ObjectMonitor::owner_offset_in_bytes()-2));
-       movptr(Address(scrReg, 0), 3);          // box->_displaced_header = 3
-       jccb  (Assembler::notZero, DONE_LABEL);
-       get_thread (scrReg);                    // beware: clobbers ICCs
-       movptr(Address(boxReg, ObjectMonitor::owner_offset_in_bytes()-2), scrReg);
-       xorptr(boxReg, boxReg);                 // set icc.ZFlag = 1 to indicate success
-
-       // If the CAS fails we can either retry or pass control to the slow-path.
-       // We use the latter tactic.
-       // Pass the CAS result in the icc.ZFlag into DONE_LABEL
-       // If the CAS was successful ...
-       //   Self has acquired the lock
-       //   Invariant: m->_recursions should already be 0, so we don't need to explicitly set it.
-       // Intentional fall-through into DONE_LABEL ...
-    } else {
-       movptr(Address(boxReg, 0), intptr_t(markOopDesc::unused_mark()));  // results in ST-before-CAS penalty
-       movptr(boxReg, tmpReg);
-
-       // Using a prefetchw helps avoid later RTS->RTO upgrades and cache probes
-       if ((EmitSync & 2048) && VM_Version::supports_3dnow_prefetch() && os::is_MP()) {
-          // prefetchw [eax + Offset(_owner)-2]
-          prefetchw(Address(tmpReg, ObjectMonitor::owner_offset_in_bytes()-2));
-       }
-
-       if ((EmitSync & 64) == 0) {
-         // Optimistic form
-         xorptr  (tmpReg, tmpReg);
-       } else {
-         // Can suffer RTS->RTO upgrades on shared or cold $ lines
-         movptr(tmpReg, Address (tmpReg, ObjectMonitor::owner_offset_in_bytes()-2));   // rax, = m->_owner
-         testptr(tmpReg, tmpReg);                   // Locked ?
-         jccb  (Assembler::notZero, DONE_LABEL);
-       }
-
-       // Appears unlocked - try to swing _owner from null to non-null.
-       // Use either "Self" (in scr) or rsp as thread identity in _owner.
-       // Invariant: tmpReg == 0.  tmpReg is EAX which is the implicit cmpxchg comparand.
-       get_thread (scrReg);
-       if (os::is_MP()) {
-         lock();
-       }
-       cmpxchgptr(scrReg, Address(boxReg, ObjectMonitor::owner_offset_in_bytes()-2));
-
-       // If the CAS fails we can either retry or pass control to the slow-path.
-       // We use the latter tactic.
-       // Pass the CAS result in the icc.ZFlag into DONE_LABEL
-       // If the CAS was successful ...
-       //   Self has acquired the lock
-       //   Invariant: m->_recursions should already be 0, so we don't need to explicitly set it.
-       // Intentional fall-through into DONE_LABEL ...
-    }
-#else // _LP64
-    // It's inflated
-
-    // TODO: someday avoid the ST-before-CAS penalty by
-    // relocating (deferring) the following ST.
-    // We should also think about trying a CAS without having
-    // fetched _owner.  If the CAS is successful we may
-    // avoid an RTO->RTS upgrade on the $line.
-
-    // Without cast to int32_t a movptr will destroy r10 which is typically obj
-    movptr(Address(boxReg, 0), (int32_t)intptr_t(markOopDesc::unused_mark()));
-
-    movptr (boxReg, tmpReg);
-    movptr (tmpReg, Address(boxReg, ObjectMonitor::owner_offset_in_bytes()-2));
-    testptr(tmpReg, tmpReg);
-    jccb   (Assembler::notZero, DONE_LABEL);
-
-    // It's inflated and appears unlocked
-    if (os::is_MP()) {
-      lock();
-    }
-    cmpxchgptr(r15_thread, Address(boxReg, ObjectMonitor::owner_offset_in_bytes()-2));
-    // Intentional fall-through into DONE_LABEL ...
-#endif // _LP64
-
-#if INCLUDE_RTM_OPT
-    } // use_rtm()
-#endif
-    // DONE_LABEL is a hot target - we'd really like to place it at the
-    // start of cache line by padding with NOPs.
-    // See the AMD and Intel software optimization manuals for the
-    // most efficient "long" NOP encodings.
-    // Unfortunately none of our alignment mechanisms suffice.
-    bind(DONE_LABEL);
-
-    // At DONE_LABEL the icc ZFlag is set as follows ...
-    // Fast_Unlock uses the same protocol.
-    // ZFlag == 1 -> Success
-    // ZFlag == 0 -> Failure - force control through the slow-path
-  }
-}
-
-// obj: object to unlock
-// box: box address (displaced header location), killed.  Must be EAX.
-// tmp: killed, cannot be obj nor box.
-//
-// Some commentary on balanced locking:
-//
-// Fast_Lock and Fast_Unlock are emitted only for provably balanced lock sites.
-// Methods that don't have provably balanced locking are forced to run in the
-// interpreter - such methods won't be compiled to use fast_lock and fast_unlock.
-// The interpreter provides two properties:
-// I1:  At return-time the interpreter automatically and quietly unlocks any
-//      objects acquired the current activation (frame).  Recall that the
-//      interpreter maintains an on-stack list of locks currently held by
-//      a frame.
-// I2:  If a method attempts to unlock an object that is not held by the
-//      the frame the interpreter throws IMSX.
-//
-// Lets say A(), which has provably balanced locking, acquires O and then calls B().
-// B() doesn't have provably balanced locking so it runs in the interpreter.
-// Control returns to A() and A() unlocks O.  By I1 and I2, above, we know that O
-// is still locked by A().
-//
-// The only other source of unbalanced locking would be JNI.  The "Java Native Interface:
-// Programmer's Guide and Specification" claims that an object locked by jni_monitorenter
-// should not be unlocked by "normal" java-level locking and vice-versa.  The specification
-// doesn't specify what will occur if a program engages in such mixed-mode locking, however.
-
-void MacroAssembler::fast_unlock(Register objReg, Register boxReg, Register tmpReg, bool use_rtm) {
-  assert(boxReg == rax, "");
-  assert_different_registers(objReg, boxReg, tmpReg);
-
-  if (EmitSync & 4) {
-    // Disable - inhibit all inlining.  Force control through the slow-path
-    cmpptr (rsp, 0);
-  } else
-  if (EmitSync & 8) {
-    Label DONE_LABEL;
-    if (UseBiasedLocking) {
-       biased_locking_exit(objReg, tmpReg, DONE_LABEL);
-    }
-    // Classic stack-locking code ...
-    // Check whether the displaced header is 0
-    //(=> recursive unlock)
-    movptr(tmpReg, Address(boxReg, 0));
-    testptr(tmpReg, tmpReg);
-    jccb(Assembler::zero, DONE_LABEL);
-    // If not recursive lock, reset the header to displaced header
-    if (os::is_MP()) {
-      lock();
-    }
-    cmpxchgptr(tmpReg, Address(objReg, 0));   // Uses RAX which is box
-    bind(DONE_LABEL);
-  } else {
-    Label DONE_LABEL, Stacked, CheckSucc;
-
-    // Critically, the biased locking test must have precedence over
-    // and appear before the (box->dhw == 0) recursive stack-lock test.
-    if (UseBiasedLocking && !UseOptoBiasInlining) {
-       biased_locking_exit(objReg, tmpReg, DONE_LABEL);
-    }
-
-#if INCLUDE_RTM_OPT
-    if (UseRTMForStackLocks && use_rtm) {
-      assert(!UseBiasedLocking, "Biased locking is not supported with RTM locking");
-      Label L_regular_unlock;
-      movptr(tmpReg, Address(objReg, 0));           // fetch markword
-      andptr(tmpReg, markOopDesc::biased_lock_mask_in_place); // look at 3 lock bits
-      cmpptr(tmpReg, markOopDesc::unlocked_value);            // bits = 001 unlocked
-      jccb(Assembler::notEqual, L_regular_unlock);  // if !HLE RegularLock
-      xend();                                       // otherwise end...
-      jmp(DONE_LABEL);                              // ... and we're done
-      bind(L_regular_unlock);
-    }
-#endif
-
-    cmpptr(Address(boxReg, 0), (int32_t)NULL_WORD); // Examine the displaced header
-    jcc   (Assembler::zero, DONE_LABEL);            // 0 indicates recursive stack-lock
-    movptr(tmpReg, Address(objReg, 0));             // Examine the object's markword
-    testptr(tmpReg, markOopDesc::monitor_value);    // Inflated?
-    jccb  (Assembler::zero, Stacked);
-
-    // It's inflated.
-#if INCLUDE_RTM_OPT
-    if (use_rtm) {
-      Label L_regular_inflated_unlock;
-      // Clean monitor_value bit to get valid pointer
-      int owner_offset = ObjectMonitor::owner_offset_in_bytes() - markOopDesc::monitor_value;
-      movptr(boxReg, Address(tmpReg, owner_offset));
-      testptr(boxReg, boxReg);
-      jccb(Assembler::notZero, L_regular_inflated_unlock);
-      xend();
-      jmpb(DONE_LABEL);
-      bind(L_regular_inflated_unlock);
-    }
-#endif
-
-    // Despite our balanced locking property we still check that m->_owner == Self
-    // as java routines or native JNI code called by this thread might
-    // have released the lock.
-    // Refer to the comments in synchronizer.cpp for how we might encode extra
-    // state in _succ so we can avoid fetching EntryList|cxq.
-    //
-    // I'd like to add more cases in fast_lock() and fast_unlock() --
-    // such as recursive enter and exit -- but we have to be wary of
-    // I$ bloat, T$ effects and BP$ effects.
-    //
-    // If there's no contention try a 1-0 exit.  That is, exit without
-    // a costly MEMBAR or CAS.  See synchronizer.cpp for details on how
-    // we detect and recover from the race that the 1-0 exit admits.
-    //
-    // Conceptually Fast_Unlock() must execute a STST|LDST "release" barrier
-    // before it STs null into _owner, releasing the lock.  Updates
-    // to data protected by the critical section must be visible before
-    // we drop the lock (and thus before any other thread could acquire
-    // the lock and observe the fields protected by the lock).
-    // IA32's memory-model is SPO, so STs are ordered with respect to
-    // each other and there's no need for an explicit barrier (fence).
-    // See also http://gee.cs.oswego.edu/dl/jmm/cookbook.html.
-#ifndef _LP64
-    get_thread (boxReg);
-    if ((EmitSync & 4096) && VM_Version::supports_3dnow_prefetch() && os::is_MP()) {
-      // prefetchw [ebx + Offset(_owner)-2]
-      prefetchw(Address(tmpReg, ObjectMonitor::owner_offset_in_bytes()-2));
-    }
-
-    // Note that we could employ various encoding schemes to reduce
-    // the number of loads below (currently 4) to just 2 or 3.
-    // Refer to the comments in synchronizer.cpp.
-    // In practice the chain of fetches doesn't seem to impact performance, however.
-    if ((EmitSync & 65536) == 0 && (EmitSync & 256)) {
-       // Attempt to reduce branch density - AMD's branch predictor.
-       xorptr(boxReg, Address (tmpReg, ObjectMonitor::owner_offset_in_bytes()-2));
-       orptr(boxReg, Address (tmpReg, ObjectMonitor::recursions_offset_in_bytes()-2));
-       orptr(boxReg, Address (tmpReg, ObjectMonitor::EntryList_offset_in_bytes()-2));
-       orptr(boxReg, Address (tmpReg, ObjectMonitor::cxq_offset_in_bytes()-2));
-       jccb  (Assembler::notZero, DONE_LABEL);
-       movptr(Address (tmpReg, ObjectMonitor::owner_offset_in_bytes()-2), NULL_WORD);
-       jmpb  (DONE_LABEL);
-    } else {
-       xorptr(boxReg, Address (tmpReg, ObjectMonitor::owner_offset_in_bytes()-2));
-       orptr(boxReg, Address (tmpReg, ObjectMonitor::recursions_offset_in_bytes()-2));
-       jccb  (Assembler::notZero, DONE_LABEL);
-       movptr(boxReg, Address (tmpReg, ObjectMonitor::EntryList_offset_in_bytes()-2));
-       orptr(boxReg, Address (tmpReg, ObjectMonitor::cxq_offset_in_bytes()-2));
-       jccb  (Assembler::notZero, CheckSucc);
-       movptr(Address (tmpReg, ObjectMonitor::owner_offset_in_bytes()-2), NULL_WORD);
-       jmpb  (DONE_LABEL);
-    }
-
-    // The Following code fragment (EmitSync & 65536) improves the performance of
-    // contended applications and contended synchronization microbenchmarks.
-    // Unfortunately the emission of the code - even though not executed - causes regressions
-    // in scimark and jetstream, evidently because of $ effects.  Replacing the code
-    // with an equal number of never-executed NOPs results in the same regression.
-    // We leave it off by default.
-
-    if ((EmitSync & 65536) != 0) {
-       Label LSuccess, LGoSlowPath ;
-
-       bind  (CheckSucc);
-
-       // Optional pre-test ... it's safe to elide this
-       if ((EmitSync & 16) == 0) {
-          cmpptr(Address (tmpReg, ObjectMonitor::succ_offset_in_bytes()-2), (int32_t)NULL_WORD);
-          jccb  (Assembler::zero, LGoSlowPath);
-       }
-
-       // We have a classic Dekker-style idiom:
-       //    ST m->_owner = 0 ; MEMBAR; LD m->_succ
-       // There are a number of ways to implement the barrier:
-       // (1) lock:andl &m->_owner, 0
-       //     is fast, but mask doesn't currently support the "ANDL M,IMM32" form.
-       //     LOCK: ANDL [ebx+Offset(_Owner)-2], 0
-       //     Encodes as 81 31 OFF32 IMM32 or 83 63 OFF8 IMM8
-       // (2) If supported, an explicit MFENCE is appealing.
-       //     In older IA32 processors MFENCE is slower than lock:add or xchg
-       //     particularly if the write-buffer is full as might be the case if
-       //     if stores closely precede the fence or fence-equivalent instruction.
-       //     In more modern implementations MFENCE appears faster, however.
-       // (3) In lieu of an explicit fence, use lock:addl to the top-of-stack
-       //     The $lines underlying the top-of-stack should be in M-state.
-       //     The locked add instruction is serializing, of course.
-       // (4) Use xchg, which is serializing
-       //     mov boxReg, 0; xchgl boxReg, [tmpReg + Offset(_owner)-2] also works
-       // (5) ST m->_owner = 0 and then execute lock:orl &m->_succ, 0.
-       //     The integer condition codes will tell us if succ was 0.
-       //     Since _succ and _owner should reside in the same $line and
-       //     we just stored into _owner, it's likely that the $line
-       //     remains in M-state for the lock:orl.
-       //
-       // We currently use (3), although it's likely that switching to (2)
-       // is correct for the future.
-
-       movptr(Address (tmpReg, ObjectMonitor::owner_offset_in_bytes()-2), NULL_WORD);
-       if (os::is_MP()) {
-          if (VM_Version::supports_sse2() && 1 == FenceInstruction) {
-            mfence();
-          } else {
-            lock (); addptr(Address(rsp, 0), 0);
-          }
-       }
-       // Ratify _succ remains non-null
-       cmpptr(Address (tmpReg, ObjectMonitor::succ_offset_in_bytes()-2), 0);
-       jccb  (Assembler::notZero, LSuccess);
-
-       xorptr(boxReg, boxReg);                  // box is really EAX
-       if (os::is_MP()) { lock(); }
-       cmpxchgptr(rsp, Address(tmpReg, ObjectMonitor::owner_offset_in_bytes()-2));
-       jccb  (Assembler::notEqual, LSuccess);
-       // Since we're low on registers we installed rsp as a placeholding in _owner.
-       // Now install Self over rsp.  This is safe as we're transitioning from
-       // non-null to non=null
-       get_thread (boxReg);
-       movptr(Address (tmpReg, ObjectMonitor::owner_offset_in_bytes()-2), boxReg);
-       // Intentional fall-through into LGoSlowPath ...
-
-       bind  (LGoSlowPath);
-       orptr(boxReg, 1);                      // set ICC.ZF=0 to indicate failure
-       jmpb  (DONE_LABEL);
-
-       bind  (LSuccess);
-       xorptr(boxReg, boxReg);                 // set ICC.ZF=1 to indicate success
-       jmpb  (DONE_LABEL);
-    }
-
-    bind (Stacked);
-    // It's not inflated and it's not recursively stack-locked and it's not biased.
-    // It must be stack-locked.
-    // Try to reset the header to displaced header.
-    // The "box" value on the stack is stable, so we can reload
-    // and be assured we observe the same value as above.
-    movptr(tmpReg, Address(boxReg, 0));
-    if (os::is_MP()) {
-      lock();
-    }
-    cmpxchgptr(tmpReg, Address(objReg, 0)); // Uses RAX which is box
-    // Intention fall-thru into DONE_LABEL
-
-    // DONE_LABEL is a hot target - we'd really like to place it at the
-    // start of cache line by padding with NOPs.
-    // See the AMD and Intel software optimization manuals for the
-    // most efficient "long" NOP encodings.
-    // Unfortunately none of our alignment mechanisms suffice.
-    if ((EmitSync & 65536) == 0) {
-       bind (CheckSucc);
-    }
-#else // _LP64
-    // It's inflated
-    movptr(boxReg, Address (tmpReg, ObjectMonitor::owner_offset_in_bytes()-2));
-    xorptr(boxReg, r15_thread);
-    orptr (boxReg, Address (tmpReg, ObjectMonitor::recursions_offset_in_bytes()-2));
-    jccb  (Assembler::notZero, DONE_LABEL);
-    movptr(boxReg, Address (tmpReg, ObjectMonitor::cxq_offset_in_bytes()-2));
-    orptr (boxReg, Address (tmpReg, ObjectMonitor::EntryList_offset_in_bytes()-2));
-    jccb  (Assembler::notZero, CheckSucc);
-    movptr(Address (tmpReg, ObjectMonitor::owner_offset_in_bytes()-2), (int32_t)NULL_WORD);
-    jmpb  (DONE_LABEL);
-
-    if ((EmitSync & 65536) == 0) {
-      Label LSuccess, LGoSlowPath ;
-      bind  (CheckSucc);
-      cmpptr(Address (tmpReg, ObjectMonitor::succ_offset_in_bytes()-2), (int32_t)NULL_WORD);
-      jccb  (Assembler::zero, LGoSlowPath);
-
-      // I'd much rather use lock:andl m->_owner, 0 as it's faster than the
-      // the explicit ST;MEMBAR combination, but masm doesn't currently support
-      // "ANDQ M,IMM".  Don't use MFENCE here.  lock:add to TOS, xchg, etc
-      // are all faster when the write buffer is populated.
-      movptr (Address (tmpReg, ObjectMonitor::owner_offset_in_bytes()-2), (int32_t)NULL_WORD);
-      if (os::is_MP()) {
-         lock (); addl (Address(rsp, 0), 0);
-      }
-      cmpptr(Address (tmpReg, ObjectMonitor::succ_offset_in_bytes()-2), (int32_t)NULL_WORD);
-      jccb  (Assembler::notZero, LSuccess);
-
-      movptr (boxReg, (int32_t)NULL_WORD);                   // box is really EAX
-      if (os::is_MP()) { lock(); }
-      cmpxchgptr(r15_thread, Address(tmpReg, ObjectMonitor::owner_offset_in_bytes()-2));
-      jccb  (Assembler::notEqual, LSuccess);
-      // Intentional fall-through into slow-path
-
-      bind  (LGoSlowPath);
-      orl   (boxReg, 1);                      // set ICC.ZF=0 to indicate failure
-      jmpb  (DONE_LABEL);
-
-      bind  (LSuccess);
-      testl (boxReg, 0);                      // set ICC.ZF=1 to indicate success
-      jmpb  (DONE_LABEL);
-    }
-
-    bind  (Stacked);
-    movptr(tmpReg, Address (boxReg, 0));      // re-fetch
-    if (os::is_MP()) { lock(); }
-    cmpxchgptr(tmpReg, Address(objReg, 0)); // Uses RAX which is box
-
-    if (EmitSync & 65536) {
-       bind (CheckSucc);
-    }
-#endif
-    bind(DONE_LABEL);
-    // Avoid branch to branch on AMD processors
-    if (EmitSync & 32768) {
-       nop();
-    }
-  }
-}
-#endif // COMPILER2
 
 void MacroAssembler::c2bool(Register x) {
   // implements x == 0 ? 0 : 1
@@ -2559,7 +1681,7 @@ void MacroAssembler::call_VM_base(Register oop_result,
   }
   // reset last Java frame
   // Only interpreter should have to clear fp
-  reset_last_Java_frame(java_thread, true);
+  reset_last_Java_frame(java_thread, true, false);
 
 #ifndef CC_INTERP
    // C++ interp handles this in the interpreter
@@ -2847,9 +1969,7 @@ void MacroAssembler::cond_inc32(Condition cond, AddressLiteral counter_addr) {
   Condition negated_cond = negate_condition(cond);
   Label L;
   jcc(negated_cond, L);
-  pushf(); // Preserve flags
   atomic_incl(counter_addr);
-  popf();
   bind(L);
 }
 
@@ -3151,12 +2271,10 @@ void MacroAssembler::fast_pow() {
   // if fast computation is not possible, result is NaN. Requires
   // fallback from user of this macro.
   // increase precision for intermediate steps of the computation
-  BLOCK_COMMENT("fast_pow {");
   increase_precision();
   fyl2x();                 // Stack: (Y*log2(X)) ...
   pow_exp_core_encoding(); // Stack: exp(X) ...
   restore_precision();
-  BLOCK_COMMENT("} fast_pow");
 }
 
 void MacroAssembler::fast_exp() {
@@ -3200,24 +2318,7 @@ void MacroAssembler::pow_or_exp(bool is_exp, int num_fpu_regs_in_use) {
     jmp(done);
   } else {
     // Stack: X Y
-    Label x_negative, y_not_2;
-
-    static double two = 2.0;
-    ExternalAddress two_addr((address)&two);
-
-    // constant maybe too far on 64 bit
-    lea(tmp2, two_addr);
-    fld_d(Address(tmp2, 0));    // Stack: 2 X Y
-    fcmp(tmp, 2, true, false);  // Stack: X Y
-    jcc(Assembler::parity, y_not_2);
-    jcc(Assembler::notEqual, y_not_2);
-
-    fxch(); fpop();             // Stack: X
-    fmul(0);                    // Stack: X*X
-
-    jmp(done);
-
-    bind(y_not_2);
+    Label x_negative, y_odd;
 
     fldz();                     // Stack: 0 X Y
     fcmp(tmp, 1, true, false);  // Stack: X Y
@@ -3806,7 +2907,7 @@ void MacroAssembler::push_IU_state() {
   pusha();
 }
 
-void MacroAssembler::reset_last_Java_frame(Register java_thread, bool clear_fp) {
+void MacroAssembler::reset_last_Java_frame(Register java_thread, bool clear_fp, bool clear_pc) {
   // determine java_thread register
   if (!java_thread->is_valid()) {
     java_thread = rdi;
@@ -3818,8 +2919,8 @@ void MacroAssembler::reset_last_Java_frame(Register java_thread, bool clear_fp) 
     movptr(Address(java_thread, JavaThread::last_Java_fp_offset()), NULL_WORD);
   }
 
-  // Always clear the pc because it could have been set by make_walkable()
-  movptr(Address(java_thread, JavaThread::last_Java_pc_offset()), NULL_WORD);
+  if (clear_pc)
+    movptr(Address(java_thread, JavaThread::last_Java_pc_offset()), NULL_WORD);
 
 }
 
@@ -5208,7 +4309,7 @@ RegisterOrConstant MacroAssembler::delayed_value_impl(intptr_t* delayed_value_ad
       {
         ResourceMark rm;
         stringStream ss;
-        ss.print("DelayedValue="INTPTR_FORMAT, delayed_value_addr[1]);
+        ss.print("DelayedValue=" INTPTR_FORMAT, delayed_value_addr[1]);
         buf = code_string(ss.as_string());
       }
       jcc(Assembler::notZero, L);
@@ -6111,7 +5212,7 @@ void MacroAssembler::reinit_heapbase() {
 
 
 // C2 compiled method's prolog code.
-void MacroAssembler::verified_entry(int framesize, int stack_bang_size, bool fp_mode_24b) {
+void MacroAssembler::verified_entry(int framesize, bool stack_bang, bool fp_mode_24b) {
 
   // WARNING: Initial instruction MUST be 5 bytes or longer so that
   // NativeJump::patch_verified_entry will be able to patch out the entry
@@ -6119,28 +5220,22 @@ void MacroAssembler::verified_entry(int framesize, int stack_bang_size, bool fp_
   // the frame allocation can be either 3 or 6 bytes. So if we don't do
   // stack bang then we must use the 6 byte frame allocation even if
   // we have no frame. :-(
-  assert(stack_bang_size >= framesize || stack_bang_size <= 0, "stack bang size incorrect");
 
   assert((framesize & (StackAlignmentInBytes-1)) == 0, "frame size not aligned");
   // Remove word for return addr
   framesize -= wordSize;
-  stack_bang_size -= wordSize;
 
   // Calls to C2R adapters often do not accept exceptional returns.
   // We require that their callers must bang for them.  But be careful, because
   // some VM calls (such as call site linkage) can use several kilobytes of
   // stack.  But the stack safety zone should account for that.
   // See bugs 4446381, 4468289, 4497237.
-  if (stack_bang_size > 0) {
-    generate_stack_overflow_check(stack_bang_size);
+  if (stack_bang) {
+    generate_stack_overflow_check(framesize);
 
     // We always push rbp, so that on return to interpreter rbp, will be
     // restored correctly and we can correct the stack.
     push(rbp);
-    // Save caller's stack pointer into RBP if the frame pointer is preserved.
-    if (PreserveFramePointer) {
-      mov(rbp, rsp);
-    }
     // Remove word for ebp
     framesize -= wordSize;
 
@@ -6155,13 +5250,6 @@ void MacroAssembler::verified_entry(int framesize, int stack_bang_size, bool fp_
     // Save RBP register now.
     framesize -= wordSize;
     movptr(Address(rsp, framesize), rbp);
-    // Save caller's stack pointer into RBP if the frame pointer is preserved.
-    if (PreserveFramePointer) {
-      movptr(rbp, rsp);
-      if (framesize > 0) {
-        addptr(rbp, framesize);
-      }
-    }
   }
 
   if (VerifyStackAtCalls) { // Majik cookie to verify stack depth
@@ -6716,7 +5804,7 @@ void MacroAssembler::string_compare(Register str1, Register str2,
     subl(cnt2, stride2);
     jccb(Assembler::notZero, COMPARE_WIDE_VECTORS_LOOP);
     // clean upper bits of YMM registers
-    vpxor(vec1, vec1);
+    vzeroupper();
 
     // compare wide vectors tail
     bind(COMPARE_WIDE_TAIL);
@@ -6731,7 +5819,7 @@ void MacroAssembler::string_compare(Register str1, Register str2,
     // Identifies the mismatching (higher or lower)16-bytes in the 32-byte vectors.
     bind(VECTOR_NOT_EQUAL);
     // clean upper bits of YMM registers
-    vpxor(vec1, vec1);
+    vzeroupper();
     lea(str1, Address(str1, result, scale));
     lea(str2, Address(str2, result, scale));
     jmp(COMPARE_16_CHARS);
@@ -6990,8 +6078,7 @@ void MacroAssembler::char_arrays_equals(bool is_array_equ, Register ary1, Regist
   bind(DONE);
   if (UseAVX >= 2) {
     // clean upper bits of YMM registers
-    vpxor(vec1, vec1);
-    vpxor(vec2, vec2);
+    vzeroupper();
   }
 }
 
@@ -7125,8 +6212,7 @@ void MacroAssembler::generate_fill(BasicType t, bool aligned,
 
         BIND(L_check_fill_8_bytes);
         // clean upper bits of YMM registers
-        movdl(xtmp, value);
-        pshufd(xtmp, xtmp, 0);
+        vzeroupper();
       } else {
         // Fill 32-byte chunks
         pshufd(xtmp, xtmp, 0);
@@ -7289,11 +6375,7 @@ void MacroAssembler::encode_iso_array(Register src, Register dst, Register len,
     bind(L_copy_16_chars_exit);
     if (UseAVX >= 2) {
       // clean upper bits of YMM registers
-      vpxor(tmp2Reg, tmp2Reg);
-      vpxor(tmp3Reg, tmp3Reg);
-      vpxor(tmp4Reg, tmp4Reg);
-      movdl(tmp1Reg, tmp5);
-      pshufd(tmp1Reg, tmp1Reg, 0);
+      vzeroupper();
     }
     subptr(len, 8);
     jccb(Assembler::greater, L_copy_8_chars_exit);
@@ -7325,964 +6407,6 @@ void MacroAssembler::encode_iso_array(Register src, Register dst, Register len,
   bind(L_done);
 }
 
-#ifdef _LP64
-/**
- * Helper for multiply_to_len().
- */
-void MacroAssembler::add2_with_carry(Register dest_hi, Register dest_lo, Register src1, Register src2) {
-  addq(dest_lo, src1);
-  adcq(dest_hi, 0);
-  addq(dest_lo, src2);
-  adcq(dest_hi, 0);
-}
-
-/**
- * Multiply 64 bit by 64 bit first loop.
- */
-void MacroAssembler::multiply_64_x_64_loop(Register x, Register xstart, Register x_xstart,
-                                           Register y, Register y_idx, Register z,
-                                           Register carry, Register product,
-                                           Register idx, Register kdx) {
-  //
-  //  jlong carry, x[], y[], z[];
-  //  for (int idx=ystart, kdx=ystart+1+xstart; idx >= 0; idx-, kdx--) {
-  //    huge_128 product = y[idx] * x[xstart] + carry;
-  //    z[kdx] = (jlong)product;
-  //    carry  = (jlong)(product >>> 64);
-  //  }
-  //  z[xstart] = carry;
-  //
-
-  Label L_first_loop, L_first_loop_exit;
-  Label L_one_x, L_one_y, L_multiply;
-
-  decrementl(xstart);
-  jcc(Assembler::negative, L_one_x);
-
-  movq(x_xstart, Address(x, xstart, Address::times_4,  0));
-  rorq(x_xstart, 32); // convert big-endian to little-endian
-
-  bind(L_first_loop);
-  decrementl(idx);
-  jcc(Assembler::negative, L_first_loop_exit);
-  decrementl(idx);
-  jcc(Assembler::negative, L_one_y);
-  movq(y_idx, Address(y, idx, Address::times_4,  0));
-  rorq(y_idx, 32); // convert big-endian to little-endian
-  bind(L_multiply);
-  movq(product, x_xstart);
-  mulq(y_idx); // product(rax) * y_idx -> rdx:rax
-  addq(product, carry);
-  adcq(rdx, 0);
-  subl(kdx, 2);
-  movl(Address(z, kdx, Address::times_4,  4), product);
-  shrq(product, 32);
-  movl(Address(z, kdx, Address::times_4,  0), product);
-  movq(carry, rdx);
-  jmp(L_first_loop);
-
-  bind(L_one_y);
-  movl(y_idx, Address(y,  0));
-  jmp(L_multiply);
-
-  bind(L_one_x);
-  movl(x_xstart, Address(x,  0));
-  jmp(L_first_loop);
-
-  bind(L_first_loop_exit);
-}
-
-/**
- * Multiply 64 bit by 64 bit and add 128 bit.
- */
-void MacroAssembler::multiply_add_128_x_128(Register x_xstart, Register y, Register z,
-                                            Register yz_idx, Register idx,
-                                            Register carry, Register product, int offset) {
-  //     huge_128 product = (y[idx] * x_xstart) + z[kdx] + carry;
-  //     z[kdx] = (jlong)product;
-
-  movq(yz_idx, Address(y, idx, Address::times_4,  offset));
-  rorq(yz_idx, 32); // convert big-endian to little-endian
-  movq(product, x_xstart);
-  mulq(yz_idx);     // product(rax) * yz_idx -> rdx:product(rax)
-  movq(yz_idx, Address(z, idx, Address::times_4,  offset));
-  rorq(yz_idx, 32); // convert big-endian to little-endian
-
-  add2_with_carry(rdx, product, carry, yz_idx);
-
-  movl(Address(z, idx, Address::times_4,  offset+4), product);
-  shrq(product, 32);
-  movl(Address(z, idx, Address::times_4,  offset), product);
-
-}
-
-/**
- * Multiply 128 bit by 128 bit. Unrolled inner loop.
- */
-void MacroAssembler::multiply_128_x_128_loop(Register x_xstart, Register y, Register z,
-                                             Register yz_idx, Register idx, Register jdx,
-                                             Register carry, Register product,
-                                             Register carry2) {
-  //   jlong carry, x[], y[], z[];
-  //   int kdx = ystart+1;
-  //   for (int idx=ystart-2; idx >= 0; idx -= 2) { // Third loop
-  //     huge_128 product = (y[idx+1] * x_xstart) + z[kdx+idx+1] + carry;
-  //     z[kdx+idx+1] = (jlong)product;
-  //     jlong carry2  = (jlong)(product >>> 64);
-  //     product = (y[idx] * x_xstart) + z[kdx+idx] + carry2;
-  //     z[kdx+idx] = (jlong)product;
-  //     carry  = (jlong)(product >>> 64);
-  //   }
-  //   idx += 2;
-  //   if (idx > 0) {
-  //     product = (y[idx] * x_xstart) + z[kdx+idx] + carry;
-  //     z[kdx+idx] = (jlong)product;
-  //     carry  = (jlong)(product >>> 64);
-  //   }
-  //
-
-  Label L_third_loop, L_third_loop_exit, L_post_third_loop_done;
-
-  movl(jdx, idx);
-  andl(jdx, 0xFFFFFFFC);
-  shrl(jdx, 2);
-
-  bind(L_third_loop);
-  subl(jdx, 1);
-  jcc(Assembler::negative, L_third_loop_exit);
-  subl(idx, 4);
-
-  multiply_add_128_x_128(x_xstart, y, z, yz_idx, idx, carry, product, 8);
-  movq(carry2, rdx);
-
-  multiply_add_128_x_128(x_xstart, y, z, yz_idx, idx, carry2, product, 0);
-  movq(carry, rdx);
-  jmp(L_third_loop);
-
-  bind (L_third_loop_exit);
-
-  andl (idx, 0x3);
-  jcc(Assembler::zero, L_post_third_loop_done);
-
-  Label L_check_1;
-  subl(idx, 2);
-  jcc(Assembler::negative, L_check_1);
-
-  multiply_add_128_x_128(x_xstart, y, z, yz_idx, idx, carry, product, 0);
-  movq(carry, rdx);
-
-  bind (L_check_1);
-  addl (idx, 0x2);
-  andl (idx, 0x1);
-  subl(idx, 1);
-  jcc(Assembler::negative, L_post_third_loop_done);
-
-  movl(yz_idx, Address(y, idx, Address::times_4,  0));
-  movq(product, x_xstart);
-  mulq(yz_idx); // product(rax) * yz_idx -> rdx:product(rax)
-  movl(yz_idx, Address(z, idx, Address::times_4,  0));
-
-  add2_with_carry(rdx, product, yz_idx, carry);
-
-  movl(Address(z, idx, Address::times_4,  0), product);
-  shrq(product, 32);
-
-  shlq(rdx, 32);
-  orq(product, rdx);
-  movq(carry, product);
-
-  bind(L_post_third_loop_done);
-}
-
-/**
- * Multiply 128 bit by 128 bit using BMI2. Unrolled inner loop.
- *
- */
-void MacroAssembler::multiply_128_x_128_bmi2_loop(Register y, Register z,
-                                                  Register carry, Register carry2,
-                                                  Register idx, Register jdx,
-                                                  Register yz_idx1, Register yz_idx2,
-                                                  Register tmp, Register tmp3, Register tmp4) {
-  assert(UseBMI2Instructions, "should be used only when BMI2 is available");
-
-  //   jlong carry, x[], y[], z[];
-  //   int kdx = ystart+1;
-  //   for (int idx=ystart-2; idx >= 0; idx -= 2) { // Third loop
-  //     huge_128 tmp3 = (y[idx+1] * rdx) + z[kdx+idx+1] + carry;
-  //     jlong carry2  = (jlong)(tmp3 >>> 64);
-  //     huge_128 tmp4 = (y[idx]   * rdx) + z[kdx+idx] + carry2;
-  //     carry  = (jlong)(tmp4 >>> 64);
-  //     z[kdx+idx+1] = (jlong)tmp3;
-  //     z[kdx+idx] = (jlong)tmp4;
-  //   }
-  //   idx += 2;
-  //   if (idx > 0) {
-  //     yz_idx1 = (y[idx] * rdx) + z[kdx+idx] + carry;
-  //     z[kdx+idx] = (jlong)yz_idx1;
-  //     carry  = (jlong)(yz_idx1 >>> 64);
-  //   }
-  //
-
-  Label L_third_loop, L_third_loop_exit, L_post_third_loop_done;
-
-  movl(jdx, idx);
-  andl(jdx, 0xFFFFFFFC);
-  shrl(jdx, 2);
-
-  bind(L_third_loop);
-  subl(jdx, 1);
-  jcc(Assembler::negative, L_third_loop_exit);
-  subl(idx, 4);
-
-  movq(yz_idx1,  Address(y, idx, Address::times_4,  8));
-  rorxq(yz_idx1, yz_idx1, 32); // convert big-endian to little-endian
-  movq(yz_idx2, Address(y, idx, Address::times_4,  0));
-  rorxq(yz_idx2, yz_idx2, 32);
-
-  mulxq(tmp4, tmp3, yz_idx1);  //  yz_idx1 * rdx -> tmp4:tmp3
-  mulxq(carry2, tmp, yz_idx2); //  yz_idx2 * rdx -> carry2:tmp
-
-  movq(yz_idx1,  Address(z, idx, Address::times_4,  8));
-  rorxq(yz_idx1, yz_idx1, 32);
-  movq(yz_idx2, Address(z, idx, Address::times_4,  0));
-  rorxq(yz_idx2, yz_idx2, 32);
-
-  if (VM_Version::supports_adx()) {
-    adcxq(tmp3, carry);
-    adoxq(tmp3, yz_idx1);
-
-    adcxq(tmp4, tmp);
-    adoxq(tmp4, yz_idx2);
-
-    movl(carry, 0); // does not affect flags
-    adcxq(carry2, carry);
-    adoxq(carry2, carry);
-  } else {
-    add2_with_carry(tmp4, tmp3, carry, yz_idx1);
-    add2_with_carry(carry2, tmp4, tmp, yz_idx2);
-  }
-  movq(carry, carry2);
-
-  movl(Address(z, idx, Address::times_4, 12), tmp3);
-  shrq(tmp3, 32);
-  movl(Address(z, idx, Address::times_4,  8), tmp3);
-
-  movl(Address(z, idx, Address::times_4,  4), tmp4);
-  shrq(tmp4, 32);
-  movl(Address(z, idx, Address::times_4,  0), tmp4);
-
-  jmp(L_third_loop);
-
-  bind (L_third_loop_exit);
-
-  andl (idx, 0x3);
-  jcc(Assembler::zero, L_post_third_loop_done);
-
-  Label L_check_1;
-  subl(idx, 2);
-  jcc(Assembler::negative, L_check_1);
-
-  movq(yz_idx1, Address(y, idx, Address::times_4,  0));
-  rorxq(yz_idx1, yz_idx1, 32);
-  mulxq(tmp4, tmp3, yz_idx1); //  yz_idx1 * rdx -> tmp4:tmp3
-  movq(yz_idx2, Address(z, idx, Address::times_4,  0));
-  rorxq(yz_idx2, yz_idx2, 32);
-
-  add2_with_carry(tmp4, tmp3, carry, yz_idx2);
-
-  movl(Address(z, idx, Address::times_4,  4), tmp3);
-  shrq(tmp3, 32);
-  movl(Address(z, idx, Address::times_4,  0), tmp3);
-  movq(carry, tmp4);
-
-  bind (L_check_1);
-  addl (idx, 0x2);
-  andl (idx, 0x1);
-  subl(idx, 1);
-  jcc(Assembler::negative, L_post_third_loop_done);
-  movl(tmp4, Address(y, idx, Address::times_4,  0));
-  mulxq(carry2, tmp3, tmp4);  //  tmp4 * rdx -> carry2:tmp3
-  movl(tmp4, Address(z, idx, Address::times_4,  0));
-
-  add2_with_carry(carry2, tmp3, tmp4, carry);
-
-  movl(Address(z, idx, Address::times_4,  0), tmp3);
-  shrq(tmp3, 32);
-
-  shlq(carry2, 32);
-  orq(tmp3, carry2);
-  movq(carry, tmp3);
-
-  bind(L_post_third_loop_done);
-}
-
-/**
- * Code for BigInteger::multiplyToLen() instrinsic.
- *
- * rdi: x
- * rax: xlen
- * rsi: y
- * rcx: ylen
- * r8:  z
- * r11: zlen
- * r12: tmp1
- * r13: tmp2
- * r14: tmp3
- * r15: tmp4
- * rbx: tmp5
- *
- */
-void MacroAssembler::multiply_to_len(Register x, Register xlen, Register y, Register ylen, Register z, Register zlen,
-                                     Register tmp1, Register tmp2, Register tmp3, Register tmp4, Register tmp5) {
-  ShortBranchVerifier sbv(this);
-  assert_different_registers(x, xlen, y, ylen, z, zlen, tmp1, tmp2, tmp3, tmp4, tmp5, rdx);
-
-  push(tmp1);
-  push(tmp2);
-  push(tmp3);
-  push(tmp4);
-  push(tmp5);
-
-  push(xlen);
-  push(zlen);
-
-  const Register idx = tmp1;
-  const Register kdx = tmp2;
-  const Register xstart = tmp3;
-
-  const Register y_idx = tmp4;
-  const Register carry = tmp5;
-  const Register product  = xlen;
-  const Register x_xstart = zlen;  // reuse register
-
-  // First Loop.
-  //
-  //  final static long LONG_MASK = 0xffffffffL;
-  //  int xstart = xlen - 1;
-  //  int ystart = ylen - 1;
-  //  long carry = 0;
-  //  for (int idx=ystart, kdx=ystart+1+xstart; idx >= 0; idx-, kdx--) {
-  //    long product = (y[idx] & LONG_MASK) * (x[xstart] & LONG_MASK) + carry;
-  //    z[kdx] = (int)product;
-  //    carry = product >>> 32;
-  //  }
-  //  z[xstart] = (int)carry;
-  //
-
-  movl(idx, ylen);      // idx = ylen;
-  movl(kdx, zlen);      // kdx = xlen+ylen;
-  xorq(carry, carry);   // carry = 0;
-
-  Label L_done;
-
-  movl(xstart, xlen);
-  decrementl(xstart);
-  jcc(Assembler::negative, L_done);
-
-  multiply_64_x_64_loop(x, xstart, x_xstart, y, y_idx, z, carry, product, idx, kdx);
-
-  Label L_second_loop;
-  testl(kdx, kdx);
-  jcc(Assembler::zero, L_second_loop);
-
-  Label L_carry;
-  subl(kdx, 1);
-  jcc(Assembler::zero, L_carry);
-
-  movl(Address(z, kdx, Address::times_4,  0), carry);
-  shrq(carry, 32);
-  subl(kdx, 1);
-
-  bind(L_carry);
-  movl(Address(z, kdx, Address::times_4,  0), carry);
-
-  // Second and third (nested) loops.
-  //
-  // for (int i = xstart-1; i >= 0; i--) { // Second loop
-  //   carry = 0;
-  //   for (int jdx=ystart, k=ystart+1+i; jdx >= 0; jdx--, k--) { // Third loop
-  //     long product = (y[jdx] & LONG_MASK) * (x[i] & LONG_MASK) +
-  //                    (z[k] & LONG_MASK) + carry;
-  //     z[k] = (int)product;
-  //     carry = product >>> 32;
-  //   }
-  //   z[i] = (int)carry;
-  // }
-  //
-  // i = xlen, j = tmp1, k = tmp2, carry = tmp5, x[i] = rdx
-
-  const Register jdx = tmp1;
-
-  bind(L_second_loop);
-  xorl(carry, carry);    // carry = 0;
-  movl(jdx, ylen);       // j = ystart+1
-
-  subl(xstart, 1);       // i = xstart-1;
-  jcc(Assembler::negative, L_done);
-
-  push (z);
-
-  Label L_last_x;
-  lea(z, Address(z, xstart, Address::times_4, 4)); // z = z + k - j
-  subl(xstart, 1);       // i = xstart-1;
-  jcc(Assembler::negative, L_last_x);
-
-  if (UseBMI2Instructions) {
-    movq(rdx,  Address(x, xstart, Address::times_4,  0));
-    rorxq(rdx, rdx, 32); // convert big-endian to little-endian
-  } else {
-    movq(x_xstart, Address(x, xstart, Address::times_4,  0));
-    rorq(x_xstart, 32);  // convert big-endian to little-endian
-  }
-
-  Label L_third_loop_prologue;
-  bind(L_third_loop_prologue);
-
-  push (x);
-  push (xstart);
-  push (ylen);
-
-
-  if (UseBMI2Instructions) {
-    multiply_128_x_128_bmi2_loop(y, z, carry, x, jdx, ylen, product, tmp2, x_xstart, tmp3, tmp4);
-  } else { // !UseBMI2Instructions
-    multiply_128_x_128_loop(x_xstart, y, z, y_idx, jdx, ylen, carry, product, x);
-  }
-
-  pop(ylen);
-  pop(xlen);
-  pop(x);
-  pop(z);
-
-  movl(tmp3, xlen);
-  addl(tmp3, 1);
-  movl(Address(z, tmp3, Address::times_4,  0), carry);
-  subl(tmp3, 1);
-  jccb(Assembler::negative, L_done);
-
-  shrq(carry, 32);
-  movl(Address(z, tmp3, Address::times_4,  0), carry);
-  jmp(L_second_loop);
-
-  // Next infrequent code is moved outside loops.
-  bind(L_last_x);
-  if (UseBMI2Instructions) {
-    movl(rdx, Address(x,  0));
-  } else {
-    movl(x_xstart, Address(x,  0));
-  }
-  jmp(L_third_loop_prologue);
-
-  bind(L_done);
-
-  pop(zlen);
-  pop(xlen);
-
-  pop(tmp5);
-  pop(tmp4);
-  pop(tmp3);
-  pop(tmp2);
-  pop(tmp1);
-}
-
-//Helper functions for square_to_len()
-
-/**
- * Store the squares of x[], right shifted one bit (divided by 2) into z[]
- * Preserves x and z and modifies rest of the registers.
- */
-
-void MacroAssembler::square_rshift(Register x, Register xlen, Register z, Register tmp1, Register tmp3, Register tmp4, Register tmp5, Register rdxReg, Register raxReg) {
-  // Perform square and right shift by 1
-  // Handle odd xlen case first, then for even xlen do the following
-  // jlong carry = 0;
-  // for (int j=0, i=0; j < xlen; j+=2, i+=4) {
-  //     huge_128 product = x[j:j+1] * x[j:j+1];
-  //     z[i:i+1] = (carry << 63) | (jlong)(product >>> 65);
-  //     z[i+2:i+3] = (jlong)(product >>> 1);
-  //     carry = (jlong)product;
-  // }
-
-  xorq(tmp5, tmp5);     // carry
-  xorq(rdxReg, rdxReg);
-  xorl(tmp1, tmp1);     // index for x
-  xorl(tmp4, tmp4);     // index for z
-
-  Label L_first_loop, L_first_loop_exit;
-
-  testl(xlen, 1);
-  jccb(Assembler::zero, L_first_loop); //jump if xlen is even
-
-  // Square and right shift by 1 the odd element using 32 bit multiply
-  movl(raxReg, Address(x, tmp1, Address::times_4, 0));
-  imulq(raxReg, raxReg);
-  shrq(raxReg, 1);
-  adcq(tmp5, 0);
-  movq(Address(z, tmp4, Address::times_4, 0), raxReg);
-  incrementl(tmp1);
-  addl(tmp4, 2);
-
-  // Square and  right shift by 1 the rest using 64 bit multiply
-  bind(L_first_loop);
-  cmpptr(tmp1, xlen);
-  jccb(Assembler::equal, L_first_loop_exit);
-
-  // Square
-  movq(raxReg, Address(x, tmp1, Address::times_4,  0));
-  rorq(raxReg, 32);    // convert big-endian to little-endian
-  mulq(raxReg);        // 64-bit multiply rax * rax -> rdx:rax
-
-  // Right shift by 1 and save carry
-  shrq(tmp5, 1);       // rdx:rax:tmp5 = (tmp5:rdx:rax) >>> 1
-  rcrq(rdxReg, 1);
-  rcrq(raxReg, 1);
-  adcq(tmp5, 0);
-
-  // Store result in z
-  movq(Address(z, tmp4, Address::times_4, 0), rdxReg);
-  movq(Address(z, tmp4, Address::times_4, 8), raxReg);
-
-  // Update indices for x and z
-  addl(tmp1, 2);
-  addl(tmp4, 4);
-  jmp(L_first_loop);
-
-  bind(L_first_loop_exit);
-}
-
-
-/**
- * Perform the following multiply add operation using BMI2 instructions
- * carry:sum = sum + op1*op2 + carry
- * op2 should be in rdx
- * op2 is preserved, all other registers are modified
- */
-void MacroAssembler::multiply_add_64_bmi2(Register sum, Register op1, Register op2, Register carry, Register tmp2) {
-  // assert op2 is rdx
-  mulxq(tmp2, op1, op1);  //  op1 * op2 -> tmp2:op1
-  addq(sum, carry);
-  adcq(tmp2, 0);
-  addq(sum, op1);
-  adcq(tmp2, 0);
-  movq(carry, tmp2);
-}
-
-/**
- * Perform the following multiply add operation:
- * carry:sum = sum + op1*op2 + carry
- * Preserves op1, op2 and modifies rest of registers
- */
-void MacroAssembler::multiply_add_64(Register sum, Register op1, Register op2, Register carry, Register rdxReg, Register raxReg) {
-  // rdx:rax = op1 * op2
-  movq(raxReg, op2);
-  mulq(op1);
-
-  //  rdx:rax = sum + carry + rdx:rax
-  addq(sum, carry);
-  adcq(rdxReg, 0);
-  addq(sum, raxReg);
-  adcq(rdxReg, 0);
-
-  // carry:sum = rdx:sum
-  movq(carry, rdxReg);
-}
-
-/**
- * Add 64 bit long carry into z[] with carry propogation.
- * Preserves z and carry register values and modifies rest of registers.
- *
- */
-void MacroAssembler::add_one_64(Register z, Register zlen, Register carry, Register tmp1) {
-  Label L_fourth_loop, L_fourth_loop_exit;
-
-  movl(tmp1, 1);
-  subl(zlen, 2);
-  addq(Address(z, zlen, Address::times_4, 0), carry);
-
-  bind(L_fourth_loop);
-  jccb(Assembler::carryClear, L_fourth_loop_exit);
-  subl(zlen, 2);
-  jccb(Assembler::negative, L_fourth_loop_exit);
-  addq(Address(z, zlen, Address::times_4, 0), tmp1);
-  jmp(L_fourth_loop);
-  bind(L_fourth_loop_exit);
-}
-
-/**
- * Shift z[] left by 1 bit.
- * Preserves x, len, z and zlen registers and modifies rest of the registers.
- *
- */
-void MacroAssembler::lshift_by_1(Register x, Register len, Register z, Register zlen, Register tmp1, Register tmp2, Register tmp3, Register tmp4) {
-
-  Label L_fifth_loop, L_fifth_loop_exit;
-
-  // Fifth loop
-  // Perform primitiveLeftShift(z, zlen, 1)
-
-  const Register prev_carry = tmp1;
-  const Register new_carry = tmp4;
-  const Register value = tmp2;
-  const Register zidx = tmp3;
-
-  // int zidx, carry;
-  // long value;
-  // carry = 0;
-  // for (zidx = zlen-2; zidx >=0; zidx -= 2) {
-  //    (carry:value)  = (z[i] << 1) | carry ;
-  //    z[i] = value;
-  // }
-
-  movl(zidx, zlen);
-  xorl(prev_carry, prev_carry); // clear carry flag and prev_carry register
-
-  bind(L_fifth_loop);
-  decl(zidx);  // Use decl to preserve carry flag
-  decl(zidx);
-  jccb(Assembler::negative, L_fifth_loop_exit);
-
-  if (UseBMI2Instructions) {
-     movq(value, Address(z, zidx, Address::times_4, 0));
-     rclq(value, 1);
-     rorxq(value, value, 32);
-     movq(Address(z, zidx, Address::times_4,  0), value);  // Store back in big endian form
-  }
-  else {
-    // clear new_carry
-    xorl(new_carry, new_carry);
-
-    // Shift z[i] by 1, or in previous carry and save new carry
-    movq(value, Address(z, zidx, Address::times_4, 0));
-    shlq(value, 1);
-    adcl(new_carry, 0);
-
-    orq(value, prev_carry);
-    rorq(value, 0x20);
-    movq(Address(z, zidx, Address::times_4,  0), value);  // Store back in big endian form
-
-    // Set previous carry = new carry
-    movl(prev_carry, new_carry);
-  }
-  jmp(L_fifth_loop);
-
-  bind(L_fifth_loop_exit);
-}
-
-
-/**
- * Code for BigInteger::squareToLen() intrinsic
- *
- * rdi: x
- * rsi: len
- * r8:  z
- * rcx: zlen
- * r12: tmp1
- * r13: tmp2
- * r14: tmp3
- * r15: tmp4
- * rbx: tmp5
- *
- */
-void MacroAssembler::square_to_len(Register x, Register len, Register z, Register zlen, Register tmp1, Register tmp2, Register tmp3, Register tmp4, Register tmp5, Register rdxReg, Register raxReg) {
-
-  Label L_second_loop, L_second_loop_exit, L_third_loop, L_third_loop_exit, fifth_loop, fifth_loop_exit, L_last_x, L_multiply;
-  push(tmp1);
-  push(tmp2);
-  push(tmp3);
-  push(tmp4);
-  push(tmp5);
-
-  // First loop
-  // Store the squares, right shifted one bit (i.e., divided by 2).
-  square_rshift(x, len, z, tmp1, tmp3, tmp4, tmp5, rdxReg, raxReg);
-
-  // Add in off-diagonal sums.
-  //
-  // Second, third (nested) and fourth loops.
-  // zlen +=2;
-  // for (int xidx=len-2,zidx=zlen-4; xidx > 0; xidx-=2,zidx-=4) {
-  //    carry = 0;
-  //    long op2 = x[xidx:xidx+1];
-  //    for (int j=xidx-2,k=zidx; j >= 0; j-=2) {
-  //       k -= 2;
-  //       long op1 = x[j:j+1];
-  //       long sum = z[k:k+1];
-  //       carry:sum = multiply_add_64(sum, op1, op2, carry, tmp_regs);
-  //       z[k:k+1] = sum;
-  //    }
-  //    add_one_64(z, k, carry, tmp_regs);
-  // }
-
-  const Register carry = tmp5;
-  const Register sum = tmp3;
-  const Register op1 = tmp4;
-  Register op2 = tmp2;
-
-  push(zlen);
-  push(len);
-  addl(zlen,2);
-  bind(L_second_loop);
-  xorq(carry, carry);
-  subl(zlen, 4);
-  subl(len, 2);
-  push(zlen);
-  push(len);
-  cmpl(len, 0);
-  jccb(Assembler::lessEqual, L_second_loop_exit);
-
-  // Multiply an array by one 64 bit long.
-  if (UseBMI2Instructions) {
-    op2 = rdxReg;
-    movq(op2, Address(x, len, Address::times_4,  0));
-    rorxq(op2, op2, 32);
-  }
-  else {
-    movq(op2, Address(x, len, Address::times_4,  0));
-    rorq(op2, 32);
-  }
-
-  bind(L_third_loop);
-  decrementl(len);
-  jccb(Assembler::negative, L_third_loop_exit);
-  decrementl(len);
-  jccb(Assembler::negative, L_last_x);
-
-  movq(op1, Address(x, len, Address::times_4,  0));
-  rorq(op1, 32);
-
-  bind(L_multiply);
-  subl(zlen, 2);
-  movq(sum, Address(z, zlen, Address::times_4,  0));
-
-  // Multiply 64 bit by 64 bit and add 64 bits lower half and upper 64 bits as carry.
-  if (UseBMI2Instructions) {
-    multiply_add_64_bmi2(sum, op1, op2, carry, tmp2);
-  }
-  else {
-    multiply_add_64(sum, op1, op2, carry, rdxReg, raxReg);
-  }
-
-  movq(Address(z, zlen, Address::times_4, 0), sum);
-
-  jmp(L_third_loop);
-  bind(L_third_loop_exit);
-
-  // Fourth loop
-  // Add 64 bit long carry into z with carry propogation.
-  // Uses offsetted zlen.
-  add_one_64(z, zlen, carry, tmp1);
-
-  pop(len);
-  pop(zlen);
-  jmp(L_second_loop);
-
-  // Next infrequent code is moved outside loops.
-  bind(L_last_x);
-  movl(op1, Address(x, 0));
-  jmp(L_multiply);
-
-  bind(L_second_loop_exit);
-  pop(len);
-  pop(zlen);
-  pop(len);
-  pop(zlen);
-
-  // Fifth loop
-  // Shift z left 1 bit.
-  lshift_by_1(x, len, z, zlen, tmp1, tmp2, tmp3, tmp4);
-
-  // z[zlen-1] |= x[len-1] & 1;
-  movl(tmp3, Address(x, len, Address::times_4, -4));
-  andl(tmp3, 1);
-  orl(Address(z, zlen, Address::times_4,  -4), tmp3);
-
-  pop(tmp5);
-  pop(tmp4);
-  pop(tmp3);
-  pop(tmp2);
-  pop(tmp1);
-}
-
-/**
- * Helper function for mul_add()
- * Multiply the in[] by int k and add to out[] starting at offset offs using
- * 128 bit by 32 bit multiply and return the carry in tmp5.
- * Only quad int aligned length of in[] is operated on in this function.
- * k is in rdxReg for BMI2Instructions, for others it is in tmp2.
- * This function preserves out, in and k registers.
- * len and offset point to the appropriate index in "in" & "out" correspondingly
- * tmp5 has the carry.
- * other registers are temporary and are modified.
- *
- */
-void MacroAssembler::mul_add_128_x_32_loop(Register out, Register in,
-  Register offset, Register len, Register tmp1, Register tmp2, Register tmp3,
-  Register tmp4, Register tmp5, Register rdxReg, Register raxReg) {
-
-  Label L_first_loop, L_first_loop_exit;
-
-  movl(tmp1, len);
-  shrl(tmp1, 2);
-
-  bind(L_first_loop);
-  subl(tmp1, 1);
-  jccb(Assembler::negative, L_first_loop_exit);
-
-  subl(len, 4);
-  subl(offset, 4);
-
-  Register op2 = tmp2;
-  const Register sum = tmp3;
-  const Register op1 = tmp4;
-  const Register carry = tmp5;
-
-  if (UseBMI2Instructions) {
-    op2 = rdxReg;
-  }
-
-  movq(op1, Address(in, len, Address::times_4,  8));
-  rorq(op1, 32);
-  movq(sum, Address(out, offset, Address::times_4,  8));
-  rorq(sum, 32);
-  if (UseBMI2Instructions) {
-    multiply_add_64_bmi2(sum, op1, op2, carry, raxReg);
-  }
-  else {
-    multiply_add_64(sum, op1, op2, carry, rdxReg, raxReg);
-  }
-  // Store back in big endian from little endian
-  rorq(sum, 0x20);
-  movq(Address(out, offset, Address::times_4,  8), sum);
-
-  movq(op1, Address(in, len, Address::times_4,  0));
-  rorq(op1, 32);
-  movq(sum, Address(out, offset, Address::times_4,  0));
-  rorq(sum, 32);
-  if (UseBMI2Instructions) {
-    multiply_add_64_bmi2(sum, op1, op2, carry, raxReg);
-  }
-  else {
-    multiply_add_64(sum, op1, op2, carry, rdxReg, raxReg);
-  }
-  // Store back in big endian from little endian
-  rorq(sum, 0x20);
-  movq(Address(out, offset, Address::times_4,  0), sum);
-
-  jmp(L_first_loop);
-  bind(L_first_loop_exit);
-}
-
-/**
- * Code for BigInteger::mulAdd() intrinsic
- *
- * rdi: out
- * rsi: in
- * r11: offs (out.length - offset)
- * rcx: len
- * r8:  k
- * r12: tmp1
- * r13: tmp2
- * r14: tmp3
- * r15: tmp4
- * rbx: tmp5
- * Multiply the in[] by word k and add to out[], return the carry in rax
- */
-void MacroAssembler::mul_add(Register out, Register in, Register offs,
-   Register len, Register k, Register tmp1, Register tmp2, Register tmp3,
-   Register tmp4, Register tmp5, Register rdxReg, Register raxReg) {
-
-  Label L_carry, L_last_in, L_done;
-
-// carry = 0;
-// for (int j=len-1; j >= 0; j--) {
-//    long product = (in[j] & LONG_MASK) * kLong +
-//                   (out[offs] & LONG_MASK) + carry;
-//    out[offs--] = (int)product;
-//    carry = product >>> 32;
-// }
-//
-  push(tmp1);
-  push(tmp2);
-  push(tmp3);
-  push(tmp4);
-  push(tmp5);
-
-  Register op2 = tmp2;
-  const Register sum = tmp3;
-  const Register op1 = tmp4;
-  const Register carry =  tmp5;
-
-  if (UseBMI2Instructions) {
-    op2 = rdxReg;
-    movl(op2, k);
-  }
-  else {
-    movl(op2, k);
-  }
-
-  xorq(carry, carry);
-
-  //First loop
-
-  //Multiply in[] by k in a 4 way unrolled loop using 128 bit by 32 bit multiply
-  //The carry is in tmp5
-  mul_add_128_x_32_loop(out, in, offs, len, tmp1, tmp2, tmp3, tmp4, tmp5, rdxReg, raxReg);
-
-  //Multiply the trailing in[] entry using 64 bit by 32 bit, if any
-  decrementl(len);
-  jccb(Assembler::negative, L_carry);
-  decrementl(len);
-  jccb(Assembler::negative, L_last_in);
-
-  movq(op1, Address(in, len, Address::times_4,  0));
-  rorq(op1, 32);
-
-  subl(offs, 2);
-  movq(sum, Address(out, offs, Address::times_4,  0));
-  rorq(sum, 32);
-
-  if (UseBMI2Instructions) {
-    multiply_add_64_bmi2(sum, op1, op2, carry, raxReg);
-  }
-  else {
-    multiply_add_64(sum, op1, op2, carry, rdxReg, raxReg);
-  }
-
-  // Store back in big endian from little endian
-  rorq(sum, 0x20);
-  movq(Address(out, offs, Address::times_4,  0), sum);
-
-  testl(len, len);
-  jccb(Assembler::zero, L_carry);
-
-  //Multiply the last in[] entry, if any
-  bind(L_last_in);
-  movl(op1, Address(in, 0));
-  movl(sum, Address(out, offs, Address::times_4,  -4));
-
-  movl(raxReg, k);
-  mull(op1); //tmp4 * eax -> edx:eax
-  addl(sum, carry);
-  adcl(rdxReg, 0);
-  addl(sum, raxReg);
-  adcl(rdxReg, 0);
-  movl(carry, rdxReg);
-
-  movl(Address(out, offs, Address::times_4,  -4), sum);
-
-  bind(L_carry);
-  //return tmp5/carry as carry in rax
-  movl(rax, carry);
-
-  bind(L_done);
-  pop(tmp5);
-  pop(tmp4);
-  pop(tmp3);
-  pop(tmp2);
-  pop(tmp1);
-}
-#endif
-
 /**
  * Emits code to update CRC-32 with a byte value according to constants in table
  *
@@ -8306,34 +6430,17 @@ void MacroAssembler::update_byte_crc32(Register crc, Register val, Register tabl
  * Fold 128-bit data chunk
  */
 void MacroAssembler::fold_128bit_crc32(XMMRegister xcrc, XMMRegister xK, XMMRegister xtmp, Register buf, int offset) {
-  if (UseAVX > 0) {
-    vpclmulhdq(xtmp, xK, xcrc); // [123:64]
-    vpclmulldq(xcrc, xK, xcrc); // [63:0]
-    vpxor(xcrc, xcrc, Address(buf, offset), false /* vector256 */);
-    pxor(xcrc, xtmp);
-  } else {
-    movdqa(xtmp, xcrc);
-    pclmulhdq(xtmp, xK);   // [123:64]
-    pclmulldq(xcrc, xK);   // [63:0]
-    pxor(xcrc, xtmp);
-    movdqu(xtmp, Address(buf, offset));
-    pxor(xcrc, xtmp);
-  }
+  vpclmulhdq(xtmp, xK, xcrc); // [123:64]
+  vpclmulldq(xcrc, xK, xcrc); // [63:0]
+  vpxor(xcrc, xcrc, Address(buf, offset), false /* vector256 */);
+  pxor(xcrc, xtmp);
 }
 
 void MacroAssembler::fold_128bit_crc32(XMMRegister xcrc, XMMRegister xK, XMMRegister xtmp, XMMRegister xbuf) {
-  if (UseAVX > 0) {
-    vpclmulhdq(xtmp, xK, xcrc);
-    vpclmulldq(xcrc, xK, xcrc);
-    pxor(xcrc, xbuf);
-    pxor(xcrc, xtmp);
-  } else {
-    movdqa(xtmp, xcrc);
-    pclmulhdq(xtmp, xK);
-    pclmulldq(xcrc, xK);
-    pxor(xcrc, xbuf);
-    pxor(xcrc, xtmp);
-  }
+  vpclmulhdq(xtmp, xK, xcrc);
+  vpclmulldq(xcrc, xK, xcrc);
+  pxor(xcrc, xbuf);
+  pxor(xcrc, xtmp);
 }
 
 /**
@@ -8451,17 +6558,9 @@ void MacroAssembler::kernel_crc32(Register crc, Register buf, Register len, Regi
   // Fold 128 bits in xmm1 down into 32 bits in crc register.
   BIND(L_fold_128b);
   movdqu(xmm0, ExternalAddress(StubRoutines::x86::crc_by128_masks_addr()));
-  if (UseAVX > 0) {
-    vpclmulqdq(xmm2, xmm0, xmm1, 0x1);
-    vpand(xmm3, xmm0, xmm2, false /* vector256 */);
-    vpclmulqdq(xmm0, xmm0, xmm3, 0x1);
-  } else {
-    movdqa(xmm2, xmm0);
-    pclmulqdq(xmm2, xmm1, 0x1);
-    movdqa(xmm3, xmm0);
-    pand(xmm3, xmm2);
-    pclmulqdq(xmm0, xmm3, 0x1);
-  }
+  vpclmulqdq(xmm2, xmm0, xmm1, 0x1);
+  vpand(xmm3, xmm0, xmm2, false /* vector256 */);
+  vpclmulqdq(xmm0, xmm0, xmm3, 0x1);
   psrldq(xmm1, 8);
   psrldq(xmm2, 4);
   pxor(xmm0, xmm1);

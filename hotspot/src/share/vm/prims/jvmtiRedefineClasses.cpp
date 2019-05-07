@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2003, 2017, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2003, 2013, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -42,9 +42,7 @@
 #include "runtime/deoptimization.hpp"
 #include "runtime/relocator.hpp"
 #include "utilities/bitMap.inline.hpp"
-#include "utilities/events.hpp"
 
-PRAGMA_FORMAT_MUTE_WARNINGS_FOR_GCC
 
 Array<Method*>* VM_RedefineClasses::_old_methods = NULL;
 Array<Method*>* VM_RedefineClasses::_new_methods = NULL;
@@ -136,7 +134,7 @@ void VM_RedefineClasses::doit() {
 
   // Mark methods seen on stack and everywhere else so old methods are not
   // cleaned up if they're on the stack.
-  MetadataOnStackMark md_on_stack(true);
+  MetadataOnStackMark md_on_stack;
   HandleMark hm(thread);   // make sure any handles created are deleted
                            // before the stack walk again.
 
@@ -148,9 +146,6 @@ void VM_RedefineClasses::doit() {
     cld->add_to_deallocate_list((InstanceKlass*)_scratch_classes[i]);
     _scratch_classes[i] = NULL;
   }
-
-  // Disable any dependent concurrent compilations
-  SystemDictionary::notice_modification();
 
   // Set flag indicating that some invariants are no longer true.
   // See jvmtiExport.hpp for detailed explanation.
@@ -172,9 +167,6 @@ void VM_RedefineClasses::doit() {
 void VM_RedefineClasses::doit_epilogue() {
   // Free os::malloc allocated memory.
   os::free(_scratch_classes);
-
-  // Reset the_class_oop to null for error printing.
-  _the_class_oop = NULL;
 
   if (RC_TRACE_ENABLED(0x00000004)) {
     // Used to have separate timers for "doit" and "all", but the timer
@@ -336,7 +328,7 @@ void VM_RedefineClasses::append_entry(constantPoolHandle scratch_cp,
       int new_name_and_type_ref_i = find_or_append_indirect_entry(scratch_cp, name_and_type_ref_i,
                                                           merge_cp_p, merge_cp_length_p, THREAD);
 
-      const char *entry_name = NULL;
+      const char *entry_name;
       switch (scratch_cp->tag_at(scratch_i).value()) {
       case JVM_CONSTANT_Fieldref:
         entry_name = "Fieldref";
@@ -781,13 +773,9 @@ jvmtiError VM_RedefineClasses::compare_and_normalize_class_versions(
           Method* idnum_owner = scratch_class->method_with_idnum(old_num);
           if (idnum_owner != NULL) {
             // There is already a method assigned this idnum -- switch them
-            // Take current and original idnum from the new_method
             idnum_owner->set_method_idnum(new_num);
-            idnum_owner->set_orig_method_idnum(k_new_method->orig_method_idnum());
           }
-          // Take current and original idnum from the old_method
           k_new_method->set_method_idnum(old_num);
-          k_new_method->set_orig_method_idnum(k_old_method->orig_method_idnum());
           if (thread->has_pending_exception()) {
             return JVMTI_ERROR_OUT_OF_MEMORY;
           }
@@ -820,12 +808,9 @@ jvmtiError VM_RedefineClasses::compare_and_normalize_class_versions(
         Method* idnum_owner = scratch_class->method_with_idnum(num);
         if (idnum_owner != NULL) {
           // There is already a method assigned this idnum -- switch them
-          // Take current and original idnum from the new_method
           idnum_owner->set_method_idnum(new_num);
-          idnum_owner->set_orig_method_idnum(k_new_method->orig_method_idnum());
         }
         k_new_method->set_method_idnum(num);
-        k_new_method->set_orig_method_idnum(num);
         if (thread->has_pending_exception()) {
           return JVMTI_ERROR_OUT_OF_MEMORY;
         }
@@ -1580,29 +1565,6 @@ bool VM_RedefineClasses::rewrite_cp_refs(instanceKlassHandle scratch_class,
     return false;
   }
 
-  // rewrite constant pool references in the class_type_annotations:
-  if (!rewrite_cp_refs_in_class_type_annotations(scratch_class, THREAD)) {
-    // propagate failure back to caller
-    return false;
-  }
-
-  // rewrite constant pool references in the fields_type_annotations:
-  if (!rewrite_cp_refs_in_fields_type_annotations(scratch_class, THREAD)) {
-    // propagate failure back to caller
-    return false;
-  }
-
-  // rewrite constant pool references in the methods_type_annotations:
-  if (!rewrite_cp_refs_in_methods_type_annotations(scratch_class, THREAD)) {
-    // propagate failure back to caller
-    return false;
-  }
-
-  // There can be type annotations in the Code part of a method_info attribute.
-  // These annotations are not accessible, even by reflection.
-  // Currently they are not even parsed by the ClassFileParser.
-  // If runtime access is added they will also need to be rewritten.
-
   // rewrite source file name index:
   u2 source_file_name_idx = scratch_class->source_file_name_index();
   if (source_file_name_idx != 0) {
@@ -1939,8 +1901,6 @@ bool VM_RedefineClasses::rewrite_cp_refs_in_annotation_struct(
 // annotations_typeArray if needed. Returns the original constant
 // pool reference if a rewrite was not needed or the new constant
 // pool reference if a rewrite was needed.
-PRAGMA_DIAG_PUSH
-PRAGMA_FORMAT_NONLITERAL_IGNORED
 u2 VM_RedefineClasses::rewrite_cp_ref_in_annotation_data(
      AnnotationArray* annotations_typeArray, int &byte_i_ref,
      const char * trace_mesg, TRAPS) {
@@ -1957,7 +1917,6 @@ u2 VM_RedefineClasses::rewrite_cp_ref_in_annotation_data(
   byte_i_ref += 2;
   return old_cp_index;
 }
-PRAGMA_DIAG_POP
 
 
 // Rewrite constant pool references in the element_value portion of an
@@ -2271,588 +2230,6 @@ bool VM_RedefineClasses::rewrite_cp_refs_in_methods_default_annotations(
 
   return true;
 } // end rewrite_cp_refs_in_methods_default_annotations()
-
-
-// Rewrite constant pool references in a class_type_annotations field.
-bool VM_RedefineClasses::rewrite_cp_refs_in_class_type_annotations(
-       instanceKlassHandle scratch_class, TRAPS) {
-
-  AnnotationArray* class_type_annotations = scratch_class->class_type_annotations();
-  if (class_type_annotations == NULL || class_type_annotations->length() == 0) {
-    // no class_type_annotations so nothing to do
-    return true;
-  }
-
-  RC_TRACE_WITH_THREAD(0x02000000, THREAD,
-    ("class_type_annotations length=%d", class_type_annotations->length()));
-
-  int byte_i = 0;  // byte index into class_type_annotations
-  return rewrite_cp_refs_in_type_annotations_typeArray(class_type_annotations,
-      byte_i, "ClassFile", THREAD);
-} // end rewrite_cp_refs_in_class_type_annotations()
-
-
-// Rewrite constant pool references in a fields_type_annotations field.
-bool VM_RedefineClasses::rewrite_cp_refs_in_fields_type_annotations(
-       instanceKlassHandle scratch_class, TRAPS) {
-
-  Array<AnnotationArray*>* fields_type_annotations = scratch_class->fields_type_annotations();
-  if (fields_type_annotations == NULL || fields_type_annotations->length() == 0) {
-    // no fields_type_annotations so nothing to do
-    return true;
-  }
-
-  RC_TRACE_WITH_THREAD(0x02000000, THREAD,
-    ("fields_type_annotations length=%d", fields_type_annotations->length()));
-
-  for (int i = 0; i < fields_type_annotations->length(); i++) {
-    AnnotationArray* field_type_annotations = fields_type_annotations->at(i);
-    if (field_type_annotations == NULL || field_type_annotations->length() == 0) {
-      // this field does not have any annotations so skip it
-      continue;
-    }
-
-    int byte_i = 0;  // byte index into field_type_annotations
-    if (!rewrite_cp_refs_in_type_annotations_typeArray(field_type_annotations,
-           byte_i, "field_info", THREAD)) {
-      RC_TRACE_WITH_THREAD(0x02000000, THREAD,
-        ("bad field_type_annotations at %d", i));
-      // propagate failure back to caller
-      return false;
-    }
-  }
-
-  return true;
-} // end rewrite_cp_refs_in_fields_type_annotations()
-
-
-// Rewrite constant pool references in a methods_type_annotations field.
-bool VM_RedefineClasses::rewrite_cp_refs_in_methods_type_annotations(
-       instanceKlassHandle scratch_class, TRAPS) {
-
-  for (int i = 0; i < scratch_class->methods()->length(); i++) {
-    Method* m = scratch_class->methods()->at(i);
-    AnnotationArray* method_type_annotations = m->constMethod()->type_annotations();
-
-    if (method_type_annotations == NULL || method_type_annotations->length() == 0) {
-      // this method does not have any annotations so skip it
-      continue;
-    }
-
-    RC_TRACE_WITH_THREAD(0x02000000, THREAD,
-        ("methods type_annotations length=%d", method_type_annotations->length()));
-
-    int byte_i = 0;  // byte index into method_type_annotations
-    if (!rewrite_cp_refs_in_type_annotations_typeArray(method_type_annotations,
-           byte_i, "method_info", THREAD)) {
-      RC_TRACE_WITH_THREAD(0x02000000, THREAD,
-        ("bad method_type_annotations at %d", i));
-      // propagate failure back to caller
-      return false;
-    }
-  }
-
-  return true;
-} // end rewrite_cp_refs_in_methods_type_annotations()
-
-
-// Rewrite constant pool references in a type_annotations
-// field. This "structure" is adapted from the
-// RuntimeVisibleTypeAnnotations_attribute described in
-// section 4.7.20 of the Java SE 8 Edition of the VM spec:
-//
-// type_annotations_typeArray {
-//   u2              num_annotations;
-//   type_annotation annotations[num_annotations];
-// }
-//
-bool VM_RedefineClasses::rewrite_cp_refs_in_type_annotations_typeArray(
-       AnnotationArray* type_annotations_typeArray, int &byte_i_ref,
-       const char * location_mesg, TRAPS) {
-
-  if ((byte_i_ref + 2) > type_annotations_typeArray->length()) {
-    // not enough room for num_annotations field
-    RC_TRACE_WITH_THREAD(0x02000000, THREAD,
-      ("length() is too small for num_annotations field"));
-    return false;
-  }
-
-  u2 num_annotations = Bytes::get_Java_u2((address)
-                         type_annotations_typeArray->adr_at(byte_i_ref));
-  byte_i_ref += 2;
-
-  RC_TRACE_WITH_THREAD(0x02000000, THREAD,
-    ("num_type_annotations=%d", num_annotations));
-
-  int calc_num_annotations = 0;
-  for (; calc_num_annotations < num_annotations; calc_num_annotations++) {
-    if (!rewrite_cp_refs_in_type_annotation_struct(type_annotations_typeArray,
-           byte_i_ref, location_mesg, THREAD)) {
-      RC_TRACE_WITH_THREAD(0x02000000, THREAD,
-        ("bad type_annotation_struct at %d", calc_num_annotations));
-      // propagate failure back to caller
-      return false;
-    }
-  }
-  assert(num_annotations == calc_num_annotations, "sanity check");
-
-  if (byte_i_ref != type_annotations_typeArray->length()) {
-    RC_TRACE_WITH_THREAD(0x02000000, THREAD,
-      ("read wrong amount of bytes at end of processing "
-       "type_annotations_typeArray (%d of %d bytes were read)",
-       byte_i_ref, type_annotations_typeArray->length()));
-    return false;
-  }
-
-  return true;
-} // end rewrite_cp_refs_in_type_annotations_typeArray()
-
-
-// Rewrite constant pool references in a type_annotation
-// field. This "structure" is adapted from the
-// RuntimeVisibleTypeAnnotations_attribute described in
-// section 4.7.20 of the Java SE 8 Edition of the VM spec:
-//
-// type_annotation {
-//   u1 target_type;
-//   union {
-//     type_parameter_target;
-//     supertype_target;
-//     type_parameter_bound_target;
-//     empty_target;
-//     method_formal_parameter_target;
-//     throws_target;
-//     localvar_target;
-//     catch_target;
-//     offset_target;
-//     type_argument_target;
-//   } target_info;
-//   type_path target_path;
-//   annotation anno;
-// }
-//
-bool VM_RedefineClasses::rewrite_cp_refs_in_type_annotation_struct(
-       AnnotationArray* type_annotations_typeArray, int &byte_i_ref,
-       const char * location_mesg, TRAPS) {
-
-  if (!skip_type_annotation_target(type_annotations_typeArray,
-         byte_i_ref, location_mesg, THREAD)) {
-    return false;
-  }
-
-  if (!skip_type_annotation_type_path(type_annotations_typeArray,
-         byte_i_ref, THREAD)) {
-    return false;
-  }
-
-  if (!rewrite_cp_refs_in_annotation_struct(type_annotations_typeArray,
-         byte_i_ref, THREAD)) {
-    return false;
-  }
-
-  return true;
-} // end rewrite_cp_refs_in_type_annotation_struct()
-
-
-// Read, verify and skip over the target_type and target_info part
-// so that rewriting can continue in the later parts of the struct.
-//
-// u1 target_type;
-// union {
-//   type_parameter_target;
-//   supertype_target;
-//   type_parameter_bound_target;
-//   empty_target;
-//   method_formal_parameter_target;
-//   throws_target;
-//   localvar_target;
-//   catch_target;
-//   offset_target;
-//   type_argument_target;
-// } target_info;
-//
-bool VM_RedefineClasses::skip_type_annotation_target(
-       AnnotationArray* type_annotations_typeArray, int &byte_i_ref,
-       const char * location_mesg, TRAPS) {
-
-  if ((byte_i_ref + 1) > type_annotations_typeArray->length()) {
-    // not enough room for a target_type let alone the rest of a type_annotation
-    RC_TRACE_WITH_THREAD(0x02000000, THREAD,
-      ("length() is too small for a target_type"));
-    return false;
-  }
-
-  u1 target_type = type_annotations_typeArray->at(byte_i_ref);
-  byte_i_ref += 1;
-  RC_TRACE_WITH_THREAD(0x02000000, THREAD, ("target_type=0x%.2x", target_type));
-  RC_TRACE_WITH_THREAD(0x02000000, THREAD, ("location=%s", location_mesg));
-
-  // Skip over target_info
-  switch (target_type) {
-    case 0x00:
-    // kind: type parameter declaration of generic class or interface
-    // location: ClassFile
-    case 0x01:
-    // kind: type parameter declaration of generic method or constructor
-    // location: method_info
-
-    {
-      // struct:
-      // type_parameter_target {
-      //   u1 type_parameter_index;
-      // }
-      //
-      if ((byte_i_ref + 1) > type_annotations_typeArray->length()) {
-        RC_TRACE_WITH_THREAD(0x02000000, THREAD,
-          ("length() is too small for a type_parameter_target"));
-        return false;
-      }
-
-      u1 type_parameter_index = type_annotations_typeArray->at(byte_i_ref);
-      byte_i_ref += 1;
-
-      RC_TRACE_WITH_THREAD(0x02000000, THREAD,
-        ("type_parameter_target: type_parameter_index=%d",
-         type_parameter_index));
-    } break;
-
-    case 0x10:
-    // kind: type in extends clause of class or interface declaration
-    //       (including the direct superclass of an anonymous class declaration),
-    //       or in implements clause of interface declaration
-    // location: ClassFile
-
-    {
-      // struct:
-      // supertype_target {
-      //   u2 supertype_index;
-      // }
-      //
-      if ((byte_i_ref + 2) > type_annotations_typeArray->length()) {
-        RC_TRACE_WITH_THREAD(0x02000000, THREAD,
-          ("length() is too small for a supertype_target"));
-        return false;
-      }
-
-      u2 supertype_index = Bytes::get_Java_u2((address)
-                             type_annotations_typeArray->adr_at(byte_i_ref));
-      byte_i_ref += 2;
-
-      RC_TRACE_WITH_THREAD(0x02000000, THREAD,
-        ("supertype_target: supertype_index=%d", supertype_index));
-    } break;
-
-    case 0x11:
-    // kind: type in bound of type parameter declaration of generic class or interface
-    // location: ClassFile
-    case 0x12:
-    // kind: type in bound of type parameter declaration of generic method or constructor
-    // location: method_info
-
-    {
-      // struct:
-      // type_parameter_bound_target {
-      //   u1 type_parameter_index;
-      //   u1 bound_index;
-      // }
-      //
-      if ((byte_i_ref + 2) > type_annotations_typeArray->length()) {
-        RC_TRACE_WITH_THREAD(0x02000000, THREAD,
-          ("length() is too small for a type_parameter_bound_target"));
-        return false;
-      }
-
-      u1 type_parameter_index = type_annotations_typeArray->at(byte_i_ref);
-      byte_i_ref += 1;
-      u1 bound_index = type_annotations_typeArray->at(byte_i_ref);
-      byte_i_ref += 1;
-
-      RC_TRACE_WITH_THREAD(0x02000000, THREAD,
-        ("type_parameter_bound_target: type_parameter_index=%d, bound_index=%d",
-         type_parameter_index, bound_index));
-    } break;
-
-    case 0x13:
-    // kind: type in field declaration
-    // location: field_info
-    case 0x14:
-    // kind: return type of method, or type of newly constructed object
-    // location: method_info
-    case 0x15:
-    // kind: receiver type of method or constructor
-    // location: method_info
-
-    {
-      // struct:
-      // empty_target {
-      // }
-      //
-      RC_TRACE_WITH_THREAD(0x02000000, THREAD,
-        ("empty_target"));
-    } break;
-
-    case 0x16:
-    // kind: type in formal parameter declaration of method, constructor, or lambda expression
-    // location: method_info
-
-    {
-      // struct:
-      // formal_parameter_target {
-      //   u1 formal_parameter_index;
-      // }
-      //
-      if ((byte_i_ref + 1) > type_annotations_typeArray->length()) {
-        RC_TRACE_WITH_THREAD(0x02000000, THREAD,
-          ("length() is too small for a formal_parameter_target"));
-        return false;
-      }
-
-      u1 formal_parameter_index = type_annotations_typeArray->at(byte_i_ref);
-      byte_i_ref += 1;
-
-      RC_TRACE_WITH_THREAD(0x02000000, THREAD,
-        ("formal_parameter_target: formal_parameter_index=%d",
-         formal_parameter_index));
-    } break;
-
-    case 0x17:
-    // kind: type in throws clause of method or constructor
-    // location: method_info
-
-    {
-      // struct:
-      // throws_target {
-      //   u2 throws_type_index
-      // }
-      //
-      if ((byte_i_ref + 2) > type_annotations_typeArray->length()) {
-        RC_TRACE_WITH_THREAD(0x02000000, THREAD,
-          ("length() is too small for a throws_target"));
-        return false;
-      }
-
-      u2 throws_type_index = Bytes::get_Java_u2((address)
-                               type_annotations_typeArray->adr_at(byte_i_ref));
-      byte_i_ref += 2;
-
-      RC_TRACE_WITH_THREAD(0x02000000, THREAD,
-        ("throws_target: throws_type_index=%d", throws_type_index));
-    } break;
-
-    case 0x40:
-    // kind: type in local variable declaration
-    // location: Code
-    case 0x41:
-    // kind: type in resource variable declaration
-    // location: Code
-
-    {
-      // struct:
-      // localvar_target {
-      //   u2 table_length;
-      //   struct {
-      //     u2 start_pc;
-      //     u2 length;
-      //     u2 index;
-      //   } table[table_length];
-      // }
-      //
-      if ((byte_i_ref + 2) > type_annotations_typeArray->length()) {
-        // not enough room for a table_length let alone the rest of a localvar_target
-        RC_TRACE_WITH_THREAD(0x02000000, THREAD,
-          ("length() is too small for a localvar_target table_length"));
-        return false;
-      }
-
-      u2 table_length = Bytes::get_Java_u2((address)
-                          type_annotations_typeArray->adr_at(byte_i_ref));
-      byte_i_ref += 2;
-
-      RC_TRACE_WITH_THREAD(0x02000000, THREAD,
-        ("localvar_target: table_length=%d", table_length));
-
-      int table_struct_size = 2 + 2 + 2; // 3 u2 variables per table entry
-      int table_size = table_length * table_struct_size;
-
-      if ((byte_i_ref + table_size) > type_annotations_typeArray->length()) {
-        // not enough room for a table
-        RC_TRACE_WITH_THREAD(0x02000000, THREAD,
-          ("length() is too small for a table array of length %d", table_length));
-        return false;
-      }
-
-      // Skip over table
-      byte_i_ref += table_size;
-    } break;
-
-    case 0x42:
-    // kind: type in exception parameter declaration
-    // location: Code
-
-    {
-      // struct:
-      // catch_target {
-      //   u2 exception_table_index;
-      // }
-      //
-      if ((byte_i_ref + 2) > type_annotations_typeArray->length()) {
-        RC_TRACE_WITH_THREAD(0x02000000, THREAD,
-          ("length() is too small for a catch_target"));
-        return false;
-      }
-
-      u2 exception_table_index = Bytes::get_Java_u2((address)
-                                   type_annotations_typeArray->adr_at(byte_i_ref));
-      byte_i_ref += 2;
-
-      RC_TRACE_WITH_THREAD(0x02000000, THREAD,
-        ("catch_target: exception_table_index=%d", exception_table_index));
-    } break;
-
-    case 0x43:
-    // kind: type in instanceof expression
-    // location: Code
-    case 0x44:
-    // kind: type in new expression
-    // location: Code
-    case 0x45:
-    // kind: type in method reference expression using ::new
-    // location: Code
-    case 0x46:
-    // kind: type in method reference expression using ::Identifier
-    // location: Code
-
-    {
-      // struct:
-      // offset_target {
-      //   u2 offset;
-      // }
-      //
-      if ((byte_i_ref + 2) > type_annotations_typeArray->length()) {
-        RC_TRACE_WITH_THREAD(0x02000000, THREAD,
-          ("length() is too small for a offset_target"));
-        return false;
-      }
-
-      u2 offset = Bytes::get_Java_u2((address)
-                    type_annotations_typeArray->adr_at(byte_i_ref));
-      byte_i_ref += 2;
-
-      RC_TRACE_WITH_THREAD(0x02000000, THREAD,
-        ("offset_target: offset=%d", offset));
-    } break;
-
-    case 0x47:
-    // kind: type in cast expression
-    // location: Code
-    case 0x48:
-    // kind: type argument for generic constructor in new expression or
-    //       explicit constructor invocation statement
-    // location: Code
-    case 0x49:
-    // kind: type argument for generic method in method invocation expression
-    // location: Code
-    case 0x4A:
-    // kind: type argument for generic constructor in method reference expression using ::new
-    // location: Code
-    case 0x4B:
-    // kind: type argument for generic method in method reference expression using ::Identifier
-    // location: Code
-
-    {
-      // struct:
-      // type_argument_target {
-      //   u2 offset;
-      //   u1 type_argument_index;
-      // }
-      //
-      if ((byte_i_ref + 3) > type_annotations_typeArray->length()) {
-        RC_TRACE_WITH_THREAD(0x02000000, THREAD,
-          ("length() is too small for a type_argument_target"));
-        return false;
-      }
-
-      u2 offset = Bytes::get_Java_u2((address)
-                    type_annotations_typeArray->adr_at(byte_i_ref));
-      byte_i_ref += 2;
-      u1 type_argument_index = type_annotations_typeArray->at(byte_i_ref);
-      byte_i_ref += 1;
-
-      RC_TRACE_WITH_THREAD(0x02000000, THREAD,
-        ("type_argument_target: offset=%d, type_argument_index=%d",
-         offset, type_argument_index));
-    } break;
-
-    default:
-      RC_TRACE_WITH_THREAD(0x02000000, THREAD,
-        ("unknown target_type"));
-#ifdef ASSERT
-      ShouldNotReachHere();
-#endif
-      return false;
-  }
-
-  return true;
-} // end skip_type_annotation_target()
-
-
-// Read, verify and skip over the type_path part so that rewriting
-// can continue in the later parts of the struct.
-//
-// type_path {
-//   u1 path_length;
-//   {
-//     u1 type_path_kind;
-//     u1 type_argument_index;
-//   } path[path_length];
-// }
-//
-bool VM_RedefineClasses::skip_type_annotation_type_path(
-       AnnotationArray* type_annotations_typeArray, int &byte_i_ref, TRAPS) {
-
-  if ((byte_i_ref + 1) > type_annotations_typeArray->length()) {
-    // not enough room for a path_length let alone the rest of the type_path
-    RC_TRACE_WITH_THREAD(0x02000000, THREAD,
-      ("length() is too small for a type_path"));
-    return false;
-  }
-
-  u1 path_length = type_annotations_typeArray->at(byte_i_ref);
-  byte_i_ref += 1;
-
-  RC_TRACE_WITH_THREAD(0x02000000, THREAD,
-    ("type_path: path_length=%d", path_length));
-
-  int calc_path_length = 0;
-  for (; calc_path_length < path_length; calc_path_length++) {
-    if ((byte_i_ref + 1 + 1) > type_annotations_typeArray->length()) {
-      // not enough room for a path
-      RC_TRACE_WITH_THREAD(0x02000000, THREAD,
-        ("length() is too small for path entry %d of %d",
-         calc_path_length, path_length));
-      return false;
-    }
-
-    u1 type_path_kind = type_annotations_typeArray->at(byte_i_ref);
-    byte_i_ref += 1;
-    u1 type_argument_index = type_annotations_typeArray->at(byte_i_ref);
-    byte_i_ref += 1;
-
-    RC_TRACE_WITH_THREAD(0x02000000, THREAD,
-      ("type_path: path[%d]: type_path_kind=%d, type_argument_index=%d",
-       calc_path_length, type_path_kind, type_argument_index));
-
-    if (type_path_kind > 3 || (type_path_kind != 3 && type_argument_index != 0)) {
-      // not enough room for a path
-      RC_TRACE_WITH_THREAD(0x02000000, THREAD,
-        ("inconsistent type_path values"));
-      return false;
-    }
-  }
-  assert(path_length == calc_path_length, "sanity check");
-
-  return true;
-} // end skip_type_annotation_type_path()
 
 
 // Rewrite constant pool references in the method's stackmap table.
@@ -3333,7 +2710,6 @@ void VM_RedefineClasses::AdjustCpoolCacheAndVtable::do_klass(Klass* k) {
   // This is a very busy routine. We don't want too much tracing
   // printed out.
   bool trace_name_printed = false;
-  InstanceKlass *the_class = InstanceKlass::cast(_the_class_oop);
 
   // Very noisy: only enable this call if you are trying to determine
   // that a specific class gets found by this routine.
@@ -3345,8 +2721,10 @@ void VM_RedefineClasses::AdjustCpoolCacheAndVtable::do_klass(Klass* k) {
   // If the class being redefined is java.lang.Object, we need to fix all
   // array class vtables also
   if (k->oop_is_array() && _the_class_oop == SystemDictionary::Object_klass()) {
-    k->vtable()->adjust_method_entries(the_class, &trace_name_printed);
-
+    k->vtable()->adjust_method_entries(_matching_old_methods,
+                                       _matching_new_methods,
+                                       _matching_methods_length,
+                                       &trace_name_printed);
   } else if (k->oop_is_instance()) {
     HandleMark hm(_thread);
     InstanceKlass *ik = InstanceKlass::cast(k);
@@ -3382,15 +2760,18 @@ void VM_RedefineClasses::AdjustCpoolCacheAndVtable::do_klass(Klass* k) {
     // not yet in the vtable, because the vtable setup is in progress.
     // This must be done after we adjust the default_methods and
     // default_vtable_indices for methods already in the vtable.
-    // If redefining Unsafe, walk all the vtables looking for entries.
     if (ik->vtable_length() > 0 && (_the_class_oop->is_interface()
-        || _the_class_oop == SystemDictionary::misc_Unsafe_klass()
         || ik->is_subtype_of(_the_class_oop))) {
       // ik->vtable() creates a wrapper object; rm cleans it up
       ResourceMark rm(_thread);
-
-      ik->vtable()->adjust_method_entries(the_class, &trace_name_printed);
-      ik->adjust_default_methods(the_class, &trace_name_printed);
+      ik->vtable()->adjust_method_entries(_matching_old_methods,
+                                          _matching_new_methods,
+                                          _matching_methods_length,
+                                          &trace_name_printed);
+      ik->adjust_default_methods(_matching_old_methods,
+                                 _matching_new_methods,
+                                 _matching_methods_length,
+                                 &trace_name_printed);
     }
 
     // If the current class has an itable and we are either redefining an
@@ -3399,14 +2780,14 @@ void VM_RedefineClasses::AdjustCpoolCacheAndVtable::do_klass(Klass* k) {
     // interface, then we have to call adjust_method_entries() for
     // every InstanceKlass that has an itable since there isn't a
     // subclass relationship between an interface and an InstanceKlass.
-    // If redefining Unsafe, walk all the itables looking for entries.
     if (ik->itable_length() > 0 && (_the_class_oop->is_interface()
-        || _the_class_oop == SystemDictionary::misc_Unsafe_klass()
         || ik->is_subclass_of(_the_class_oop))) {
       // ik->itable() creates a wrapper object; rm cleans it up
       ResourceMark rm(_thread);
-
-      ik->itable()->adjust_method_entries(the_class, &trace_name_printed);
+      ik->itable()->adjust_method_entries(_matching_old_methods,
+                                          _matching_new_methods,
+                                          _matching_methods_length,
+                                          &trace_name_printed);
     }
 
     // The constant pools in other classes (other_cp) can refer to
@@ -3430,7 +2811,10 @@ void VM_RedefineClasses::AdjustCpoolCacheAndVtable::do_klass(Klass* k) {
       other_cp = constantPoolHandle(ik->constants());
       cp_cache = other_cp->cache();
       if (cp_cache != NULL) {
-        cp_cache->adjust_method_entries(the_class, &trace_name_printed);
+        cp_cache->adjust_method_entries(_matching_old_methods,
+                                        _matching_new_methods,
+                                        _matching_methods_length,
+                                        &trace_name_printed);
       }
     }
 
@@ -3441,7 +2825,10 @@ void VM_RedefineClasses::AdjustCpoolCacheAndVtable::do_klass(Klass* k) {
       other_cp = pv_node->prev_constant_pool();
       cp_cache = other_cp->cache();
       if (cp_cache != NULL) {
-        cp_cache->adjust_method_entries(other_cp->pool_holder(), &trace_name_printed);
+        cp_cache->adjust_method_entries(_matching_old_methods,
+                                        _matching_new_methods,
+                                        _matching_methods_length,
+                                        &trace_name_printed);
       }
     }
   }
@@ -3556,7 +2943,6 @@ void VM_RedefineClasses::check_methods_and_mark_as_obsolete(
 
       // obsolete methods need a unique idnum so they become new entries in
       // the jmethodID cache in InstanceKlass
-      assert(old_method->method_idnum() == new_method->method_idnum(), "must match");
       u2 num = InstanceKlass::cast(_the_class_oop)->next_method_idnum();
       if (num != ConstMethod::UNSET_IDNUM) {
         old_method->set_method_idnum(num);
@@ -3577,8 +2963,7 @@ void VM_RedefineClasses::check_methods_and_mark_as_obsolete(
     assert(!old_method->has_vtable_index(),
            "cannot delete methods with vtable entries");;
 
-    // Mark all deleted methods as old, obsolete and deleted
-    old_method->set_is_deleted();
+    // Mark all deleted methods as old and obsolete
     old_method->set_is_old();
     old_method->set_is_obsolete();
     ++obsolete_count;
@@ -3759,7 +3144,7 @@ void VM_RedefineClasses::flush_dependent_code(instanceKlassHandle k_h, TRAPS) {
     // Deoptimize all activations depending on marked nmethods
     Deoptimization::deoptimize_dependents();
 
-    // Make the dependent methods not entrant
+    // Make the dependent methods not entrant (in VM_Deoptimize they are made zombies)
     CodeCache::make_marked_nmethods_not_entrant();
 
     // From now on we know that the dependency information is complete
@@ -3831,6 +3216,23 @@ void VM_RedefineClasses::compute_added_deleted_matching_methods() {
 
 void VM_RedefineClasses::swap_annotations(instanceKlassHandle the_class,
                                           instanceKlassHandle scratch_class) {
+  // Since there is currently no rewriting of type annotations indexes
+  // into the CP, we null out type annotations on scratch_class before
+  // we swap annotations with the_class rather than facing the
+  // possibility of shipping annotations with broken indexes to
+  // Java-land.
+  ClassLoaderData* loader_data = scratch_class->class_loader_data();
+  AnnotationArray* new_class_type_annotations = scratch_class->class_type_annotations();
+  if (new_class_type_annotations != NULL) {
+    MetadataFactory::free_array<u1>(loader_data, new_class_type_annotations);
+    scratch_class->annotations()->set_class_type_annotations(NULL);
+  }
+  Array<AnnotationArray*>* new_field_type_annotations = scratch_class->fields_type_annotations();
+  if (new_field_type_annotations != NULL) {
+    Annotations::free_contents(loader_data, new_field_type_annotations);
+    scratch_class->annotations()->set_fields_type_annotations(NULL);
+  }
+
   // Swap annotation fields values
   Annotations* old_annotations = the_class->annotations();
   the_class->set_annotations(scratch_class->annotations());
@@ -3930,10 +3332,6 @@ void VM_RedefineClasses::redefine_single_class(jclass the_jclass,
   scratch_class->set_methods(_old_methods);     // To prevent potential GCing of the old methods,
                                           // and to be able to undo operation easily.
 
-  Array<int>* old_ordering = the_class->method_ordering();
-  the_class->set_method_ordering(scratch_class->method_ordering());
-  scratch_class->set_method_ordering(old_ordering);
-
   ConstantPool* old_constants = the_class->constants();
   the_class->set_constants(scratch_class->constants());
   scratch_class->set_constants(old_constants);  // See the previous comment.
@@ -3988,13 +3386,14 @@ void VM_RedefineClasses::redefine_single_class(jclass the_jclass,
     // the_class doesn't have a cache yet so copy it
     the_class->set_cached_class_file(scratch_class->get_cached_class_file());
   }
-  else if (scratch_class->get_cached_class_file_bytes() !=
-           the_class->get_cached_class_file_bytes()) {
-    // The same class can be present twice in the scratch classes list or there
-    // are multiple concurrent RetransformClasses calls on different threads.
-    // In such cases we have to deallocate scratch_class cached_class_file.
-    os::free(scratch_class->get_cached_class_file());
+#ifndef PRODUCT
+  else {
+    assert(the_class->get_cached_class_file_bytes() ==
+      scratch_class->get_cached_class_file_bytes(), "cache ptrs must match");
+    assert(the_class->get_cached_class_file_len() ==
+      scratch_class->get_cached_class_file_len(), "cache lens must match");
   }
+#endif
 
   // NULL out in scratch class to not delete twice.  The class to be redefined
   // always owns these bytes.
@@ -4080,8 +3479,14 @@ void VM_RedefineClasses::redefine_single_class(jclass the_jclass,
   MemberNameTable* mnt = the_class->member_names();
   if (mnt != NULL) {
     bool trace_name_printed = false;
-    mnt->adjust_method_entries(the_class(), &trace_name_printed);
+    mnt->adjust_method_entries(_matching_old_methods,
+                               _matching_new_methods,
+                               _matching_methods_length,
+                               &trace_name_printed);
   }
+
+  // Fix Resolution Error table also to remove old constant pools
+  SystemDictionary::delete_resolution_error(old_constants);
 
   if (the_class->oop_map_cache() != NULL) {
     // Flush references to any obsolete methods from the oop map cache
@@ -4100,13 +3505,6 @@ void VM_RedefineClasses::redefine_single_class(jclass the_jclass,
     java_lang_Class::classRedefinedCount(the_class_mirror),
     os::available_memory() >> 10));
 
-  {
-    ResourceMark rm(THREAD);
-    Events::log_redefinition(THREAD, "redefined class name=%s, count=%d",
-                             the_class->external_name(),
-                             java_lang_Class::classRedefinedCount(the_class_mirror));
-
-  }
   RC_TIMER_STOP(_timer_rsc_phase2);
 } // end redefine_single_class()
 
@@ -4171,7 +3569,7 @@ void VM_RedefineClasses::CheckClass::do_klass(Klass* k) {
       no_old_methods = false;
     }
 
-    // the constant pool cache should never contain non-deleted old or obsolete methods
+    // the constant pool cache should never contain old or obsolete methods
     if (ik->constants() != NULL &&
         ik->constants()->cache() != NULL &&
         !ik->constants()->cache()->check_no_old_or_obsolete_entries()) {
@@ -4249,13 +3647,5 @@ void VM_RedefineClasses::dump_methods() {
     tty->print(" --  ");
     m->print_name(tty);
     tty->cr();
-  }
-}
-
-void VM_RedefineClasses::print_on_error(outputStream* st) const {
-  VM_Operation::print_on_error(st);
-  if (_the_class_oop != NULL) {
-    ResourceMark rm;
-    st->print_cr(", redefining class %s", _the_class_oop->external_name());
   }
 }

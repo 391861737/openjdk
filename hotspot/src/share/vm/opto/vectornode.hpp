@@ -355,8 +355,8 @@ class XorVNode : public VectorNode {
 // Load Vector from memory
 class LoadVectorNode : public LoadNode {
  public:
-  LoadVectorNode(Node* c, Node* mem, Node* adr, const TypePtr* at, const TypeVect* vt, ControlDependency control_dependency = LoadNode::DependsOnlyOnTest)
-    : LoadNode(c, mem, adr, at, vt, MemNode::unordered, control_dependency) {
+  LoadVectorNode(Node* c, Node* mem, Node* adr, const TypePtr* at, const TypeVect* vt)
+    : LoadNode(c, mem, adr, at, vt) {
     init_class_id(Class_LoadVector);
   }
 
@@ -372,8 +372,7 @@ class LoadVectorNode : public LoadNode {
   virtual int store_Opcode() const { return Op_StoreVector; }
 
   static LoadVectorNode* make(Compile* C, int opc, Node* ctl, Node* mem,
-                              Node* adr, const TypePtr* atyp, uint vlen, BasicType bt,
-                              ControlDependency control_dependency = LoadNode::DependsOnlyOnTest);
+                              Node* adr, const TypePtr* atyp, uint vlen, BasicType bt);
 };
 
 //------------------------------StoreVectorNode--------------------------------
@@ -381,7 +380,7 @@ class LoadVectorNode : public LoadNode {
 class StoreVectorNode : public StoreNode {
  public:
   StoreVectorNode(Node* c, Node* mem, Node* adr, const TypePtr* at, Node* val)
-    : StoreNode(c, mem, adr, at, val, MemNode::unordered) {
+    : StoreNode(c, mem, adr, at, val) {
     assert(val->is_Vector() || val->is_LoadVector(), "sanity");
     init_class_id(Class_StoreVector);
   }

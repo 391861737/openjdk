@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2012, 2014, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2012, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -33,15 +33,14 @@ public class TestAESDecode extends TestAESBase {
   public void run() {
     try {
       if (!noReinit) dCipher.init(Cipher.DECRYPT_MODE, key, algParams);
-      decode = new byte[decodeLength];
-      if (testingMisalignment) {
-        int tempSize = dCipher.update(encode, encOutputOffset, (decodeMsgSize - lastChunkSize), decode, decOutputOffset);
-        dCipher.doFinal(encode, (encOutputOffset + decodeMsgSize - lastChunkSize), lastChunkSize, decode, (decOutputOffset + tempSize));
-      } else {
-        dCipher.doFinal(encode, encOutputOffset, decodeMsgSize, decode, decOutputOffset);
-      }
       if (checkOutput) {
+        // checked version creates new output buffer each time
+        decode = dCipher.doFinal(encode, 0, encode.length);
         compareArrays(decode, expectedDecode);
+      } else {
+        // non-checked version outputs to existing encode buffer for maximum speed
+        decode = new byte[dCipher.getOutputSize(encode.length)];
+        dCipher.doFinal(encode, 0, encode.length, decode);
       }
     }
     catch (Exception e) {

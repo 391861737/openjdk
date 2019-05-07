@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 1997, 2016, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 1997, 2012, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -81,37 +81,24 @@ final class ServerMgr {
             synchronized(servers) {
                 state = servers.get(inetAddress);
                 if (state == null) {
-                    final int finalPortNum = port;
-                    for (ServerState s: servers.values()) {
-                        if (s.getServer()
-                             .getAddress()
-                             .getPort() == finalPortNum) {
-                            state = s;
-                            break;
-                        }
-                    }
+                    logger.fine("Creating new HTTP Server at "+inetAddress);
+                    // Creates server with default socket backlog
+                    server = HttpServer.create(inetAddress, 0);
+                    server.setExecutor(Executors.newCachedThreadPool());
+                    String path = url.toURI().getPath();
+                    logger.fine("Creating HTTP Context at = "+path);
+                    HttpContext context = server.createContext(path);
+                    server.start();
 
-                    if (!inetAddress.getAddress().isAnyLocalAddress() ||
-                        state == null) {
-                        logger.fine("Creating new HTTP Server at "+inetAddress);
-                        // Creates server with default socket backlog
-                        server = HttpServer.create(inetAddress, 0);
-                        server.setExecutor(Executors.newCachedThreadPool());
-                        String path = url.toURI().getPath();
-                        logger.fine("Creating HTTP Context at = "+path);
-                        HttpContext context = server.createContext(path);
-                        server.start();
+                    // we have to get actual inetAddress from server, which can differ from the original in some cases.
+                    // e.g. A port number of zero will let the system pick up an ephemeral port in a bind operation,
+                    // or IP: 0.0.0.0 - which is used to monitor network traffic from any valid IP address
+                    inetAddress = server.getAddress();
 
-                        // we have to get actual inetAddress from server, which can differ from the original in some cases.
-                        // e.g. A port number of zero will let the system pick up an ephemeral port in a bind operation,
-                        // or IP: 0.0.0.0 - which is used to monitor network traffic from any valid IP address
-                        inetAddress = server.getAddress();
-
-                        logger.fine("HTTP server started = "+inetAddress);
-                        state = new ServerState(server, path);
-                        servers.put(inetAddress, state);
-                        return context;
-                    }
+                    logger.fine("HTTP server started = "+inetAddress);
+                    state = new ServerState(server, path);
+                    servers.put(inetAddress, state);
+                    return context;
                 }
             }
             server = state.getServer();

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 1995, 2014, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 1995, 2013, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -35,8 +35,6 @@ import java.io.FileInputStream;
 
 import java.security.AccessController;
 import java.security.PrivilegedAction;
-
-import sun.reflect.misc.ReflectUtil;
 
 /**
  * A class providing APIs for the CORBA Object Request Broker
@@ -298,15 +296,13 @@ abstract public class ORB {
     }
 
     private static ORB create_impl(String className) {
+
         ClassLoader cl = Thread.currentThread().getContextClassLoader();
         if (cl == null)
             cl = ClassLoader.getSystemClassLoader();
 
         try {
-            ReflectUtil.checkPackageAccess(className);
-            Class<org.omg.CORBA.ORB> orbBaseClass = org.omg.CORBA.ORB.class;
-            Class<?> orbClass = Class.forName(className, true, cl).asSubclass(orbBaseClass);
-            return (ORB)orbClass.newInstance();
+            return (ORB) Class.forName(className, true, cl).newInstance();
         } catch (Throwable ex) {
             SystemException systemException = new INITIALIZE(
                "can't instantiate default ORB implementation " + className);
@@ -350,6 +346,7 @@ abstract public class ORB {
         } else {
             orb = create_impl(className);
         }
+
         orb.set_parameters(args, props);
         return orb;
     }
@@ -380,6 +377,7 @@ abstract public class ORB {
         } else {
             orb = create_impl(className);
         }
+
         orb.set_parameters(app, props);
         return orb;
     }
@@ -575,7 +573,7 @@ abstract public class ORB {
         try {
             // First try to load the OperationDef class
             String opDefClassName = "org.omg.CORBA.OperationDef";
-            Class<?> opDefClass = null;
+            Class opDefClass = null;
 
             ClassLoader cl = Thread.currentThread().getContextClassLoader();
             if ( cl == null )
@@ -585,7 +583,7 @@ abstract public class ORB {
 
             // OK, we loaded OperationDef. Now try to get the
             // create_operation_list(OperationDef oper) method.
-            Class<?>[] argc = { opDefClass };
+            Class[] argc = { opDefClass };
             java.lang.reflect.Method meth =
                 this.getClass().getMethod("create_operation_list", argc);
 

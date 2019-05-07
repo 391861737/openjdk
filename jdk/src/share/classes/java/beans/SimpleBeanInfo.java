@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 1996, 2015, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 1996, 2011, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -24,11 +24,6 @@
  */
 
 package java.beans;
-
-import java.awt.Image;
-import java.awt.Toolkit;
-import java.awt.image.ImageProducer;
-import java.net.URL;
 
 /**
  * This is a support class to make it easier for people to provide
@@ -104,7 +99,7 @@ public class SimpleBeanInfo implements BeanInfo {
      * Claim there are no icons available.  You can override
      * this if you want to provide icons for your bean.
      */
-    public Image getIcon(int iconKind) {
+    public java.awt.Image getIcon(int iconKind) {
         return null;
     }
 
@@ -119,17 +114,33 @@ public class SimpleBeanInfo implements BeanInfo {
      *          "wombat.gif".
      * @return  an image object.  May be null if the load failed.
      */
-    public Image loadImage(final String resourceName) {
+    public java.awt.Image loadImage(final String resourceName) {
         try {
-            final URL url = getClass().getResource(resourceName);
-            if (url != null) {
-                final ImageProducer ip = (ImageProducer) url.getContent();
-                if (ip != null) {
-                    return Toolkit.getDefaultToolkit().createImage(ip);
-                }
-            }
-        } catch (final Exception ignored) {
+            final Class<?> c = getClass();
+            java.awt.image.ImageProducer ip = (java.awt.image.ImageProducer)
+                java.security.AccessController.doPrivileged(
+                new java.security.PrivilegedAction<Object>() {
+                    public Object run() {
+                        java.net.URL url;
+                        if ((url = c.getResource(resourceName)) == null) {
+                            return null;
+                        } else {
+                            try {
+                                return url.getContent();
+                            } catch (java.io.IOException ioe) {
+                                return null;
+                            }
+                        }
+                    }
+            });
+
+            if (ip == null)
+                return null;
+            java.awt.Toolkit tk = java.awt.Toolkit.getDefaultToolkit();
+            return tk.createImage(ip);
+        } catch (Exception ex) {
+            return null;
         }
-        return null;
     }
+
 }

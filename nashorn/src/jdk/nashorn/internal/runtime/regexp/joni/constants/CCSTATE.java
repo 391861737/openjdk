@@ -19,7 +19,6 @@
  */
 package jdk.nashorn.internal.runtime.regexp.joni.constants;
 
-@SuppressWarnings("javadoc")
 public enum CCSTATE {
     VALUE,
     RANGE,

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2007, 2015, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2007, 2013, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -41,7 +41,7 @@ static jboolean purgeOutstandingICMP(JNIEnv *env, jint fd)
     char buf[1];
     fd_set tbl;
     struct timeval t = { 0, 0 };
-    SOCKETADDRESS rmtaddr;
+    struct sockaddr_in rmtaddr;
     int addrlen = sizeof(rmtaddr);
 
     /*
@@ -68,27 +68,6 @@ static jboolean purgeOutstandingICMP(JNIEnv *env, jint fd)
     }
 
     return got_icmp;
-}
-
-static jfieldID IO_fd_fdID = NULL;
-static jfieldID pdsi_fdID = NULL;
-
-/*
- * Class:     java_net_DualStackPlainDatagramSocketImpl
- * Method:    initIDs
- * Signature: ()V
- */
-JNIEXPORT void JNICALL Java_java_net_DualStackPlainDatagramSocketImpl_initIDs
-  (JNIEnv *env, jclass clazz)
-{
-    pdsi_fdID = (*env)->GetFieldID(env, clazz, "fd",
-                                   "Ljava/io/FileDescriptor;");
-    CHECK_NULL(pdsi_fdID);
-    IO_fd_fdID = NET_GetFileDescriptorID(env);
-    CHECK_NULL(IO_fd_fdID);
-    JNU_CHECK_EXCEPTION(env);
-
-    initInetAddressIDs(env);
 }
 
 /*
@@ -397,19 +376,15 @@ JNIEXPORT jint JNICALL Java_java_net_DualStackPlainDatagramSocketImpl_socketRece
         if (packetAddress == NULL) {
             packetAddress = NET_SockaddrToInetAddress(env, (struct sockaddr *)&sa,
                                                       &port);
-            if (packetAddress != NULL) {
-                /* stuff the new Inetaddress into the packet */
-                (*env)->SetObjectField(env, dpObj, dp_addressID, packetAddress);
-            }
+            /* stuff the new Inetaddress into the packet */
+            (*env)->SetObjectField(env, dpObj, dp_addressID, packetAddress);
         }
 
-        if (!(*env)->ExceptionCheck(env)) {
-            /* populate the packet */
-            (*env)->SetByteArrayRegion(env, packetBuffer, packetBufferOffset, rv,
+        /* populate the packet */
+        (*env)->SetByteArrayRegion(env, packetBuffer, packetBufferOffset, rv,
                                    (jbyte *)fullPacket);
-            (*env)->SetIntField(env, dpObj, dp_portID, port);
-            (*env)->SetIntField(env, dpObj, dp_lengthID, rv);
-        }
+        (*env)->SetIntField(env, dpObj, dp_portID, port);
+        (*env)->SetIntField(env, dpObj, dp_lengthID, rv);
     }
 
     if (packetBufferLen > MAX_BUFFER_LEN) {
@@ -483,7 +458,7 @@ JNIEXPORT void JNICALL Java_java_net_DualStackPlainDatagramSocketImpl_socketSend
  */
 JNIEXPORT void JNICALL Java_java_net_DualStackPlainDatagramSocketImpl_socketSetIntOption
   (JNIEnv *env, jclass clazz, jint fd , jint cmd, jint value) {
-    int level = 0, opt = 0;
+    int level, opt;
 
     if (NET_MapSocketOption(cmd, &level, &opt) < 0) {
         JNU_ThrowByNameWithLastError(env, JNU_JAVANETPKG "SocketException",
@@ -503,7 +478,7 @@ JNIEXPORT void JNICALL Java_java_net_DualStackPlainDatagramSocketImpl_socketSetI
  */
 JNIEXPORT jint JNICALL Java_java_net_DualStackPlainDatagramSocketImpl_socketGetIntOption
   (JNIEnv *env, jclass clazz, jint fd, jint cmd) {
-    int level = 0, opt = 0, result=0;
+    int level, opt, result=0;
     int result_len = sizeof(result);
 
     if (NET_MapSocketOption(cmd, &level, &opt) < 0) {
@@ -518,33 +493,4 @@ JNIEXPORT jint JNICALL Java_java_net_DualStackPlainDatagramSocketImpl_socketGetI
     }
 
     return result;
-}
-
-/*
- * Class:     java_net_DualStackPlainDatagramSocketImpl
- * Method:    dataAvailable
- * Signature: ()I
- */
-JNIEXPORT jint JNICALL Java_java_net_DualStackPlainDatagramSocketImpl_dataAvailable
-(JNIEnv *env, jobject this) {
-    SOCKET fd;
-    int  rv = -1;
-    jobject fdObj = (*env)->GetObjectField(env, this, pdsi_fdID);
-
-    if (!IS_NULL(fdObj)) {
-        int retval = 0;
-        fd = (SOCKET)(*env)->GetIntField(env, fdObj, IO_fd_fdID);
-        rv = ioctlsocket(fd, FIONREAD, &retval);
-        if (retval > 0) {
-            return retval;
-        }
-    }
-
-    if (rv < 0) {
-        JNU_ThrowByName(env, JNU_JAVANETPKG "SocketException",
-                        "Socket closed");
-        return -1;
-    }
-
-    return 0;
 }

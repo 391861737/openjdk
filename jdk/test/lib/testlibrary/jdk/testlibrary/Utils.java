@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2013, 2016, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2013, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -25,12 +25,7 @@ package jdk.testlibrary;
 
 import static jdk.testlibrary.Asserts.assertTrue;
 
-import java.io.BufferedReader;
-import java.io.File;
-import java.io.FileReader;
 import java.io.IOException;
-import java.io.InputStream;
-import java.io.OutputStream;
 import java.net.InetAddress;
 import java.net.ServerSocket;
 import java.net.UnknownHostException;
@@ -40,8 +35,6 @@ import java.util.Arrays;
 import java.util.Collections;
 import java.util.regex.Pattern;
 import java.util.regex.Matcher;
-import java.util.concurrent.TimeUnit;
-import java.util.function.Function;
 
 /**
  * Common library for various test helper functions.
@@ -63,22 +56,6 @@ public final class Utils {
      */
     public static final String JAVA_OPTIONS = System.getProperty("test.java.opts", "").trim();
 
-
-    /**
-    * Returns the value of 'test.timeout.factor' system property
-    * converted to {@code double}.
-    */
-    public static final double TIMEOUT_FACTOR;
-    static {
-        String toFactor = System.getProperty("test.timeout.factor", "1.0");
-        TIMEOUT_FACTOR = Double.parseDouble(toFactor);
-    }
-
-    /**
-    * Returns the value of JTREG default test timeout in milliseconds
-    * converted to {@code long}.
-    */
-    public static final long DEFAULT_TEST_TIMEOUT = TimeUnit.SECONDS.toMillis(120);
 
     private Utils() {
         // Private constructor to prevent class instantiation
@@ -128,26 +105,6 @@ public final class Utils {
         Collections.addAll(opts, getTestJavaOpts());
         Collections.addAll(opts, userArgs);
         return opts.toArray(new String[0]);
-    }
-
-    /**
-     * Removes any options specifying which GC to use, for example "-XX:+UseG1GC".
-     * Removes any options matching: -XX:(+/-)Use*GC
-     * Used when a test need to set its own GC version. Then any
-     * GC specified by the framework must first be removed.
-     * @return A copy of given opts with all GC options removed.
-     */
-    private static final Pattern useGcPattern = Pattern.compile("\\-XX\\:[\\+\\-]Use.+GC");
-    public static List<String> removeGcOpts(List<String> opts) {
-        List<String> optsWithoutGC = new ArrayList<String>();
-        for (String opt : opts) {
-            if (useGcPattern.matcher(opt).matches()) {
-                System.out.println("removeGcOpts: removed " + opt);
-            } else {
-                optsWithoutGC.add(opt);
-            }
-        }
-        return optsWithoutGC;
     }
 
     /**
@@ -246,6 +203,7 @@ public final class Utils {
      * @throws Exception If multiple matching jvms are found.
      */
     public static int tryFindJvmPid(String key) throws Throwable {
+        ProcessBuilder pb = null;
         OutputAnalyzer output = null;
         try {
             JDKToolLauncher jcmdLauncher = JDKToolLauncher.create("jcmd");
@@ -270,107 +228,5 @@ public final class Utils {
             System.out.println(String.format("Utils.findJvmPid(%s) failed: %s", key, t));
             throw t;
         }
-    }
-
-    /**
-     * Returns file content as a list of strings
-     *
-     * @param file File to operate on
-     * @return List of strings
-     * @throws IOException
-     */
-    public static List<String> fileAsList(File file) throws IOException {
-        assertTrue(file.exists() && file.isFile(),
-                file.getAbsolutePath() + " does not exist or not a file");
-        List<String> output = new ArrayList<>();
-        try (BufferedReader reader = new BufferedReader(new FileReader(file.getAbsolutePath()))) {
-            while (reader.ready()) {
-                output.add(reader.readLine().replace(NEW_LINE, ""));
-            }
-        }
-        return output;
-    }
-
-    /**
-     * Adjusts the provided timeout value for the TIMEOUT_FACTOR
-     * @param tOut the timeout value to be adjusted
-     * @return The timeout value adjusted for the value of "test.timeout.factor"
-     *         system property
-     */
-    public static long adjustTimeout(long tOut) {
-        return Math.round(tOut * Utils.TIMEOUT_FACTOR);
-    }
-
-    /**
-     * Interface same as java.lang.Runnable but with
-     * method {@code run()} able to throw any Throwable.
-     */
-    public static interface ThrowingRunnable {
-        void run() throws Throwable;
-    }
-
-    /**
-     * Filters out an exception that may be thrown by the given
-     * test according to the given filter.
-     *
-     * @param test - method that is invoked and checked for exception.
-     * @param filter - function that checks if the thrown exception matches
-     *                 criteria given in the filter's implementation.
-     * @return - exception that matches the filter if it has been thrown or
-     *           {@code null} otherwise.
-     * @throws Throwable - if test has thrown an exception that does not
-     *                     match the filter.
-     */
-    public static Throwable filterException(ThrowingRunnable test,
-            Function<Throwable, Boolean> filter) throws Throwable {
-        try {
-            test.run();
-        } catch (Throwable t) {
-            if (filter.apply(t)) {
-                return t;
-            } else {
-                throw t;
-            }
-        }
-        return null;
-    }
-
-    private static final int BUFFER_SIZE = 1024;
-
-    /**
-     * Reads all bytes from the input stream and writes the bytes to the
-     * given output stream in the order that they are read. On return, the
-     * input stream will be at end of stream. This method does not close either
-     * stream.
-     * <p>
-     * This method may block indefinitely reading from the input stream, or
-     * writing to the output stream. The behavior for the case where the input
-     * and/or output stream is <i>asynchronously closed</i>, or the thread
-     * interrupted during the transfer, is highly input and output stream
-     * specific, and therefore not specified.
-     * <p>
-     * If an I/O error occurs reading from the input stream or writing to the
-     * output stream, then it may do so after some bytes have been read or
-     * written. Consequently the input stream may not be at end of stream and
-     * one, or both, streams may be in an inconsistent state. It is strongly
-     * recommended that both streams be promptly closed if an I/O error occurs.
-     *
-     * @param  in the input stream, non-null
-     * @param  out the output stream, non-null
-     * @return the number of bytes transferred
-     * @throws IOException if an I/O error occurs when reading or writing
-     * @throws NullPointerException if {@code in} or {@code out} is {@code null}
-     *
-     */
-    public static long transferBetweenStreams(InputStream in, OutputStream out)
-            throws IOException  {
-        long transferred = 0;
-        byte[] buffer = new byte[BUFFER_SIZE];
-        int read;
-        while ((read = in.read(buffer, 0, BUFFER_SIZE)) >= 0) {
-            out.write(buffer, 0, read);
-            transferred += read;
-        }
-        return transferred;
     }
 }

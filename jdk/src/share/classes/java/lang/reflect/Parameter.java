@@ -198,7 +198,7 @@ public final class Parameter implements AnnotatedElement {
     public Type getParameterizedType() {
         Type tmp = parameterTypeCache;
         if (null == tmp) {
-            tmp = executable.getAllGenericParameterTypes()[index];
+            tmp = executable.getGenericParameterTypes()[index];
             parameterTypeCache = tmp;
         }
 

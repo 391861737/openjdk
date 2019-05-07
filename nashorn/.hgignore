@@ -22,6 +22,6 @@ report.xml
 CC/*
 jcov2/*
 .idea/*
-test/lib/*.jar
+test/lib/testng.jar
 test/script/external/*
 .project

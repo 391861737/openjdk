@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2004, 2014, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2004, 2006, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -25,15 +25,11 @@
 
 package sun.awt.windows;
 
-import java.awt.Color;
-import java.awt.Dimension;
-import java.awt.Insets;
-import java.awt.Point;
-import java.util.HashMap;
-import java.util.Map;
-import java.util.concurrent.locks.Lock;
-import java.util.concurrent.locks.ReadWriteLock;
-import java.util.concurrent.locks.ReentrantReadWriteLock;
+import java.awt.*;
+import java.util.*;
+import java.util.concurrent.locks.*;
+import java.beans.*;
+import javax.swing.SwingUtilities;
 
 /* !!!! WARNING !!!!
  * This class has to be in sync with
@@ -49,9 +45,9 @@ import java.util.concurrent.locks.ReentrantReadWriteLock;
  * @author Bino George
  * @author Igor Kushnirskiy
  */
-public final class ThemeReader {
-
-    private static final Map<String, Long> widgetToTheme = new HashMap<>();
+public class ThemeReader {
+    private static final HashMap<String, Long> widgetToTheme =
+        new HashMap<String, Long>();
 
     // lock for the cache
     // reading should be done with readLock
@@ -60,21 +56,21 @@ public final class ThemeReader {
         new ReentrantReadWriteLock();
     private static final Lock readLock = readWriteLock.readLock();
     private static final Lock writeLock = readWriteLock.writeLock();
-    private static volatile boolean valid = false;
-
-    static volatile boolean xpStyleEnabled;
 
     static void flush() {
-        // Could be called on Toolkit thread, so do not try to acquire locks
-        // to avoid deadlock with theme initialization
-        valid = false;
+        writeLock.lock();
+        try {
+            // Close old themes.
+            for (Long value : widgetToTheme.values()) {
+                closeTheme(value.longValue());
+            }
+            widgetToTheme.clear();
+        } finally {
+            writeLock.unlock();
+        }
     }
 
-    public static native boolean isThemed();
-
-    public static boolean isXPStyleEnabled() {
-        return xpStyleEnabled;
-    }
+    public native static boolean isThemed();
 
     // this should be called only with writeLock held
     private static Long getThemeImpl(String widget) {
@@ -98,24 +94,6 @@ public final class ThemeReader {
     // returns theme value
     // this method should be invoked with readLock locked
     private static Long getTheme(String widget) {
-        if (!valid) {
-            readLock.unlock();
-            writeLock.lock();
-            try {
-                if (!valid) {
-                    // Close old themes.
-                    for (Long value : widgetToTheme.values()) {
-                        closeTheme(value);
-                    }
-                    widgetToTheme.clear();
-                    valid = true;
-                }
-            } finally {
-                readLock.lock();
-                writeLock.unlock();
-            }
-        }
-
         // mostly copied from the javadoc for ReentrantReadWriteLock
         Long theme = widgetToTheme.get(widget);
         if (theme == null) {
@@ -131,9 +109,8 @@ public final class ThemeReader {
         return theme;
     }
 
-    private static native void paintBackground(int[] buffer, long theme,
-                                               int part, int state, int x,
-                                               int y, int w, int h, int stride);
+    public native static void paintBackground(int[] buffer, long theme, int part, int state,
+                             int x, int y, int w, int h, int stride);
 
     public static void paintBackground(int[] buffer, String widget,
            int part, int state, int x, int y, int w, int h, int stride) {
@@ -145,8 +122,8 @@ public final class ThemeReader {
         }
     }
 
-    private static native Insets getThemeMargins(long theme, int part,
-                                                 int state, int marginType);
+    public native static Insets getThemeMargins(long theme, int part, int state,
+ int marginType);
 
     public static Insets getThemeMargins(String widget, int part, int state, int marginType) {
         readLock.lock();
@@ -157,7 +134,7 @@ public final class ThemeReader {
         }
     }
 
-    private static native boolean isThemePartDefined(long theme, int part, int state);
+    private native static boolean isThemePartDefined(long theme, int part, int state);
 
     public static boolean isThemePartDefined(String widget, int part, int state) {
         readLock.lock();
@@ -168,8 +145,8 @@ public final class ThemeReader {
         }
     }
 
-    private static native Color getColor(long theme, int part, int state,
-                                         int property);
+    public native static Color getColor(long theme, int part, int state,
+                                                               int property);
 
     public static Color getColor(String widget, int part, int state, int property) {
         readLock.lock();
@@ -180,8 +157,8 @@ public final class ThemeReader {
         }
     }
 
-    private static native int getInt(long theme, int part, int state,
-                                     int property);
+    public native static int getInt(long theme, int part, int state,
+                                                                int property);
 
     public static int getInt(String widget, int part, int state, int property) {
         readLock.lock();
@@ -192,8 +169,8 @@ public final class ThemeReader {
         }
     }
 
-    private static native int getEnum(long theme, int part, int state,
-                                      int property);
+    public native static int getEnum(long theme, int part, int state,
+                                                                int property);
 
     public static int getEnum(String widget, int part, int state, int property) {
         readLock.lock();
@@ -204,8 +181,8 @@ public final class ThemeReader {
         }
     }
 
-    private static native boolean getBoolean(long theme, int part, int state,
-                                             int property);
+    public native static boolean getBoolean(long theme, int part, int state,
+                                                                int property);
 
     public static boolean getBoolean(String widget, int part, int state,
                                      int property) {
@@ -217,7 +194,7 @@ public final class ThemeReader {
         }
     }
 
-    private static native boolean getSysBoolean(long theme, int property);
+    public native static boolean getSysBoolean(long theme, int property);
 
     public static boolean getSysBoolean(String widget, int property) {
         readLock.lock();
@@ -228,8 +205,8 @@ public final class ThemeReader {
         }
     }
 
-    private static native Point getPoint(long theme, int part, int state,
-                                         int property);
+    public native static Point getPoint(long theme, int part, int state,
+                                                                int property);
 
     public static Point getPoint(String widget, int part, int state, int property) {
         readLock.lock();
@@ -240,8 +217,8 @@ public final class ThemeReader {
         }
     }
 
-    private static native Dimension getPosition(long theme, int part, int state,
-                                                int property);
+    public native static Dimension getPosition(long theme, int part, int state,
+                                                                 int property);
 
     public static Dimension getPosition(String widget, int part, int state,
                                         int property) {
@@ -253,8 +230,7 @@ public final class ThemeReader {
         }
     }
 
-    private static native Dimension getPartSize(long theme, int part,
-                                                int state);
+    public native static Dimension getPartSize(long theme, int part, int state);
 
     public static Dimension getPartSize(String widget, int part, int state) {
         readLock.lock();
@@ -265,15 +241,14 @@ public final class ThemeReader {
         }
     }
 
-    private static native long openTheme(String widget);
+    public native static long openTheme(String widget);
 
-    private static native void closeTheme(long theme);
+    public native static void closeTheme(long theme);
 
-    private static native void setWindowTheme(String subAppName);
+    public native static void setWindowTheme(String subAppName);
 
-    private static native long getThemeTransitionDuration(long theme, int part,
+    private native static long getThemeTransitionDuration(long theme, int part,
                                         int stateFrom, int stateTo, int propId);
-
     public static long getThemeTransitionDuration(String widget, int part,
                                        int stateFrom, int stateTo, int propId) {
         readLock.lock();
@@ -284,12 +259,10 @@ public final class ThemeReader {
             readLock.unlock();
         }
     }
+    public native static boolean isGetThemeTransitionDurationDefined();
 
-    public static native boolean isGetThemeTransitionDurationDefined();
-
-    private static native Insets getThemeBackgroundContentMargins(long theme,
+    private native static Insets getThemeBackgroundContentMargins(long theme,
                      int part, int state, int boundingWidth, int boundingHeight);
-
     public static Insets getThemeBackgroundContentMargins(String widget,
                     int part, int state, int boundingWidth, int boundingHeight) {
         readLock.lock();

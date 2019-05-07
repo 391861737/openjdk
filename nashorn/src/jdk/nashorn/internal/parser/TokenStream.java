@@ -209,8 +209,4 @@ public class TokenStream {
         in = count;
         buffer = newBuffer;
     }
-
-    void reset() {
-        in = out = count = base = 0;
-    }
 }

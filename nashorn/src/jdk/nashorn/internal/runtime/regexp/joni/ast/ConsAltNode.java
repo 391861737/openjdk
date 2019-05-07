@@ -20,40 +20,35 @@
 package jdk.nashorn.internal.runtime.regexp.joni.ast;
 
 import java.util.Set;
+
 import jdk.nashorn.internal.runtime.regexp.joni.WarnCallback;
 import jdk.nashorn.internal.runtime.regexp.joni.exception.ErrorMessages;
 import jdk.nashorn.internal.runtime.regexp.joni.exception.InternalException;
 
-@SuppressWarnings("javadoc")
 public final class ConsAltNode extends Node {
     public Node car;
     public ConsAltNode cdr;
     private int type;           // List or Alt
 
-    private ConsAltNode(final Node car, final ConsAltNode cdr, final int type) {
+    private ConsAltNode(Node car, ConsAltNode cdr, int type) {
         this.car = car;
-        if (car != null) {
-            car.parent = this;
-        }
+        if (car != null) car.parent = this;
         this.cdr = cdr;
-        if (cdr != null) {
-            cdr.parent = this;
-        }
+        if (cdr != null) cdr.parent = this;
 
         this.type = type;
     }
 
-    public static ConsAltNode newAltNode(final Node left, final ConsAltNode right) {
+    public static ConsAltNode newAltNode(Node left, ConsAltNode right) {
         return new ConsAltNode(left, right, ALT);
     }
 
-    public static ConsAltNode newListNode(final Node left, final ConsAltNode right) {
+    public static ConsAltNode newListNode(Node left, ConsAltNode right) {
         return new ConsAltNode(left, right, LIST);
     }
 
-    public static ConsAltNode listAdd(final ConsAltNode listp, final Node x) {
-        final ConsAltNode n = newListNode(x, null);
-        ConsAltNode list = listp;
+    public static ConsAltNode listAdd(ConsAltNode list, Node x) {
+        ConsAltNode n = newListNode(x, null);
 
         if (list != null) {
             while (list.cdr != null) {
@@ -78,7 +73,7 @@ public final class ConsAltNode extends Node {
     }
 
     @Override
-    protected void setChild(final Node newChild) {
+    protected void setChild(Node newChild) {
         car = newChild;
     }
 
@@ -88,13 +83,13 @@ public final class ConsAltNode extends Node {
     }
 
     @Override
-    public void swap(final Node with) {
+    public void swap(Node with) {
         if (cdr != null) {
             cdr.parent = with;
             if (with instanceof ConsAltNode) {
-                final ConsAltNode withCan = (ConsAltNode)with;
+                ConsAltNode withCan = (ConsAltNode)with;
                 withCan.cdr.parent = this;
-                final ConsAltNode tmp = cdr;
+                ConsAltNode tmp = cdr;
                 cdr = withCan.cdr;
                 withCan.cdr = tmp;
             }
@@ -103,7 +98,7 @@ public final class ConsAltNode extends Node {
     }
 
     @Override
-    public void verifyTree(final Set<Node> set, final WarnCallback warnings) {
+    public void verifyTree(Set<Node> set, WarnCallback warnings) {
         if (!set.contains(this)) {
             set.add(this);
             if (car != null) {
@@ -121,13 +116,13 @@ public final class ConsAltNode extends Node {
         }
     }
 
-    public Node setCar(final Node ca) {
+    public Node setCar(Node ca) {
         car = ca;
         ca.parent = this;
         return car;
     }
 
-    public ConsAltNode setCdr(final ConsAltNode cd) {
+    public ConsAltNode setCdr(ConsAltNode cd) {
         cdr = cd;
         cd.parent = this;
         return cdr;
@@ -146,8 +141,8 @@ public final class ConsAltNode extends Node {
     }
 
     @Override
-    public String toString(final int level) {
-        final StringBuilder value = new StringBuilder();
+    public String toString(int level) {
+        StringBuilder value = new StringBuilder();
         value.append("\n  car: " + pad(car, level + 1));
         value.append("\n  cdr: " + (cdr == null ? "NULL" : cdr.toString()));
 

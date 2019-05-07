@@ -27,7 +27,6 @@ package javax.sql.rowset.serial;
 import java.sql.*;
 import java.util.Arrays;
 import java.util.Map;
-import sun.reflect.misc.ReflectUtil;
 
 /**
  * An input stream used for custom mapping user-defined types (UDTs).
@@ -477,9 +476,13 @@ public class SQLInputImpl implements SQLInput {
                 // create new instance of the class
                 SQLData obj = null;
                 try {
-                    obj = (SQLData)ReflectUtil.newInstance(c);
-                } catch (Exception ex) {
-                    throw new SQLException("Unable to Instantiate: ", ex);
+                    obj = (SQLData)c.newInstance();
+                } catch (java.lang.InstantiationException ex) {
+                    throw new SQLException("Unable to instantiate: " +
+                            ex.getMessage());
+                } catch (java.lang.IllegalAccessException ex) {
+                    throw new SQLException("Unable to instantiate: " +
+                            ex.getMessage());
                 }
                 // get the attributes from the struct
                 Object attribs[] = s.getAttributes(map);

@@ -144,34 +144,32 @@ static void readInterfaceAttributes(
         env, provider, &(jvm_provider->argsAttributes));
 }
 
-static int readProviderData(
+static void readProviderData(
         JNIEnv* env, jobject provider, JVM_DTraceProvider* jvm_provider) {
     jmethodID mid;
     jobjectArray probes;
     jsize i;
-    jclass clazz = (*env)->GetObjectClass(env, provider); CHECK_(0)
+    jclass clazz = (*env)->GetObjectClass(env, provider); CHECK
     mid = (*env)->GetMethodID(
-        env, clazz, "getProbes", "()[Lsun/tracing/dtrace/DTraceProbe;"); CHECK_(0)
+        env, clazz, "getProbes", "()[Lsun/tracing/dtrace/DTraceProbe;"); CHECK
     probes = (jobjectArray)(*env)->CallObjectMethod(
-        env, provider, mid); CHECK_(0)
+        env, provider, mid); CHECK
 
     // Fill JVM structure, describing provider
-    jvm_provider->probe_count = (*env)->GetArrayLength(env, probes); CHECK_(0)
+    jvm_provider->probe_count = (*env)->GetArrayLength(env, probes); CHECK
     jvm_provider->probes = (JVM_DTraceProbe*)calloc(
         jvm_provider->probe_count, sizeof(*jvm_provider->probes));
     mid = (*env)->GetMethodID(
-        env, clazz, "getProviderName", "()Ljava/lang/String;"); CHECK_(0)
+        env, clazz, "getProviderName", "()Ljava/lang/String;"); CHECK
     jvm_provider->name = (jstring)(*env)->CallObjectMethod(
-        env, provider, mid); CHECK_(0)
+        env, provider, mid); CHECK
 
-    readInterfaceAttributes(env, provider, jvm_provider); CHECK_(0)
+    readInterfaceAttributes(env, provider, jvm_provider); CHECK
 
     for (i = 0; i < jvm_provider->probe_count; ++i) {
-        jobject probe = (*env)->GetObjectArrayElement(env, probes, i); CHECK_(0)
-        readProbeData(env, probe, &jvm_provider->probes[i]); CHECK_(0)
+        jobject probe = (*env)->GetObjectArrayElement(env, probes, i); CHECK
+        readProbeData(env, probe, &jvm_provider->probes[i]); CHECK
     }
-
-    return 1;
 }
 
 /*
@@ -184,7 +182,6 @@ JNIEXPORT jlong JNICALL Java_sun_tracing_dtrace_JVM_activate0(
     jlong handle = 0;
     jsize num_providers;
     jsize i;
-    jsize count = 0;
     JVM_DTraceProvider* jvm_providers;
 
     initialize();
@@ -198,23 +195,16 @@ JNIEXPORT jlong JNICALL Java_sun_tracing_dtrace_JVM_activate0(
     jvm_providers = (JVM_DTraceProvider*)calloc(
         num_providers, sizeof(*jvm_providers));
 
-    for (; count < num_providers; ++count) {
-        JVM_DTraceProvider* p = &(jvm_providers[count]);
+    for (i = 0; i < num_providers; ++i) {
+        JVM_DTraceProvider* p = &(jvm_providers[i]);
         jobject provider = (*env)->GetObjectArrayElement(
-            env, providers, count);
-        if ((*env)->ExceptionOccurred(env) ||
-            ! readProviderData(env, provider, p)) {
-            // got an error, bail out!
-            break;
-        }
+            env, providers, i);
+        readProviderData(env, provider, p);
     }
 
-    if (count == num_providers) {
-        // all providers successfully loaded - get the handle
-        handle = jvm_symbols->Activate(
-            env, JVM_TRACING_DTRACE_VERSION, moduleName,
-            num_providers, jvm_providers);
-    }
+    handle = jvm_symbols->Activate(
+        env, JVM_TRACING_DTRACE_VERSION, moduleName,
+        num_providers, jvm_providers);
 
     for (i = 0; i < num_providers; ++i) {
         JVM_DTraceProvider* p = &(jvm_providers[i]);

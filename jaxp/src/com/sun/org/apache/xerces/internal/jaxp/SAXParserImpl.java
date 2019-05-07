@@ -1,13 +1,13 @@
 /*
- * Copyright (c) 2010, 2015, Oracle and/or its affiliates. All rights reserved.
+ * reserved comment block
+ * DO NOT REMOVE OR ALTER!
  */
 /*
- * Licensed to the Apache Software Foundation (ASF) under one or more
- * contributor license agreements.  See the NOTICE file distributed with
- * this work for additional information regarding copyright ownership.
- * The ASF licenses this file to You under the Apache License, Version 2.0
- * (the "License"); you may not use this file except in compliance with
- * the License.  You may obtain a copy of the License at
+ * Copyright 2000-2005 The Apache Software Foundation.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
  *
  *      http://www.apache.org/licenses/LICENSE-2.0
  *
@@ -39,6 +39,7 @@ import com.sun.org.apache.xerces.internal.xs.ElementPSVI;
 import com.sun.org.apache.xerces.internal.xs.PSVIProvider;
 import java.io.IOException;
 import java.util.HashMap;
+import java.util.Hashtable;
 import java.util.Iterator;
 import java.util.Locale;
 import java.util.Map;
@@ -115,18 +116,18 @@ public class SAXParserImpl extends javax.xml.parsers.SAXParser
 
     /**
      * Create a SAX parser with the associated features
-     * @param features Map of SAX features, may be null
+     * @param features Hashtable of SAX features, may be null
      */
-    SAXParserImpl(SAXParserFactoryImpl spf, Map<String, Boolean> features)
+    SAXParserImpl(SAXParserFactoryImpl spf, Hashtable features)
         throws SAXException {
         this(spf, features, false);
     }
 
     /**
      * Create a SAX parser with the associated features
-     * @param features Map of SAX features, may be null
+     * @param features Hashtable of SAX features, may be null
      */
-    SAXParserImpl(SAXParserFactoryImpl spf, Map<String, Boolean> features, boolean secureProcessing)
+    SAXParserImpl(SAXParserFactoryImpl spf, Hashtable features, boolean secureProcessing)
         throws SAXException
     {
         fSecurityManager = new XMLSecurityManager(secureProcessing);
@@ -164,9 +165,10 @@ public class SAXParserImpl extends javax.xml.parsers.SAXParser
              */
             if (features != null) {
 
-                Boolean temp = features.get(XMLConstants.FEATURE_SECURE_PROCESSING);
+                Object temp = features.get(XMLConstants.FEATURE_SECURE_PROCESSING);
                 if (temp != null) {
-                    if (temp && Constants.IS_JDK8_OR_ABOVE) {
+                    boolean value = ((Boolean) temp).booleanValue();
+                    if (value && Constants.IS_JDK8_OR_ABOVE) {
                         fSecurityPropertyMgr.setValue(XMLSecurityPropertyManager.Property.ACCESS_EXTERNAL_DTD,
                                 XMLSecurityPropertyManager.State.FSP, Constants.EXTERNAL_ACCESS_DEFAULT_FSP);
                         fSecurityPropertyMgr.setValue(XMLSecurityPropertyManager.Property.ACCESS_EXTERNAL_SCHEMA,
@@ -240,11 +242,15 @@ public class SAXParserImpl extends javax.xml.parsers.SAXParser
      * XXX Does not handle possible conflicts between SAX feature names and
      * JAXP specific feature names, eg. SAXParserFactory.isValidating()
      */
-    private void setFeatures(Map<String, Boolean> features)
+    private void setFeatures(Hashtable features)
         throws SAXNotSupportedException, SAXNotRecognizedException {
         if (features != null) {
-            for (Map.Entry<String, Boolean> entry : features.entrySet()) {
-                xmlReader.setFeature0(entry.getKey(), entry.getValue());
+            Iterator entries = features.entrySet().iterator();
+            while (entries.hasNext()) {
+                Map.Entry entry = (Map.Entry) entries.next();
+                String feature = (String) entry.getKey();
+                boolean value = ((Boolean) entry.getValue()).booleanValue();
+                xmlReader.setFeature0(feature, value);
             }
         }
     }

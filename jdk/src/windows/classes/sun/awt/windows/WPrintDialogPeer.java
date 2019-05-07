@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 1999, 2014, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 1999, 2013, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -30,10 +30,11 @@ import java.awt.peer.DialogPeer;
 import java.awt.peer.ComponentPeer;
 import java.awt.dnd.DropTarget;
 import java.util.Vector;
+import sun.awt.AppContext;
 import sun.awt.CausedFocusEvent;
 import sun.awt.AWTAccessor;
 
-class WPrintDialogPeer extends WWindowPeer implements DialogPeer {
+public class WPrintDialogPeer extends WWindowPeer implements DialogPeer {
 
     static {
         initIDs();
@@ -41,34 +42,29 @@ class WPrintDialogPeer extends WWindowPeer implements DialogPeer {
 
     private WComponentPeer parent;
 
-    private Vector<WWindowPeer> blockedWindows = new Vector<>();
+    private Vector<WWindowPeer> blockedWindows = new Vector<WWindowPeer>();
 
     WPrintDialogPeer(WPrintDialog target) {
         super(target);
     }
 
-    @Override
     void create(WComponentPeer parent) {
         this.parent = parent;
     }
 
     // fix for CR 6178323:
     // don't use checkCreation() from WComponentPeer to avoid hwnd check
-    @Override
     protected void checkCreation() {
     }
 
-    @Override
     protected void disposeImpl() {
         WToolkit.targetDisposedPeer(target, this);
     }
 
     private native boolean _show();
 
-    @Override
     public void show() {
         new Thread(new Runnable() {
-            @Override
             public void run() {
                 try {
                     ((WPrintDialog)target).setRetVal(_show());
@@ -106,7 +102,6 @@ class WPrintDialogPeer extends WWindowPeer implements DialogPeer {
         }
     }
 
-    @Override
     public void blockWindows(java.util.List<Window> toBlock) {
         for (Window w : toBlock) {
             WWindowPeer wp = (WWindowPeer)AWTAccessor.getComponentAccessor().getPeer(w);
@@ -116,43 +111,28 @@ class WPrintDialogPeer extends WWindowPeer implements DialogPeer {
         }
     }
 
-    @Override
     public native void toFront();
-    @Override
     public native void toBack();
 
     // unused methods.  Overridden to disable this functionality as
     // it requires HWND which is not available for FileDialog
-    @Override
     void initialize() {}
-    @Override
     public void updateAlwaysOnTopState() {}
-    @Override
     public void setResizable(boolean resizable) {}
-    @Override
-    void hide() {}
-    @Override
-    void enable() {}
-    @Override
-    void disable() {}
-    @Override
+    public void hide() {}
+    public void enable() {}
+    public void disable() {}
     public void reshape(int x, int y, int width, int height) {}
     public boolean handleEvent(Event e) { return false; }
-    @Override
     public void setForeground(Color c) {}
-    @Override
     public void setBackground(Color c) {}
-    @Override
     public void setFont(Font f) {}
-    @Override
     public void updateMinimumSize() {}
-    @Override
     public void updateIconImages() {}
     public boolean requestFocus(boolean temporary, boolean focusedWindowChangeAllowed) {
         return false;
     }
 
-    @Override
     public boolean requestFocus
          (Component lightweightChild, boolean temporary,
           boolean focusedWindowChangeAllowed, long time, CausedFocusEvent.Cause cause)
@@ -161,20 +141,13 @@ class WPrintDialogPeer extends WWindowPeer implements DialogPeer {
         return false;
     }
 
-    @Override
     public void updateFocusableWindowState() {}
-    @Override
     void start() {}
-    @Override
     public void beginValidate() {}
-    @Override
     public void endValidate() {}
     void invalidate(int x, int y, int width, int height) {}
-    @Override
     public void addDropTarget(DropTarget dt) {}
-    @Override
     public void removeDropTarget(DropTarget dt) {}
-    @Override
     public void setZOrder(ComponentPeer above) {}
 
     /**
@@ -183,11 +156,8 @@ class WPrintDialogPeer extends WWindowPeer implements DialogPeer {
     private static native void initIDs();
 
     // The effects are not supported for system dialogs.
-    @Override
     public void applyShape(sun.java2d.pipe.Region shape) {}
-    @Override
     public void setOpacity(float opacity) {}
-    @Override
     public void setOpaque(boolean isOpaque) {}
     public void updateWindow(java.awt.image.BufferedImage backBuffer) {}
 

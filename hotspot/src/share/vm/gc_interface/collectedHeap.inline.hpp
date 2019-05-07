@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2001, 2014, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2001, 2013, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -70,7 +70,7 @@ void CollectedHeap::post_allocation_install_obj_klass(KlassHandle klass,
 }
 
 // Support for jvmti and dtrace
-inline void post_allocation_notify(KlassHandle klass, oop obj, int size) {
+inline void post_allocation_notify(KlassHandle klass, oop obj) {
   // support low memory notifications (no-op if not enabled)
   LowMemoryDetector::detect_low_memory_for_collected_pools();
 
@@ -80,19 +80,18 @@ inline void post_allocation_notify(KlassHandle klass, oop obj, int size) {
   if (DTraceAllocProbes) {
     // support for Dtrace object alloc event (no-op most of the time)
     if (klass() != NULL && klass()->name() != NULL) {
-      SharedRuntime::dtrace_object_alloc(obj, size);
+      SharedRuntime::dtrace_object_alloc(obj);
     }
   }
 }
 
 void CollectedHeap::post_allocation_setup_obj(KlassHandle klass,
-                                              HeapWord* obj,
-                                              int size) {
+                                              HeapWord* obj) {
   post_allocation_setup_common(klass, obj);
   assert(Universe::is_bootstrapping() ||
          !((oop)obj)->is_array(), "must not be an array");
   // notify jvmti and dtrace
-  post_allocation_notify(klass, (oop)obj, size);
+  post_allocation_notify(klass, (oop)obj);
 }
 
 void CollectedHeap::post_allocation_setup_array(KlassHandle klass,
@@ -104,10 +103,9 @@ void CollectedHeap::post_allocation_setup_array(KlassHandle klass,
   assert(length >= 0, "length should be non-negative");
   ((arrayOop)obj)->set_length(length);
   post_allocation_setup_common(klass, obj);
-  oop new_obj = (oop)obj;
-  assert(new_obj->is_array(), "must be an array");
+  assert(((oop)obj)->is_array(), "must be an array");
   // notify jvmti and dtrace (must be after length is set for dtrace)
-  post_allocation_notify(klass, new_obj, new_obj->size());
+  post_allocation_notify(klass, (oop)obj);
 }
 
 HeapWord* CollectedHeap::common_mem_allocate_noinit(KlassHandle klass, size_t size, TRAPS) {
@@ -201,7 +199,7 @@ oop CollectedHeap::obj_allocate(KlassHandle klass, int size, TRAPS) {
   assert(!Universe::heap()->is_gc_active(), "Allocation during gc not allowed");
   assert(size >= 0, "int won't convert to size_t");
   HeapWord* obj = common_mem_allocate_init(klass, size, CHECK_NULL);
-  post_allocation_setup_obj(klass, obj, size);
+  post_allocation_setup_obj(klass, obj);
   NOT_PRODUCT(Universe::heap()->check_for_bad_heap_word_value(obj, size));
   return (oop)obj;
 }
@@ -239,44 +237,6 @@ oop CollectedHeap::array_allocate_nozero(KlassHandle klass,
 inline void CollectedHeap::oop_iterate_no_header(OopClosure* cl) {
   NoHeaderExtendedOopClosure no_header_cl(cl);
   oop_iterate(&no_header_cl);
-}
-
-
-inline HeapWord* CollectedHeap::align_allocation_or_fail(HeapWord* addr,
-                                                         HeapWord* end,
-                                                         unsigned short alignment_in_bytes) {
-  if (alignment_in_bytes <= ObjectAlignmentInBytes) {
-    return addr;
-  }
-
-  assert(is_ptr_aligned(addr, HeapWordSize),
-    err_msg("Address " PTR_FORMAT " is not properly aligned.", p2i(addr)));
-  assert(is_size_aligned(alignment_in_bytes, HeapWordSize),
-    err_msg("Alignment size %u is incorrect.", alignment_in_bytes));
-
-  HeapWord* new_addr = (HeapWord*) align_pointer_up(addr, alignment_in_bytes);
-  size_t padding = pointer_delta(new_addr, addr);
-
-  if (padding == 0) {
-    return addr;
-  }
-
-  if (padding < CollectedHeap::min_fill_size()) {
-    padding += alignment_in_bytes / HeapWordSize;
-    assert(padding >= CollectedHeap::min_fill_size(),
-      err_msg("alignment_in_bytes %u is expect to be larger "
-      "than the minimum object size", alignment_in_bytes));
-    new_addr = addr + padding;
-  }
-
-  assert(new_addr > addr, err_msg("Unexpected arithmetic overflow "
-    PTR_FORMAT " not greater than " PTR_FORMAT, p2i(new_addr), p2i(addr)));
-  if(new_addr < end) {
-    CollectedHeap::fill_with_object(addr, padding);
-    return new_addr;
-  } else {
-    return NULL;
-  }
 }
 
 #ifndef PRODUCT

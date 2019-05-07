@@ -19,7 +19,6 @@
  */
 package jdk.nashorn.internal.runtime.regexp.joni.constants;
 
-@SuppressWarnings("javadoc")
 public interface SyntaxProperties {
     /* syntax (operators); */
     final int OP_VARIABLE_META_CHARACTERS    = (1<<0);

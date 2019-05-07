@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 1996, 2017, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 1996, 2013, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -32,6 +32,7 @@ import java.lang.reflect.Method;
 import java.rmi.MarshalException;
 import java.rmi.Remote;
 import java.rmi.RemoteException;
+import java.rmi.ServerException;
 import java.rmi.UnmarshalException;
 import java.rmi.server.Operation;
 import java.rmi.server.RemoteCall;
@@ -186,11 +187,14 @@ public class UnicastRef implements RemoteRef {
 
                 return returnValue;
 
-            } catch (IOException | ClassNotFoundException e) {
-                // disable saving any refs in the inputStream for GC
-                ((StreamRemoteCall)call).discardPendingRefs();
+            } catch (IOException e) {
                 clientRefLog.log(Log.BRIEF,
-                                 e.getClass().getName() + " unmarshalling return: ", e);
+                                 "IOException unmarshalling return: ", e);
+                throw new UnmarshalException("error unmarshalling return", e);
+            } catch (ClassNotFoundException e) {
+                clientRefLog.log(Log.BRIEF,
+                    "ClassNotFoundException unmarshalling return: ", e);
+
                 throw new UnmarshalException("error unmarshalling return", e);
             } finally {
                 try {

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2011, 2014, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2011, 2013, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -23,9 +23,36 @@
  * questions.
  */
 
+#import "CWrapper.h"
+
 #import <JavaNativeFoundation/JavaNativeFoundation.h>
+
+#import "AWTWindow.h"
+#import "LWCToolkit.h"
+#import "GeomUtilities.h"
 #import "ThreadUtilities.h"
+
 #import "sun_lwawt_macosx_CWrapper_NSWindow.h"
+
+/*
+ * Class:     sun_lwawt_macosx_CWrapper$NSObject
+ * Method:    release
+ * Signature: (J)V
+ */
+JNIEXPORT void JNICALL
+Java_sun_lwawt_macosx_CWrapper_00024NSObject_release
+(JNIEnv *env, jclass cls, jlong objectPtr)
+{
+JNF_COCOA_ENTER(env);
+
+    id obj = (id)jlong_to_ptr(objectPtr);
+    [ThreadUtilities performOnMainThreadWaiting:NO block:^(){
+        CFRelease(obj);
+    }];
+
+JNF_COCOA_EXIT(env);
+}
+
 
 /*
  * Class:     sun_lwawt_macosx_CWrapper$NSWindow
@@ -175,23 +202,6 @@ JNF_COCOA_EXIT(env);
 
 /*
  * Class:     sun_lwawt_macosx_CWrapper$NSWindow
- * Method:    close
- * Signature: (J)V
- */
-JNIEXPORT void JNICALL
-Java_sun_lwawt_macosx_CWrapper_00024NSWindow_close
-        (JNIEnv *env, jclass cls, jlong windowPtr)
-{
-JNF_COCOA_ENTER(env);
-    NSWindow *window = (NSWindow *)jlong_to_ptr(windowPtr);
-    [ThreadUtilities performOnMainThreadWaiting:NO block:^(){
-        [window close];
-    }];
-JNF_COCOA_EXIT(env);
-}
-
-/*
- * Class:     sun_lwawt_macosx_CWrapper$NSWindow
  * Method:    orderFrontRegardless
  * Signature: (J)V
  */
@@ -239,7 +249,6 @@ static void initLevels()
     dispatch_once(&pred, ^{
         LEVELS[sun_lwawt_macosx_CWrapper_NSWindow_NSNormalWindowLevel] = NSNormalWindowLevel;
         LEVELS[sun_lwawt_macosx_CWrapper_NSWindow_NSFloatingWindowLevel] = NSFloatingWindowLevel;
-        LEVELS[sun_lwawt_macosx_CWrapper_NSWindow_NSPopUpMenuWindowLevel] = NSPopUpMenuWindowLevel;
     });
 }
 
@@ -299,12 +308,32 @@ Java_sun_lwawt_macosx_CWrapper_00024NSWindow_removeChildWindow
 {
 JNF_COCOA_ENTER(env);
 
-    NSWindow *parent = (NSWindow *)jlong_to_ptr(parentPtr);
-    NSWindow *child = (NSWindow *)jlong_to_ptr(childPtr);
+    AWTWindow *parent = (AWTWindow *)jlong_to_ptr(parentPtr);
+    AWTWindow *child = (AWTWindow *)jlong_to_ptr(childPtr);
     [ThreadUtilities performOnMainThread:@selector(removeChildWindow:)
                                       on:parent
                               withObject:child
                            waitUntilDone:NO];
+
+JNF_COCOA_EXIT(env);
+}
+
+/*
+ * Class:     sun_lwawt_macosx_CWrapper$NSWindow
+ * Method:    setFrame
+ * Signature: (JIIIIZ)V
+ */
+JNIEXPORT void JNICALL
+Java_sun_lwawt_macosx_CWrapper_00024NSWindow_setFrame
+(JNIEnv *env, jclass cls, jlong windowPtr, jint x, jint y, jint w, jint h, jboolean display)
+{
+JNF_COCOA_ENTER(env);
+
+    AWTWindow *window = (AWTWindow *)jlong_to_ptr(windowPtr);
+    NSRect frame = NSMakeRect(x, y, w, h);
+    [ThreadUtilities performOnMainThreadWaiting:NO block:^(){
+        [window setFrame:frame display:display];
+    }];
 
 JNF_COCOA_EXIT(env);
 }
@@ -320,7 +349,7 @@ Java_sun_lwawt_macosx_CWrapper_00024NSWindow_setAlphaValue
 {
 JNF_COCOA_ENTER(env);
 
-    NSWindow *window = (NSWindow *)jlong_to_ptr(windowPtr);
+    AWTWindow *window = (AWTWindow *)jlong_to_ptr(windowPtr);
     [ThreadUtilities performOnMainThreadWaiting:NO block:^(){
         [window setAlphaValue:(CGFloat)alpha];
     }];
@@ -339,7 +368,7 @@ Java_sun_lwawt_macosx_CWrapper_00024NSWindow_setOpaque
 {
 JNF_COCOA_ENTER(env);
 
-    NSWindow *window = (NSWindow *)jlong_to_ptr(windowPtr);
+    AWTWindow *window = (AWTWindow *)jlong_to_ptr(windowPtr);
     [ThreadUtilities performOnMainThreadWaiting:NO block:^(){
         [window setOpaque:(BOOL)opaque];
     }];
@@ -354,17 +383,12 @@ JNF_COCOA_EXIT(env);
  */
 JNIEXPORT void JNICALL
 Java_sun_lwawt_macosx_CWrapper_00024NSWindow_setBackgroundColor
-(JNIEnv *env, jclass cls, jlong windowPtr, jint rgb)
+(JNIEnv *env, jclass cls, jlong windowPtr, jlong colorPtr)
 {
 JNF_COCOA_ENTER(env);
 
-    NSWindow *window = (NSWindow *)jlong_to_ptr(windowPtr);
-    CGFloat alpha = (((rgb >> 24) & 0xff) / 255.0);
-    CGFloat red   = (((rgb >> 16) & 0xff) / 255.0);
-    CGFloat green = (((rgb >>  8) & 0xff) / 255.0);
-    CGFloat blue  = (((rgb >>  0) & 0xff) / 255.0);
-    NSColor *color = [NSColor colorWithCalibratedRed:red green:green blue:blue
-                                               alpha:alpha];
+    AWTWindow *window = (AWTWindow *)jlong_to_ptr(windowPtr);
+    NSColor *color = (NSColor *)jlong_to_ptr(colorPtr);
     [ThreadUtilities performOnMainThreadWaiting:NO block:^(){
         [window setBackgroundColor:color];
     }];
@@ -373,7 +397,6 @@ JNF_COCOA_EXIT(env);
 }
 
 /*
- * Class:     sun_lwawt_macosx_CWrapper$NSWindow
  * Method:    miniaturize
  * Signature: (J)V
  */
@@ -537,6 +560,33 @@ JNF_COCOA_EXIT(env);
 
 /*
  * Class:     sun_lwawt_macosx_CWrapper$NSView
+ * Method:    frame
+ * Signature: (J)Ljava/awt/Rectangle;
+ */
+JNIEXPORT jobject JNICALL
+Java_sun_lwawt_macosx_CWrapper_00024NSView_frame
+(JNIEnv *env, jclass cls, jlong viewPtr)
+{
+    jobject jRect = NULL;
+
+JNF_COCOA_ENTER(env);
+
+    __block NSRect rect = NSZeroRect;
+
+    NSView *view = (NSView *)jlong_to_ptr(viewPtr);
+    [ThreadUtilities performOnMainThreadWaiting:YES block:^(){
+        rect = [view frame];
+    }];
+
+    jRect = NSToJavaRect(env, rect);
+
+JNF_COCOA_EXIT(env);
+
+    return jRect;
+}
+
+/*
+ * Class:     sun_lwawt_macosx_CWrapper$NSView
  * Method:    window
  * Signature: (J)J
  */
@@ -597,3 +647,26 @@ JNF_COCOA_ENTER(env);
 
 JNF_COCOA_EXIT(env);
 }
+
+/*
+ * Class:     sun_lwawt_macosx_CWrapper$NSColor
+ * Method:    clearColor
+ * Signature: ()J
+ */
+JNIEXPORT jlong JNICALL
+Java_sun_lwawt_macosx_CWrapper_00024NSColor_clearColor
+(JNIEnv *env, jclass cls)
+{
+    __block jlong clearColorPtr = 0L;
+
+JNF_COCOA_ENTER(env);
+
+    [ThreadUtilities performOnMainThreadWaiting:YES block:^(){
+        clearColorPtr = ptr_to_jlong([NSColor clearColor]);
+    }];
+
+JNF_COCOA_EXIT(env);
+
+    return clearColorPtr;
+}
+

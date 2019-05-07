@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2011, 2014, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2011, 2013, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -27,8 +27,6 @@ package sun.font;
 
 import java.awt.*;
 import java.io.File;
-import java.security.AccessController;
-import java.security.PrivilegedAction;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.Hashtable;
@@ -40,10 +38,9 @@ import javax.swing.plaf.FontUIResource;
 
 import sun.awt.FontConfiguration;
 import sun.awt.HeadlessToolkit;
-import sun.misc.ThreadGroupUtils;
 import sun.lwawt.macosx.*;
 
-public final class CFontManager extends SunFontManager {
+public class CFontManager extends SunFontManager {
     private FontConfigManager fcManager = null;
     private static Hashtable<String, Font2D> genericFonts = new Hashtable<String, Font2D>();
 
@@ -61,14 +58,20 @@ public final class CFontManager extends SunFontManager {
         return new CFontConfiguration(this, preferLocaleFonts, preferPropFonts);
     }
 
+    private static String[] defaultPlatformFont = null;
+
     /*
      * Returns an array of two strings. The first element is the
      * name of the font. The second element is the file name.
      */
     @Override
-    protected String[] getDefaultPlatformFont() {
-        return new String[]{"Lucida Grande",
-                            "/System/Library/Fonts/LucidaGrande.ttc"};
+    public synchronized String[] getDefaultPlatformFont() {
+        if (defaultPlatformFont == null) {
+            defaultPlatformFont = new String[2];
+            defaultPlatformFont[0] = "Lucida Grande";
+            defaultPlatformFont[1] = "/System/Library/Fonts/LucidaGrande.ttc";
+        }
+        return defaultPlatformFont;
     }
 
     // This is a way to register any kind of Font2D, not just files and composites.
@@ -212,19 +215,24 @@ public final class CFontManager extends SunFontManager {
                                 });
                     }
                 };
-                AccessController.doPrivileged(
-                        (PrivilegedAction<Void>) () -> {
-                            /* The thread must be a member of a thread group
-                             * which will not get GCed before VM exit.
-                             * Make its parent the top-level thread group.
-                             */
-                            ThreadGroup rootTG = ThreadGroupUtils.getRootThreadGroup();
-                            fileCloser = new Thread(rootTG, fileCloserRunnable);
-                            fileCloser.setContextClassLoader(null);
-                            Runtime.getRuntime().addShutdownHook(fileCloser);
-                            return null;
-                        }
-                );
+                java.security.AccessController.doPrivileged(
+                        new java.security.PrivilegedAction<Object>() {
+                            public Object run() {
+                                /* The thread must be a member of a thread group
+                                 * which will not get GCed before VM exit.
+                                 * Make its parent the top-level thread group.
+                                 */
+                                ThreadGroup tg =
+                                    Thread.currentThread().getThreadGroup();
+                                for (ThreadGroup tgn = tg;
+                                tgn != null;
+                                tg = tgn, tgn = tg.getParent());
+                                fileCloser = new Thread(tg, fileCloserRunnable);
+                                fileCloser.setContextClassLoader(null);
+                                Runtime.getRuntime().addShutdownHook(fileCloser);
+                                return null;
+                            }
+                        });
                 }
             }
         }
@@ -252,42 +260,13 @@ public final class CFontManager extends SunFontManager {
         final CFont font = new CFont(fontName, fontFamilyName);
 
         registerGenericFont(font);
-    }
 
-    void registerItalicDerived() {
-        FontFamily[] famArr = FontFamily.getAllFontFamilies();
-        for (int i=0; i<famArr.length; i++) {
-            FontFamily family = famArr[i];
-
-            Font2D f2dPlain = family.getFont(Font.PLAIN);
-            if (f2dPlain != null && !(f2dPlain instanceof CFont)) continue;
-            Font2D f2dBold = family.getFont(Font.BOLD);
-            if (f2dBold != null && !(f2dBold instanceof CFont)) continue;
-            Font2D f2dItalic = family.getFont(Font.ITALIC);
-            if (f2dItalic != null && !(f2dItalic instanceof CFont)) continue;
-            Font2D f2dBoldItalic = family.getFont(Font.BOLD|Font.ITALIC);
-            if (f2dBoldItalic != null && !(f2dBoldItalic instanceof CFont)) continue;
-
-            CFont plain = (CFont)f2dPlain;
-            CFont bold = (CFont)f2dBold;
-            CFont italic = (CFont)f2dItalic;
-            CFont boldItalic = (CFont)f2dBoldItalic;
-
-            if (bold == null) bold = plain;
-            if (plain == null && bold == null) continue;
-            if (italic != null && boldItalic != null) continue;
-            if (plain != null && italic == null) {
-               registerGenericFont(plain.createItalicVariant(), true);
-            }
-            if (bold != null && boldItalic == null) {
-               registerGenericFont(bold.createItalicVariant(), true);
-            }
+        if ((font.getStyle() & Font.ITALIC) == 0) {
+            registerGenericFont(font.createItalicVariant(), true);
         }
     }
 
     Object waitForFontsToBeLoaded  = new Object();
-    private boolean loadedAllFonts = false;
-
     public void loadFonts()
     {
         synchronized(waitForFontsToBeLoaded)
@@ -296,11 +275,7 @@ public final class CFontManager extends SunFontManager {
             java.security.AccessController.doPrivileged(
                 new java.security.PrivilegedAction<Object>() {
                     public Object run() {
-                        if (!loadedAllFonts) {
-                           loadNativeFonts();
-                           registerItalicDerived();
-                           loadedAllFonts = true;
-                        }
+                        loadNativeFonts();
                         return null;
                     }
                 }

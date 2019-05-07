@@ -90,7 +90,6 @@ import jdk.internal.dynalink.linker.GuardedInvocation;
 import jdk.internal.dynalink.linker.GuardingDynamicLinker;
 import jdk.internal.dynalink.linker.LinkRequest;
 import jdk.internal.dynalink.linker.LinkerServices;
-import jdk.internal.dynalink.linker.MethodHandleTransformer;
 
 /**
  * Default implementation of the {@link LinkerServices} interface.
@@ -104,50 +103,41 @@ public class LinkerServicesImpl implements LinkerServices {
 
     private final TypeConverterFactory typeConverterFactory;
     private final GuardingDynamicLinker topLevelLinker;
-    private final MethodHandleTransformer internalObjectsFilter;
 
     /**
      * Creates a new linker services object.
      *
      * @param typeConverterFactory the type converter factory exposed by the services.
      * @param topLevelLinker the top level linker used by the services.
-     * @param internalObjectsFilter a method handle transformer that is supposed to act as the implementation of this
-     * services' {@link #filterInternalObjects(java.lang.invoke.MethodHandle)} method.
      */
     public LinkerServicesImpl(final TypeConverterFactory typeConverterFactory,
-            final GuardingDynamicLinker topLevelLinker, final MethodHandleTransformer internalObjectsFilter) {
+            final GuardingDynamicLinker topLevelLinker) {
         this.typeConverterFactory = typeConverterFactory;
         this.topLevelLinker = topLevelLinker;
-        this.internalObjectsFilter = internalObjectsFilter;
     }
 
     @Override
-    public boolean canConvert(final Class<?> from, final Class<?> to) {
+    public boolean canConvert(Class<?> from, Class<?> to) {
         return typeConverterFactory.canConvert(from, to);
     }
 
     @Override
-    public MethodHandle asType(final MethodHandle handle, final MethodType fromType) {
+    public MethodHandle asType(MethodHandle handle, MethodType fromType) {
         return typeConverterFactory.asType(handle, fromType);
     }
 
     @Override
-    public MethodHandle asTypeLosslessReturn(final MethodHandle handle, final MethodType fromType) {
-        return Implementation.asTypeLosslessReturn(this, handle, fromType);
-    }
-
-    @Override
-    public MethodHandle getTypeConverter(final Class<?> sourceType, final Class<?> targetType) {
+    public MethodHandle getTypeConverter(Class<?> sourceType, Class<?> targetType) {
         return typeConverterFactory.getTypeConverter(sourceType, targetType);
     }
 
     @Override
-    public Comparison compareConversion(final Class<?> sourceType, final Class<?> targetType1, final Class<?> targetType2) {
+    public Comparison compareConversion(Class<?> sourceType, Class<?> targetType1, Class<?> targetType2) {
         return typeConverterFactory.compareConversion(sourceType, targetType1, targetType2);
     }
 
     @Override
-    public GuardedInvocation getGuardedInvocation(final LinkRequest linkRequest) throws Exception {
+    public GuardedInvocation getGuardedInvocation(LinkRequest linkRequest) throws Exception {
         final LinkRequest prevLinkRequest = threadLinkRequest.get();
         threadLinkRequest.set(linkRequest);
         try {
@@ -157,11 +147,6 @@ public class LinkerServicesImpl implements LinkerServices {
         }
     }
 
-    @Override
-    public MethodHandle filterInternalObjects(final MethodHandle target) {
-        return internalObjectsFilter != null ? internalObjectsFilter.transform(target) : target;
-    }
-
     /**
      * Returns the currently processed link request, or null if the method is invoked outside of the linking process.
      * @return the currently processed link request, or null.
@@ -169,7 +154,7 @@ public class LinkerServicesImpl implements LinkerServices {
      * permission.
      */
     public static LinkRequest getCurrentLinkRequest() {
-        final SecurityManager sm = System.getSecurityManager();
+        SecurityManager sm = System.getSecurityManager();
         if(sm != null) {
             sm.checkPermission(GET_CURRENT_LINK_REQUEST);
         }

@@ -40,23 +40,22 @@ class Compile;
 class Phase : public StackObj {
 public:
   enum PhaseNumber {
-    Compiler,                         // Top-level compiler phase
-    Parser,                           // Parse bytecodes
-    Remove_Useless,                   // Remove useless nodes
-    Remove_Useless_And_Renumber_Live, // First, remove useless nodes from the graph. Then, renumber live nodes.
-    Optimistic,                       // Optimistic analysis phase
-    GVN,                              // Pessimistic global value numbering phase
-    Ins_Select,                       // Instruction selection phase
-    CFG,                              // Build a CFG
-    BlockLayout,                      // Linear ordering of blocks
-    Register_Allocation,              // Register allocation, duh
-    LIVE,                             // Dragon-book LIVE range problem
-    StringOpts,                       // StringBuilder related optimizations
-    Interference_Graph,               // Building the IFG
-    Coalesce,                         // Coalescing copies
-    Ideal_Loop,                       // Find idealized trip-counted loops
-    Macro_Expand,                     // Expand macro nodes
-    Peephole,                         // Apply peephole optimizations
+    Compiler,                   // Top-level compiler phase
+    Parser,                     // Parse bytecodes
+    Remove_Useless,             // Remove useless nodes
+    Optimistic,                 // Optimistic analysis phase
+    GVN,                        // Pessimistic global value numbering phase
+    Ins_Select,                 // Instruction selection phase
+    CFG,                        // Build a CFG
+    BlockLayout,                // Linear ordering of blocks
+    Register_Allocation,        // Register allocation, duh
+    LIVE,                       // Dragon-book LIVE range problem
+    StringOpts,                 // StringBuilder related optimizations
+    Interference_Graph,         // Building the IFG
+    Coalesce,                   // Coalescing copies
+    Ideal_Loop,                 // Find idealized trip-counted loops
+    Macro_Expand,               // Expand macro nodes
+    Peephole,                   // Apply peephole optimizations
     last_phase
   };
 protected:
@@ -92,7 +91,6 @@ protected:
   static elapsedTimer _t_macroEliminate;
   static elapsedTimer _t_macroExpand;
   static elapsedTimer _t_peephole;
-  static elapsedTimer _t_postalloc_expand;
   static elapsedTimer _t_codeGeneration;
   static elapsedTimer _t_registerMethod;
   static elapsedTimer _t_temporaryTimer1;
@@ -103,7 +101,6 @@ protected:
   static elapsedTimer   _t_iterGVN;
   static elapsedTimer   _t_iterGVN2;
   static elapsedTimer   _t_incrInline;
-  static elapsedTimer   _t_renumberLive;
 
 // Subtimers for _t_registerAllocation
   static elapsedTimer   _t_ctorChaitin;
@@ -111,7 +108,6 @@ protected:
   static elapsedTimer   _t_computeLive;
   static elapsedTimer   _t_regAllocSplit;
   static elapsedTimer   _t_postAllocCopyRemoval;
-  static elapsedTimer   _t_mergeMultidefs;
   static elapsedTimer   _t_fixupSpills;
 
 // Subtimers for _t_output

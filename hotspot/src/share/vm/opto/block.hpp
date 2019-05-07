@@ -185,13 +185,14 @@ public:
   Block* lone_fall_through();   // Return lone fall-through Block or null
 
   Block* dom_lca(Block* that);  // Compute LCA in dominator tree.
-
+#ifdef ASSERT
   bool dominates(Block* that) {
     int dom_diff = this->_dom_depth - that->_dom_depth;
     if (dom_diff > 0)  return false;
     for (; dom_diff < 0; dom_diff++)  that = that->_idom;
     return this == that;
   }
+#endif
 
   // Report the alignment required by this block.  Must be a power of 2.
   // The previous block will insert nops to get this alignment.
@@ -312,12 +313,10 @@ public:
   // Add an instruction to an existing block.  It must go after the head
   // instruction and before the end instruction.
   void add_inst( Node *n ) { insert_node(n, end_idx()); }
-  // Find node in block. Fails if node not in block.
+  // Find node in block
   uint find_node( const Node *n ) const;
   // Find and remove n from block list
   void find_remove( const Node *n );
-  // Check wether the node is in the block.
-  bool contains (const Node *n) const;
 
   // Return the empty status of a block
   enum { not_empty, empty_with_goto, completely_empty };
@@ -472,9 +471,9 @@ class PhaseCFG : public Phase {
   MachNode* _goto;
 
   Block* insert_anti_dependences(Block* LCA, Node* load, bool verify = false);
-  void verify_anti_dependences(Block* LCA, Node* load) const {
+  void verify_anti_dependences(Block* LCA, Node* load) {
     assert(LCA == get_block_for_node(load), "should already be scheduled");
-    const_cast<PhaseCFG*>(this)->insert_anti_dependences(LCA, load, true);
+    insert_anti_dependences(LCA, load, true);
   }
 
   bool move_to_next(Block* bx, uint b_index);
@@ -589,7 +588,6 @@ class PhaseCFG : public Phase {
 
   // Remove empty basic blocks
   void remove_empty_blocks();
-  Block *fixup_trap_based_check(Node *branch, Block *block, int block_pos, Block *bnext);
   void fixup_flow();
 
   // Insert a node into a block at index and map the node to the block
@@ -597,9 +595,6 @@ class PhaseCFG : public Phase {
     b->insert_node(n , idx);
     map_node_to_block(n, b);
   }
-
-  // Check all nodes and postalloc_expand them if necessary.
-  void postalloc_expand(PhaseRegAlloc* _ra);
 
 #ifndef PRODUCT
   bool trace_opto_pipelining() const { return _trace_opto_pipelining; }

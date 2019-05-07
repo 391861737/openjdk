@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2013, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2012, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -45,19 +45,23 @@ extern char **environ;
  *      A collection of useful strings. One should think of these as #define
  *      entries, but actual strings can be more efficient (with many compilers).
  */
-#ifdef __solaris__
-static const char *system_dir   = "/usr/jdk";
-static const char *user_dir     = "/jdk";
-#else /* !__solaris__, i.e. Linux, AIX,.. */
+#ifdef __linux__
 static const char *system_dir   = "/usr/java";
 static const char *user_dir     = "/java";
+#else /* Solaris */
+static const char *system_dir   = "/usr/jdk";
+static const char *user_dir     = "/jdk";
 #endif
 
 #include <dlfcn.h>
-#ifdef __solaris__
-#include <thread.h>
-#else
+#ifdef __linux__
 #include <pthread.h>
+#else
+#include <thread.h>
 #endif
+
+#define JVM_DLL         "libjvm.so"
+#define JAVA_DLL        "libjava.so"
+#define LD_LIBRARY_PATH "LD_LIBRARY_PATH"
 
 #endif /* JAVA_MD_SOLINUX_H */

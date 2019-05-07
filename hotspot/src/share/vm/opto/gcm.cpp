@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 1997, 2015, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 1997, 2013, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -35,20 +35,24 @@
 #include "opto/rootnode.hpp"
 #include "opto/runtime.hpp"
 #include "runtime/deoptimization.hpp"
-#if defined AD_MD_HPP
-# include AD_MD_HPP
-#elif defined TARGET_ARCH_MODEL_x86_32
+#ifdef TARGET_ARCH_MODEL_x86_32
 # include "adfiles/ad_x86_32.hpp"
-#elif defined TARGET_ARCH_MODEL_x86_64
-# include "adfiles/ad_x86_64.hpp"
-#elif defined TARGET_ARCH_MODEL_sparc
-# include "adfiles/ad_sparc.hpp"
-#elif defined TARGET_ARCH_MODEL_zero
-# include "adfiles/ad_zero.hpp"
-#elif defined TARGET_ARCH_MODEL_ppc_64
-# include "adfiles/ad_ppc_64.hpp"
 #endif
-
+#ifdef TARGET_ARCH_MODEL_x86_64
+# include "adfiles/ad_x86_64.hpp"
+#endif
+#ifdef TARGET_ARCH_MODEL_sparc
+# include "adfiles/ad_sparc.hpp"
+#endif
+#ifdef TARGET_ARCH_MODEL_zero
+# include "adfiles/ad_zero.hpp"
+#endif
+#ifdef TARGET_ARCH_MODEL_arm
+# include "adfiles/ad_arm.hpp"
+#endif
+#ifdef TARGET_ARCH_MODEL_ppc
+# include "adfiles/ad_ppc.hpp"
+#endif
 
 // Portions of code courtesy of Clifford Click
 
@@ -118,8 +122,8 @@ void PhaseCFG::replace_block_proj_ctrl( Node *n ) {
 //------------------------------schedule_pinned_nodes--------------------------
 // Set the basic block for Nodes pinned into blocks
 void PhaseCFG::schedule_pinned_nodes(VectorSet &visited) {
-  // Allocate node stack of size C->live_nodes()+8 to avoid frequent realloc
-  GrowableArray <Node *> spstack(C->live_nodes() + 8);
+  // Allocate node stack of size C->unique()+8 to avoid frequent realloc
+  GrowableArray <Node *> spstack(C->unique() + 8);
   spstack.push(_root);
   while (spstack.is_nonempty()) {
     Node* node = spstack.pop();
@@ -1285,7 +1289,7 @@ void PhaseCFG::global_code_motion() {
   visited.Clear();
   Node_List stack(arena);
   // Pre-grow the list
-  stack.map((C->live_nodes() >> 1) + 16, NULL);
+  stack.map((C->unique() >> 1) + 16, NULL);
   if (!schedule_early(visited, stack)) {
     // Bailout without retry
     C->record_method_not_compilable("early schedule failed");
@@ -1322,6 +1326,15 @@ void PhaseCFG::global_code_motion() {
   // with suitable memory ops nearby.  Use the memory op to do the NULL check.
   // I can generate a memory op if there is not one nearby.
   if (C->is_method_compilation()) {
+    // Don't do it for natives, adapters, or runtime stubs
+    int allowed_reasons = 0;
+    // ...and don't do it when there have been too many traps, globally.
+    for (int reason = (int)Deoptimization::Reason_none+1;
+         reason < Compile::trapHistLength; reason++) {
+      assert(reason < BitsPerInt, "recode bit map");
+      if (!C->too_many_traps((Deoptimization::DeoptReason) reason))
+        allowed_reasons |= nth_bit(reason);
+    }
     // By reversing the loop direction we get a very minor gain on mpegaudio.
     // Feel free to revert to a forward loop for clarity.
     // for( int i=0; i < (int)matcher._null_check_tests.size(); i+=2 ) {
@@ -1329,7 +1342,7 @@ void PhaseCFG::global_code_motion() {
       Node* proj = _matcher._null_check_tests[i];
       Node* val  = _matcher._null_check_tests[i + 1];
       Block* block = get_block_for_node(proj);
-      implicit_null_check(block, proj, val, C->allowed_deopt_reasons());
+      implicit_null_check(block, proj, val, allowed_reasons);
       // The implicit_null_check will only perform the transformation
       // if the null branch is truly uncommon, *and* it leads to an
       // uncommon trap.  Combined with the too_many_traps guards
@@ -2006,7 +2019,7 @@ void CFGLoop::dump() const {
   tty->print("%s: %d  trip_count: %6.0f freq: %6.0f\n",
              _depth == 0 ? "Method" : "Loop", _id, trip_count(), _freq);
   for (int i = 0; i < _depth; i++) tty->print("   ");
-  tty->print("         members:");
+  tty->print("         members:", _id);
   int k = 0;
   for (int i = 0; i < _members.length(); i++) {
     if (k++ >= 6) {

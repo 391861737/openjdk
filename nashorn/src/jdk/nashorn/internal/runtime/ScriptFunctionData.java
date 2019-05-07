@@ -29,101 +29,55 @@ import static jdk.nashorn.internal.lookup.Lookup.MH;
 import static jdk.nashorn.internal.runtime.ECMAErrors.typeError;
 import static jdk.nashorn.internal.runtime.ScriptRuntime.UNDEFINED;
 
-import java.io.IOException;
-import java.io.ObjectInputStream;
-import java.io.Serializable;
 import java.lang.invoke.MethodHandle;
 import java.lang.invoke.MethodHandles;
 import java.lang.invoke.MethodType;
-import java.util.Collection;
-import java.util.LinkedList;
-import java.util.List;
-import jdk.nashorn.internal.runtime.linker.LinkerCallSite;
-
+import jdk.nashorn.internal.runtime.linker.JavaAdapterFactory;
 
 /**
  * A container for data needed to instantiate a specific {@link ScriptFunction} at runtime.
  * Instances of this class are created during codegen and stored in script classes'
  * constants array to reduce function instantiation overhead during runtime.
  */
-public abstract class ScriptFunctionData implements Serializable {
-    static final int MAX_ARITY = LinkerCallSite.ARGLIMIT;
-    static {
-        // Assert it fits in a byte, as that's what we store it in. It's just a size optimization though, so if needed
-        // "byte arity" field can be widened.
-        assert MAX_ARITY < 256;
-    }
+public abstract class ScriptFunctionData {
 
-    /** Name of the function or "" for anonymous functions */
+    /** Name of the function or "" for anonynous functions */
     protected final String name;
 
-    /**
-     * A list of code versions of a function sorted in ascending order of generic descriptors.
-     */
-    protected transient LinkedList<CompiledFunction> code = new LinkedList<>();
+    /** All versions of this function that have been generated to code */
+    protected final CompiledFunctions code;
 
-    /** Function flags */
-    protected int flags;
-
-    // Parameter arity of the function, corresponding to "f.length". E.g. "function f(a, b, c) { ... }" arity is 3, and
-    // some built-in ECMAScript functions have their arity declared by the specification. Note that regardless of this
-    // value, the function might still be capable of receiving variable number of arguments, see isVariableArity.
     private int arity;
 
-    /**
-     * A pair of method handles used for generic invoker and constructor. Field is volatile as it can be initialized by
-     * multiple threads concurrently, but we still tolerate a race condition in it as all values stored into it are
-     * idempotent.
-     */
-    private volatile transient GenericInvokers genericInvokers;
+    private final boolean isStrict;
 
+    private final boolean isBuiltin;
+
+    private final boolean isConstructor;
+
+    private static final MethodHandle NEWFILTER     = findOwnMH("newFilter", Object.class, Object.class, Object.class);
     private static final MethodHandle BIND_VAR_ARGS = findOwnMH("bindVarArgs", Object[].class, Object[].class, Object[].class);
-
-    /** Is this a strict mode function? */
-    public static final int IS_STRICT            = 1 << 0;
-    /** Is this a built-in function? */
-    public static final int IS_BUILTIN           = 1 << 1;
-    /** Is this a constructor function? */
-    public static final int IS_CONSTRUCTOR       = 1 << 2;
-    /** Does this function expect a callee argument? */
-    public static final int NEEDS_CALLEE         = 1 << 3;
-    /** Does this function make use of the this-object argument? */
-    public static final int USES_THIS            = 1 << 4;
-    /** Is this a variable arity function? */
-    public static final int IS_VARIABLE_ARITY    = 1 << 5;
-    /** Is this a object literal property getter or setter? */
-    public static final int IS_PROPERTY_ACCESSOR = 1 << 6;
-
-    /** Flag for strict or built-in functions */
-    public static final int IS_STRICT_OR_BUILTIN = IS_STRICT | IS_BUILTIN;
-    /** Flag for built-in constructors */
-    public static final int IS_BUILTIN_CONSTRUCTOR = IS_BUILTIN | IS_CONSTRUCTOR;
-
-    private static final long serialVersionUID = 4252901245508769114L;
 
     /**
      * Constructor
      *
-     * @param name  script function name
-     * @param arity arity
-     * @param flags the function flags
+     * @param name          script function name
+     * @param arity         arity
+     * @param isStrict      is the function strict
+     * @param isBuiltin     is the function built in
+     * @param isConstructor is the function a constructor
      */
-    ScriptFunctionData(final String name, final int arity, final int flags) {
-        this.name  = name;
-        this.flags = flags;
-        setArity(arity);
+    ScriptFunctionData(final String name, final int arity, final boolean isStrict, final boolean isBuiltin, final boolean isConstructor) {
+        this.name          = name;
+        this.arity         = arity;
+        this.code          = new CompiledFunctions();
+        this.isStrict      = isStrict;
+        this.isBuiltin     = isBuiltin;
+        this.isConstructor = isConstructor;
     }
 
     final int getArity() {
         return arity;
-    }
-
-    final boolean isVariableArity() {
-        return (flags & IS_VARIABLE_ARITY) != 0;
-    }
-
-    final boolean isPropertyAccessor() {
-        return (flags & IS_PROPERTY_ACCESSOR) != 0;
     }
 
     /**
@@ -131,56 +85,50 @@ public abstract class ScriptFunctionData implements Serializable {
      * @param arity new arity
      */
     void setArity(final int arity) {
-        if(arity < 0 || arity > MAX_ARITY) {
-            throw new IllegalArgumentException(String.valueOf(arity));
-        }
         this.arity = arity;
     }
 
     CompiledFunction bind(final CompiledFunction originalInv, final ScriptFunction fn, final Object self, final Object[] args) {
-        final MethodHandle boundInvoker = bindInvokeHandle(originalInv.createComposableInvoker(), fn, self, args);
+        final MethodHandle boundInvoker = bindInvokeHandle(originalInv.getInvoker(), fn, self, args);
 
+        //TODO the boundinvoker.type() could actually be more specific here
         if (isConstructor()) {
-            return new CompiledFunction(boundInvoker, bindConstructHandle(originalInv.createComposableConstructor(), fn, args), null);
+            ensureConstructor(originalInv);
+            return new CompiledFunction(boundInvoker.type(), boundInvoker, bindConstructHandle(originalInv.getConstructor(), fn, args));
         }
 
-        return new CompiledFunction(boundInvoker);
+        return new CompiledFunction(boundInvoker.type(), boundInvoker);
     }
 
     /**
      * Is this a ScriptFunction generated with strict semantics?
      * @return true if strict, false otherwise
      */
-    public final boolean isStrict() {
-        return (flags & IS_STRICT) != 0;
+    public boolean isStrict() {
+        return isStrict;
     }
 
-    /**
-     * Return the complete internal function name for this
-     * data, not anonymous or similar. May be identical
-     * @return internal function name
-     */
-    protected String getFunctionName() {
-        return getName();
+    boolean isBuiltin() {
+        return isBuiltin;
     }
 
-    final boolean isBuiltin() {
-        return (flags & IS_BUILTIN) != 0;
+    boolean isConstructor() {
+        return isConstructor;
     }
 
-    final boolean isConstructor() {
-        return (flags & IS_CONSTRUCTOR) != 0;
+    boolean needsCallee() {
+        // we don't know if we need a callee or not unless we are generated
+        ensureCodeGenerated();
+        return code.needsCallee();
     }
-
-    abstract boolean needsCallee();
 
     /**
      * Returns true if this is a non-strict, non-built-in function that requires non-primitive this argument
      * according to ECMA 10.4.3.
      * @return true if this argument must be an object
      */
-    final boolean needsWrappedThis() {
-        return (flags & USES_THIS) != 0 && (flags & IS_STRICT_OR_BUILTIN) == 0;
+    boolean needsWrappedThis() {
+        return !isStrict && !isBuiltin;
     }
 
     String toSource() {
@@ -199,14 +147,6 @@ public abstract class ScriptFunctionData implements Serializable {
      */
     @Override
     public String toString() {
-        return name.isEmpty() ? "<anonymous>" : name;
-    }
-
-    /**
-     * Verbose description of data
-     * @return verbose description
-     */
-    public String toStringVerbose() {
         final StringBuilder sb = new StringBuilder();
 
         sb.append("name='").
@@ -227,32 +167,37 @@ public abstract class ScriptFunctionData implements Serializable {
      * and not suddenly a "real" object
      *
      * @param callSiteType callsite type
-     * @return compiled function object representing the best invoker.
+     * @param args         arguments at callsite on first trampoline invocation
+     * @return method handle to best invoker
      */
-    final CompiledFunction getBestInvoker(final MethodType callSiteType, final ScriptObject runtimeScope) {
-        return getBestInvoker(callSiteType, runtimeScope, CompiledFunction.NO_FUNCTIONS);
+    MethodHandle getBestInvoker(final MethodType callSiteType, final Object[] args) {
+        return getBest(callSiteType).getInvoker();
     }
 
-    final CompiledFunction getBestInvoker(final MethodType callSiteType, final ScriptObject runtimeScope, final Collection<CompiledFunction> forbidden) {
-        final CompiledFunction cf = getBest(callSiteType, runtimeScope, forbidden);
-        assert cf != null;
-        return cf;
+    MethodHandle getBestInvoker(final MethodType callSiteType) {
+        return getBestInvoker(callSiteType, null);
     }
 
-    final CompiledFunction getBestConstructor(final MethodType callSiteType, final ScriptObject runtimeScope, final Collection<CompiledFunction> forbidden) {
+    MethodHandle getBestConstructor(final MethodType callSiteType, final Object[] args) {
         if (!isConstructor()) {
             throw typeError("not.a.constructor", toSource());
         }
-        // Constructor call sites don't have a "this", but getBest is meant to operate on "callee, this, ..." style
-        final CompiledFunction cf = getBest(callSiteType.insertParameterTypes(1, Object.class), runtimeScope, forbidden);
-        return cf;
+        ensureCodeGenerated();
+
+        final CompiledFunction best = getBest(callSiteType);
+        ensureConstructor(best);
+        return best.getConstructor();
+    }
+
+    MethodHandle getBestConstructor(final MethodType callSiteType) {
+        return getBestConstructor(callSiteType, null);
     }
 
     /**
-     * If we can have lazy code generation, this is a hook to ensure that the code has been compiled.
-     * This does not guarantee the code been installed in this {@code ScriptFunctionData} instance
+     * Subclass responsibility. If we can have lazy code generation, this is a hook to ensure that
+     * code exists before performing an operation.
      */
-    protected void ensureCompiled() {
+    protected void ensureCodeGenerated() {
         //empty
     }
 
@@ -261,175 +206,128 @@ public abstract class ScriptFunctionData implements Serializable {
      * is generated, get the most generic of all versions of this function and adapt it
      * to Objects.
      *
-     * @param runtimeScope the runtime scope. It can be used to evaluate types of scoped variables to guide the
-     * optimistic compilation, should the call to this method trigger code compilation. Can be null if current runtime
-     * scope is not known, but that might cause compilation of code that will need more deoptimization passes.
+     * TODO this is only public because {@link JavaAdapterFactory} can't supply us with
+     * a MethodType that we can use for lookup due to boostrapping problems. Can be fixed
+     *
      * @return generic invoker of this script function
      */
-    final MethodHandle getGenericInvoker(final ScriptObject runtimeScope) {
-        // This method has race conditions both on genericsInvoker and genericsInvoker.invoker, but even if invoked
-        // concurrently, they'll create idempotent results, so it doesn't matter. We could alternatively implement this
-        // using java.util.concurrent.AtomicReferenceFieldUpdater, but it's hardly worth it.
-        final GenericInvokers lgenericInvokers = ensureGenericInvokers();
-        MethodHandle invoker = lgenericInvokers.invoker;
-        if(invoker == null) {
-            lgenericInvokers.invoker = invoker = createGenericInvoker(runtimeScope);
-        }
-        return invoker;
+    public final MethodHandle getGenericInvoker() {
+        ensureCodeGenerated();
+        return code.generic().getInvoker();
     }
 
-    private MethodHandle createGenericInvoker(final ScriptObject runtimeScope) {
-        return makeGenericMethod(getGeneric(runtimeScope).createComposableInvoker());
+    final MethodHandle getGenericConstructor() {
+        ensureCodeGenerated();
+        ensureConstructor(code.generic());
+        return code.generic().getConstructor();
     }
 
-    final MethodHandle getGenericConstructor(final ScriptObject runtimeScope) {
-        // This method has race conditions both on genericsInvoker and genericsInvoker.constructor, but even if invoked
-        // concurrently, they'll create idempotent results, so it doesn't matter. We could alternatively implement this
-        // using java.util.concurrent.AtomicReferenceFieldUpdater, but it's hardly worth it.
-        final GenericInvokers lgenericInvokers = ensureGenericInvokers();
-        MethodHandle constructor = lgenericInvokers.constructor;
-        if(constructor == null) {
-            lgenericInvokers.constructor = constructor = createGenericConstructor(runtimeScope);
-        }
-        return constructor;
+    private CompiledFunction getBest(final MethodType callSiteType) {
+        ensureCodeGenerated();
+        return code.best(callSiteType);
     }
-
-    private MethodHandle createGenericConstructor(final ScriptObject runtimeScope) {
-        return makeGenericMethod(getGeneric(runtimeScope).createComposableConstructor());
-    }
-
-    private GenericInvokers ensureGenericInvokers() {
-        GenericInvokers lgenericInvokers = genericInvokers;
-        if(lgenericInvokers == null) {
-            genericInvokers = lgenericInvokers = new GenericInvokers();
-        }
-        return lgenericInvokers;
-    }
-
-    private static MethodType widen(final MethodType cftype) {
-        final Class<?>[] paramTypes = new Class<?>[cftype.parameterCount()];
-        for (int i = 0; i < cftype.parameterCount(); i++) {
-            paramTypes[i] = cftype.parameterType(i).isPrimitive() ? cftype.parameterType(i) : Object.class;
-        }
-        return MH.type(cftype.returnType(), paramTypes);
-    }
-
-    /**
-     * Used to find an apply to call version that fits this callsite.
-     * We cannot just, as in the normal matcher case, return e.g. (Object, Object, int)
-     * for (Object, Object, int, int, int) or we will destroy the semantics and get
-     * a function that, when padded with undefined values, behaves differently
-     * @param type actual call site type
-     * @return apply to call that perfectly fits this callsite or null if none found
-     */
-    CompiledFunction lookupExactApplyToCall(final MethodType type) {
-        for (final CompiledFunction cf : code) {
-            if (!cf.isApplyToCall()) {
-                continue;
-            }
-
-            final MethodType cftype = cf.type();
-            if (cftype.parameterCount() != type.parameterCount()) {
-                continue;
-            }
-
-            if (widen(cftype).equals(widen(type))) {
-                return cf;
-            }
-        }
-
-        return null;
-    }
-
-    CompiledFunction pickFunction(final MethodType callSiteType, final boolean canPickVarArg) {
-        for (final CompiledFunction candidate : code) {
-            if (candidate.matchesCallSite(callSiteType, canPickVarArg)) {
-                return candidate;
-            }
-        }
-        return null;
-    }
-
-    /**
-     * Returns the best function for the specified call site type.
-     * @param callSiteType The call site type. Call site types are expected to have the form
-     * {@code (callee, this[, args...])}.
-     * @param runtimeScope the runtime scope. It can be used to evaluate types of scoped variables to guide the
-     * optimistic compilation, should the call to this method trigger code compilation. Can be null if current runtime
-     * scope is not known, but that might cause compilation of code that will need more deoptimization passes.
-     * @param linkLogicOkay is a CompiledFunction with a LinkLogic acceptable?
-     * @return the best function for the specified call site type.
-     */
-    abstract CompiledFunction getBest(final MethodType callSiteType, final ScriptObject runtimeScope, final Collection<CompiledFunction> forbidden, final boolean linkLogicOkay);
-
-    /**
-     * Returns the best function for the specified call site type.
-     * @param callSiteType The call site type. Call site types are expected to have the form
-     * {@code (callee, this[, args...])}.
-     * @param runtimeScope the runtime scope. It can be used to evaluate types of scoped variables to guide the
-     * optimistic compilation, should the call to this method trigger code compilation. Can be null if current runtime
-     * scope is not known, but that might cause compilation of code that will need more deoptimization passes.
-     * @return the best function for the specified call site type.
-     */
-    final CompiledFunction getBest(final MethodType callSiteType, final ScriptObject runtimeScope, final Collection<CompiledFunction> forbidden) {
-        return getBest(callSiteType, runtimeScope, forbidden, true);
-    }
-
-    boolean isValidCallSite(final MethodType callSiteType) {
-        return callSiteType.parameterCount() >= 2  && // Must have at least (callee, this)
-               callSiteType.parameterType(0).isAssignableFrom(ScriptFunction.class); // Callee must be assignable from script function
-    }
-
-    CompiledFunction getGeneric(final ScriptObject runtimeScope) {
-        return getBest(getGenericType(), runtimeScope, CompiledFunction.NO_FUNCTIONS, false);
-    }
-
-    /**
-     * Get a method type for a generic invoker.
-     * @return the method type for the generic invoker
-     */
-    abstract MethodType getGenericType();
 
     /**
      * Allocates an object using this function's allocator.
-     *
-     * @param map the property map for the allocated object.
      * @return the object allocated using this function's allocator, or null if the function doesn't have an allocator.
      */
-    ScriptObject allocate(final PropertyMap map) {
-        return null;
-    }
-
-    /**
-     * Get the property map to use for objects allocated by this function.
-     *
-     * @param prototype the prototype of the allocated object
-     * @return the property map for allocated objects.
-     */
-    PropertyMap getAllocatorMap(final ScriptObject prototype) {
+    ScriptObject allocate() {
         return null;
     }
 
     /**
      * This method is used to create the immutable portion of a bound function.
-     * See {@link ScriptFunction#createBound(Object, Object[])}
+     * See {@link ScriptFunction#makeBoundFunction(Object, Object[])}
      *
      * @param fn the original function being bound
      * @param self this reference to bind. Can be null.
      * @param args additional arguments to bind. Can be null.
      */
     ScriptFunctionData makeBoundFunctionData(final ScriptFunction fn, final Object self, final Object[] args) {
+        ensureCodeGenerated();
+
         final Object[] allArgs = args == null ? ScriptRuntime.EMPTY_ARRAY : args;
         final int length = args == null ? 0 : args.length;
-        // Clear the callee and this flags
-        final int boundFlags = flags & ~NEEDS_CALLEE & ~USES_THIS;
 
-        final List<CompiledFunction> boundList = new LinkedList<>();
-        final ScriptObject runtimeScope = fn.getScope();
-        final CompiledFunction bindTarget = new CompiledFunction(getGenericInvoker(runtimeScope), getGenericConstructor(runtimeScope), null);
-        boundList.add(bind(bindTarget, fn, self, allArgs));
+        CompiledFunctions boundList = new CompiledFunctions();
+        if (code.size() == 1) {
+            // only one variant - bind that
+            boundList.add(bind(code.first(), fn, self, allArgs));
+        } else {
+            // There are specialized versions. Get the most generic one.
+            // This is to avoid ambiguous overloaded versions of bound and
+            // specialized variants and choosing wrong overload.
+            final MethodHandle genInvoker = getGenericInvoker();
+            final CompiledFunction inv = new CompiledFunction(genInvoker.type(), genInvoker, getGenericConstructor());
+            boundList.add(bind(inv, fn, self, allArgs));
+        }
 
-        return new FinalScriptFunctionData(name, Math.max(0, getArity() - length), boundList, boundFlags);
+        ScriptFunctionData boundData = new FinalScriptFunctionData(name, arity == -1 ? -1 : Math.max(0, arity - length), boundList, isStrict(), isBuiltin(), isConstructor());
+        return boundData;
+    }
+
+    /**
+     * Compose a constructor given a primordial constructor handle.
+     *
+     * @param ctor primordial constructor handle
+     * @return the composed constructor
+     */
+    protected MethodHandle composeConstructor(final MethodHandle ctor) {
+        // If it was (callee, this, args...), permute it to (this, callee, args...). We're doing this because having
+        // "this" in the first argument position is what allows the elegant folded composition of
+        // (newFilter x constructor x allocator) further down below in the code. Also, ensure the composite constructor
+        // always returns Object.
+        final boolean needsCallee = needsCallee(ctor);
+        MethodHandle composedCtor = needsCallee ? swapCalleeAndThis(ctor) : ctor;
+
+        composedCtor = changeReturnTypeToObject(composedCtor);
+
+        final MethodType ctorType = composedCtor.type();
+
+        // Construct a dropping type list for NEWFILTER, but don't include constructor "this" into it, so it's actually
+        // captured as "allocation" parameter of NEWFILTER after we fold the constructor into it.
+        // (this, [callee, ]args...) => ([callee, ]args...)
+        final Class<?>[] ctorArgs = ctorType.dropParameterTypes(0, 1).parameterArray();
+
+        // Fold constructor into newFilter that replaces the return value from the constructor with the originally
+        // allocated value when the originally allocated value is a primitive.
+        // (result, this, [callee, ]args...) x (this, [callee, ]args...) => (this, [callee, ]args...)
+        composedCtor = MH.foldArguments(MH.dropArguments(NEWFILTER, 2, ctorArgs), composedCtor);
+
+        // allocate() takes a ScriptFunction and returns a newly allocated ScriptObject...
+        if (needsCallee) {
+            // ...we either fold it into the previous composition, if we need both the ScriptFunction callee object and
+            // the newly allocated object in the arguments, so (this, callee, args...) x (callee) => (callee, args...),
+            // or...
+            return MH.foldArguments(composedCtor, ScriptFunction.ALLOCATE);
+        }
+
+        // ...replace the ScriptFunction argument with the newly allocated object, if it doesn't need the callee
+        // (this, args...) filter (callee) => (callee, args...)
+        return MH.filterArguments(composedCtor, 0, ScriptFunction.ALLOCATE);
+    }
+
+    /**
+     * If this function's method handles need a callee parameter, swap the order of first two arguments for the passed
+     * method handle. If this function's method handles don't need a callee parameter, returns the original method
+     * handle unchanged.
+     *
+     * @param mh a method handle with order of arguments {@code (callee, this, args...)}
+     *
+     * @return a method handle with order of arguments {@code (this, callee, args...)}
+     */
+    private static MethodHandle swapCalleeAndThis(final MethodHandle mh) {
+        final MethodType type = mh.type();
+        assert type.parameterType(0) == ScriptFunction.class : type;
+        assert type.parameterType(1) == Object.class : type;
+        final MethodType newType = type.changeParameterType(0, Object.class).changeParameterType(1, ScriptFunction.class);
+        final int[] reorder = new int[type.parameterCount()];
+        reorder[0] = 1;
+        assert reorder[1] == 0;
+        for (int i = 2; i < reorder.length; ++i) {
+            reorder[i] = i;
+        }
+        return MethodHandles.permuteArguments(mh, newType, reorder);
     }
 
     /**
@@ -440,17 +338,13 @@ public abstract class ScriptFunctionData implements Serializable {
      * @return the converted this object
      */
     private Object convertThisObject(final Object thiz) {
-        return needsWrappedThis() ? wrapThis(thiz) : thiz;
-    }
-
-    static Object wrapThis(final Object thiz) {
-        if (!(thiz instanceof ScriptObject)) {
+        if (!(thiz instanceof ScriptObject) && needsWrappedThis()) {
             if (JSType.nullOrUndefined(thiz)) {
-                return Context.getGlobal();
+                return Context.getGlobalTrusted();
             }
 
             if (isPrimitiveThis(thiz)) {
-                return Context.getGlobal().wrapAsObject(thiz);
+                return ((GlobalObject)Context.getGlobalTrusted()).wrapAsObject(thiz);
             }
         }
 
@@ -458,7 +352,8 @@ public abstract class ScriptFunctionData implements Serializable {
     }
 
     static boolean isPrimitiveThis(final Object obj) {
-        return JSType.isString(obj) || obj instanceof Number || obj instanceof Boolean;
+        return obj instanceof String || obj instanceof ConsString ||
+               obj instanceof Number || obj instanceof Boolean;
     }
 
     /**
@@ -510,7 +405,7 @@ public abstract class ScriptFunctionData implements Serializable {
         } else {
             // If target is already bound, insert additional bound arguments after "this" argument, at position 1.
             final int argInsertPos = isTargetBound ? 1 : 0;
-            final Object[] boundArgs = new Object[Math.min(originalInvoker.type().parameterCount() - argInsertPos, args.length + (isTargetBound ? 0 : needsCallee  ? 2 : 1))];
+            final Object[] boundArgs = new Object[Math.min(originalInvoker.type().parameterCount() - argInsertPos, args.length + (isTargetBound ? 0 : (needsCallee  ? 2 : 1)))];
             int next = 0;
             if (!isTargetBound) {
                 if (needsCallee) {
@@ -576,38 +471,6 @@ public abstract class ScriptFunctionData implements Serializable {
     }
 
     /**
-     * Takes a method handle, and returns a potentially different method handle that can be used in
-     * {@code ScriptFunction#invoke(Object, Object...)} or {code ScriptFunction#construct(Object, Object...)}.
-     * The returned method handle will be sure to return {@code Object}, and will have all its parameters turned into
-     * {@code Object} as well, except for the following ones:
-     * <ul>
-     *   <li>a last parameter of type {@code Object[]} which is used for vararg functions,</li>
-     *   <li>the first argument, which is forced to be {@link ScriptFunction}, in case the function receives itself
-     *   (callee) as an argument.</li>
-     * </ul>
-     *
-     * @param mh the original method handle
-     *
-     * @return the new handle, conforming to the rules above.
-     */
-    private static MethodHandle makeGenericMethod(final MethodHandle mh) {
-        final MethodType type = mh.type();
-        final MethodType newType = makeGenericType(type);
-        return type.equals(newType) ? mh : mh.asType(newType);
-    }
-
-    private static MethodType makeGenericType(final MethodType type) {
-        MethodType newType = type.generic();
-        if (isVarArg(type)) {
-            newType = newType.changeParameterType(type.parameterCount() - 1, Object[].class);
-        }
-        if (needsCallee(type)) {
-            newType = newType.changeParameterType(0, ScriptFunction.class);
-        }
-        return newType;
-    }
-
-    /**
      * Execute this script function.
      *
      * @param self  Target object.
@@ -617,11 +480,9 @@ public abstract class ScriptFunctionData implements Serializable {
      * @throws Throwable if there is an exception/error with the invocation or thrown from it
      */
     Object invoke(final ScriptFunction fn, final Object self, final Object... arguments) throws Throwable {
-        final MethodHandle mh      = getGenericInvoker(fn.getScope());
-        final Object       selfObj = convertThisObject(self);
-        final Object[]     args    = arguments == null ? ScriptRuntime.EMPTY_ARRAY : arguments;
-
-        DebuggerSupport.notifyInvoke(mh);
+        final MethodHandle mh  = getGenericInvoker();
+        final Object   selfObj = convertThisObject(self);
+        final Object[] args    = arguments == null ? ScriptRuntime.EMPTY_ARRAY : arguments;
 
         if (isVarArg(mh)) {
             if (needsCallee(mh)) {
@@ -673,10 +534,8 @@ public abstract class ScriptFunctionData implements Serializable {
     }
 
     Object construct(final ScriptFunction fn, final Object... arguments) throws Throwable {
-        final MethodHandle mh   = getGenericConstructor(fn.getScope());
+        final MethodHandle mh   = getGenericConstructor();
         final Object[]     args = arguments == null ? ScriptRuntime.EMPTY_ARRAY : arguments;
-
-        DebuggerSupport.notifyInvoke(mh);
 
         if (isVarArg(mh)) {
             if (needsCallee(mh)) {
@@ -792,6 +651,24 @@ public abstract class ScriptFunctionData implements Serializable {
     }
 
     /**
+     * Adapts the method handle so its return type is {@code Object}. If the handle's return type is already
+     * {@code Object}, the handle is returned unchanged.
+     *
+     * @param mh the handle to adapt
+     * @return the adapted handle
+     */
+    private static MethodHandle changeReturnTypeToObject(final MethodHandle mh) {
+        final MethodType type = mh.type();
+        return (type.returnType() == Object.class) ? mh : MH.asType(mh, type.changeReturnType(Object.class));
+    }
+
+    private void ensureConstructor(final CompiledFunction inv) {
+        if (!inv.hasConstructor()) {
+            inv.setConstructor(composeConstructor(inv.getInvoker()));
+        }
+    }
+
+    /**
      * Heuristic to figure out if the method handle has a callee argument. If it's type is
      * {@code (ScriptFunction, ...)}, then we'll assume it has a callee argument. We need this as
      * the constructor above is not passed this information, and can't just blindly assume it's false
@@ -803,18 +680,8 @@ public abstract class ScriptFunctionData implements Serializable {
      * @return true if the method handle expects a callee, false otherwise
      */
     protected static boolean needsCallee(final MethodHandle mh) {
-        return needsCallee(mh.type());
-    }
-
-    static boolean needsCallee(final MethodType type) {
-        final int length = type.parameterCount();
-
-        if (length == 0) {
-            return false;
-        }
-
-        final Class<?> param0 = type.parameterType(0);
-        return param0 == ScriptFunction.class || param0 == boolean.class && length > 1 && type.parameterType(1) == ScriptFunction.class;
+        final MethodType type = mh.type();
+        return (type.parameterCount() > 0 && type.parameterType(0) == ScriptFunction.class);
     }
 
     /**
@@ -825,19 +692,8 @@ public abstract class ScriptFunctionData implements Serializable {
      * @return true if vararg
      */
     protected static boolean isVarArg(final MethodHandle mh) {
-        return isVarArg(mh.type());
-    }
-
-    static boolean isVarArg(final MethodType type) {
+        final MethodType type = mh.type();
         return type.parameterType(type.parameterCount() - 1).isArray();
-    }
-
-    /**
-     * Is this ScriptFunction declared in a dynamic context
-     * @return true if in dynamic context, false if not or irrelevant
-     */
-    public boolean inDynamicContext() {
-        return false;
     }
 
     @SuppressWarnings("unused")
@@ -860,22 +716,12 @@ public abstract class ScriptFunctionData implements Serializable {
         return concat;
     }
 
+    @SuppressWarnings("unused")
+    private static Object newFilter(final Object result, final Object allocation) {
+        return (result instanceof ScriptObject || !JSType.isPrimitive(result))? result : allocation;
+    }
+
     private static MethodHandle findOwnMH(final String name, final Class<?> rtype, final Class<?>... types) {
         return MH.findStatic(MethodHandles.lookup(), ScriptFunctionData.class, name, MH.type(rtype, types));
-    }
-
-    /**
-     * This class is used to hold the generic invoker and generic constructor pair. It is structured in this way since
-     * most functions will never use them, so this way ScriptFunctionData only pays storage cost for one null reference
-     * to the GenericInvokers object, instead of two null references for the two method handles.
-     */
-    private static final class GenericInvokers {
-        volatile MethodHandle invoker;
-        volatile MethodHandle constructor;
-    }
-
-    private void readObject(final ObjectInputStream in) throws IOException, ClassNotFoundException {
-        in.defaultReadObject();
-        code = new LinkedList<>();
     }
 }

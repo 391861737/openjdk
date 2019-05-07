@@ -22,16 +22,9 @@
 # questions.
 #
 
-fix() {
-    #convert tabs to spaces
-    find . -name $1 -exec sed -i "" 's/	/    /g' {} \;
-    #remove trailing whitespace
-    find . -name $1 -exec sed -i "" 's/[ 	]*$//' \{} \;
-}
+#convert tabs to spaces
+find . -name "*.java" -exec sed -i "" 's/	/    /g' {} \;
 
-if [ ! -z $1 ]; then 
-    fix $1;
-else
-    fix "*.java"
-    fix "*.js"
-fi
+#remove trailing whitespace
+find . -name "*.java" -exec sed -i "" 's/[ 	]*$//' \{} \;
+

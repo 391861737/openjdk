@@ -32,11 +32,9 @@ package sun.security.krb5.internal.ccache;
 
 import java.io.IOException;
 import java.io.InputStream;
-import java.util.ArrayList;
-import java.util.List;
+import java.util.Hashtable;
+import java.util.Vector;
 import java.util.StringTokenizer;
-
-import sun.misc.IOUtils;
 import sun.security.krb5.*;
 import sun.security.krb5.internal.*;
 import sun.security.krb5.internal.util.KrbDataInputStream;
@@ -76,6 +74,7 @@ public class CCacheInputStream extends KrbDataInputStream implements FileCCacheC
     // this needs to be public for Kinit.
     public Tag readTag() throws IOException {
         char[] buf = new char[1024];
+        byte[] bytes;
         int len;
         int tag = -1;
         int taglen;
@@ -86,6 +85,7 @@ public class CCacheInputStream extends KrbDataInputStream implements FileCCacheC
         if (len < 0) {
             throw new IOException("stop.");
         }
+        bytes = new byte[len + 2];
         if (len > buf.length) {
             throw new IOException("Invalid tag length.");
         }
@@ -101,7 +101,11 @@ public class CCacheInputStream extends KrbDataInputStream implements FileCCacheC
             }
             len = len - (4 + taglen);
         }
-        return new Tag(len, tag, time_offset, usec_offset);
+        Tag result;
+        if (tag == -1) {
+        }
+        result = new Tag(len, tag, time_offset, usec_offset);
+        return result;
     }
     /*
      * In file-based credential cache, the realm name is stored as part of
@@ -118,8 +122,8 @@ public class CCacheInputStream extends KrbDataInputStream implements FileCCacheC
         } else {
             type = read(4);
         }
-        length = readLength4();
-        List<String> result = new ArrayList<String>();
+        length = read(4);
+        String[] result = new String[length + 1];
         /*
          * DCE includes the principal's realm in the count; the new format
          * does not.
@@ -127,28 +131,22 @@ public class CCacheInputStream extends KrbDataInputStream implements FileCCacheC
         if (version == KRB5_FCC_FVNO_1)
             length--;
         for (int i = 0; i <= length; i++) {
-            namelength = readLength4();
-            byte[] bytes = IOUtils.readFully(this, namelength, true);
-            result.add(new String(bytes));
-        }
-        if (result.isEmpty()) {
-            throw new IOException("No realm or principal");
-        }
-        if (isRealm(result.get(0))) {
-            realm = result.remove(0);
-            if (result.isEmpty()) {
-                throw new IOException("No principal name components");
+            namelength = read(4);
+            if (namelength > MAXNAMELENGTH) {
+                throw new IOException("Invalid name length in principal name.");
             }
-            return new PrincipalName(
-                    type,
-                    result.toArray(new String[result.size()]),
-                    new Realm(realm));
+            byte[] bytes = new byte[namelength];
+            read(bytes, 0, namelength);
+            result[i] = new String(bytes);
+        }
+        if (isRealm(result[0])) {
+            realm = result[0];
+            pname = new String[length];
+            System.arraycopy(result, 1, pname, 0, length);
+            return new PrincipalName(type, pname, new Realm(realm));
         }
         try {
-            return new PrincipalName(
-                    type,
-                    result.toArray(new String[result.size()]),
-                    Realm.getDefault());
+            return new PrincipalName(result, type);
         } catch (RealmException re) {
             return null;
         }
@@ -185,8 +183,11 @@ public class CCacheInputStream extends KrbDataInputStream implements FileCCacheC
         keyType = read(2);
         if (version == KRB5_FCC_FVNO_3)
             read(2); /* keytype recorded twice in fvno 3 */
-        keyLen = readLength4();
-        byte[] bytes = IOUtils.readFully(this, keyLen, true);
+        keyLen = read(4);
+        byte[] bytes = new byte[keyLen];
+        for (int i = 0; i < keyLen; i++) {
+            bytes[i] = (byte)read();
+        }
         return new EncryptionKey(bytes, keyType, new Integer(version));
     }
 
@@ -208,12 +209,12 @@ public class CCacheInputStream extends KrbDataInputStream implements FileCCacheC
 
     HostAddress[] readAddr() throws IOException, KrbApErrException {
         int numAddrs, addrType, addrLength;
-        numAddrs = readLength4();
+        numAddrs = read(4);
         if (numAddrs > 0) {
-            List<HostAddress> addrs = new ArrayList<>();
+            HostAddress[] addrs = new HostAddress[numAddrs];
             for (int i = 0; i < numAddrs; i++) {
                 addrType = read(2);
-                addrLength = readLength4();
+                addrLength = read(4);
                 if (!(addrLength == 4 || addrLength == 16)) {
                     if (DEBUG) {
                         System.out.println("Incorrect address format.");
@@ -223,37 +224,42 @@ public class CCacheInputStream extends KrbDataInputStream implements FileCCacheC
                 byte[] result = new byte[addrLength];
                 for (int j = 0; j < addrLength; j++)
                     result[j] = (byte)read(1);
-                addrs.add(new HostAddress(addrType, result));
+                addrs[i] = new HostAddress(addrType, result);
             }
-            return addrs.toArray(new HostAddress[addrs.size()]);
+            return addrs;
         }
         return null;
     }
 
     AuthorizationDataEntry[] readAuth() throws IOException {
         int num, adtype, adlength;
-        num = readLength4();
+        num = read(4);
         if (num > 0) {
-            List<AuthorizationDataEntry> auData = new ArrayList<>();
+            AuthorizationDataEntry[] auData = new AuthorizationDataEntry[num];
             byte[] data = null;
             for (int i = 0; i < num; i++) {
                 adtype = read(2);
-                adlength = readLength4();
-                data = IOUtils.readFully(this, adlength, true);
-                auData.add(new AuthorizationDataEntry(adtype, data));
+                adlength = read(4);
+                data = new byte[adlength];
+                for (int j = 0; j < adlength; j++) {
+                    data[j] = (byte)read();
+                }
+                auData[i] = new AuthorizationDataEntry(adtype, data);
             }
-            return auData.toArray(new AuthorizationDataEntry[auData.size()]);
+            return auData;
         }
         else return null;
     }
 
     byte[] readData() throws IOException {
         int length;
-        length = readLength4();
+        length = read(4);
         if (length == 0) {
             return null;
         } else {
-            return IOUtils.readFully(this, length, true);
+            byte[] bytes = new byte[length];
+            read(bytes, 0, length);
+            return bytes;
         }
     }
 
@@ -335,29 +341,15 @@ public class CCacheInputStream extends KrbDataInputStream implements FileCCacheC
      * returns null.
      */
     Credentials readCred(int version) throws IOException,RealmException, KrbApErrException, Asn1Exception {
-        PrincipalName cpname = null;
-        try {
-            cpname = readPrincipal(version);
-        } catch (Exception e) {
-            // Do not return here. All data for this cred should be fully
-            // consumed so that we can read the next one.
-        }
-        if (DEBUG) {
+        PrincipalName cpname = readPrincipal(version);
+        if (DEBUG)
             System.out.println(">>>DEBUG <CCacheInputStream>  client principal is " + cpname);
-        }
-        PrincipalName spname = null;
-        try {
-            spname = readPrincipal(version);
-        } catch (Exception e) {
-            // same as above
-        }
-        if (DEBUG) {
+        PrincipalName spname = readPrincipal(version);
+        if (DEBUG)
             System.out.println(">>>DEBUG <CCacheInputStream> server principal is " + spname);
-        }
         EncryptionKey key = readKey(version);
-        if (DEBUG) {
+        if (DEBUG)
             System.out.println(">>>DEBUG <CCacheInputStream> key type: " + key.getEType());
-        }
         long times[] = readTimes();
         KerberosTime authtime = new KerberosTime(times[0]);
         KerberosTime starttime =
@@ -389,11 +381,6 @@ public class CCacheInputStream extends KrbDataInputStream implements FileCCacheC
         }
         byte[] ticketData = readData();
         byte[] ticketData2 = readData();
-
-        // Skip this cred if either cpname or spname isn't created.
-        if (cpname == null || spname == null) {
-            return null;
-        }
 
         try {
             return new Credentials(cpname, spname, key, authtime, starttime,

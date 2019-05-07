@@ -58,7 +58,6 @@ import java.util.logging.Logger;
  */
 public class TestLoggerBundleSync {
 
-    static final boolean VERBOSE = false;
     static volatile Exception thrown = null;
     static volatile boolean goOn = true;
 
@@ -66,7 +65,6 @@ public class TestLoggerBundleSync {
     static final long TIME = 4 * 1000; // 4 sec.
     static final long STEP = 1 * 1000;  // message every 1 sec.
     static final int  LCOUNT = 50; // change bundle 50 times...
-    static final AtomicLong ignoreLogCount = new AtomicLong(0);
     static final AtomicLong setRBcount = new AtomicLong(0);
     static final AtomicLong setRBNameCount = new AtomicLong(0);
     static final AtomicLong getRBcount = new AtomicLong(0);
@@ -152,7 +150,6 @@ public class TestLoggerBundleSync {
           long sSetRBNameCount  = setRBNameCount.get();
           long sCheckCount = checkCount.get();
           long sNextLong = nextLong.get();
-          long sIgnoreLogCount = ignoreLogCount.get();
           List<Thread> threads = new ArrayList<>();
           for (Class<? extends ResourceBundle> type : classes) {
               threads.add(new SetRB(type));
@@ -184,58 +181,19 @@ public class TestLoggerBundleSync {
                   + " resource bundles set by " + classes.size() + " Thread(s),");
           System.out.println("\t " + (setRBNameCount.get() - sSetRBNameCount)
                   + " resource bundle names set by " + classes.size() + " Thread(s),");
-          System.out.println("\t " + (ignoreLogCount.get() - sIgnoreLogCount)
-                  + " log messages emitted by other GetRB threads were ignored"
-                  + " to ensure MT test consistency,");
           System.out.println("\t ThreadMXBean.findDeadlockedThreads called "
                   + (checkCount.get() -sCheckCount) + " times by 1 Thread.");
 
     }
 
     final static class GetRB extends Thread {
-        final class MyHandler extends Handler {
+        final static class MyHandler extends Handler {
             volatile ResourceBundle rb;
             volatile String rbName;
-            volatile int count = 0;
             @Override
             public synchronized void publish(LogRecord record) {
-                Object[] params = record.getParameters();
-                // Each GetRB thread has its own handler, but since they
-                // log into the same logger, each handler may receive
-                // messages emitted by other threads.
-                // This means that GetRB#2.handler may receive a message
-                // emitted by GetRB#1 at a time where the resource bundle
-                // was still null.
-                // To avoid falling into this trap, the GetRB thread passes
-                // 'this' as argument to the messages it logs - which does
-                // allow us here to ignore messages that where not emitted
-                // by our own GetRB.this thread...
-                if (params.length == 1) {
-                    if (params[0] == GetRB.this) {
-                        // The message was emitted by our thread.
-                        count++;
-                        rb = record.getResourceBundle();
-                        rbName = record.getResourceBundleName();
-                    } else {
-                        // The message was emitted by another thread: just
-                        // ignore it, as it may have been emitted at a time
-                        // where the resource bundle was still null, and
-                        // processing it may overwrite the 'rb' and 'rbName'
-                        // recorded from the message emitted by our own thread.
-                        if (VERBOSE) {
-                            System.out.println("Ignoring message logged by " + params[0]);
-                        }
-                        ignoreLogCount.incrementAndGet();
-                    }
-                } else {
-                    ignoreLogCount.incrementAndGet();
-                    System.err.println("Unexpected message received");
-                }
-            }
-
-            void reset() {
-                rbName = null;
-                rb = null;
+                rb = record.getResourceBundle();
+                rbName = record.getResourceBundleName();
             }
 
             @Override
@@ -247,7 +205,6 @@ public class TestLoggerBundleSync {
             }
         };
         final MyHandler handler = new MyHandler();
-
         @Override
         public void run() {
             try {
@@ -270,50 +227,21 @@ public class TestLoggerBundleSync {
                         Logger ll = Logger.getLogger(l.getName()+".bie.bye");
                         ResourceBundle hrb;
                         String hrbName;
-                        if (handler.getLevel() != Level.FINEST) {
-                            throw new RuntimeException("Handler level is not finest: "
-                                    + handler.getLevel());
-                        }
-                        final int countBefore = handler.count;
-                        handler.reset();
                         ll.setLevel(Level.FINEST);
                         ll.addHandler(handler);
-                        ll.log(Level.FINE, "dummy {0}", this);
+                        ll.fine("dummy");
                         ll.removeHandler(handler);
-                        final int countAfter = handler.count;
-                        if (countBefore == countAfter) {
-                            throw new RuntimeException("Handler not called for "
-                                    + ll.getName() + "("+ countAfter +")");
-                        }
                         hrb = handler.rb;
                         hrbName = handler.rbName;
                         if (name != null) {
-                            // if name is not null, then it implies that it
-                            // won't change, since setResourceBundle() cannot
-                            // replace a non null name.
-                            // Since we never set the resource bundle on 'll',
-                            // then ll must inherit its resource bundle [name]
-                            // from l - and therefor we should find it in
-                            // handler.rb/handler.rbName
                             if (!name.equals(hrbName)) {
                                 throw new RuntimeException("Unexpected bundle name: "
-                                        +hrbName);
+                                        +hrb.getBaseBundleName());
                             }
-                            // here we know that hrbName is not null so hrb
-                            // should not be null either.
                             if (!name.equals(hrb.getBaseBundleName())) {
                                 throw new RuntimeException("Unexpected bundle name: "
                                         +hrb.getBaseBundleName());
                             }
-                        }
-
-                        // Make sure to refer to 'l' explicitly in order to
-                        // prevent eager garbage collecting before the end of
-                        // the test (JDK-8030192)
-                        if (!ll.getName().startsWith(l.getName())) {
-                            throw new RuntimeException("Logger " + ll.getName()
-                                    + "does not start with expected prefix "
-                                    + l.getName());
                         }
 
                         getRBcount.incrementAndGet();

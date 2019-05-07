@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2012, 2016, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2012, 2013, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -80,7 +80,6 @@ import com.sun.source.util.DocTreePathScanner;
 import com.sun.source.util.TreePath;
 import com.sun.tools.doclint.HtmlTag.AttrKind;
 import com.sun.tools.javac.tree.DocPretty;
-import com.sun.tools.javac.util.StringUtils;
 import static com.sun.tools.doclint.Messages.Group.*;
 
 
@@ -126,7 +125,7 @@ public class Checker extends DocTreePathScanner<Void, Void> {
         }
     }
 
-    private final Deque<TagStackItem> tagStack; // TODO: maybe want to record starting tree as well
+    private Deque<TagStackItem> tagStack; // TODO: maybe want to record starting tree as well
     private HtmlTag currHeaderTag;
 
     private final int implicitHeaderLevel;
@@ -244,7 +243,7 @@ public class Checker extends DocTreePathScanner<Void, Void> {
         markEnclosingTag(Flag.HAS_TEXT);
         String name = tree.getName().toString();
         if (name.startsWith("#")) {
-            int v = StringUtils.toLowerCase(name).startsWith("#x")
+            int v = name.toLowerCase().startsWith("#x")
                     ? Integer.parseInt(name.substring(2), 16)
                     : Integer.parseInt(name.substring(1), 10);
             if (!Entity.isValid(v)) {
@@ -401,16 +400,7 @@ public class Checker extends DocTreePathScanner<Void, Void> {
                 break;
 
             case OTHER:
-                switch (t) {
-                    case SCRIPT:
-                        // <script> may or may not be allowed, depending on --allow-script-in-comments
-                        // but we allow it here, and rely on a separate scanner to detect all uses
-                        // of JavaScript, including <script> tags, and use in attributes, etc.
-                        break;
-
-                    default:
-                        env.messages.error(HTML, tree, "dc.tag.not.allowed", treeName);
-                }
+                env.messages.error(HTML, tree, "dc.tag.not.allowed", treeName);
                 return;
         }
 
@@ -528,27 +518,22 @@ public class Checker extends DocTreePathScanner<Void, Void> {
                 if (!first)
                     env.messages.error(HTML, tree, "dc.attr.repeated", name);
             }
+            AttrKind k = currTag.getAttrKind(name);
+            switch (k) {
+                case OK:
+                    break;
 
-            // for now, doclint allows all attribute names beginning with "on" as event handler names,
-            // without checking the validity or applicability of the name
-            if (!name.toString().startsWith("on")) {
-                AttrKind k = currTag.getAttrKind(name);
-                switch (k) {
-                    case OK:
-                        break;
+                case INVALID:
+                    env.messages.error(HTML, tree, "dc.attr.unknown", name);
+                    break;
 
-                    case INVALID:
-                        env.messages.error(HTML, tree, "dc.attr.unknown", name);
-                        break;
+                case OBSOLETE:
+                    env.messages.warning(ACCESSIBILITY, tree, "dc.attr.obsolete", name);
+                    break;
 
-                    case OBSOLETE:
-                        env.messages.warning(ACCESSIBILITY, tree, "dc.attr.obsolete", name);
-                        break;
-
-                    case USE_CSS:
-                        env.messages.warning(ACCESSIBILITY, tree, "dc.attr.obsolete.use.css", name);
-                        break;
-                }
+                case USE_CSS:
+                    env.messages.warning(ACCESSIBILITY, tree, "dc.attr.obsolete.use.css", name);
+                    break;
             }
 
             if (attr != null) {
@@ -657,9 +642,6 @@ public class Checker extends DocTreePathScanner<Void, Void> {
     }
 
     private void checkURI(AttributeTree tree, String uri) {
-        // allow URIs beginning with javascript:, which would otherwise be rejected by the URI API.
-        if (uri.startsWith("javascript:"))
-            return;
         try {
             URI u = new URI(uri);
         } catch (URISyntaxException e) {

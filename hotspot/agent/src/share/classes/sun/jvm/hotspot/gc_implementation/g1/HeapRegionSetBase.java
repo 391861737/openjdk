@@ -40,8 +40,12 @@ import sun.jvm.hotspot.types.TypeDataBase;
 // Mirror class for HeapRegionSetBase. Represents a group of regions.
 
 public class HeapRegionSetBase extends VMObject {
-
-    static private long countField;
+    // uint _length;
+    static private CIntegerField lengthField;
+    // uint _region_num;
+    static private CIntegerField regionNumField;
+    // size_t _total_used_bytes;
+    static private CIntegerField totalUsedBytesField;
 
     static {
         VM.registerVMInitializedObserver(new Observer() {
@@ -54,13 +58,21 @@ public class HeapRegionSetBase extends VMObject {
     static private synchronized void initialize(TypeDataBase db) {
         Type type = db.lookupType("HeapRegionSetBase");
 
-        countField = type.getField("_count").getOffset();
+        lengthField         = type.getCIntegerField("_length");
+        regionNumField      = type.getCIntegerField("_region_num");
+        totalUsedBytesField = type.getCIntegerField("_total_used_bytes");
     }
 
+    public long length() {
+        return lengthField.getValue(addr);
+    }
 
-    public HeapRegionSetCount count() {
-        Address countFieldAddr = addr.addOffsetTo(countField);
-        return (HeapRegionSetCount) VMObjectFactory.newObject(HeapRegionSetCount.class, countFieldAddr);
+    public long regionNum() {
+        return regionNumField.getValue(addr);
+    }
+
+    public long totalUsedBytes() {
+        return totalUsedBytesField.getValue(addr);
     }
 
     public HeapRegionSetBase(Address addr) {

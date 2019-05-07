@@ -29,7 +29,6 @@ import java.io.*;
 import java.util.*;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
-import javax.tools.JavaFileManager;
 
 import com.sun.javadoc.*;
 import com.sun.tools.javac.sym.Profiles;
@@ -37,7 +36,7 @@ import com.sun.tools.javac.jvm.Profile;
 import com.sun.tools.doclets.internal.toolkit.builders.BuilderFactory;
 import com.sun.tools.doclets.internal.toolkit.taglets.*;
 import com.sun.tools.doclets.internal.toolkit.util.*;
-import com.sun.tools.javac.util.StringUtils;
+import javax.tools.JavaFileManager;
 
 /**
  * Configure the output based on the options. Doclets should sub-class
@@ -338,7 +337,7 @@ public abstract class Configuration {
      * Negative value means error occurred.
      */
     public int optionLength(String option) {
-        option = StringUtils.toLowerCase(option);
+        option = option.toLowerCase();
         if (option.equals("-author") ||
             option.equals("-docfilessubdirs") ||
             option.equals("-javafx") ||
@@ -455,7 +454,7 @@ public abstract class Configuration {
         // the output directory has already been created: so do that first.
         for (int oi = 0; oi < options.length; ++oi) {
             String[] os = options[oi];
-            String opt = StringUtils.toLowerCase(os[0]);
+            String opt = os[0].toLowerCase();
             if (opt.equals("-d")) {
                 destDirName = addTrailingFileSep(os[1]);
                 docFileDestDirName = destDirName;
@@ -466,7 +465,7 @@ public abstract class Configuration {
 
         for (int oi = 0; oi < options.length; ++oi) {
             String[] os = options[oi];
-            String opt = StringUtils.toLowerCase(os[0]);
+            String opt = os[0].toLowerCase();
             if (opt.equals("-docfilessubdirs")) {
                 copydocfilesubdirs = true;
             } else if (opt.equals("-docencoding")) {
@@ -709,7 +708,7 @@ public abstract class Configuration {
         String encoding = "";
         for (int oi = 0; oi < options.length; oi++) {
             String[] os = options[oi];
-            String opt = StringUtils.toLowerCase(os[0]);
+            String opt = os[0].toLowerCase();
             if (opt.equals("-docencoding")) {
                 docencodingfound = true;
                 if (!checkOutputFileEncoding(os[1], reporter)) {

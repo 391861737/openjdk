@@ -34,7 +34,6 @@ import jdk.nashorn.internal.runtime.Source;
 /**
  * Helper class to facilitate script access of nashorn Source class.
  */
-@SuppressWarnings("javadoc")
 public final class SourceHelper {
     private SourceHelper() {}
 
@@ -47,7 +46,7 @@ public final class SourceHelper {
     }
 
     public static String readFully(final URL url) throws IOException {
-        return Source.sourceFor(url.toString(), url).getString();
+        return new Source(url.toString(), url).getString();
     }
 
     public static String readFully(final Reader reader) throws IOException {

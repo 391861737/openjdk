@@ -163,7 +163,7 @@ public final class OptionTemplate implements Comparable<OptionTemplate> {
 
     /**
      * Does this option automatically enable another option, i.e. a dependency.
-     * @return the dependency or null if none exists
+     * @return the dependecy or null if non exists
      */
     public String getDependency() {
         return this.dependency;
@@ -304,8 +304,8 @@ public final class OptionTemplate implements Comparable<OptionTemplate> {
         }
     }
 
-    boolean nameMatches(final String aName) {
-        return aName.equals(this.shortName) || aName.equals(this.name);
+    boolean matches(final String key0) {
+        return key0.equals(this.shortName) || key0.equals(this.name);
     }
 
     private static final int LINE_BREAK = 64;

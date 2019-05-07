@@ -45,7 +45,7 @@ class MethodHandleNatives {
 
     static native void init(MemberName self, Object ref);
     static native void expand(MemberName self);
-    static native MemberName resolve(MemberName self, Class<?> caller) throws LinkageError, ClassNotFoundException;
+    static native MemberName resolve(MemberName self, Class<?> caller) throws LinkageError;
     static native int getMembers(Class<?> defc, String matchName, String matchSig,
             int matchFlags, Class<?> caller, int skip, MemberName[] results);
 
@@ -78,7 +78,7 @@ class MethodHandleNatives {
 
         // The JVM calls MethodHandleNatives.<clinit>.  Cascade the <clinit> calls as needed:
         MethodHandleImpl.initStatics();
-    }
+}
 
     // All compile-time constants go here.
     // There is an opportunity to check them against the JVM's idea of them.
@@ -293,17 +293,6 @@ class MethodHandleNatives {
         Class<?> caller = (Class<?>)callerObj;
         String name = nameObj.toString().intern();
         MethodType type = (MethodType)typeObj;
-        if (!TRACE_METHOD_LINKAGE)
-            return linkCallSiteImpl(caller, bootstrapMethod, name, type,
-                                    staticArguments, appendixResult);
-        return linkCallSiteTracing(caller, bootstrapMethod, name, type,
-                                   staticArguments, appendixResult);
-    }
-    static MemberName linkCallSiteImpl(Class<?> caller,
-                                       MethodHandle bootstrapMethod,
-                                       String name, MethodType type,
-                                       Object staticArguments,
-                                       Object[] appendixResult) {
         CallSite callSite = CallSite.makeSite(bootstrapMethod,
                                               name,
                                               type,
@@ -315,30 +304,6 @@ class MethodHandleNatives {
         } else {
             appendixResult[0] = callSite;
             return Invokers.linkToCallSiteMethod(type);
-        }
-    }
-    // Tracing logic:
-    static MemberName linkCallSiteTracing(Class<?> caller,
-                                          MethodHandle bootstrapMethod,
-                                          String name, MethodType type,
-                                          Object staticArguments,
-                                          Object[] appendixResult) {
-        Object bsmReference = bootstrapMethod.internalMemberName();
-        if (bsmReference == null)  bsmReference = bootstrapMethod;
-        Object staticArglist = (staticArguments instanceof Object[] ?
-                                java.util.Arrays.asList((Object[]) staticArguments) :
-                                staticArguments);
-        System.out.println("linkCallSite "+caller.getName()+" "+
-                           bsmReference+" "+
-                           name+type+"/"+staticArglist);
-        try {
-            MemberName res = linkCallSiteImpl(caller, bootstrapMethod, name, type,
-                                              staticArguments, appendixResult);
-            System.out.println("linkCallSite => "+res+" + "+appendixResult[0]);
-            return res;
-        } catch (Throwable ex) {
-            System.out.println("linkCallSite => throw "+ex);
-            throw ex;
         }
     }
 

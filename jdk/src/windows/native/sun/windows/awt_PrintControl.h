@@ -47,7 +47,6 @@ public:
     static jmethodID setDevmodeID;
     static jmethodID getDevnamesID;
     static jmethodID setDevnamesID;
-    static jmethodID getParentWindowID;
     static jmethodID getWin32MediaID;
     static jmethodID setWin32MediaID;
     static jmethodID getWin32MediaTrayID;
@@ -97,10 +96,6 @@ public:
     static BOOL getDevmode(HANDLE hPrinter,
                                  LPTSTR pPrinterName,
                                  LPDEVMODE *pDevMode);
-
-    inline static HWND getParentID(JNIEnv *env, jobject self) {
-      return (HWND)env->CallLongMethod(self, getParentWindowID);
-    }
 
     inline static  HDC getPrintDC(JNIEnv *env, jobject self) {
       return (HDC)env->CallLongMethod(self, getPrintDCID);

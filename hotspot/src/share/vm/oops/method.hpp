@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 1997, 2016, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 1997, 2013, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -105,15 +105,17 @@ class Method : public Metadata {
   AccessFlags       _access_flags;               // Access flags
   int               _vtable_index;               // vtable index of this method (see VtableIndexFlag)
                                                  // note: can have vtables with >2**16 elements (because of inheritance)
+#ifdef CC_INTERP
+  int               _result_index;               // C++ interpreter needs for converting results to/from stack
+#endif
   u2                _method_size;                // size of this object
   u1                _intrinsic_id;               // vmSymbols::intrinsic_id (0 == _none)
-  u1                _jfr_towrite          : 1,   // Flags
-                    _caller_sensitive     : 1,
-                    _force_inline         : 1,
-                    _hidden               : 1,
-                    _dont_inline          : 1,
-                    _has_injected_profile : 1,
-                                          : 2;
+  u1                _jfr_towrite      : 1,       // Flags
+                    _caller_sensitive : 1,
+                    _force_inline     : 1,
+                    _hidden           : 1,
+                    _dont_inline      : 1,
+                                      : 3;
 
 #ifndef PRODUCT
   int               _compiled_invocation_count;  // Number of nmethod invocations so far (for perf. debugging)
@@ -153,8 +155,6 @@ class Method : public Metadata {
   // by their vtable.
   void restore_vtable() { guarantee(is_method(), "vtable restored by this call"); }
   bool is_method() const volatile { return true; }
-
-  void restore_unshareable_info(TRAPS);
 
   // accessors for instance variables
 
@@ -199,6 +199,11 @@ class Method : public Metadata {
     return constMethod()->type_annotations();
   }
 
+#ifdef CC_INTERP
+  void set_result_index(BasicType type);
+  int  result_index()                            { return _result_index; }
+#endif
+
   // Helper routine: get klass name + "." + method name + signature as
   // C string, for the purpose of providing more useful NoSuchMethodErrors
   // and fatal error handling. The string is allocated in resource
@@ -226,11 +231,10 @@ class Method : public Metadata {
   // Tracking number of breakpoints, for fullspeed debugging.
   // Only mutated by VM thread.
   u2   number_of_breakpoints()             const {
-    MethodCounters* mcs = method_counters();
-    if (mcs == NULL) {
+    if (method_counters() == NULL) {
       return 0;
     } else {
-      return mcs->number_of_breakpoints();
+      return method_counters()->number_of_breakpoints();
     }
   }
   void incr_number_of_breakpoints(TRAPS)         {
@@ -247,9 +251,8 @@ class Method : public Metadata {
   }
   // Initialization only
   void clear_number_of_breakpoints()             {
-    MethodCounters* mcs = method_counters();
-    if (mcs != NULL) {
-      mcs->clear_number_of_breakpoints();
+    if (method_counters() != NULL) {
+      method_counters()->clear_number_of_breakpoints();
     }
   }
 
@@ -257,9 +260,6 @@ class Method : public Metadata {
   // note: also used by jfr
   u2 method_idnum() const           { return constMethod()->method_idnum(); }
   void set_method_idnum(u2 idnum)   { constMethod()->set_method_idnum(idnum); }
-
-  u2 orig_method_idnum() const           { return constMethod()->orig_method_idnum(); }
-  void set_orig_method_idnum(u2 idnum)   { constMethod()->set_orig_method_idnum(idnum); }
 
   // code size
   int code_size() const                  { return constMethod()->code_size(); }
@@ -299,11 +299,10 @@ class Method : public Metadata {
   }
 
   int  interpreter_throwout_count() const        {
-    MethodCounters* mcs = method_counters();
-    if (mcs == NULL) {
+    if (method_counters() == NULL) {
       return 0;
     } else {
-      return mcs->interpreter_throwout_count();
+      return method_counters()->interpreter_throwout_count();
     }
   }
 
@@ -351,23 +350,16 @@ class Method : public Metadata {
   }
 
   void set_method_data(MethodData* data)       {
-    // The store into method must be released. On platforms without
-    // total store order (TSO) the reference may become visible before
-    // the initialization of data otherwise.
-    OrderAccess::release_store_ptr((volatile void *)&_method_data, data);
+    _method_data = data;
   }
 
   MethodCounters* method_counters() const {
     return _method_counters;
   }
 
-  void clear_method_counters() {
-    _method_counters = NULL;
-  }
 
-  bool init_method_counters(MethodCounters* counters) {
-    // Try to install a pointer to MethodCounters, return true on success.
-    return Atomic::cmpxchg_ptr(counters, (volatile void*)&_method_counters, NULL) == NULL;
+  void set_method_counters(MethodCounters* counters) {
+    _method_counters = counters;
   }
 
 #ifdef TIERED
@@ -380,28 +372,26 @@ class Method : public Metadata {
       return method_counters()->interpreter_invocation_count();
     }
   }
-  void set_prev_event_count(int count) {
-    MethodCounters* mcs = method_counters();
+  void set_prev_event_count(int count, TRAPS)    {
+    MethodCounters* mcs = get_method_counters(CHECK);
     if (mcs != NULL) {
       mcs->set_interpreter_invocation_count(count);
     }
   }
   jlong prev_time() const                        {
-    MethodCounters* mcs = method_counters();
-    return mcs == NULL ? 0 : mcs->prev_time();
+    return method_counters() == NULL ? 0 : method_counters()->prev_time();
   }
-  void set_prev_time(jlong time) {
-    MethodCounters* mcs = method_counters();
+  void set_prev_time(jlong time, TRAPS)          {
+    MethodCounters* mcs = get_method_counters(CHECK);
     if (mcs != NULL) {
       mcs->set_prev_time(time);
     }
   }
   float rate() const                             {
-    MethodCounters* mcs = method_counters();
-    return mcs == NULL ? 0 : mcs->rate();
+    return method_counters() == NULL ? 0 : method_counters()->rate();
   }
-  void set_rate(float rate) {
-    MethodCounters* mcs = method_counters();
+  void set_rate(float rate, TRAPS) {
+    MethodCounters* mcs = get_method_counters(CHECK);
     if (mcs != NULL) {
       mcs->set_rate(rate);
     }
@@ -419,12 +409,9 @@ class Method : public Metadata {
   static MethodCounters* build_method_counters(Method* m, TRAPS);
 
   int interpreter_invocation_count() {
-    if (TieredCompilation) {
-      return invocation_count();
-    } else {
-      MethodCounters* mcs = method_counters();
-      return (mcs == NULL) ? 0 : mcs->interpreter_invocation_count();
-    }
+    if (TieredCompilation) return invocation_count();
+    else return (method_counters() == NULL) ? 0 :
+                 method_counters()->interpreter_invocation_count();
   }
   int increment_interpreter_invocation_count(TRAPS) {
     if (TieredCompilation) ShouldNotReachHere();
@@ -445,7 +432,7 @@ class Method : public Metadata {
   address verified_code_entry();
   bool check_code() const;      // Not inline to avoid circular ref
   nmethod* volatile code() const                 { assert( check_code(), "" ); return (nmethod *)OrderAccess::load_ptr_acquire(&_code); }
-  void clear_code(bool acquire_lock = true);            // Clear out any compiled code
+  void clear_code();            // Clear out any compiled code
   static void set_code(methodHandle mh, nmethod* code);
   void set_adapter_entry(AdapterHandlerEntry* adapter) {  _adapter = adapter; }
   address get_i2c_entry();
@@ -471,12 +458,12 @@ class Method : public Metadata {
   DEBUG_ONLY(bool valid_vtable_index() const     { return _vtable_index >= nonvirtual_vtable_index; })
   bool has_vtable_index() const                  { return _vtable_index >= 0; }
   int  vtable_index() const                      { return _vtable_index; }
-  void set_vtable_index(int index);
+  void set_vtable_index(int index)               { _vtable_index = index; }
   DEBUG_ONLY(bool valid_itable_index() const     { return _vtable_index <= pending_itable_index; })
   bool has_itable_index() const                  { return _vtable_index <= itable_index_max; }
   int  itable_index() const                      { assert(valid_itable_index(), "");
                                                    return itable_index_max - _vtable_index; }
-  void set_itable_index(int index);
+  void set_itable_index(int index)               { _vtable_index = itable_index_max - index; assert(valid_itable_index(), ""); }
 
   // interpreter entry
   address interpreter_entry() const              { return _i2i_entry; }
@@ -551,6 +538,7 @@ class Method : public Metadata {
   void compute_size_of_parameters(Thread *thread); // word size of parameters (receiver if any + arguments)
   Symbol* klass_name() const;                    // returns the name of the method holder
   BasicType result_type() const;                 // type of the method result
+  int result_type_index() const;                 // type index of the method result
   bool is_returning_oop() const                  { BasicType r = result_type(); return (r == T_OBJECT || r == T_ARRAY); }
   bool is_returning_fp() const                   { BasicType r = result_type(); return (r == T_FLOAT || r == T_DOUBLE); }
 
@@ -614,9 +602,6 @@ class Method : public Metadata {
   // returns true if the method is an accessor function (setter/getter).
   bool is_accessor() const;
 
-  // returns true if the method does nothing but return a constant of primitive type
-  bool is_constant_getter() const;
-
   // returns true if the method is an initializer (<init> or <clinit>).
   bool is_initializer() const;
 
@@ -626,9 +611,6 @@ class Method : public Metadata {
   // returns true if the method name is <clinit> and the method has
   // valid static initializer flags.
   bool is_static_initializer() const;
-
-  // returns true if the method name is <init>
-  bool is_object_initializer() const;
 
   // compiled code support
   // NOTE: code() is inherently racy as deopt can be clearing code
@@ -646,6 +628,9 @@ class Method : public Metadata {
   // interpreter support
   static ByteSize const_offset()                 { return byte_offset_of(Method, _constMethod       ); }
   static ByteSize access_flags_offset()          { return byte_offset_of(Method, _access_flags      ); }
+#ifdef CC_INTERP
+  static ByteSize result_index_offset()          { return byte_offset_of(Method, _result_index ); }
+#endif /* CC_INTERP */
   static ByteSize from_compiled_offset()         { return byte_offset_of(Method, _from_compiled_entry); }
   static ByteSize code_offset()                  { return byte_offset_of(Method, _code); }
   static ByteSize method_data_offset()           {
@@ -709,8 +694,6 @@ class Method : public Metadata {
   void set_is_old()                                 { _access_flags.set_is_old(); }
   bool is_obsolete() const                          { return access_flags().is_obsolete(); }
   void set_is_obsolete()                            { _access_flags.set_is_obsolete(); }
-  bool is_deleted() const                           { return access_flags().is_deleted(); }
-  void set_is_deleted()                             { _access_flags.set_is_deleted(); }
   bool on_stack() const                             { return access_flags().on_stack(); }
   void set_on_stack(const bool value);
 
@@ -771,23 +754,18 @@ class Method : public Metadata {
 
   // Helper routines for intrinsic_id() and vmIntrinsics::method().
   void init_intrinsic_id();     // updates from _none if a match
-  void clear_jmethod_id(ClassLoaderData* loader_data);
-
   static vmSymbols::SID klass_id_for_intrinsics(Klass* holder);
 
-  bool     jfr_towrite()                { return _jfr_towrite;              }
-  void set_jfr_towrite(bool x)          {        _jfr_towrite = x;          }
-  bool     caller_sensitive()           { return _caller_sensitive;         }
-  void set_caller_sensitive(bool x)     {        _caller_sensitive = x;     }
-  bool     force_inline()               { return _force_inline;             }
-  void set_force_inline(bool x)         {        _force_inline = x;         }
-  bool     dont_inline()                { return _dont_inline;              }
-  void set_dont_inline(bool x)          {        _dont_inline = x;          }
-  bool  is_hidden()                     { return _hidden;                   }
-  void set_hidden(bool x)               {        _hidden = x;               }
-  bool     has_injected_profile()       { return _has_injected_profile;     }
-  void set_has_injected_profile(bool x) {        _has_injected_profile = x; }
-
+  bool     jfr_towrite()            { return _jfr_towrite;          }
+  void set_jfr_towrite(bool x)      {        _jfr_towrite = x;      }
+  bool     caller_sensitive()       { return _caller_sensitive;     }
+  void set_caller_sensitive(bool x) {        _caller_sensitive = x; }
+  bool     force_inline()           { return _force_inline;         }
+  void set_force_inline(bool x)     {        _force_inline = x;     }
+  bool     dont_inline()            { return _dont_inline;          }
+  void set_dont_inline(bool x)      {        _dont_inline = x;      }
+  bool  is_hidden()                 { return _hidden;               }
+  void set_hidden(bool x)           {        _hidden = x;           }
   ConstMethod::MethodType method_type() const {
       return _constMethod->method_type();
   }
@@ -796,10 +774,6 @@ class Method : public Metadata {
   // On-stack replacement support
   bool has_osr_nmethod(int level, bool match_level) {
    return method_holder()->lookup_osr_nmethod(this, InvocationEntryBci, level, match_level) != NULL;
-  }
-
-  int mark_osr_nmethods() {
-    return method_holder()->mark_osr_nmethods(this);
   }
 
   nmethod* lookup_osr_nmethod_for(int bci, int level, bool match_level) {
@@ -887,7 +861,6 @@ class Method : public Metadata {
   const char* internal_name() const { return "{method}"; }
 
   // Check for valid method pointer
-  static bool has_method_vptr(const void* ptr);
   bool is_valid_method() const;
 
   // Verify

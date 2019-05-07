@@ -53,7 +53,6 @@ m4_include([toolchain_windows.m4])
 
 AC_DEFUN_ONCE([CUSTOM_EARLY_HOOK])
 AC_DEFUN_ONCE([CUSTOM_LATE_HOOK])
-AC_DEFUN_ONCE([CUSTOM_CONFIG_OUTPUT_GENERATED_HOOK])
 
 # This line needs to be here, verbatim, after all includes and the dummy hook
 # definitions. It is replaced with custom functionality when building
@@ -89,7 +88,6 @@ JDKOPT_SETUP_OPEN_OR_CUSTOM
 
 # These are needed to be able to create a configuration name (and thus the output directory)
 JDKOPT_SETUP_JDK_VARIANT
-JDKOPT_SETUP_JVM_INTERPRETER
 JDKOPT_SETUP_JVM_VARIANTS
 JDKOPT_SETUP_DEBUG_LEVEL
 
@@ -238,7 +236,6 @@ CONFIG_STATUS="$OUTPUT_ROOT/config.status"
 
 # Create the actual output files. Now the main work of configure is done.
 AC_OUTPUT
-CUSTOM_CONFIG_OUTPUT_GENERATED_HOOK
 
 # Try to move the config.log file to the output directory.
 if test -e ./config.log; then

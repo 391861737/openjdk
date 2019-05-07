@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2005, 2015, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2005, 2013, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -25,20 +25,19 @@
 
 package com.sun.xml.internal.stream;
 
-import com.sun.org.apache.xerces.internal.impl.Constants;
-import com.sun.org.apache.xerces.internal.impl.PropertyManager;
-import com.sun.org.apache.xerces.internal.impl.XMLEntityManager;
-import com.sun.org.apache.xerces.internal.impl.XMLErrorReporter;
+import java.util.Hashtable;
+
 import com.sun.org.apache.xerces.internal.impl.msg.XMLMessageFormatter;
 import com.sun.org.apache.xerces.internal.util.URI;
 import com.sun.org.apache.xerces.internal.util.XMLResourceIdentifierImpl;
-import com.sun.org.apache.xerces.internal.utils.SecuritySupport;
 import com.sun.org.apache.xerces.internal.xni.parser.XMLComponentManager;
 import com.sun.org.apache.xerces.internal.xni.parser.XMLConfigurationException;
-import java.util.Collections;
+import com.sun.org.apache.xerces.internal.impl.XMLEntityManager;
+import com.sun.org.apache.xerces.internal.impl.PropertyManager;
+import com.sun.org.apache.xerces.internal.impl.XMLErrorReporter;
+import com.sun.org.apache.xerces.internal.impl.Constants;
+import com.sun.org.apache.xerces.internal.utils.SecuritySupport;
 import java.util.Enumeration;
-import java.util.HashMap;
-import java.util.Map;
 
 /**
  *
@@ -63,7 +62,7 @@ public class XMLEntityStorage {
     protected boolean fWarnDuplicateEntityDef;
 
     /** Entities. */
-    protected Map<String, Entity> fEntities = new HashMap<>();
+    protected Hashtable fEntities = new Hashtable();
 
     protected Entity.ScannedEntity fCurrentEntity ;
 
@@ -139,7 +138,7 @@ public class XMLEntityStorage {
      * @see SymbolTable
      */
     public Entity getEntity(String name) {
-        return fEntities.get(name);
+        return (Entity)fEntities.get(name);
     } // getEntity(String)
 
     public boolean hasEntities() {
@@ -151,7 +150,7 @@ public class XMLEntityStorage {
     } // getEntity(String)
 
     public Enumeration getEntityKeys() {
-        return Collections.enumeration(fEntities.keySet());
+        return fEntities.keys();
     }
     /**
      * Adds an internal entity declaration.
@@ -264,7 +263,7 @@ public class XMLEntityStorage {
      */
     public boolean isExternalEntity(String entityName) {
 
-        Entity entity = fEntities.get(entityName);
+        Entity entity = (Entity)fEntities.get(entityName);
         if (entity == null) {
             return false;
         }
@@ -281,7 +280,7 @@ public class XMLEntityStorage {
      */
     public boolean isEntityDeclInExternalSubset(String entityName) {
 
-        Entity entity = fEntities.get(entityName);
+        Entity entity = (Entity)fEntities.get(entityName);
         if (entity == null) {
             return false;
         }
@@ -334,7 +333,7 @@ public class XMLEntityStorage {
      */
     public boolean isUnparsedEntity(String entityName) {
 
-        Entity entity = fEntities.get(entityName);
+        Entity entity = (Entity)fEntities.get(entityName);
         if (entity == null) {
             return false;
         }
@@ -349,7 +348,7 @@ public class XMLEntityStorage {
      */
     public boolean isDeclaredEntity(String entityName) {
 
-        Entity entity = fEntities.get(entityName);
+        Entity entity = (Entity)fEntities.get(entityName);
         return entity != null;
     }
     /**

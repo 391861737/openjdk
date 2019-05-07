@@ -125,9 +125,7 @@ public class JarURLConnection extends java.net.JarURLConnection {
              * to get the jarFile, and set it as our permission.
              */
             if (getUseCaches()) {
-                boolean oldUseCaches = jarFileURLConnection.getUseCaches();
                 jarFileURLConnection = factory.getConnection(jarFile);
-                jarFileURLConnection.setUseCaches(oldUseCaches);
             }
 
             if ((entryName != null)) {

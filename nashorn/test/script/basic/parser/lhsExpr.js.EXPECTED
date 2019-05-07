@@ -69,7 +69,10 @@
                     "type": "Identifier",
                     "name": "obj"
                 },
-                "property": "foo",
+                "property": {
+                    "type": "Identifier",
+                    "name": "foo"
+                },
                 "computed": false
             }
         }
@@ -88,10 +91,16 @@
                         "type": "Identifier",
                         "name": "obj"
                     },
-                    "property": "foo",
+                    "property": {
+                        "type": "Identifier",
+                        "name": "foo"
+                    },
                     "computed": false
                 },
-                "property": "bar",
+                "property": {
+                    "type": "Identifier",
+                    "name": "bar"
+                },
                 "computed": false
             }
         }
@@ -167,7 +176,10 @@
                         "type": "Identifier",
                         "name": "obj"
                     },
-                    "property": "Type",
+                    "property": {
+                        "type": "Identifier",
+                        "name": "Type"
+                    },
                     "computed": false
                 },
                 "arguments": []
@@ -188,7 +200,10 @@
                         "type": "Identifier",
                         "name": "obj"
                     },
-                    "property": "Type",
+                    "property": {
+                        "type": "Identifier",
+                        "name": "Type"
+                    },
                     "computed": false
                 },
                 "arguments": []
@@ -209,7 +224,10 @@
                         "type": "Identifier",
                         "name": "obj"
                     },
-                    "property": "Type",
+                    "property": {
+                        "type": "Identifier",
+                        "name": "Type"
+                    },
                     "computed": false
                 },
                 "arguments": [
@@ -255,7 +273,10 @@
                         "type": "Identifier",
                         "name": "obj"
                     },
-                    "property": "foo",
+                    "property": {
+                        "type": "Identifier",
+                        "name": "foo"
+                    },
                     "computed": false
                 },
                 "arguments": []
@@ -301,7 +322,10 @@
                         "type": "Identifier",
                         "name": "obj"
                     },
-                    "property": "foo",
+                    "property": {
+                        "type": "Identifier",
+                        "name": "foo"
+                    },
                     "computed": false
                 },
                 "arguments": [

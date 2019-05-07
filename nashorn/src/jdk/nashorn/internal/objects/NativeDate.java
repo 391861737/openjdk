@@ -38,9 +38,10 @@ import jdk.nashorn.internal.objects.annotations.Attribute;
 import jdk.nashorn.internal.objects.annotations.Constructor;
 import jdk.nashorn.internal.objects.annotations.Function;
 import jdk.nashorn.internal.objects.annotations.ScriptClass;
-import jdk.nashorn.internal.objects.annotations.SpecializedFunction;
+import jdk.nashorn.internal.objects.annotations.SpecializedConstructor;
 import jdk.nashorn.internal.objects.annotations.Where;
 import jdk.nashorn.internal.parser.DateParser;
+import jdk.nashorn.internal.runtime.ConsString;
 import jdk.nashorn.internal.runtime.JSType;
 import jdk.nashorn.internal.runtime.PropertyMap;
 import jdk.nashorn.internal.runtime.ScriptEnvironment;
@@ -113,6 +114,10 @@ public final class NativeDate extends ScriptObject {
     // initialized by nasgen
     private static PropertyMap $nasgenmap$;
 
+    static PropertyMap getInitialMap() {
+        return $nasgenmap$;
+    }
+
     private NativeDate(final double time, final ScriptObject proto, final PropertyMap map) {
         super(proto, map);
         final ScriptEnvironment env = Global.getEnv();
@@ -121,12 +126,8 @@ public final class NativeDate extends ScriptObject {
         this.timezone = env._timezone;
     }
 
-    NativeDate(final double time, final ScriptObject proto) {
-        this(time, proto, $nasgenmap$);
-    }
-
     NativeDate(final double time, final Global global) {
-        this(time, global.getDatePrototype(), $nasgenmap$);
+        this(time, global.getDatePrototype(), global.getDateMap());
     }
 
     private NativeDate (final double time) {
@@ -158,7 +159,7 @@ public final class NativeDate extends ScriptObject {
      * @param self  self references
      * @return Date representing now
      */
-    @SpecializedFunction(isConstructor=true)
+    @SpecializedConstructor
     public static Object construct(final boolean isNew, final Object self) {
         final NativeDate result = new NativeDate();
         return isNew ? result : toStringImpl(result, FORMAT_DATE_TIME);
@@ -187,7 +188,7 @@ public final class NativeDate extends ScriptObject {
         case 1:
             double num;
             final Object arg = JSType.toPrimitive(args[0]);
-            if (JSType.isString(arg)) {
+            if (arg instanceof String || arg instanceof ConsString) {
                 num = parseDateString(arg.toString());
             } else {
                 num = timeClip(JSType.toNumber(args[0]));
@@ -229,7 +230,7 @@ public final class NativeDate extends ScriptObject {
      * @return Date interpreted from the string, or NaN for illegal values
      */
     @Function(attributes = Attribute.NOT_ENUMERABLE, where = Where.CONSTRUCTOR)
-    public static double parse(final Object self, final Object string) {
+    public static Object parse(final Object self, final Object string) {
         return parseDateString(JSType.toString(string));
     }
 
@@ -241,7 +242,7 @@ public final class NativeDate extends ScriptObject {
      * @return a time clip according to the ECMA specification
      */
     @Function(attributes = Attribute.NOT_ENUMERABLE, arity = 7, where = Where.CONSTRUCTOR)
-    public static double UTC(final Object self, final Object... args) {
+    public static Object UTC(final Object self, final Object... args) {
         final NativeDate nd = new NativeDate(0);
         final double[] d = convertCtorArgs(args);
         final double time = d == null ? Double.NaN : timeClip(makeDate(d));
@@ -256,9 +257,8 @@ public final class NativeDate extends ScriptObject {
      * @return a Date that points to the current moment in time
      */
     @Function(attributes = Attribute.NOT_ENUMERABLE, where = Where.CONSTRUCTOR)
-    public static double now(final Object self) {
-        // convert to double as long does not represent the primitive JS number type
-        return (double) System.currentTimeMillis();
+    public static Object now(final Object self) {
+        return (double)System.currentTimeMillis();
     }
 
     /**
@@ -268,7 +268,7 @@ public final class NativeDate extends ScriptObject {
      * @return string value that represents the Date in the current time zone
      */
     @Function(attributes = Attribute.NOT_ENUMERABLE)
-    public static String toString(final Object self) {
+    public static Object toString(final Object self) {
         return toStringImpl(self, FORMAT_DATE_TIME);
     }
 
@@ -279,7 +279,7 @@ public final class NativeDate extends ScriptObject {
      * @return string value with the "date" part of the Date in the current time zone
      */
     @Function(attributes = Attribute.NOT_ENUMERABLE)
-    public static String toDateString(final Object self) {
+    public static Object toDateString(final Object self) {
         return toStringImpl(self, FORMAT_DATE);
     }
 
@@ -290,7 +290,7 @@ public final class NativeDate extends ScriptObject {
      * @return string value with "time" part of Date in the current time zone
      */
     @Function(attributes = Attribute.NOT_ENUMERABLE)
-    public static String toTimeString(final Object self) {
+    public static Object toTimeString(final Object self) {
         return toStringImpl(self, FORMAT_TIME);
     }
 
@@ -301,7 +301,7 @@ public final class NativeDate extends ScriptObject {
      * @return string value that represents the Data in the current time zone and locale
      */
     @Function(attributes = Attribute.NOT_ENUMERABLE)
-    public static String toLocaleString(final Object self) {
+    public static Object toLocaleString(final Object self) {
         return toStringImpl(self, FORMAT_LOCAL_DATE_TIME);
     }
 
@@ -312,7 +312,7 @@ public final class NativeDate extends ScriptObject {
      * @return string value with the "date" part of the Date in the current time zone and locale
      */
     @Function(attributes = Attribute.NOT_ENUMERABLE)
-    public static String toLocaleDateString(final Object self) {
+    public static Object toLocaleDateString(final Object self) {
         return toStringImpl(self, FORMAT_LOCAL_DATE);
     }
 
@@ -323,7 +323,7 @@ public final class NativeDate extends ScriptObject {
      * @return string value with the "time" part of Date in the current time zone and locale
      */
     @Function(attributes = Attribute.NOT_ENUMERABLE)
-    public static String toLocaleTimeString(final Object self) {
+    public static Object toLocaleTimeString(final Object self) {
         return toStringImpl(self, FORMAT_LOCAL_TIME);
     }
 
@@ -334,7 +334,7 @@ public final class NativeDate extends ScriptObject {
      * @return valueOf - a number which is this time value
      */
     @Function(attributes = Attribute.NOT_ENUMERABLE)
-    public static double valueOf(final Object self) {
+    public static Object valueOf(final Object self) {
         final NativeDate nd = getNativeDate(self);
         return (nd != null) ? nd.getTime() : Double.NaN;
     }
@@ -346,7 +346,7 @@ public final class NativeDate extends ScriptObject {
      * @return time
      */
     @Function(attributes = Attribute.NOT_ENUMERABLE)
-    public static double getTime(final Object self) {
+    public static Object getTime(final Object self) {
         final NativeDate nd = getNativeDate(self);
         return (nd != null) ? nd.getTime() : Double.NaN;
     }
@@ -369,7 +369,7 @@ public final class NativeDate extends ScriptObject {
      * @return UTC full year
      */
     @Function(attributes = Attribute.NOT_ENUMERABLE)
-    public static double getUTCFullYear(final Object self) {
+    public static Object getUTCFullYear(final Object self) {
         return getUTCField(self, YEAR);
     }
 
@@ -380,7 +380,7 @@ public final class NativeDate extends ScriptObject {
      * @return year
      */
     @Function(attributes = Attribute.NOT_ENUMERABLE)
-    public static double getYear(final Object self) {
+    public static Object getYear(final Object self) {
         final NativeDate nd = getNativeDate(self);
         return (nd != null && nd.isValidDate()) ? (yearFromTime(nd.getLocalTime()) - 1900) : Double.NaN;
     }
@@ -392,7 +392,7 @@ public final class NativeDate extends ScriptObject {
      * @return month
      */
     @Function(attributes = Attribute.NOT_ENUMERABLE)
-    public static double getMonth(final Object self) {
+    public static Object getMonth(final Object self) {
         return getField(self, MONTH);
     }
 
@@ -403,7 +403,7 @@ public final class NativeDate extends ScriptObject {
      * @return UTC month
      */
     @Function(attributes = Attribute.NOT_ENUMERABLE)
-    public static double getUTCMonth(final Object self) {
+    public static Object getUTCMonth(final Object self) {
         return getUTCField(self, MONTH);
     }
 
@@ -414,7 +414,7 @@ public final class NativeDate extends ScriptObject {
      * @return date
      */
     @Function(attributes = Attribute.NOT_ENUMERABLE)
-    public static double getDate(final Object self) {
+    public static Object getDate(final Object self) {
         return getField(self, DAY);
     }
 
@@ -425,7 +425,7 @@ public final class NativeDate extends ScriptObject {
      * @return UTC Date
      */
     @Function(attributes = Attribute.NOT_ENUMERABLE)
-    public static double getUTCDate(final Object self) {
+    public static Object getUTCDate(final Object self) {
         return getUTCField(self, DAY);
     }
 
@@ -436,7 +436,7 @@ public final class NativeDate extends ScriptObject {
      * @return day
      */
     @Function(attributes = Attribute.NOT_ENUMERABLE)
-    public static double getDay(final Object self) {
+    public static Object getDay(final Object self) {
         final NativeDate nd = getNativeDate(self);
         return (nd != null && nd.isValidDate()) ? weekDay(nd.getLocalTime()) : Double.NaN;
     }
@@ -448,7 +448,7 @@ public final class NativeDate extends ScriptObject {
      * @return UTC day
      */
     @Function(attributes = Attribute.NOT_ENUMERABLE)
-    public static double getUTCDay(final Object self) {
+    public static Object getUTCDay(final Object self) {
         final NativeDate nd = getNativeDate(self);
         return (nd != null && nd.isValidDate()) ? weekDay(nd.getTime()) : Double.NaN;
     }
@@ -460,7 +460,7 @@ public final class NativeDate extends ScriptObject {
      * @return hours
      */
     @Function(attributes = Attribute.NOT_ENUMERABLE)
-    public static double getHours(final Object self) {
+    public static Object getHours(final Object self) {
         return getField(self, HOUR);
     }
 
@@ -471,7 +471,7 @@ public final class NativeDate extends ScriptObject {
      * @return UTC hours
      */
     @Function(attributes = Attribute.NOT_ENUMERABLE)
-    public static double getUTCHours(final Object self) {
+    public static Object getUTCHours(final Object self) {
         return getUTCField(self, HOUR);
     }
 
@@ -482,7 +482,7 @@ public final class NativeDate extends ScriptObject {
      * @return minutes
      */
     @Function(attributes = Attribute.NOT_ENUMERABLE)
-    public static double getMinutes(final Object self) {
+    public static Object getMinutes(final Object self) {
         return getField(self, MINUTE);
     }
 
@@ -493,7 +493,7 @@ public final class NativeDate extends ScriptObject {
      * @return UTC minutes
      */
     @Function(attributes = Attribute.NOT_ENUMERABLE)
-    public static double getUTCMinutes(final Object self) {
+    public static Object getUTCMinutes(final Object self) {
         return getUTCField(self, MINUTE);
     }
 
@@ -504,7 +504,7 @@ public final class NativeDate extends ScriptObject {
      * @return seconds
      */
     @Function(attributes = Attribute.NOT_ENUMERABLE)
-    public static double getSeconds(final Object self) {
+    public static Object getSeconds(final Object self) {
         return getField(self, SECOND);
     }
 
@@ -515,7 +515,7 @@ public final class NativeDate extends ScriptObject {
      * @return UTC seconds
      */
     @Function(attributes = Attribute.NOT_ENUMERABLE)
-    public static double getUTCSeconds(final Object self) {
+    public static Object getUTCSeconds(final Object self) {
         return getUTCField(self, SECOND);
     }
 
@@ -526,7 +526,7 @@ public final class NativeDate extends ScriptObject {
      * @return milliseconds
      */
     @Function(attributes = Attribute.NOT_ENUMERABLE)
-    public static double getMilliseconds(final Object self) {
+    public static Object getMilliseconds(final Object self) {
         return getField(self, MILLISECOND);
     }
 
@@ -537,7 +537,7 @@ public final class NativeDate extends ScriptObject {
      * @return UTC milliseconds
      */
     @Function(attributes = Attribute.NOT_ENUMERABLE)
-    public static double getUTCMilliseconds(final Object self) {
+    public static Object getUTCMilliseconds(final Object self) {
         return getUTCField(self, MILLISECOND);
     }
 
@@ -548,7 +548,7 @@ public final class NativeDate extends ScriptObject {
      * @return time zone offset or NaN if N/A
      */
     @Function(attributes = Attribute.NOT_ENUMERABLE)
-    public static double getTimezoneOffset(final Object self) {
+    public static Object getTimezoneOffset(final Object self) {
         final NativeDate nd = getNativeDate(self);
         if (nd != null && nd.isValidDate()) {
             final long msec = (long) nd.getTime();
@@ -565,7 +565,7 @@ public final class NativeDate extends ScriptObject {
      * @return time
      */
     @Function(attributes = Attribute.NOT_ENUMERABLE)
-    public static double setTime(final Object self, final Object time) {
+    public static Object setTime(final Object self, final Object time) {
         final NativeDate nd  = getNativeDate(self);
         final double     num = timeClip(JSType.toNumber(time));
         nd.setTime(num);
@@ -580,7 +580,7 @@ public final class NativeDate extends ScriptObject {
      * @return time
      */
     @Function(attributes = Attribute.NOT_ENUMERABLE, arity = 1)
-    public static double setMilliseconds(final Object self, final Object... args) {
+    public static Object setMilliseconds(final Object self, final Object... args) {
         final NativeDate nd = getNativeDate(self);
         setFields(nd, MILLISECOND, args, true);
         return nd.getTime();
@@ -594,7 +594,7 @@ public final class NativeDate extends ScriptObject {
      * @return time
      */
     @Function(attributes = Attribute.NOT_ENUMERABLE, arity = 1)
-    public static double setUTCMilliseconds(final Object self, final Object... args) {
+    public static Object setUTCMilliseconds(final Object self, final Object... args) {
         final NativeDate nd = getNativeDate(self);
         setFields(nd, MILLISECOND, args, false);
         return nd.getTime();
@@ -608,7 +608,7 @@ public final class NativeDate extends ScriptObject {
      * @return time
      */
     @Function(attributes = Attribute.NOT_ENUMERABLE, arity = 2)
-    public static double setSeconds(final Object self, final Object... args) {
+    public static Object setSeconds(final Object self, final Object... args) {
         final NativeDate nd = getNativeDate(self);
         setFields(nd, SECOND, args, true);
         return nd.getTime();
@@ -622,7 +622,7 @@ public final class NativeDate extends ScriptObject {
      * @return time
      */
     @Function(attributes = Attribute.NOT_ENUMERABLE, arity = 2)
-    public static double setUTCSeconds(final Object self, final Object... args) {
+    public static Object setUTCSeconds(final Object self, final Object... args) {
         final NativeDate nd = getNativeDate(self);
         setFields(nd, SECOND, args, false);
         return nd.getTime();
@@ -636,7 +636,7 @@ public final class NativeDate extends ScriptObject {
      * @return time
      */
     @Function(attributes = Attribute.NOT_ENUMERABLE, arity = 3)
-    public static double setMinutes(final Object self, final Object... args) {
+    public static Object setMinutes(final Object self, final Object... args) {
         final NativeDate nd = getNativeDate(self);
         setFields(nd, MINUTE, args, true);
         return nd.getTime();
@@ -650,7 +650,7 @@ public final class NativeDate extends ScriptObject {
      * @return time
      */
     @Function(attributes = Attribute.NOT_ENUMERABLE, arity = 3)
-    public static double setUTCMinutes(final Object self, final Object... args) {
+    public static Object setUTCMinutes(final Object self, final Object... args) {
         final NativeDate nd = getNativeDate(self);
         setFields(nd, MINUTE, args, false);
         return nd.getTime();
@@ -664,7 +664,7 @@ public final class NativeDate extends ScriptObject {
      * @return time
      */
     @Function(attributes = Attribute.NOT_ENUMERABLE, arity = 4)
-    public static double setHours(final Object self, final Object... args) {
+    public static Object setHours(final Object self, final Object... args) {
         final NativeDate nd = getNativeDate(self);
         setFields(nd, HOUR, args, true);
         return nd.getTime();
@@ -678,7 +678,7 @@ public final class NativeDate extends ScriptObject {
      * @return time
      */
     @Function(attributes = Attribute.NOT_ENUMERABLE, arity = 4)
-    public static double setUTCHours(final Object self, final Object... args) {
+    public static Object setUTCHours(final Object self, final Object... args) {
         final NativeDate nd = getNativeDate(self);
         setFields(nd, HOUR, args, false);
         return nd.getTime();
@@ -692,7 +692,7 @@ public final class NativeDate extends ScriptObject {
      * @return time
      */
     @Function(attributes = Attribute.NOT_ENUMERABLE, arity = 1)
-    public static double setDate(final Object self, final Object... args) {
+    public static Object setDate(final Object self, final Object... args) {
         final NativeDate nd = getNativeDate(self);
         setFields(nd, DAY, args, true);
         return nd.getTime();
@@ -706,7 +706,7 @@ public final class NativeDate extends ScriptObject {
      * @return time
      */
     @Function(attributes = Attribute.NOT_ENUMERABLE, arity = 1)
-    public static double setUTCDate(final Object self, final Object... args) {
+    public static Object setUTCDate(final Object self, final Object... args) {
         final NativeDate nd = getNativeDate(self);
         setFields(nd, DAY, args, false);
         return nd.getTime();
@@ -720,7 +720,7 @@ public final class NativeDate extends ScriptObject {
      * @return time
      */
     @Function(attributes = Attribute.NOT_ENUMERABLE, arity = 2)
-    public static double setMonth(final Object self, final Object... args) {
+    public static Object setMonth(final Object self, final Object... args) {
         final NativeDate nd = getNativeDate(self);
         setFields(nd, MONTH, args, true);
         return nd.getTime();
@@ -734,7 +734,7 @@ public final class NativeDate extends ScriptObject {
      * @return time
      */
     @Function(attributes = Attribute.NOT_ENUMERABLE, arity = 2)
-    public static double setUTCMonth(final Object self, final Object... args) {
+    public static Object setUTCMonth(final Object self, final Object... args) {
         final NativeDate nd = ensureNativeDate(self);
         setFields(nd, MONTH, args, false);
         return nd.getTime();
@@ -748,7 +748,7 @@ public final class NativeDate extends ScriptObject {
      * @return time
      */
     @Function(attributes = Attribute.NOT_ENUMERABLE, arity = 3)
-    public static double setFullYear(final Object self, final Object... args) {
+    public static Object setFullYear(final Object self, final Object... args) {
         final NativeDate nd   = ensureNativeDate(self);
         if (nd.isValidDate()) {
             setFields(nd, YEAR, args, true);
@@ -771,7 +771,7 @@ public final class NativeDate extends ScriptObject {
      * @return time
      */
     @Function(attributes = Attribute.NOT_ENUMERABLE, arity = 3)
-    public static double setUTCFullYear(final Object self, final Object... args) {
+    public static Object setUTCFullYear(final Object self, final Object... args) {
         final NativeDate nd   = ensureNativeDate(self);
         if (nd.isValidDate()) {
             setFields(nd, YEAR, args, false);
@@ -790,7 +790,7 @@ public final class NativeDate extends ScriptObject {
      * @return NativeDate
      */
     @Function(attributes = Attribute.NOT_ENUMERABLE)
-    public static double setYear(final Object self, final Object year) {
+    public static Object setYear(final Object self, final Object year) {
         final NativeDate nd = getNativeDate(self);
         if (isNaN(nd.getTime())) {
             nd.setTime(utc(0, nd.getTimeZone()));
@@ -817,7 +817,7 @@ public final class NativeDate extends ScriptObject {
      * @return string representation of date
      */
     @Function(attributes = Attribute.NOT_ENUMERABLE)
-    public static String toUTCString(final Object self) {
+    public static Object toUTCString(final Object self) {
         return toGMTStringImpl(self);
     }
 
@@ -830,7 +830,7 @@ public final class NativeDate extends ScriptObject {
      * @return string representation of date
      */
     @Function(attributes = Attribute.NOT_ENUMERABLE)
-    public static String toGMTString(final Object self) {
+    public static Object toGMTString(final Object self) {
         return toGMTStringImpl(self);
     }
 
@@ -841,7 +841,7 @@ public final class NativeDate extends ScriptObject {
      * @return string representation of date
      */
     @Function(attributes = Attribute.NOT_ENUMERABLE)
-    public static String toISOString(final Object self) {
+    public static Object toISOString(final Object self) {
         return toISOStringImpl(self);
     }
 
@@ -913,7 +913,6 @@ public final class NativeDate extends ScriptObject {
         sb.append(n);
     }
 
-    @SuppressWarnings("fallthrough")
     private static String toStringImpl(final Object self, final int format) {
         final NativeDate nd = getNativeDate(self);
 
@@ -939,6 +938,7 @@ public final class NativeDate extends ScriptObject {
                     }
                     sb.append(' ');
 
+                    //$FALL-THROUGH$
                 case FORMAT_TIME:
                     final TimeZone tz = nd.getTimeZone();
                     final double utcTime = nd.getTime();
@@ -1050,8 +1050,7 @@ public final class NativeDate extends ScriptObject {
 
     // ECMA 15.9.1.2 TimeWithinDay (t)
     private static double timeWithinDay(final double t) {
-        final double val = t % msPerDay;
-        return val < 0? val + msPerDay : val;
+        return t % msPerDay;
     }
 
     // ECMA 15.9.1.3 InLeapYear (t)
@@ -1281,20 +1280,20 @@ public final class NativeDate extends ScriptObject {
         if (self instanceof NativeDate) {
             return (NativeDate)self;
         } else if (self != null && self == Global.instance().getDatePrototype()) {
-            return Global.instance().getDefaultDate();
+            return Global.instance().DEFAULT_DATE;
         } else {
             throw typeError("not.a.date", ScriptRuntime.safeToString(self));
         }
     }
 
-    private static double getField(final Object self, final int field) {
+    private static Object getField(final Object self, final int field) {
         final NativeDate nd = getNativeDate(self);
-        return (nd != null && nd.isValidDate()) ? (double)valueFromTime(field, nd.getLocalTime()) : Double.NaN;
+        return (nd != null && nd.isValidDate()) ? valueFromTime(field, nd.getLocalTime()) : Double.NaN;
     }
 
-    private static double getUTCField(final Object self, final int field) {
+    private static Object getUTCField(final Object self, final int field) {
         final NativeDate nd = getNativeDate(self);
-        return (nd != null && nd.isValidDate()) ? (double)valueFromTime(field, nd.getTime()) : Double.NaN;
+        return (nd != null && nd.isValidDate()) ? valueFromTime(field, nd.getTime()) : Double.NaN;
     }
 
     private static void setFields(final NativeDate nd, final int fieldId, final Object[] args, final boolean local) {
@@ -1349,4 +1348,5 @@ public final class NativeDate extends ScriptObject {
     private TimeZone getTimeZone() {
         return timezone;
     }
+
 }

@@ -165,7 +165,7 @@ public class URIName implements GeneralNameInterface {
             String host = uri.getSchemeSpecificPart();
             try {
                 DNSName hostDNS;
-                if (host.startsWith(".")) {
+                if (host.charAt(0) == '.') {
                     hostDNS = new DNSName(host.substring(1));
                 } else {
                     hostDNS = new DNSName(host);

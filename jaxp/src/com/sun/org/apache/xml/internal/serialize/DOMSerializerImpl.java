@@ -33,7 +33,6 @@ import java.net.URLConnection;
 import java.util.StringTokenizer;
 import java.util.Vector;
 
-import com.sun.org.apache.xerces.internal.dom.AbortException;
 import com.sun.org.apache.xerces.internal.dom.CoreDocumentImpl;
 import com.sun.org.apache.xerces.internal.dom.DOMErrorImpl;
 import com.sun.org.apache.xerces.internal.dom.DOMLocatorImpl;
@@ -118,6 +117,7 @@ public class DOMSerializerImpl implements LSSerializer, DOMConfiguration {
     private DOMErrorHandler fErrorHandler = null;
     private final DOMErrorImpl fError = new DOMErrorImpl();
     private final DOMLocatorImpl fLocator = new DOMLocatorImpl();
+    private static final RuntimeException abort = new RuntimeException();
 
     /**
      * Constructs a new LSSerializer.
@@ -539,9 +539,11 @@ public class DOMSerializerImpl implements LSSerializer, DOMConfiguration {
         } catch (LSException lse) {
             // Rethrow LSException.
             throw lse;
-        } catch (AbortException e) {
-            return null;
         } catch (RuntimeException e) {
+            if (e == DOMNormalizer.abort){
+                // stopped at user request
+                return null;
+            }
             throw (LSException) new LSException(LSException.SERIALIZE_ERR, e.toString()).initCause(e);
         } catch (IOException ioe) {
             // REVISIT: A generic IOException doesn't provide enough information
@@ -834,9 +836,11 @@ public class DOMSerializerImpl implements LSSerializer, DOMConfiguration {
         } catch (LSException lse) {
             // Rethrow LSException.
             throw lse;
-        } catch (AbortException e) {
-            return false;
         } catch (RuntimeException e) {
+            if (e == DOMNormalizer.abort){
+                // stopped at user request
+                return false;
+            }
             throw (LSException) DOMUtil.createLSException(LSException.SERIALIZE_ERR, e).fillInStackTrace();
         } catch (Exception e) {
             if (ser.fDOMErrorHandler != null) {
@@ -847,6 +851,7 @@ public class DOMSerializerImpl implements LSSerializer, DOMConfiguration {
                 ser.fDOMErrorHandler.handleError(error);
 
             }
+            e.printStackTrace();
             throw (LSException) DOMUtil.createLSException(LSException.SERIALIZE_ERR, e).fillInStackTrace();
         }
         return true;
@@ -988,9 +993,11 @@ public class DOMSerializerImpl implements LSSerializer, DOMConfiguration {
         } catch (LSException lse) {
             // Rethrow LSException.
             throw lse;
-        } catch (AbortException e) {
-            return false;
         } catch (RuntimeException e) {
+            if (e == DOMNormalizer.abort){
+                // stopped at user request
+                return false;
+            }
             throw (LSException) DOMUtil.createLSException(LSException.SERIALIZE_ERR, e).fillInStackTrace();
         } catch (Exception e) {
             if (ser.fDOMErrorHandler != null) {

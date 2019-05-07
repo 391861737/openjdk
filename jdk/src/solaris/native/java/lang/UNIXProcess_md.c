@@ -44,7 +44,7 @@
 #include <signal.h>
 #include <string.h>
 
-#if defined(__solaris__) || defined(_ALLBSD_SOURCE) || defined(_AIX)
+#if defined(__solaris__) || defined(_ALLBSD_SOURCE)
 #include <spawn.h>
 #endif
 
@@ -206,7 +206,6 @@ JNIEXPORT void JNICALL
 Java_java_lang_UNIXProcess_init(JNIEnv *env, jclass clazz)
 {
     parentPathv = effectivePathv(env);
-    CHECK_NULL(parentPathv);
     setSIGCHLDHandler(env);
 }
 
@@ -293,13 +292,12 @@ throwIOException(JNIEnv *env, int errnum, const char *defaultDetail)
     static const char * const format = "error=%d, %s";
     const char *detail = defaultDetail;
     char *errmsg;
-    char tmpbuf[1024];
     jstring s;
 
     if (errnum != 0) {
-        int ret = getErrorString(errnum, tmpbuf, sizeof(tmpbuf));
-        if (ret != EINVAL)
-            detail = tmpbuf;
+        const char *s = strerror(errnum);
+        if (strcmp(s, "Unknown error") != 0)
+            detail = s;
     }
     /* ASCII Decimal representation uses 2.4 times as many bits as binary. */
     errmsg = NEW(char, strlen(format) + strlen(detail) + 3 * sizeof(errnum));
@@ -457,7 +455,7 @@ forkChild(ChildStuff *c) {
     return resultPid;
 }
 
-#if defined(__solaris__) || defined(_ALLBSD_SOURCE) || defined(_AIX)
+#if defined(__solaris__) || defined(_ALLBSD_SOURCE)
 static pid_t
 spawnChild(JNIEnv *env, jobject process, ChildStuff *c, const char *helperpath) {
     pid_t resultPid;
@@ -553,7 +551,7 @@ startChild(JNIEnv *env, jobject process, ChildStuff *c, const char *helperpath) 
         return vforkChild(c);
       case MODE_FORK:
         return forkChild(c);
-#if defined(__solaris__) || defined(_ALLBSD_SOURCE) || defined(_AIX)
+#if defined(__solaris__) || defined(_ALLBSD_SOURCE)
       case MODE_POSIX_SPAWN:
         return spawnChild(env, process, c, helperpath);
 #endif
@@ -600,9 +598,9 @@ Java_java_lang_UNIXProcess_forkAndExec(JNIEnv *env,
      */
     assert(prog != NULL && argBlock != NULL);
     if ((phelperpath = getBytes(env, helperpath))   == NULL) goto Catch;
-    if ((pprog       = getBytes(env, prog))         == NULL) goto Catch;
-    if ((pargBlock   = getBytes(env, argBlock))     == NULL) goto Catch;
-    if ((c->argv     = NEW(const char *, argc + 3)) == NULL) goto Catch;
+    if ((pprog     = getBytes(env, prog))       == NULL) goto Catch;
+    if ((pargBlock = getBytes(env, argBlock))   == NULL) goto Catch;
+    if ((c->argv = NEW(const char *, argc + 3)) == NULL) goto Catch;
     c->argv[0] = pprog;
     c->argc = argc + 2;
     initVectorFromBlock(c->argv+1, pargBlock, argc);
@@ -691,11 +689,10 @@ Java_java_lang_UNIXProcess_forkAndExec(JNIEnv *env,
     closeSafely(childenv[0]);
     closeSafely(childenv[1]);
 
-    releaseBytes(env, helperpath, phelperpath);
-    releaseBytes(env, prog,       pprog);
-    releaseBytes(env, argBlock,   pargBlock);
-    releaseBytes(env, envBlock,   penvBlock);
-    releaseBytes(env, dir,        c->pdir);
+    releaseBytes(env, prog,     pprog);
+    releaseBytes(env, argBlock, pargBlock);
+    releaseBytes(env, envBlock, penvBlock);
+    releaseBytes(env, dir,      c->pdir);
 
     free(c->argv);
     free(c->envv);

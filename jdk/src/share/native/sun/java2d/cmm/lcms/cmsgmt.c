@@ -30,7 +30,7 @@
 //---------------------------------------------------------------------------------
 //
 //  Little Color Management System
-//  Copyright (c) 1998-2016 Marti Maria Saguer
+//  Copyright (c) 1998-2012 Marti Maria Saguer
 //
 // Permission is hereby granted, free of charge, to any person obtaining
 // a copy of this software and associated documentation files (the "Software"),
@@ -56,7 +56,7 @@
 #include "lcms2_internal.h"
 
 
-// Auxiliary: append a Lab identity after the given sequence of profiles
+// Auxiliar: append a Lab identity after the given sequence of profiles
 // and return the transform. Lab profile is closed, rest of profiles are kept open.
 cmsHTRANSFORM _cmsChain2Lab(cmsContext            ContextID,
                             cmsUInt32Number        nProfiles,
@@ -191,7 +191,7 @@ cmsToneCurve* _cmsBuildKToneCurve(cmsContext        ContextID,
 
     out = ComputeKToLstar(ContextID, nPoints, 1,
                             Intents + (nProfiles - 1),
-                            &hProfiles [nProfiles - 1],
+                            hProfiles + (nProfiles - 1),
                             BPC + (nProfiles - 1),
                             AdaptationStates + (nProfiles - 1),
                             dwFlags);
@@ -201,7 +201,7 @@ cmsToneCurve* _cmsBuildKToneCurve(cmsContext        ContextID,
     }
 
     // Build the relationship. This effectively limits the maximum accuracy to 16 bits, but
-    // since this is used on black-preserving LUTs, we are not losing  accuracy in any case
+    // since this is used on black-preserving LUTs, we are not loosing  accuracy in any case
     KTone = cmsJoinToneCurve(ContextID, in, out, nPoints);
 
     // Get rid of components
@@ -249,10 +249,13 @@ int GamutSampler(register const cmsUInt16Number In[], register cmsUInt16Number O
     cmsFloat64Number dE1, dE2, ErrorRatio;
 
     // Assume in-gamut by default.
+    dE1 = 0.;
+    dE2 = 0;
     ErrorRatio = 1.0;
 
     // Convert input to Lab
-    cmsDoTransform(t -> hInput, In, &LabIn1, 1);
+    if (t -> hInput != NULL)
+        cmsDoTransform(t -> hInput, In, &LabIn1, 1);
 
     // converts from PCS to colorant. This always
     // does return in-gamut values,
@@ -264,7 +267,7 @@ int GamutSampler(register const cmsUInt16Number In[], register cmsUInt16Number O
     memmove(&LabIn2, &LabOut1, sizeof(cmsCIELab));
 
     // Try again, but this time taking Check as input
-    cmsDoTransform(t -> hForward, &LabOut1, Proof2, 1);
+    cmsDoTransform(t -> hForward, &LabOut1, Proof2,  1);
     cmsDoTransform(t -> hReverse, Proof2, &LabOut2, 1);
 
     // Take difference of direct value
@@ -307,7 +310,7 @@ int GamutSampler(register const cmsUInt16Number In[], register cmsUInt16Number O
 }
 
 // Does compute a gamut LUT going back and forth across pcs -> relativ. colorimetric intent -> pcs
-// the dE obtained is then annotated on the LUT. Values truly out of gamut are clipped to dE = 0xFFFE
+// the dE obtained is then annotated on the LUT. Values truely out of gamut are clipped to dE = 0xFFFE
 // and values changed are supposed to be handled by any gamut remapping, so, are out of gamut as well.
 //
 // **WARNING: This algorithm does assume that gamut remapping algorithms does NOT move in-gamut colors,
@@ -371,7 +374,7 @@ cmsPipeline* _cmsCreateGamutCheckPipeline(cmsContext ContextID,
     ProfileList[nGamutPCSposition] = hLab;
     BPCList[nGamutPCSposition] = 0;
     AdaptationList[nGamutPCSposition] = 1.0;
-    IntentList[nGamutPCSposition] = INTENT_RELATIVE_COLORIMETRIC;
+    Intents[nGamutPCSposition] = INTENT_RELATIVE_COLORIMETRIC;
 
 
     ColorSpace  = cmsGetColorSpace(hGamut);
@@ -382,48 +385,45 @@ cmsPipeline* _cmsCreateGamutCheckPipeline(cmsContext ContextID,
 
     // 16 bits to Lab double
     Chain.hInput = cmsCreateExtendedTransform(ContextID,
-        nGamutPCSposition + 1,
-        ProfileList,
-        BPCList,
-        IntentList,
-        AdaptationList,
-        NULL, 0,
-        dwFormat, TYPE_Lab_DBL,
-        cmsFLAGS_NOCACHE);
+                                              nGamutPCSposition + 1,
+                                              ProfileList,
+                                              BPCList,
+                                              Intents,
+                                              AdaptationList,
+                                              NULL, 0,
+                                              dwFormat, TYPE_Lab_DBL,
+                                              cmsFLAGS_NOCACHE);
 
 
     // Does create the forward step. Lab double to device
     dwFormat    = (CHANNELS_SH(nChannels)|BYTES_SH(2));
     Chain.hForward = cmsCreateTransformTHR(ContextID,
-        hLab, TYPE_Lab_DBL,
-        hGamut, dwFormat,
-        INTENT_RELATIVE_COLORIMETRIC,
-        cmsFLAGS_NOCACHE);
+                                           hLab, TYPE_Lab_DBL,
+                                           hGamut, dwFormat,
+                                           INTENT_RELATIVE_COLORIMETRIC,
+                                           cmsFLAGS_NOCACHE);
 
     // Does create the backwards step
     Chain.hReverse = cmsCreateTransformTHR(ContextID, hGamut, dwFormat,
-        hLab, TYPE_Lab_DBL,
-        INTENT_RELATIVE_COLORIMETRIC,
-        cmsFLAGS_NOCACHE);
+                                           hLab, TYPE_Lab_DBL,
+                                           INTENT_RELATIVE_COLORIMETRIC,
+                                           cmsFLAGS_NOCACHE);
 
 
     // All ok?
-    if (Chain.hInput && Chain.hForward && Chain.hReverse) {
+    if (Chain.hForward && Chain.hReverse) {
 
         // Go on, try to compute gamut LUT from PCS. This consist on a single channel containing
         // dE when doing a transform back and forth on the colorimetric intent.
 
         Gamut = cmsPipelineAlloc(ContextID, 3, 1);
+
         if (Gamut != NULL) {
 
-            CLUT = cmsStageAllocCLut16bit(ContextID, nGridpoints, nChannels, 1, NULL);
-            if (!cmsPipelineInsertStage(Gamut, cmsAT_BEGIN, CLUT)) {
-                cmsPipelineFree(Gamut);
-                Gamut = NULL;
-            }
-            else {
-                cmsStageSampleCLut16bit(CLUT, GamutSampler, (void*) &Chain, 0);
-            }
+          CLUT = cmsStageAllocCLut16bit(ContextID, nGridpoints, nChannels, 1, NULL);
+          cmsPipelineInsertStage(Gamut, cmsAT_BEGIN, CLUT);
+
+          cmsStageSampleCLut16bit(CLUT, GamutSampler, (void*) &Chain, 0);
         }
     }
     else

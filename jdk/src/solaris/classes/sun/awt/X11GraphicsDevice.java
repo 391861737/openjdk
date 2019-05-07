@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 1997, 2014, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 1997, 2011, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -41,8 +41,6 @@ import java.util.HashMap;
 import sun.java2d.opengl.GLXGraphicsConfig;
 import sun.java2d.xr.XRGraphicsConfig;
 import sun.java2d.loops.SurfaceType;
-
-import sun.misc.ThreadGroupUtils;
 
 /**
  * This is an implementation of a GraphicsDevice object for a single
@@ -286,6 +284,7 @@ public class X11GraphicsDevice
      * Returns true only if:
      *   - the Xrandr extension is present
      *   - the necessary Xrandr functions were loaded successfully
+     *   - XINERAMA is not enabled
      */
     private static synchronized boolean isXrandrExtensionSupported() {
         if (xrandrExtSupported == null) {
@@ -297,7 +296,11 @@ public class X11GraphicsDevice
 
     @Override
     public boolean isFullScreenSupported() {
-        boolean fsAvailable = isXrandrExtensionSupported();
+        // REMIND: for now we will only allow fullscreen exclusive mode
+        // on the primary screen; we could change this behavior slightly
+        // in the future by allowing only one screen to be in fullscreen
+        // exclusive mode at any given time...
+        boolean fsAvailable = (screen == 0) && isXrandrExtensionSupported();
         if (fsAvailable) {
             SecurityManager security = System.getSecurityManager();
             if (security != null) {
@@ -317,16 +320,13 @@ public class X11GraphicsDevice
 
     @Override
     public boolean isDisplayChangeSupported() {
-        return (isFullScreenSupported()
-                && (getFullScreenWindow() != null)
-                && !((X11GraphicsEnvironment) GraphicsEnvironment
-                        .getLocalGraphicsEnvironment()).runningXinerama());
+        return (isFullScreenSupported() && (getFullScreenWindow() != null));
     }
 
     private static void enterFullScreenExclusive(Window w) {
         X11ComponentPeer peer = (X11ComponentPeer)w.getPeer();
         if (peer != null) {
-            enterFullScreenExclusive(peer.getWindow());
+            enterFullScreenExclusive(peer.getContentWindow());
             peer.setFullScreenExclusiveModeState(true);
         }
     }
@@ -335,7 +335,7 @@ public class X11GraphicsDevice
         X11ComponentPeer peer = (X11ComponentPeer)w.getPeer();
         if (peer != null) {
             peer.setFullScreenExclusiveModeState(false);
-            exitFullScreenExclusive(peer.getWindow());
+            exitFullScreenExclusive(peer.getContentWindow());
         }
     }
 
@@ -350,9 +350,7 @@ public class X11GraphicsDevice
         if (fsSupported && old != null) {
             // enter windowed mode (and restore original display mode)
             exitFullScreenExclusive(old);
-            if (isDisplayChangeSupported()) {
-                setDisplayMode(origDisplayMode);
-            }
+            setDisplayMode(origDisplayMode);
         }
 
         super.setFullScreenWindow(w);
@@ -379,11 +377,7 @@ public class X11GraphicsDevice
     @Override
     public synchronized DisplayMode getDisplayMode() {
         if (isFullScreenSupported()) {
-            DisplayMode mode = getCurrentDisplayMode(screen);
-            if (mode == null) {
-                mode = getDefaultDisplayMode();
-            }
-            return mode;
+            return getCurrentDisplayMode(screen);
         } else {
             if (origDisplayMode == null) {
                 origDisplayMode = getDefaultDisplayMode();
@@ -429,21 +423,28 @@ public class X11GraphicsDevice
             // is already in the original DisplayMode at that time, this
             // hook will have no effect)
             shutdownHookRegistered = true;
-            PrivilegedAction<Void> a = () -> {
-                ThreadGroup rootTG = ThreadGroupUtils.getRootThreadGroup();
-                Runnable r = () -> {
-                    Window old = getFullScreenWindow();
-                    if (old != null) {
-                        exitFullScreenExclusive(old);
-                        if (isDisplayChangeSupported()) {
-                            setDisplayMode(origDisplayMode);
-                        }
+            PrivilegedAction<Void> a = new PrivilegedAction<Void>() {
+                public Void run() {
+                    ThreadGroup mainTG = Thread.currentThread().getThreadGroup();
+                    ThreadGroup parentTG = mainTG.getParent();
+                    while (parentTG != null) {
+                        mainTG = parentTG;
+                        parentTG = mainTG.getParent();
                     }
-                };
-                Thread t = new Thread(rootTG, r,"Display-Change-Shutdown-Thread-"+screen);
-                t.setContextClassLoader(null);
-                Runtime.getRuntime().addShutdownHook(t);
-                return null;
+                    Runnable r = new Runnable() {
+                            public void run() {
+                                Window old = getFullScreenWindow();
+                                if (old != null) {
+                                    exitFullScreenExclusive(old);
+                                    setDisplayMode(origDisplayMode);
+                                }
+                            }
+                        };
+                    Thread t = new Thread(mainTG, r,"Display-Change-Shutdown-Thread-"+screen);
+                    t.setContextClassLoader(null);
+                    Runtime.getRuntime().addShutdownHook(t);
+                    return null;
+                }
             };
             AccessController.doPrivileged(a);
         }

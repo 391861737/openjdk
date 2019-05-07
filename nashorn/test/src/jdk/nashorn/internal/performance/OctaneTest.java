@@ -40,7 +40,6 @@ import java.text.NumberFormat;
 import java.util.List;
 import org.testng.annotations.Test;
 
-@SuppressWarnings("javadoc")
 public class OctaneTest {
 
     @Test
@@ -73,7 +72,7 @@ public class OctaneTest {
         genericTest("GBEMU");
     }
 
-/*    @Test
+    /*    @Test
     public void mandreelTest() {
         genericTest("Mandreel");
     }*/
@@ -108,21 +107,11 @@ public class OctaneTest {
         genericTest("Splay");
     }
 
-    @Test
-/*    public void typeScriptTest() {
-        genericTest("TypeScript");
-    }
-
-    @Test
-    public void zlibTest() {
-        genericTest("zlib");
-    }/*/
-
     public void genericTest(final String benchmark) {
         try {
             final String mainScript      = "test/script/basic/run-octane.js";
-            final String benchmarkScript = "test/script/external/octane/benchmarks/" + benchmark.toLowerCase() + ".js";
-            final String[] args = {
+            final String benchmarkScript = "test/script/external/octane/benchmarks/"+benchmark.toLowerCase() + ".js";
+            String[] args = {
                 "--",
                 benchmarkScript,
                 "--verbose"
@@ -147,17 +136,16 @@ public class OctaneTest {
         }
     }
 
-    public Double genericNashornTest(final String benchmark, final String testPath, final String[] args) throws Throwable {
+    public Double genericNashornTest(final String benchmark, final String testPath, String[] args) throws Throwable {
         try {
             final PerformanceWrapper wrapper = new PerformanceWrapper();
 
             final ByteArrayOutputStream baos = new ByteArrayOutputStream();
             final PrintStream ps = new PrintStream(baos);
 
-            final java.io.File test=new java.io.File(testPath);
-            final File absoluteFile=test.getAbsoluteFile();
+            java.io.File test=new java.io.File(testPath);
+            File absoluteFile=test.getAbsoluteFile();
             @SuppressWarnings("deprecation")
-            final
             URL testURL=absoluteFile.toURL();
 
             wrapper.runExecuteOnlyTest(testPath, 0, 0, testURL.toString(), ps, System.err, args);
@@ -165,7 +153,7 @@ public class OctaneTest {
             final byte[] output = baos.toByteArray();
             final List<String> result = outputToStrings(output);
 
-            final Double _result = filterBenchmark(result, benchmark);
+            Double _result = filterBenchmark(result, benchmark);
 
             return _result;
         } catch (final Throwable e) {
@@ -277,7 +265,7 @@ public class OctaneTest {
         if (v8 != null && rhino != 0) {
             nashornToV8 = nashorn.doubleValue() / v8.doubleValue();
         }
-        final String normalizedBenchmark=benchmark.replace("-", "");
+        String normalizedBenchmark=benchmark.replace("-", "");
         System.out.println("benchmark-" + normalizedBenchmark + "-nashorn=" + nashorn);
         AuroraWrapper.addResults(AuroraWrapper.createOrOpenDocument(), "benchmark-" + normalizedBenchmark + "-nashorn", nashorn.toString());
 

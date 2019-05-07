@@ -37,7 +37,6 @@ import javax.sql.rowset.spi.*;
 import javax.sql.rowset.serial.*;
 import com.sun.rowset.internal.*;
 import com.sun.rowset.providers.*;
-import sun.reflect.misc.ReflectUtil;
 
 /**
  * The standard implementation of the <code>CachedRowSet</code> interface.
@@ -2960,9 +2959,13 @@ public class CachedRowSetImpl extends BaseRowSet implements RowSet, RowSetIntern
                 // create new instance of the class
                 SQLData obj = null;
                 try {
-                    obj = (SQLData) ReflectUtil.newInstance(c);
-                } catch(Exception ex) {
-                    throw new SQLException("Unable to Instantiate: ", ex);
+                    obj = (SQLData)c.newInstance();
+                } catch (java.lang.InstantiationException ex) {
+                    throw new SQLException(MessageFormat.format(resBundle.handleGetObject("cachedrowsetimpl.unableins").toString(),
+                    ex.getMessage()));
+                } catch (java.lang.IllegalAccessException ex) {
+                    throw new SQLException(MessageFormat.format(resBundle.handleGetObject("cachedrowsetimpl.unableins").toString(),
+                    ex.getMessage()));
                 }
                 // get the attributes from the struct
                 Object attribs[] = s.getAttributes(map);
@@ -5707,9 +5710,13 @@ public class CachedRowSetImpl extends BaseRowSet implements RowSet, RowSetIntern
                 // create new instance of the class
                 SQLData obj = null;
                 try {
-                    obj = (SQLData) ReflectUtil.newInstance(c);
-                } catch(Exception ex) {
-                    throw new SQLException("Unable to Instantiate: ", ex);
+                    obj = (SQLData)c.newInstance();
+                } catch (java.lang.InstantiationException ex) {
+                    throw new SQLException(MessageFormat.format(resBundle.handleGetObject("cachedrowsetimpl.unableins").toString(),
+                    ex.getMessage()));
+                } catch (java.lang.IllegalAccessException ex) {
+                    throw new SQLException(MessageFormat.format(resBundle.handleGetObject("cachedrowsetimpl.unableins").toString(),
+                    ex.getMessage()));
                 }
                 // get the attributes from the struct
                 Object attribs[] = s.getAttributes(map);

@@ -388,8 +388,8 @@ JNIEXPORT jobject JNICALL Java_sun_security_krb5_Credentials_acquireDefaultNativ
     jobject ticketFlags, startTime, endTime, krbCreds = NULL;
     jobject authTime, renewTillTime, hostAddresses = NULL;
     KERB_EXTERNAL_TICKET *msticket;
-    int found = 0;
-    FILETIME Now, EndTime;
+    int found_in_cache = 0;
+    FILETIME Now, EndTime, LocalEndTime;
 
     int i, netypes;
     jint *etypes = NULL;
@@ -463,10 +463,6 @@ JNIEXPORT jobject JNICALL Java_sun_security_krb5_Credentials_acquireDefaultNativ
         netypes = (*env)->GetArrayLength(env, jetypes);
         etypes = (jint *) (*env)->GetIntArrayElements(env, jetypes, NULL);
 
-        if (etypes == NULL) {
-            break;
-        }
-
         // check TGT validity
         if (native_debug) {
             printf("LSA: TICKET SessionKey KeyType is %d\n", msticket->SessionKey.KeyType);
@@ -476,10 +472,11 @@ JNIEXPORT jobject JNICALL Java_sun_security_krb5_Credentials_acquireDefaultNativ
             GetSystemTimeAsFileTime(&Now);
             EndTime.dwLowDateTime = msticket->EndTime.LowPart;
             EndTime.dwHighDateTime = msticket->EndTime.HighPart;
-            if (CompareFileTime(&Now, &EndTime) < 0) {
+            FileTimeToLocalFileTime(&EndTime, &LocalEndTime);
+            if (CompareFileTime(&Now, &LocalEndTime) < 0) {
                 for (i=0; i<netypes; i++) {
                     if (etypes[i] == msticket->SessionKey.KeyType) {
-                        found = 1;
+                        found_in_cache = 1;
                         if (native_debug) {
                             printf("LSA: Valid etype found: %d\n", etypes[i]);
                         }
@@ -489,7 +486,7 @@ JNIEXPORT jobject JNICALL Java_sun_security_krb5_Credentials_acquireDefaultNativ
             }
         }
 
-        if (!found) {
+        if (!found_in_cache) {
             if (native_debug) {
                 printf("LSA: MS TGT in cache is invalid/not supported; request new ticket\n");
             }
@@ -532,14 +529,6 @@ JNIEXPORT jobject JNICALL Java_sun_security_krb5_Credentials_acquireDefaultNativ
 
                 // got the native MS Kerberos TGT
                 msticket = &(pTicketResponse->Ticket);
-
-                if (msticket->SessionKey.KeyType != etypes[i]) {
-                    if (native_debug) {
-                        printf("LSA: Response etype is %d for %d. Retry.\n", msticket->SessionKey.KeyType, etypes[i]);
-                    }
-                    continue;
-                }
-                found = 1;
                 break;
             }
         }
@@ -594,10 +583,6 @@ JNIEXPORT jobject JNICALL Java_sun_security_krb5_Credentials_acquireDefaultNativ
         } KERB_CRYPTO_KEY, *PKERB_CRYPTO_KEY;
 
         */
-        if (!found) {
-            break;
-        }
-
         // Build a com.sun.security.krb5.Ticket
         ticket = BuildTicket(env, msticket->EncodedTicket,
                                 msticket->EncodedTicketSize);
@@ -955,7 +940,8 @@ jobject BuildPrincipal(JNIEnv *env, PKERB_EXTERNAL_NAME principalName,
         if (native_debug) {
             printf("LSA: Can't allocate String array for Principal\n");
         }
-        goto cleanup;
+        LocalFree(realm);
+        return principal;
     }
 
     for (i=0; i<nameCount; i++) {
@@ -965,17 +951,8 @@ jobject BuildPrincipal(JNIEnv *env, PKERB_EXTERNAL_NAME principalName,
         // OK, got a Char array, so construct a String
         tempString = (*env)->NewString(env, (const jchar*)scanner->Buffer,
                             scanner->Length/sizeof(WCHAR));
-
-        if (tempString == NULL) {
-            goto cleanup;
-        }
-
         // Set the String into the StringArray
         (*env)->SetObjectArrayElement(env, stringArray, i, tempString);
-
-        if ((*env)->ExceptionCheck(env)) {
-            goto cleanup;
-        }
 
         // Do I have to worry about storage reclamation here?
     }
@@ -983,14 +960,9 @@ jobject BuildPrincipal(JNIEnv *env, PKERB_EXTERNAL_NAME principalName,
     realmLen = (ULONG)wcslen((PWCHAR)realm);
     realmStr = (*env)->NewString(env, (PWCHAR)realm, (USHORT)realmLen);
 
-    if (realmStr == NULL) {
-        goto cleanup;
-    }
-
     principal = (*env)->NewObject(env, principalNameClass,
                     principalNameConstructor, stringArray, realmStr);
 
-cleanup:
     // free local resources
     LocalFree(realm);
 

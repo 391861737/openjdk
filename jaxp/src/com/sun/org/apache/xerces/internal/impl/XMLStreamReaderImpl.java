@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2005, 2017, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2005, 2006, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -25,21 +25,22 @@
 
 package com.sun.org.apache.xerces.internal.impl;
 
-import com.sun.org.apache.xerces.internal.util.NamespaceContextWrapper;
-import com.sun.org.apache.xerces.internal.util.NamespaceSupport;
-import com.sun.org.apache.xerces.internal.util.SymbolTable;
-import com.sun.org.apache.xerces.internal.util.XMLAttributesImpl;
-import com.sun.org.apache.xerces.internal.util.XMLChar;
-import com.sun.org.apache.xerces.internal.util.XMLStringBuffer;
-import com.sun.org.apache.xerces.internal.xni.XNIException;
-import com.sun.org.apache.xerces.internal.xni.parser.XMLInputSource;
 import com.sun.xml.internal.stream.Entity;
 import com.sun.xml.internal.stream.StaxErrorReporter;
 import com.sun.xml.internal.stream.XMLEntityStorage;
-import com.sun.xml.internal.stream.dtd.nonvalidating.DTDGrammar;
-import com.sun.xml.internal.stream.dtd.nonvalidating.XMLNotationDecl;
 import com.sun.xml.internal.stream.events.EntityDeclarationImpl;
 import com.sun.xml.internal.stream.events.NotationDeclarationImpl;
+import javax.xml.namespace.NamespaceContext;
+import com.sun.org.apache.xerces.internal.xni.XNIException;
+import com.sun.org.apache.xerces.internal.xni.parser.XMLInputSource;
+import javax.xml.XMLConstants;
+import javax.xml.namespace.QName;
+import javax.xml.stream.Location;
+import javax.xml.stream.events.XMLEvent;
+import com.sun.org.apache.xerces.internal.util.NamespaceContextWrapper;
+import com.sun.org.apache.xerces.internal.util.SymbolTable;
+import com.sun.xml.internal.stream.dtd.nonvalidating.XMLNotationDecl;
+import com.sun.xml.internal.stream.dtd.nonvalidating.DTDGrammar;
 import java.io.BufferedInputStream;
 import java.io.BufferedReader;
 import java.io.IOException;
@@ -47,16 +48,20 @@ import java.io.InputStream;
 import java.io.Reader;
 import java.util.ArrayList;
 import java.util.Enumeration;
+import java.util.Hashtable;
 import java.util.Iterator;
 import java.util.List;
-import javax.xml.XMLConstants;
-import javax.xml.namespace.NamespaceContext;
-import javax.xml.namespace.QName;
-import javax.xml.stream.Location;
 import javax.xml.stream.XMLInputFactory;
 import javax.xml.stream.XMLStreamConstants;
 import javax.xml.stream.XMLStreamException;
-import javax.xml.stream.events.XMLEvent;
+import com.sun.org.apache.xerces.internal.impl.msg.XMLMessageFormatter;
+import com.sun.org.apache.xerces.internal.util.XMLChar;
+import com.sun.org.apache.xerces.internal.util.XMLStringBuffer;
+import com.sun.org.apache.xerces.internal.util.NamespaceSupport;
+import com.sun.org.apache.xerces.internal.util.XMLAttributesImpl;
+import com.sun.org.apache.xerces.internal.impl.Constants;
+import com.sun.org.apache.xerces.internal.xni.XMLDocumentHandler;
+import com.sun.xml.internal.stream.dtd.DTDGrammarUtil;
 
 /** This class implements javax.xml.stream.XMLStreamReader. It makes use of XML*Scanner classes to
  * derive most of its functionality. If desired, Application can reuse this instance by calling
@@ -560,14 +565,6 @@ public class XMLStreamReaderImpl implements javax.xml.stream.XMLStreamReader {
                     && versionStr != null
                     && versionStr.equals("1.1")) {
                 switchToXML11Scanner();
-            }
-
-            if (fEventType == XMLStreamConstants.CHARACTERS ||
-                    fEventType == XMLStreamConstants.ENTITY_REFERENCE ||
-                    fEventType == XMLStreamConstants.PROCESSING_INSTRUCTION ||
-                    fEventType == XMLStreamConstants.COMMENT ||
-                    fEventType == XMLStreamConstants.CDATA) {
-                    fEntityScanner.checkNodeCount(fEntityScanner.fCurrentEntity);
             }
 
             return fEventType;
@@ -1176,7 +1173,7 @@ public class XMLStreamReaderImpl implements javax.xml.stream.XMLStreamReader {
     public boolean hasText() {
         if(DEBUG) pr("XMLReaderImpl#EVENT TYPE = " + fEventType ) ;
         if( fEventType == XMLEvent.CHARACTERS || fEventType == XMLEvent.COMMENT || fEventType == XMLEvent.CDATA) {
-            return fScanner.getCharacterData().length > 0;
+            return fScanner.getCharacterData().length > 0 ? true : false;
         } else if(fEventType == XMLEvent.ENTITY_REFERENCE) {
             String name = fScanner.getEntityName();
             if(name != null){
@@ -1188,9 +1185,9 @@ public class XMLStreamReaderImpl implements javax.xml.stream.XMLStreamReader {
                 if(en == null)
                     return false;
                 if(en.isExternal()){
-                    return ((Entity.ExternalEntity)en).entityLocation.getExpandedSystemId() != null;
+                    return ((Entity.ExternalEntity)en).entityLocation.getExpandedSystemId() != null ? true : false;
                 } else{
-                    return ((Entity.InternalEntity)en).text != null ;
+                    return ((Entity.InternalEntity)en).text != null ? true : false ;
                 }
             }else
                 return false;

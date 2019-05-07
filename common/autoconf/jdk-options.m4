@@ -51,33 +51,6 @@ AC_DEFUN_ONCE([JDKOPT_SETUP_JDK_VARIANT],
   AC_MSG_RESULT([$JDK_VARIANT])
 ])
 
-AC_DEFUN_ONCE([JDKOPT_SETUP_JVM_INTERPRETER],
-[
-###############################################################################
-#
-# Check which interpreter of the JVM we want to build.
-# Currently we have:
-#    template: Template interpreter (the default)
-#    cpp     : C++ interpreter
-AC_MSG_CHECKING([which interpreter of the JVM to build])
-AC_ARG_WITH([jvm-interpreter], [AS_HELP_STRING([--with-jvm-interpreter],
-	[JVM interpreter to build (template, cpp) @<:@template@:>@])])
-
-if test "x$with_jvm_interpreter" = x; then
-     with_jvm_interpreter="template"
-fi
-
-JVM_INTERPRETER="$with_jvm_interpreter"
-
-if test "x$JVM_INTERPRETER" != xtemplate && test "x$JVM_INTERPRETER" != xcpp; then
-   AC_MSG_ERROR([The available JVM interpreters are: template, cpp])
-fi
-
-AC_SUBST(JVM_INTERPRETER)
-
-AC_MSG_RESULT([$with_jvm_interpreter])
-])
-
 AC_DEFUN_ONCE([JDKOPT_SETUP_JVM_VARIANTS],
 [
 
@@ -92,20 +65,19 @@ AC_DEFUN_ONCE([JDKOPT_SETUP_JVM_VARIANTS],
   #             ie normal interpreter and C1, only the serial GC, kernel jvmti etc
   #    zero: no machine code interpreter, no compiler
   #    zeroshark: zero interpreter and shark/llvm compiler backend
-#    core: interpreter only, no compiler (only works on some platforms)
   AC_MSG_CHECKING([which variants of the JVM to build])
   AC_ARG_WITH([jvm-variants], [AS_HELP_STRING([--with-jvm-variants],
-	[JVM variants (separated by commas) to build (server, client, minimal1, kernel, zero, zeroshark, core) @<:@server@:>@])])
+      [JVM variants (separated by commas) to build (server, client, minimal1, kernel, zero, zeroshark) @<:@server@:>@])])
 
   if test "x$with_jvm_variants" = x; then
     with_jvm_variants="server"
   fi
 
   JVM_VARIANTS=",$with_jvm_variants,"
-  TEST_VARIANTS=`$ECHO "$JVM_VARIANTS" | $SED -e 's/server,//' -e 's/client,//'  -e 's/minimal1,//' -e 's/kernel,//' -e 's/zero,//' -e 's/zeroshark,//' -e 's/core,//'`
+  TEST_VARIANTS=`$ECHO "$JVM_VARIANTS" | $SED -e 's/server,//' -e 's/client,//'  -e 's/minimal1,//' -e 's/kernel,//' -e 's/zero,//' -e 's/zeroshark,//'`
 
   if test "x$TEST_VARIANTS" != "x,"; then
-     AC_MSG_ERROR([The available JVM variants are: server, client, minimal1, kernel, zero, zeroshark, core])
+    AC_MSG_ERROR([The available JVM variants are: server, client, minimal1, kernel, zero, zeroshark])
   fi
   AC_MSG_RESULT([$with_jvm_variants])
 
@@ -115,7 +87,6 @@ AC_DEFUN_ONCE([JDKOPT_SETUP_JVM_VARIANTS],
   JVM_VARIANT_KERNEL=`$ECHO "$JVM_VARIANTS" | $SED -e '/,kernel,/!s/.*/false/g' -e '/,kernel,/s/.*/true/g'`
   JVM_VARIANT_ZERO=`$ECHO "$JVM_VARIANTS" | $SED -e '/,zero,/!s/.*/false/g' -e '/,zero,/s/.*/true/g'`
   JVM_VARIANT_ZEROSHARK=`$ECHO "$JVM_VARIANTS" | $SED -e '/,zeroshark,/!s/.*/false/g' -e '/,zeroshark,/s/.*/true/g'`
-  JVM_VARIANT_CORE=`$ECHO "$JVM_VARIANTS" | $SED -e '/,core,/!s/.*/false/g' -e '/,core,/s/.*/true/g'`
 
   if test "x$JVM_VARIANT_CLIENT" = xtrue; then
     if test "x$OPENJDK_TARGET_CPU_BITS" = x64; then
@@ -134,8 +105,8 @@ AC_DEFUN_ONCE([JDKOPT_SETUP_JVM_VARIANTS],
   fi
 
   # Replace the commas with AND for use in the build directory name.
-  ANDED_JVM_VARIANTS=`$ECHO "$JVM_VARIANTS" | $SED -e 's/^,//' -e 's/,$//' -e 's/,/AND/g'`
-  COUNT_VARIANTS=`$ECHO "$JVM_VARIANTS" | $SED -e 's/server,/1/' -e 's/client,/1/' -e 's/minimal1,/1/' -e 's/kernel,/1/' -e 's/zero,/1/' -e 's/zeroshark,/1/' -e 's/core,/1/'`
+  ANDED_JVM_VARIANTS=`$ECHO "$JVM_VARIANTS" | $SED -e 's/^,//' -e 's/,$//' -e 's/,/AND/'`
+  COUNT_VARIANTS=`$ECHO "$JVM_VARIANTS" | $SED -e 's/server,/1/' -e 's/client,/1/' -e 's/minimal1,/1/' -e 's/kernel,/1/' -e 's/zero,/1/' -e 's/zeroshark,/1/'`
   if test "x$COUNT_VARIANTS" != "x,1"; then
     BUILDING_MULTIPLE_JVM_VARIANTS=yes
   else
@@ -149,7 +120,6 @@ AC_DEFUN_ONCE([JDKOPT_SETUP_JVM_VARIANTS],
   AC_SUBST(JVM_VARIANT_KERNEL)
   AC_SUBST(JVM_VARIANT_ZERO)
   AC_SUBST(JVM_VARIANT_ZEROSHARK)
-  AC_SUBST(JVM_VARIANT_CORE)
 
   INCLUDE_SA=true
   if test "x$JVM_VARIANT_ZERO" = xtrue ; then
@@ -158,16 +128,10 @@ AC_DEFUN_ONCE([JDKOPT_SETUP_JVM_VARIANTS],
   if test "x$JVM_VARIANT_ZEROSHARK" = xtrue ; then
     INCLUDE_SA=false
   fi
-  if test "x$VAR_CPU" = xppc64 ; then
-    INCLUDE_SA=false
-  fi
-  if test "x$OPENJDK_TARGET_CPU" = xaarch64; then
-    INCLUDE_SA=false
-  fi
   AC_SUBST(INCLUDE_SA)
 
   if test "x$OPENJDK_TARGET_OS" = "xmacosx"; then
-    MACOSX_UNIVERSAL="false"
+    MACOSX_UNIVERSAL="true"
   fi
 
   AC_SUBST(MACOSX_UNIVERSAL)
@@ -270,10 +234,6 @@ AC_DEFUN_ONCE([JDKOPT_SETUP_DEBUG_LEVEL],
 
   if test "x$JVM_VARIANT_ZEROSHARK" = xtrue; then
     HOTSPOT_TARGET="$HOTSPOT_TARGET${HOTSPOT_DEBUG_LEVEL}shark "
-  fi
-
-  if test "x$JVM_VARIANT_CORE" = xtrue; then
-    HOTSPOT_TARGET="$HOTSPOT_TARGET${HOTSPOT_DEBUG_LEVEL}core "
   fi
 
   HOTSPOT_TARGET="$HOTSPOT_TARGET docs export_$HOTSPOT_EXPORT"
@@ -463,12 +423,6 @@ AC_DEFUN_ONCE([JDKOPT_SETUP_JDK_VERSION_NUMBERS],
     AC_MSG_ERROR([Update version must have a value])
   elif test "x$with_update_version" != x; then
     JDK_UPDATE_VERSION="$with_update_version"
-    # On macosx 10.7, it's not possible to set --with-update-version=0X due
-    # to a bug in expr (which reduces it to just X). To work around this, we
-    # always add a 0 to one digit update versions.
-    if test "${#JDK_UPDATE_VERSION}" = "1"; then
-      JDK_UPDATE_VERSION="0${JDK_UPDATE_VERSION}"
-    fi
   fi
 
   AC_ARG_WITH(user-release-suffix, [AS_HELP_STRING([--with-user-release-suffix],
@@ -513,15 +467,7 @@ AC_DEFUN_ONCE([JDKOPT_SETUP_JDK_VERSION_NUMBERS],
   AC_SUBST(MACOSX_BUNDLE_NAME_BASE)
   AC_SUBST(MACOSX_BUNDLE_ID_BASE)
 
-  AC_ARG_WITH(copyright-year, [AS_HELP_STRING([--with-copyright-year],
-      [Set copyright year value for build @<:@current year@:>@])])
-  if test "x$with_copyright_year" = xyes; then
-    AC_MSG_ERROR([Copyright year must have a value])
-  elif test "x$with_copyright_year" != x; then
-    COPYRIGHT_YEAR="$with_copyright_year"
-  else
-    COPYRIGHT_YEAR=`date +'%Y'`
-  fi
+  COPYRIGHT_YEAR=`date +'%Y'`
   AC_SUBST(COPYRIGHT_YEAR)
 
   if test "x$JDK_UPDATE_VERSION" != x; then
@@ -530,12 +476,6 @@ AC_DEFUN_ONCE([JDKOPT_SETUP_JDK_VERSION_NUMBERS],
     JDK_VERSION="${JDK_MAJOR_VERSION}.${JDK_MINOR_VERSION}.${JDK_MICRO_VERSION}"
   fi
   AC_SUBST(JDK_VERSION)
-
-  # The cooked update version used to encode trailing letters in the update
-  # version into a trailing number. That is no longer needed, but need to
-  # keep the format in 8u for compatibility.
-  COOKED_JDK_UPDATE_VERSION="${JDK_UPDATE_VERSION}0"
-  AC_SUBST(COOKED_JDK_UPDATE_VERSION)
 
   COOKED_BUILD_NUMBER=`$ECHO $JDK_BUILD_NUMBER | $SED -e 's/^b//' -e 's/^0//'`
   AC_SUBST(COOKED_BUILD_NUMBER)

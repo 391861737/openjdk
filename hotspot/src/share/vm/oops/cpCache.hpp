@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 1998, 2016, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 1998, 2013, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -27,7 +27,6 @@
 
 #include "interpreter/bytecodes.hpp"
 #include "memory/allocation.hpp"
-#include "runtime/orderAccess.hpp"
 #include "utilities/array.hpp"
 
 class PSPromotionManager;
@@ -77,19 +76,18 @@ class PSPromotionManager;
 // f2 flag true if f2 contains an oop (e.g., virtual final method)
 // fv flag true if invokeinterface used for method in class Object
 //
-// The flags 31, 30, 29, 28 together build a 4 bit number 0 to 16 with the
+// The flags 31, 30, 29, 28 together build a 4 bit number 0 to 8 with the
 // following mapping to the TosState states:
 //
 // btos: 0
-// ztos: 1
-// ctos: 2
-// stos: 3
-// itos: 4
-// ltos: 5
-// ftos: 6
-// dtos: 7
-// atos: 8
-// vtos: 9
+// ctos: 1
+// stos: 2
+// itos: 3
+// ltos: 4
+// ftos: 5
+// dtos: 6
+// atos: 7
+// vtos: 8
 //
 // Entry specific: field entries:
 // _indices = get (b1 section) and put (b2 section) bytecodes, original constant pool index
@@ -140,7 +138,7 @@ class ConstantPoolCacheEntry VALUE_OBJ_CLASS_SPEC {
 
   void set_bytecode_1(Bytecodes::Code code);
   void set_bytecode_2(Bytecodes::Code code);
-  void set_f1(Metadata* f1) {
+  void set_f1(Metadata* f1)                            {
     Metadata* existing_f1 = (Metadata*)_f1; // read once
     assert(existing_f1 == NULL || existing_f1 == f1, "illegal field change");
     _f1 = f1;
@@ -229,15 +227,13 @@ class ConstantPoolCacheEntry VALUE_OBJ_CLASS_SPEC {
   void set_direct_or_vtable_call(
     Bytecodes::Code invoke_code,                 // the bytecode used for invoking the method
     methodHandle    method,                      // the method/prototype if any (NULL, otherwise)
-    int             vtable_index,                // the vtable index if any, else negative
-    bool            sender_is_interface
+    int             vtable_index                 // the vtable index if any, else negative
   );
 
  public:
   void set_direct_call(                          // sets entry to exact concrete method entry
     Bytecodes::Code invoke_code,                 // the bytecode used for invoking the method
-    methodHandle    method,                      // the method to call
-    bool            sender_is_interface
+    methodHandle    method                       // the method to call
   );
 
   void set_vtable_call(                          // sets entry to vtable index
@@ -329,33 +325,32 @@ class ConstantPoolCacheEntry VALUE_OBJ_CLASS_SPEC {
 
   // Accessors
   int indices() const                            { return _indices; }
-  int indices_ord() const                        { return (intx)OrderAccess::load_ptr_acquire(&_indices); }
   int constant_pool_index() const                { return (indices() & cp_index_mask); }
-  Bytecodes::Code bytecode_1() const             { return Bytecodes::cast((indices_ord() >> bytecode_1_shift) & bytecode_1_mask); }
-  Bytecodes::Code bytecode_2() const             { return Bytecodes::cast((indices_ord() >> bytecode_2_shift) & bytecode_2_mask); }
-  Metadata* f1_ord() const                       { return (Metadata *)OrderAccess::load_ptr_acquire(&_f1); }
-  Method*   f1_as_method() const                 { Metadata* f1 = f1_ord(); assert(f1 == NULL || f1->is_method(), ""); return (Method*)f1; }
-  Klass*    f1_as_klass() const                  { Metadata* f1 = f1_ord(); assert(f1 == NULL || f1->is_klass(), ""); return (Klass*)f1; }
-  // Use the accessor f1() to acquire _f1's value. This is needed for
-  // example in BytecodeInterpreter::run(), where is_f1_null() is
-  // called to check if an invokedynamic call is resolved. This load
-  // of _f1 must be ordered with the loads performed by
-  // cache->main_entry_index().
-  bool      is_f1_null() const                   { Metadata* f1 = f1_ord(); return f1 == NULL; }  // classifies a CPC entry as unbound
+  Bytecodes::Code bytecode_1() const             { return Bytecodes::cast((indices() >> bytecode_1_shift) & bytecode_1_mask); }
+  Bytecodes::Code bytecode_2() const             { return Bytecodes::cast((indices() >> bytecode_2_shift) & bytecode_2_mask); }
+  Method* f1_as_method() const                   { Metadata* f1 = (Metadata*)_f1; assert(f1 == NULL || f1->is_method(), ""); return (Method*)f1; }
+  Klass*    f1_as_klass() const                  { Metadata* f1 = (Metadata*)_f1; assert(f1 == NULL || f1->is_klass(), ""); return (Klass*)f1; }
+  bool      is_f1_null() const                   { Metadata* f1 = (Metadata*)_f1; return f1 == NULL; }  // classifies a CPC entry as unbound
   int       f2_as_index() const                  { assert(!is_vfinal(), ""); return (int) _f2; }
-  Method*   f2_as_vfinal_method() const          { assert(is_vfinal(), ""); return (Method*)_f2; }
+  Method* f2_as_vfinal_method() const            { assert(is_vfinal(), ""); return (Method*)_f2; }
   int  field_index() const                       { assert(is_field_entry(),  ""); return (_flags & field_index_mask); }
   int  parameter_size() const                    { assert(is_method_entry(), ""); return (_flags & parameter_size_mask); }
   bool is_volatile() const                       { return (_flags & (1 << is_volatile_shift))       != 0; }
   bool is_final() const                          { return (_flags & (1 << is_final_shift))          != 0; }
   bool is_forced_virtual() const                 { return (_flags & (1 << is_forced_virtual_shift)) != 0; }
   bool is_vfinal() const                         { return (_flags & (1 << is_vfinal_shift))         != 0; }
-  bool has_appendix() const                      { return (!is_f1_null()) && (_flags & (1 << has_appendix_shift))      != 0; }
-  bool has_method_type() const                   { return (!is_f1_null()) && (_flags & (1 << has_method_type_shift))   != 0; }
+  bool has_appendix() const                      { return (_flags & (1 << has_appendix_shift))      != 0; }
+  bool has_method_type() const                   { return (_flags & (1 << has_method_type_shift))   != 0; }
   bool is_method_entry() const                   { return (_flags & (1 << is_field_entry_shift))    == 0; }
   bool is_field_entry() const                    { return (_flags & (1 << is_field_entry_shift))    != 0; }
+  bool is_byte() const                           { return flag_state() == btos; }
+  bool is_char() const                           { return flag_state() == ctos; }
+  bool is_short() const                          { return flag_state() == stos; }
+  bool is_int() const                            { return flag_state() == itos; }
   bool is_long() const                           { return flag_state() == ltos; }
+  bool is_float() const                          { return flag_state() == ftos; }
   bool is_double() const                         { return flag_state() == dtos; }
+  bool is_object() const                         { return flag_state() == atos; }
   TosState flag_state() const                    { assert((uint)number_of_states <= (uint)tos_state_mask+1, "");
                                                    return (TosState)((_flags >> tos_state_shift) & tos_state_mask); }
 
@@ -375,9 +370,9 @@ class ConstantPoolCacheEntry VALUE_OBJ_CLASS_SPEC {
   // printed the klass name so that other routines in the adjust_*
   // group don't print the klass name.
   bool adjust_method_entry(Method* old_method, Method* new_method,
-         bool* trace_name_printed);
+         bool * trace_name_printed);
   bool check_no_old_or_obsolete_entries();
-  Method* get_interesting_method_entry(Klass* k);
+  bool is_interesting_method_entry(Klass* k);
 #endif // INCLUDE_JVMTI
 
   // Debugging & Printing
@@ -473,7 +468,8 @@ class ConstantPoolCache: public MetaspaceObj {
   // trace_name_printed is set to true if the current call has
   // printed the klass name so that other routines in the adjust_*
   // group don't print the klass name.
-  void adjust_method_entries(InstanceKlass* holder, bool* trace_name_printed);
+  void adjust_method_entries(Method** old_methods, Method** new_methods,
+                             int methods_length, bool * trace_name_printed);
   bool check_no_old_or_obsolete_entries();
   void dump_cache();
 #endif // INCLUDE_JVMTI

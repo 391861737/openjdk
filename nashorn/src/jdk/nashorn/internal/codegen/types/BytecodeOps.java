@@ -36,7 +36,7 @@ import jdk.internal.org.objectweb.asm.MethodVisitor;
  * The bytecode ops are coupled to a MethodVisitor from ASM for
  * byte code generation. They know nothing about our MethodGenerator,
  * which is the abstraction for working with Nashorn JS types
- * For example, anything like "two or one slots" for a type, which
+ * For exmaple, anything like "two or one slots" for a type, which
  * is represented in bytecode and ASM, is abstracted away in the
  * MethodGenerator. There you just say "dup" or "store".
  *
@@ -85,10 +85,9 @@ interface BytecodeOps {
      * first to the second, pushing the result on the stack
      *
      * @param method  method visitor
-     * @param programPoint program point id
      * @return result type
      */
-    Type add(MethodVisitor method, int programPoint);
+    Type add(MethodVisitor method);
 
     /**
      * Load a variable from a local slot to the stack
@@ -128,17 +127,6 @@ interface BytecodeOps {
      * @return the undefined type at the top of the stack
      */
     Type loadUndefined(MethodVisitor method);
-
-    /**
-     * Load the "forced initializer" value to the stack, used to ensure that a local variable has a value when it is
-     * read by the unwarranted optimism catch block.
-     *
-     * @param  method  method visitor.
-     *
-     * @return the forced initialization type at the top of the stack
-     */
-    Type loadForcedInitializer(MethodVisitor method);
-
 
     /**
      * Load the "empty" value to the stack.

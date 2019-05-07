@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 1995, 2014, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 1995, 2013, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -46,12 +46,6 @@
 #undef FAR
 #include <jpeglib.h>
 #include "jerror.h"
-
-#ifdef __APPLE__
-/* use setjmp/longjmp versions that do not save/restore the signal mask */
-#define setjmp _setjmp
-#define longjmp _longjmp
-#endif
 
 /* The method IDs we cache. Note that the last two belongs to the
  * java.io.InputStream class.
@@ -180,7 +174,6 @@ struct sun_jpeg_source_mgr {
       int               *ip;
       unsigned char     *bp;
   } outbuf;
-  size_t outbufSize;
   jobject hOutputBuffer;
 };
 
@@ -234,7 +227,6 @@ static int GET_ARRAYS(JNIEnv *env, sun_jpeg_source_ptr src)
     }
     if (src->hOutputBuffer) {
         assert(src->outbuf.ip == 0);
-        src->outbufSize = (*env)->GetArrayLength(env, src->hOutputBuffer);
         src->outbuf.ip = (int *)(*env)->GetPrimitiveArrayCritical
             (env, src->hOutputBuffer, 0);
         if (src->outbuf.ip == 0) {
@@ -297,7 +289,6 @@ sun_jpeg_fill_input_buffer(j_decompress_ptr cinfo)
     buflen = (*env)->GetArrayLength(env, src->hInputBuffer);
     ret = (*env)->CallIntMethod(env, src->hInputStream, InputStream_readID,
                                 src->hInputBuffer, 0, buflen);
-    if (ret > buflen) ret = buflen;
     if ((*env)->ExceptionOccurred(env) || !GET_ARRAYS(env, src)) {
         cinfo->err->error_exit((struct jpeg_common_struct *) cinfo);
     }
@@ -358,7 +349,6 @@ sun_jpeg_fill_suspended_buffer(j_decompress_ptr cinfo)
     }
     ret = (*env)->CallIntMethod(env, src->hInputStream, InputStream_readID,
                                 src->hInputBuffer, offset, buflen);
-    if ((ret > 0) && ((unsigned int)ret > buflen)) ret = buflen;
     if ((*env)->ExceptionOccurred(env) || !GET_ARRAYS(env, src)) {
         cinfo->err->error_exit((struct jpeg_common_struct *) cinfo);
     }
@@ -434,7 +424,6 @@ sun_jpeg_skip_input_data(j_decompress_ptr cinfo, long num_bytes)
         ret = (*env)->CallIntMethod(env, src->hInputStream,
                                     InputStream_readID,
                                     src->hInputBuffer, 0, buflen);
-        if (ret > buflen) ret = buflen;
         if ((*env)->ExceptionOccurred(env)) {
             cinfo->err->error_exit((struct jpeg_common_struct *) cinfo);
         }
@@ -473,14 +462,14 @@ JNIEXPORT void JNICALL
 Java_sun_awt_image_JPEGImageDecoder_initIDs(JNIEnv *env, jclass cls,
                                             jclass InputStreamClass)
 {
-    CHECK_NULL(sendHeaderInfoID = (*env)->GetMethodID(env, cls, "sendHeaderInfo",
-                                           "(IIZZZ)Z"));
-    CHECK_NULL(sendPixelsByteID = (*env)->GetMethodID(env, cls, "sendPixels", "([BI)Z"));
-    CHECK_NULL(sendPixelsIntID = (*env)->GetMethodID(env, cls, "sendPixels", "([II)Z"));
-    CHECK_NULL(InputStream_readID = (*env)->GetMethodID(env, InputStreamClass,
-                                             "read", "([BII)I"));
-    CHECK_NULL(InputStream_availableID = (*env)->GetMethodID(env, InputStreamClass,
-                                                  "available", "()I"));
+    sendHeaderInfoID = (*env)->GetMethodID(env, cls, "sendHeaderInfo",
+                                           "(IIZZZ)Z");
+    sendPixelsByteID = (*env)->GetMethodID(env, cls, "sendPixels", "([BI)Z");
+    sendPixelsIntID = (*env)->GetMethodID(env, cls, "sendPixels", "([II)Z");
+    InputStream_readID = (*env)->GetMethodID(env, InputStreamClass,
+                                             "read", "([BII)I");
+    InputStream_availableID = (*env)->GetMethodID(env, InputStreamClass,
+                                                  "available", "()I");
 }
 
 
@@ -679,8 +668,8 @@ Java_sun_awt_image_JPEGImageDecoder_readImage(JNIEnv *env,
                                               cinfo.output_scanline - 1);
           } else {
               if (hasalpha) {
-                  ip = jsrc.outbuf.ip + jsrc.outbufSize;
-                  bp = jsrc.outbuf.bp + jsrc.outbufSize * 4;
+                  ip = jsrc.outbuf.ip + cinfo.image_width;
+                  bp = jsrc.outbuf.bp + cinfo.image_width * 4;
                   while (ip > jsrc.outbuf.ip) {
                       pixel = (*--bp) << 24;
                       pixel |= (*--bp);
@@ -689,8 +678,8 @@ Java_sun_awt_image_JPEGImageDecoder_readImage(JNIEnv *env,
                       *--ip = pixel;
                   }
               } else {
-                  ip = jsrc.outbuf.ip + jsrc.outbufSize;
-                  bp = jsrc.outbuf.bp + jsrc.outbufSize * 3;
+                  ip = jsrc.outbuf.ip + cinfo.image_width;
+                  bp = jsrc.outbuf.bp + cinfo.image_width * 3;
                   while (ip > jsrc.outbuf.ip) {
                       pixel = (*--bp);
                       pixel |= (*--bp) << 8;

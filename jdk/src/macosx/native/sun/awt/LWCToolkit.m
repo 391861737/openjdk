@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2011, 2016, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2011, 2013, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -39,13 +39,6 @@
 
 #import "sizecalc.h"
 
-// SCROLL PHASE STATE
-#define SCROLL_PHASE_UNSUPPORTED 1
-#define SCROLL_PHASE_BEGAN 2
-#define SCROLL_PHASE_CONTINUED 3
-#define SCROLL_PHASE_MOMENTUM_BEGAN 4
-#define SCROLL_PHASE_ENDED 5
-
 int gNumberOfButtons;
 jint* gButtonDownMasks;
 
@@ -61,40 +54,6 @@ static long eventCount;
     eventCount++;
 }
 
-+ (jint) scrollStateWithEvent: (NSEvent*) event {
-    
-    if ([event type] != NSScrollWheel) {
-        return 0;
-    }
-    
-    if ([event phase]) {
-        // process a phase of manual scrolling
-        switch ([event phase]) {
-            case NSEventPhaseBegan: return SCROLL_PHASE_BEGAN;
-            case NSEventPhaseCancelled: return SCROLL_PHASE_ENDED;
-            case NSEventPhaseEnded: return SCROLL_PHASE_ENDED;
-            default: return SCROLL_PHASE_CONTINUED;
-        }
-    }
-    
-    if ([event momentumPhase]) {
-        // process a phase of automatic scrolling
-        switch ([event momentumPhase]) {
-            case NSEventPhaseBegan: return SCROLL_PHASE_MOMENTUM_BEGAN;
-            case NSEventPhaseCancelled: return SCROLL_PHASE_ENDED;
-            case NSEventPhaseEnded: return SCROLL_PHASE_ENDED;
-            default: return SCROLL_PHASE_CONTINUED;
-        }
-    }
-    // phase and momentum phase both are not set
-    return SCROLL_PHASE_UNSUPPORTED;
-}
-
-+ (BOOL) hasPreciseScrollingDeltas: (NSEvent*) event {
-    return [event type] == NSScrollWheel
-    && [event respondsToSelector:@selector(hasPreciseScrollingDeltas)]
-    && [event hasPreciseScrollingDeltas];
-}
 @end
 
 
@@ -152,17 +111,60 @@ JNIEXPORT jboolean JNICALL Java_sun_lwawt_macosx_LWCToolkit_nativeSyncQueue
     return JNI_FALSE;
 }
 
+
+static JNF_CLASS_CACHE(jc_Component, "java/awt/Component");
+static JNF_MEMBER_CACHE(jf_Component_appContext, jc_Component, "appContext", "Lsun/awt/AppContext;");
+static JNF_CLASS_CACHE(jc_MenuComponent, "java/awt/MenuComponent");
+static JNF_MEMBER_CACHE(jf_MenuComponent_appContext, jc_MenuComponent, "appContext", "Lsun/awt/AppContext;");
+
 /*
- * Class:     sun_lwawt_macosx_LWCToolkit
- * Method:    flushNativeSelectors
- * Signature: ()J
+ * Class:     sun_awt_SunToolkit
+ * Method:    getAppContext
+ * Signature: (Ljava/awt/Object;)Lsun/awt/AppContext;
  */
-JNIEXPORT void JNICALL Java_sun_lwawt_macosx_LWCToolkit_flushNativeSelectors
-(JNIEnv *env, jclass clz)
+JNIEXPORT jobject JNICALL
+Java_sun_awt_SunToolkit_getAppContext
+(JNIEnv *env, jclass cls, jobject obj)
 {
+    jobject appContext = NULL;
+
 JNF_COCOA_ENTER(env);
-        [ThreadUtilities performOnMainThreadWaiting:YES block:^(){}];
+
+    if (JNFIsInstanceOf(env, obj, &jc_Component)) {
+        appContext = JNFGetObjectField(env, obj, jf_Component_appContext);
+    } else if (JNFIsInstanceOf(env, obj, &jc_MenuComponent)) {
+        appContext = JNFGetObjectField(env, obj, jf_MenuComponent_appContext);
+    }
+
 JNF_COCOA_EXIT(env);
+
+    return appContext;
+}
+
+/*
+ * Class:     sun_awt_SunToolkit
+ * Method:    setAppContext
+ * Signature: (Ljava/lang/Object;Lsun/awt/AppContext;)Z
+ */
+JNIEXPORT jboolean JNICALL
+Java_sun_awt_SunToolkit_setAppContext
+(JNIEnv *env, jclass cls, jobject obj, jobject appContext)
+{
+    jboolean isComponent;
+
+JNF_COCOA_ENTER(env);
+
+    if (JNFIsInstanceOf(env, obj, &jc_Component)) {
+        JNFSetObjectField(env, obj, jf_Component_appContext, appContext);
+        isComponent = JNI_TRUE;
+    } else if (JNFIsInstanceOf(env, obj, &jc_MenuComponent)) {
+        JNFSetObjectField(env, obj, jf_MenuComponent_appContext, appContext);
+        isComponent = JNI_FALSE;
+    }
+
+JNF_COCOA_EXIT(env);
+
+    return isComponent;
 }
 
 /*
@@ -186,30 +188,25 @@ JNIEXPORT void JNICALL
 Java_sun_lwawt_macosx_LWCToolkit_initIDs
 (JNIEnv *env, jclass klass) {
     // set thread names
-    if (![ThreadUtilities isAWTEmbedded]) {
-        dispatch_async(dispatch_get_main_queue(), ^(void){
-            [[NSThread currentThread] setName:@"AppKit Thread"];
-            JNIEnv *env = [ThreadUtilities getJNIEnv];
-            static JNF_CLASS_CACHE(jc_LWCToolkit, "sun/lwawt/macosx/LWCToolkit");
-            static JNF_STATIC_MEMBER_CACHE(jsm_installToolkitThreadInJava, jc_LWCToolkit, "installToolkitThreadInJava", "()V");
-            JNFCallStaticVoidMethod(env, jsm_installToolkitThreadInJava);
-        });
-    }
-    
+    dispatch_async(dispatch_get_main_queue(), ^(void){
+        [[NSThread currentThread] setName:@"AppKit Thread"];
+
+        JNIEnv *env = [ThreadUtilities getJNIEnv];
+        static JNF_CLASS_CACHE(jc_LWCToolkit, "sun/lwawt/macosx/LWCToolkit");
+        static JNF_STATIC_MEMBER_CACHE(jsm_installToolkitThreadNameInJava, jc_LWCToolkit, "installToolkitThreadNameInJava", "()V");
+        JNFCallStaticVoidMethod(env, jsm_installToolkitThreadNameInJava);
+    });
+
     gNumberOfButtons = sun_lwawt_macosx_LWCToolkit_BUTTONS;
 
     jclass inputEventClazz = (*env)->FindClass(env, "java/awt/event/InputEvent");
-    CHECK_NULL(inputEventClazz);
     jmethodID getButtonDownMasksID = (*env)->GetStaticMethodID(env, inputEventClazz, "getButtonDownMasks", "()[I");
-    CHECK_NULL(getButtonDownMasksID);
     jintArray obj = (jintArray)(*env)->CallStaticObjectMethod(env, inputEventClazz, getButtonDownMasksID);
     jint * tmp = (*env)->GetIntArrayElements(env, obj, JNI_FALSE);
-    CHECK_NULL(tmp);
 
     gButtonDownMasks = (jint*)SAFE_SIZE_ARRAY_ALLOC(malloc, sizeof(jint), gNumberOfButtons);
     if (gButtonDownMasks == NULL) {
         gNumberOfButtons = 0;
-        (*env)->ReleaseIntArrayElements(env, obj, tmp, JNI_ABORT);
         JNU_ThrowOutOfMemoryError(env, NULL);
         return;
     }
@@ -243,7 +240,7 @@ static UInt32 RGB(NSColor *c) {
     return ((ia & 0xFF) << 24) | ((ir & 0xFF) << 16) | ((ig & 0xFF) << 8) | ((ib & 0xFF) << 0);
 }
 
-BOOL doLoadNativeColors(JNIEnv *env, jintArray jColors, BOOL useAppleColors) {
+void doLoadNativeColors(JNIEnv *env, jintArray jColors, BOOL useAppleColors) {
     jint len = (*env)->GetArrayLength(env, jColors);
 
     UInt32 colorsArray[len];
@@ -257,12 +254,8 @@ BOOL doLoadNativeColors(JNIEnv *env, jintArray jColors, BOOL useAppleColors) {
     }];
 
     jint *_colors = (*env)->GetPrimitiveArrayCritical(env, jColors, 0);
-    if (_colors == NULL) {
-        return NO;
-    }
     memcpy(_colors, colors, len * sizeof(UInt32));
     (*env)->ReleasePrimitiveArrayCritical(env, jColors, _colors, 0);
-    return YES;
 }
 
 /**
@@ -274,9 +267,8 @@ JNIEXPORT void JNICALL Java_sun_lwawt_macosx_LWCToolkit_loadNativeColors
 (JNIEnv *env, jobject peer, jintArray jSystemColors, jintArray jAppleColors)
 {
 JNF_COCOA_ENTER(env);
-    if (doLoadNativeColors(env, jSystemColors, NO)) {
-        doLoadNativeColors(env, jAppleColors, YES);
-    }
+    doLoadNativeColors(env, jSystemColors, NO);
+    doLoadNativeColors(env, jAppleColors, YES);
 JNF_COCOA_EXIT(env);
 }
 
@@ -290,15 +282,17 @@ JNIEXPORT jlong JNICALL Java_sun_lwawt_macosx_LWCToolkit_createAWTRunLoopMediato
 {
 AWT_ASSERT_APPKIT_THREAD;
 
-    jlong result;
+    AWTRunLoopObject *o = nil;
 
-JNF_COCOA_ENTER(env);
     // We double retain because this object is owned by both main thread and "other" thread
     // We release in both doAWTRunLoop and stopAWTRunLoop
-    result = ptr_to_jlong([[[AWTRunLoopObject alloc] init] retain]);
-JNF_COCOA_EXIT(env);
-
-    return result;
+    o = [[AWTRunLoopObject alloc] init];
+    if (o) {
+        CFRetain(o); // GC
+        CFRetain(o); // GC
+        [o release];
+    }
+    return ptr_to_jlong(o);
 }
 
 /*
@@ -323,10 +317,8 @@ JNF_COCOA_ENTER(env);
                                              beforeDate:[NSDate dateWithTimeIntervalSinceNow:0.010]];
         if (processEvents) {
             //We do not spin a runloop here as date is nil, so does not matter which mode to use
-            // Processing all events excluding NSApplicationDefined which need to be processed 
-            // on the main loop only (those events are intended for disposing resources)
             NSEvent *event;
-            if ((event = [NSApp nextEventMatchingMask:(NSAnyEventMask & ~NSApplicationDefinedMask)
+            if ((event = [NSApp nextEventMatchingMask:NSAnyEventMask
                                            untilDate:nil
                                               inMode:NSDefaultRunLoopMode
                                              dequeue:YES]) != nil) {
@@ -335,7 +327,10 @@ JNF_COCOA_ENTER(env);
 
         }
     }
-    [mediatorObject release];
+
+   
+    CFRelease(mediatorObject);
+
 JNF_COCOA_EXIT(env);
 }
 
@@ -353,7 +348,7 @@ JNF_COCOA_ENTER(env);
 
     [ThreadUtilities performOnMainThread:@selector(endRunLoop) on:mediatorObject withObject:nil waitUntilDone:NO];
 
-    [mediatorObject release];
+    CFRelease(mediatorObject);
 
 JNF_COCOA_EXIT(env);
 }
@@ -396,23 +391,6 @@ JNF_COCOA_EXIT(env);
     return active;
 }
 
-/*
- * Class:     sun_lwawt_macosx_LWCToolkit
- * Method:    activateApplicationIgnoringOtherApps
- * Signature: ()V
- */
-JNIEXPORT void JNICALL Java_sun_lwawt_macosx_LWCToolkit_activateApplicationIgnoringOtherApps
-(JNIEnv *env, jclass clazz)
-{
-    JNF_COCOA_ENTER(env);
-    [ThreadUtilities performOnMainThreadWaiting:NO block:^(){
-        if(![NSApp isActive]){
-            [NSApp activateIgnoringOtherApps:YES];
-        }
-    }];
-    JNF_COCOA_EXIT(env);
-}
-
 
 /*
  * Class:     sun_awt_SunToolkit
@@ -450,16 +428,5 @@ Java_sun_font_FontManager_populateFontFileNameMap
 (JNIEnv *env, jclass obj, jobject fontToFileMap, jobject fontToFamilyMap, jobject familyToFontListMap, jobject locale)
 {
 
-}
-
-/*
- * Class:     sun_lwawt_macosx_LWCToolkit
- * Method:    isEmbedded
- * Signature: ()Z
- */
-JNIEXPORT jboolean JNICALL
-Java_sun_lwawt_macosx_LWCToolkit_isEmbedded
-(JNIEnv *env, jclass klass) {
-    return [ThreadUtilities isAWTEmbedded] ? JNI_TRUE : JNI_FALSE;
 }
 

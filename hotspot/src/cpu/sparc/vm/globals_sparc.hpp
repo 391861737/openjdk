@@ -43,8 +43,7 @@ define_pd_global(bool, CountInterpCalls,            false); // not implemented i
 define_pd_global(bool, NeedsDeoptSuspend,           true); // register window machines need this
 
 define_pd_global(bool, ImplicitNullChecks,          true);  // Generate code for implicit null checks
-define_pd_global(bool, TrapBasedNullChecks,         false); // Not needed on sparc.
-define_pd_global(bool, UncommonNullCast,            true);  // Uncommon-trap NULLs passed to check cast
+define_pd_global(bool, UncommonNullCast,            true);  // Uncommon-trap NULLs past to check cast
 
 define_pd_global(intx, CodeEntryAlignment,    32);
 // The default setting 16/16 seems to work best.
@@ -73,8 +72,6 @@ define_pd_global(bool, RewriteBytecodes,     true);
 define_pd_global(bool, RewriteFrequentPairs, true);
 
 define_pd_global(bool, UseMembar,            false);
-
-define_pd_global(bool, PreserveFramePointer, false);
 
 // GC Ergo Flags
 define_pd_global(uintx, CMSYoungGenPerWorker, 16*M);  // default max size of CMS young gen, per GC worker thread

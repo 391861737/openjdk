@@ -38,8 +38,6 @@ public class CCustomCursor extends Cursor {
 
     Image fImage;
     Point fHotspot;
-    int fWidth;
-    int fHeight;
 
     public CCustomCursor(final Image cursor, final Point hotSpot, final String name) throws IndexOutOfBoundsException, HeadlessException {
         super(name);
@@ -52,7 +50,6 @@ public class CCustomCursor extends Cursor {
         // Make sure image is fully loaded.
         final Component c = new Canvas(); // for its imageUpdate method
         final MediaTracker tracker = new MediaTracker(c);
-        // MediaTracker loads resolution variants from MultiResolution Toolkit image
         tracker.addImage(fImage, 0);
         try {
             tracker.waitForAll();
@@ -70,14 +67,14 @@ public class CCustomCursor extends Cursor {
             width = height = 1;
             fImage = createTransparentImage(width, height);
         } else {
-            // Get the nearest supported cursor size
+            // Scale image to nearest supported size
             final Dimension nativeSize = toolkit.getBestCursorSize(width, height);
-            width = nativeSize.width;
-            height = nativeSize.height;
+            if (nativeSize.width != width || nativeSize.height != height) {
+                fImage = fImage.getScaledInstance(nativeSize.width, nativeSize.height, Image.SCALE_DEFAULT);
+                width = nativeSize.width;
+                height = nativeSize.height;
+            }
         }
-
-        fWidth = width;
-        fHeight = height;
 
         // NOTE: this was removed for 3169146, but in 1.5 the JCK tests for an exception and fails if one isn't thrown.
         // See what JBuilder does.
@@ -141,7 +138,6 @@ public class CCustomCursor extends Cursor {
                 // failed to do its job. Return null to keep the cursor unchanged.
                 return 0L;
             } else {
-                fCImage.resizeRepresentations(fWidth, fHeight);
                 return fCImage.ptr;
             }
         } catch (IllegalArgumentException iae) {

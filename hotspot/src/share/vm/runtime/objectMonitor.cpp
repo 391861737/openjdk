@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 1998, 2015, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 1998, 2013, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -32,7 +32,6 @@
 #include "runtime/mutexLocker.hpp"
 #include "runtime/objectMonitor.hpp"
 #include "runtime/objectMonitor.inline.hpp"
-#include "runtime/orderAccess.inline.hpp"
 #include "runtime/osThread.hpp"
 #include "runtime/stubRoutines.hpp"
 #include "runtime/thread.inline.hpp"
@@ -55,7 +54,7 @@
 # include "os_bsd.inline.hpp"
 #endif
 
-#if defined(__GNUC__) && !defined(IA64) && !defined(PPC64)
+#if defined(__GNUC__) && !defined(IA64)
   // Need to inhibit inlining for older versions of GCC to avoid build-time failures
   #define ATTR __attribute__((noinline))
 #else
@@ -226,8 +225,7 @@ static volatile int InitDone       = 0 ;
 //
 // * The monitor entry list operations avoid locks, but strictly speaking
 //   they're not lock-free.  Enter is lock-free, exit is not.
-//   For a description of 'Methods and apparatus providing non-blocking access
-//   to a resource,' see U.S. Pat. No. 7844973.
+//   See http://j2se.east/~dice/PERSIST/040825-LockFreeQueues.html
 //
 // * The cxq can have multiple concurrent "pushers" but only one concurrent
 //   detaching thread.  This mechanism is immune from the ABA corruption.
@@ -384,12 +382,6 @@ void ATTR ObjectMonitor::enter(TRAPS) {
     DTRACE_MONITOR_PROBE(contended__enter, this, object(), jt);
     if (JvmtiExport::should_post_monitor_contended_enter()) {
       JvmtiExport::post_monitor_contended_enter(jt, this);
-
-      // The current thread does not yet own the monitor and does not
-      // yet appear on any queues that would get it made the successor.
-      // This means that the JVMTI_EVENT_MONITOR_CONTENDED_ENTER event
-      // handler cannot accidentally consume an unpark() meant for the
-      // ParkEvent associated with this ObjectMonitor.
     }
 
     OSThreadContendState osts(Self->osthread());
@@ -420,15 +412,6 @@ void ATTR ObjectMonitor::enter(TRAPS) {
       jt->java_suspend_self();
     }
     Self->set_current_pending_monitor(NULL);
-
-    // We cleared the pending monitor info since we've just gotten past
-    // the enter-check-for-suspend dance and we now own the monitor free
-    // and clear, i.e., it is no longer pending. The ThreadBlockInVM
-    // destructor can go to a safepoint at the end of this block. If we
-    // do a thread dump during that safepoint, then this thread will show
-    // as having "-locked" the monitor, but the OS and java.lang.Thread
-    // states will still report that the thread is blocked trying to
-    // acquire it.
   }
 
   Atomic::dec_ptr(&_count);
@@ -456,12 +439,6 @@ void ATTR ObjectMonitor::enter(TRAPS) {
   DTRACE_MONITOR_PROBE(contended__entered, this, object(), jt);
   if (JvmtiExport::should_post_monitor_contended_entered()) {
     JvmtiExport::post_monitor_contended_entered(jt, this);
-
-    // The current thread already owns the monitor and is not going to
-    // call park() for the remainder of the monitor enter protocol. So
-    // it doesn't matter if the JVMTI_EVENT_MONITOR_CONTENDED_ENTERED
-    // event handler consumed an unpark() issued by the thread that
-    // just exited the monitor.
   }
 
   if (event.should_commit()) {
@@ -1479,14 +1456,6 @@ void ObjectMonitor::wait(jlong millis, bool interruptible, TRAPS) {
         // Note: 'false' parameter is passed here because the
         // wait was not timed out due to thread interrupt.
         JvmtiExport::post_monitor_waited(jt, this, false);
-
-        // In this short circuit of the monitor wait protocol, the
-        // current thread never drops ownership of the monitor and
-        // never gets added to the wait queue so the current thread
-        // cannot be made the successor. This means that the
-        // JVMTI_EVENT_MONITOR_WAITED event handler cannot accidentally
-        // consume an unpark() meant for the ParkEvent associated with
-        // this ObjectMonitor.
      }
      if (event.should_commit()) {
        post_monitor_wait_event(&event, 0, millis, false);
@@ -1529,6 +1498,21 @@ void ObjectMonitor::wait(jlong millis, bool interruptible, TRAPS) {
    _recursions = 0;             // set the recursion level to be 1
    exit (true, Self) ;                    // exit the monitor
    guarantee (_owner != Self, "invariant") ;
+
+   // As soon as the ObjectMonitor's ownership is dropped in the exit()
+   // call above, another thread can enter() the ObjectMonitor, do the
+   // notify(), and exit() the ObjectMonitor. If the other thread's
+   // exit() call chooses this thread as the successor and the unpark()
+   // call happens to occur while this thread is posting a
+   // MONITOR_CONTENDED_EXIT event, then we run the risk of the event
+   // handler using RawMonitors and consuming the unpark().
+   //
+   // To avoid the problem, we re-post the event. This does no harm
+   // even if the original unpark() was not consumed because we are the
+   // chosen successor for this monitor.
+   if (node._notified != 0 && _succ == Self) {
+      node._event->unpark();
+   }
 
    // The thread is on the WaitSet list - now park() it.
    // On MP systems it's conceivable that a brief spin before we park
@@ -1611,25 +1595,6 @@ void ObjectMonitor::wait(jlong millis, bool interruptible, TRAPS) {
      // post monitor waited event. Note that this is past-tense, we are done waiting.
      if (JvmtiExport::should_post_monitor_waited()) {
        JvmtiExport::post_monitor_waited(jt, this, ret == OS_TIMEOUT);
-
-       if (node._notified != 0 && _succ == Self) {
-         // In this part of the monitor wait-notify-reenter protocol it
-         // is possible (and normal) for another thread to do a fastpath
-         // monitor enter-exit while this thread is still trying to get
-         // to the reenter portion of the protocol.
-         //
-         // The ObjectMonitor was notified and the current thread is
-         // the successor which also means that an unpark() has already
-         // been done. The JVMTI_EVENT_MONITOR_WAITED event handler can
-         // consume the unpark() that was done when the successor was
-         // set because the same ParkEvent is shared between Java
-         // monitors and JVM/TI RawMonitors (for now).
-         //
-         // We redo the unpark() to ensure forward progress, i.e., we
-         // don't want all pending threads hanging (parked) with none
-         // entering the unlocked monitor.
-         node._event->unpark();
-       }
      }
 
      if (event.should_commit()) {
@@ -1956,8 +1921,7 @@ void ObjectMonitor::notifyAll(TRAPS) {
 // (duration) or we can fix the count at approximately the duration of
 // a context switch and vary the frequency.   Of course we could also
 // vary both satisfying K == Frequency * Duration, where K is adaptive by monitor.
-// For a description of 'Adaptive spin-then-block mutual exclusion in
-// multi-threaded processing,' see U.S. Pat. No. 8046758.
+// See http://j2se.east/~dice/PERSIST/040824-AdaptiveSpinning.html.
 //
 // This implementation varies the duration "D", where D varies with
 // the success rate of recent spin attempts. (D is capped at approximately
@@ -2529,10 +2493,6 @@ void ObjectMonitor::DeferredInitialize () {
   SETKNOB(FastHSSEC) ;
   #undef SETKNOB
 
-  if (Knob_Verbose) {
-    sanity_checks();
-  }
-
   if (os::is_MP()) {
      BackOffMask = (1 << Knob_SpinBackOff) - 1 ;
      if (Knob_ReportSettings) ::printf ("BackOffMask=%X\n", BackOffMask) ;
@@ -2551,66 +2511,6 @@ void ObjectMonitor::DeferredInitialize () {
   free (knobs) ;
   OrderAccess::fence() ;
   InitDone = 1 ;
-}
-
-void ObjectMonitor::sanity_checks() {
-  int error_cnt = 0;
-  int warning_cnt = 0;
-  bool verbose = Knob_Verbose != 0 NOT_PRODUCT(|| VerboseInternalVMTests);
-
-  if (verbose) {
-    tty->print_cr("INFO: sizeof(ObjectMonitor)=" SIZE_FORMAT,
-                  sizeof(ObjectMonitor));
-  }
-
-  uint cache_line_size = VM_Version::L1_data_cache_line_size();
-  if (verbose) {
-    tty->print_cr("INFO: L1_data_cache_line_size=%u", cache_line_size);
-  }
-
-  ObjectMonitor dummy;
-  u_char *addr_begin  = (u_char*)&dummy;
-  u_char *addr_header = (u_char*)&dummy._header;
-  u_char *addr_owner  = (u_char*)&dummy._owner;
-
-  uint offset_header = (uint)(addr_header - addr_begin);
-  if (verbose) tty->print_cr("INFO: offset(_header)=%u", offset_header);
-
-  uint offset_owner = (uint)(addr_owner - addr_begin);
-  if (verbose) tty->print_cr("INFO: offset(_owner)=%u", offset_owner);
-
-  if ((uint)(addr_header - addr_begin) != 0) {
-    tty->print_cr("ERROR: offset(_header) must be zero (0).");
-    error_cnt++;
-  }
-
-  if (cache_line_size != 0) {
-    // We were able to determine the L1 data cache line size so
-    // do some cache line specific sanity checks
-
-    if ((offset_owner - offset_header) < cache_line_size) {
-      tty->print_cr("WARNING: the _header and _owner fields are closer "
-                    "than a cache line which permits false sharing.");
-      warning_cnt++;
-    }
-
-    if ((sizeof(ObjectMonitor) % cache_line_size) != 0) {
-      tty->print_cr("WARNING: ObjectMonitor size is not a multiple of "
-                    "a cache line which permits false sharing.");
-      warning_cnt++;
-    }
-  }
-
-  ObjectSynchronizer::sanity_checks(verbose, cache_line_size, &error_cnt,
-                                    &warning_cnt);
-
-  if (verbose || error_cnt != 0 || warning_cnt != 0) {
-    tty->print_cr("INFO: error_cnt=%d", error_cnt);
-    tty->print_cr("INFO: warning_cnt=%d", warning_cnt);
-  }
-
-  guarantee(error_cnt == 0,
-            "Fatal error(s) found in ObjectMonitor::sanity_checks()");
 }
 
 #ifndef PRODUCT

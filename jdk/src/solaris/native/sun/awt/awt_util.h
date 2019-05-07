@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 1995, 2014, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 1995, 2013, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -52,8 +52,6 @@
  */
 extern XErrorHandler current_native_xerror_handler;
 
-Window get_xawt_root_shell(JNIEnv *env);
-
 #endif /* !HEADLESS */
 
 #ifndef INTERSECTS
@@ -80,7 +78,7 @@ struct DPos {
     int32_t echoC;
 };
 
-extern jboolean awtJNI_ThreadYield(JNIEnv *env);
+extern void awtJNI_ThreadYield(JNIEnv *env);
 
 /*
  * Functions for accessing fields by name and signature

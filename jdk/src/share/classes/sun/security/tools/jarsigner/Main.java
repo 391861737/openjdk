@@ -53,9 +53,6 @@ import java.security.cert.CertificateNotYetValidException;
 import java.security.cert.PKIXParameters;
 import java.security.cert.TrustAnchor;
 import java.util.Map.Entry;
-import sun.security.pkcs.PKCS7;
-import sun.security.pkcs.SignerInfo;
-import sun.security.timestamp.TimestampToken;
 import sun.security.tools.KeyStoreUtil;
 import sun.security.tools.PathList;
 import sun.security.x509.*;
@@ -93,21 +90,15 @@ public class Main {
 
     private static final String META_INF = "META-INF/";
 
+    // prefix for new signature-related files in META-INF directory
+    private static final String SIG_PREFIX = META_INF + "SIG-";
+
     private static final Class<?>[] PARAM_STRING = { String.class };
 
     private static final String NONE = "NONE";
     private static final String P11KEYSTORE = "PKCS11";
 
     private static final long SIX_MONTHS = 180*24*60*60*1000L; //milliseconds
-
-    private static final DisabledAlgorithmConstraints DISABLED_CHECK =
-            new DisabledAlgorithmConstraints(
-                    DisabledAlgorithmConstraints.PROPERTY_JAR_DISABLED_ALGS);
-
-    private static final Set<CryptoPrimitive> DIGEST_PRIMITIVE_SET = Collections
-            .unmodifiableSet(EnumSet.of(CryptoPrimitive.MESSAGE_DIGEST));
-    private static final Set<CryptoPrimitive> SIG_PRIMITIVE_SET = Collections
-            .unmodifiableSet(EnumSet.of(CryptoPrimitive.SIGNATURE));
 
     // Attention:
     // This is the entry that get launched by the security tool jarsigner.
@@ -151,7 +142,6 @@ public class Main {
     String tsaAlias; // alias for the Timestamping Authority's certificate
     String altCertChain; // file to read alternative cert chain from
     String tSAPolicyID;
-    String tSADigestAlg = "SHA-256";
     boolean verify = false; // verify the jar
     String verbose = null; // verbose output when signing/verifying
     boolean showcerts = false; // show certs when verifying
@@ -183,8 +173,6 @@ public class Main {
     private boolean badKeyUsage = false;
     private boolean badExtendedKeyUsage = false;
     private boolean badNetscapeCertType = false;
-
-    private boolean seeWeak = false;
 
     CertificateFactory certificateFactory;
     CertPathValidator validator;
@@ -357,9 +345,6 @@ public class Main {
             } else if (collator.compare(flags, "-tsapolicyid") ==0) {
                 if (++n == args.length) usageNoArg();
                 tSAPolicyID = args[n];
-            } else if (collator.compare(flags, "-tsadigestalg") ==0) {
-                if (++n == args.length) usageNoArg();
-                tSADigestAlg = args[n];
             } else if (collator.compare(flags, "-debug") ==0) {
                 debug = true;
             } else if (collator.compare(flags, "-keypass") ==0) {
@@ -554,9 +539,6 @@ public class Main {
                 (".tsapolicyid.tsapolicyid.for.Timestamping.Authority"));
         System.out.println();
         System.out.println(rb.getString
-                (".tsadigestalg.algorithm.of.digest.data.in.timestamping.request"));
-        System.out.println();
-        System.out.println(rb.getString
                 (".altsigner.class.class.name.of.an.alternative.signing.mechanism"));
         System.out.println();
         System.out.println(rb.getString
@@ -591,10 +573,6 @@ public class Main {
     {
         boolean anySigned = false;  // if there exists entry inside jar signed
         JarFile jf = null;
-        Map<String,String> digestMap = new HashMap<>();
-        Map<String,PKCS7> sigMap = new HashMap<>();
-        Map<String,String> sigNameMap = new HashMap<>();
-        Map<String,String> unparsableSignatures = new HashMap<>();
 
         try {
             jf = new JarFile(jarName, true);
@@ -605,50 +583,22 @@ public class Main {
             while (entries.hasMoreElements()) {
                 JarEntry je = entries.nextElement();
                 entriesVec.addElement(je);
-                try (InputStream is = jf.getInputStream(je)) {
-                    String name = je.getName();
-                    if (signatureRelated(name)
-                            && SignatureFileVerifier.isBlockOrSF(name)) {
-                        String alias = name.substring(name.lastIndexOf('/') + 1,
-                                name.lastIndexOf('.'));
+                InputStream is = null;
                 try {
-                            if (name.endsWith(".SF")) {
-                                Manifest sf = new Manifest(is);
-                                boolean found = false;
-                                for (Object obj : sf.getMainAttributes().keySet()) {
-                                    String key = obj.toString();
-                                    if (key.endsWith("-Digest-Manifest")) {
-                                        digestMap.put(alias,
-                                                key.substring(0, key.length() - 16));
-                                        found = true;
-                                        break;
-                                    }
-                                }
-                                if (!found) {
-                                    unparsableSignatures.putIfAbsent(alias,
-                                        String.format(
-                                            rb.getString("history.unparsable"),
-                                            name));
-                                }
-                            } else {
-                                sigNameMap.put(alias, name);
-                                sigMap.put(alias, new PKCS7(is));
-                            }
-                        } catch (IOException ioe) {
-                            unparsableSignatures.putIfAbsent(alias, String.format(
-                                    rb.getString("history.unparsable"), name));
-                        }
-                    } else {
-                        while (is.read(buffer, 0, buffer.length) != -1) {
+                    is = jf.getInputStream(je);
+                    int n;
+                    while ((n = is.read(buffer, 0, buffer.length)) != -1) {
                         // we just read. this will throw a SecurityException
                         // if  a signature/digest check fails.
                     }
+                } finally {
+                    if (is != null) {
+                        is.close();
                     }
                 }
             }
 
             Manifest man = jf.getManifest();
-            boolean hasSignature = false;
 
             // The map to record display info, only used when -verbose provided
             //      key: signer info string
@@ -664,10 +614,6 @@ public class Main {
                 while (e.hasMoreElements()) {
                     JarEntry je = e.nextElement();
                     String name = je.getName();
-
-                    hasSignature = hasSignature
-                            || SignatureFileVerifier.isBlockOrSF(name);
-
                     CodeSigner[] signers = je.getCodeSigners();
                     boolean isSigned = (signers != null);
                     anySigned |= isSigned;
@@ -801,110 +747,14 @@ public class Main {
                     System.out.println(rb.getString(
                         ".X.not.signed.by.specified.alias.es."));
                 }
-            }
-            if (man == null) {
                 System.out.println();
+            }
+            if (man == null)
                 System.out.println(rb.getString("no.manifest."));
-            }
-
-            // Even if the verbose option is not specified, all out strings
-            // must be generated so seeWeak can be updated.
-            if (!digestMap.isEmpty()
-                    || !sigMap.isEmpty()
-                    || !unparsableSignatures.isEmpty()) {
-                if (verbose != null) {
-                System.out.println();
-            }
-                for (String s : sigMap.keySet()) {
-                    if (!digestMap.containsKey(s)) {
-                        unparsableSignatures.putIfAbsent(s, String.format(
-                                rb.getString("history.nosf"), s));
-                    }
-                }
-                for (String s : digestMap.keySet()) {
-                    PKCS7 p7 = sigMap.get(s);
-                    if (p7 != null) {
-                        String history;
-                        try {
-                            SignerInfo si = p7.getSignerInfos()[0];
-                            X509Certificate signer = si.getCertificate(p7);
-                            String digestAlg = digestMap.get(s);
-                            String sigAlg = AlgorithmId.makeSigAlg(
-                                    si.getDigestAlgorithmId().getName(),
-                                    si.getDigestEncryptionAlgorithmId().getName());
-                            PublicKey key = signer.getPublicKey();
-                            PKCS7 tsToken = si.getTsToken();
-                            if (tsToken != null) {
-                                SignerInfo tsSi = tsToken.getSignerInfos()[0];
-                                X509Certificate tsSigner = tsSi.getCertificate(tsToken);
-                                byte[] encTsTokenInfo = tsToken.getContentInfo().getData();
-                                TimestampToken tsTokenInfo = new TimestampToken(encTsTokenInfo);
-                                PublicKey tsKey = tsSigner.getPublicKey();
-                                String tsDigestAlg = tsTokenInfo.getHashAlgorithm().getName();
-                                String tsSigAlg = AlgorithmId.makeSigAlg(
-                                        tsSi.getDigestAlgorithmId().getName(),
-                                        tsSi.getDigestEncryptionAlgorithmId().getName());
-                                Calendar c = Calendar.getInstance(
-                                        TimeZone.getTimeZone("UTC"),
-                                        Locale.getDefault(Locale.Category.FORMAT));
-                                c.setTime(tsTokenInfo.getDate());
-                                history = String.format(
-                                        rb.getString("history.with.ts"),
-                                        signer.getSubjectX500Principal(),
-                                        withWeak(digestAlg, DIGEST_PRIMITIVE_SET),
-                                        withWeak(sigAlg, SIG_PRIMITIVE_SET),
-                                        withWeak(key),
-                                        c,
-                                        tsSigner.getSubjectX500Principal(),
-                                        withWeak(tsDigestAlg, DIGEST_PRIMITIVE_SET),
-                                        withWeak(tsSigAlg, SIG_PRIMITIVE_SET),
-                                        withWeak(tsKey));
-                            } else {
-                                history = String.format(
-                                        rb.getString("history.without.ts"),
-                                        signer.getSubjectX500Principal(),
-                                        withWeak(digestAlg, DIGEST_PRIMITIVE_SET),
-                                        withWeak(sigAlg, SIG_PRIMITIVE_SET),
-                                        withWeak(key));
-                            }
-                        } catch (Exception e) {
-                            // The only usage of sigNameMap, remember the name
-                            // of the block file if it's invalid.
-                            history = String.format(
-                                    rb.getString("history.unparsable"),
-                                    sigNameMap.get(s));
-                        }
-                        if (verbose != null) {
-                            System.out.println(history);
-                        }
-                    } else {
-                        unparsableSignatures.putIfAbsent(s, String.format(
-                                rb.getString("history.nobk"), s));
-                    }
-                }
-                if (verbose != null) {
-                    for (String s : unparsableSignatures.keySet()) {
-                        System.out.println(unparsableSignatures.get(s));
-                    }
-                }
-            }
-            System.out.println();
 
             if (!anySigned) {
-                if (seeWeak) {
-                    if (verbose != null) {
-                        System.out.println(rb.getString("jar.treated.unsigned.see.weak.verbose"));
-                        System.out.println("\n  " +
-                                DisabledAlgorithmConstraints.PROPERTY_JAR_DISABLED_ALGS +
-                                "=" + Security.getProperty(DisabledAlgorithmConstraints.PROPERTY_JAR_DISABLED_ALGS));
-                    } else {
-                        System.out.println(rb.getString("jar.treated.unsigned.see.weak"));
-                    }
-                } else if (hasSignature) {
-                    System.out.println(rb.getString("jar.treated.unsigned"));
-                } else {
-                    System.out.println(rb.getString("jar.is.unsigned"));
-                }
+                System.out.println(rb.getString(
+                      "jar.is.unsigned.signatures.missing.or.not.parsable."));
             } else {
                 boolean warningAppeared = false;
                 boolean errorAppeared = false;
@@ -1005,26 +855,6 @@ public class Main {
         }
 
         System.exit(1);
-    }
-
-    private String withWeak(String alg, Set<CryptoPrimitive> primitiveSet) {
-        if (DISABLED_CHECK.permits(primitiveSet, alg, null)) {
-            return alg;
-        } else {
-            seeWeak = true;
-            return String.format(rb.getString("with.weak"), alg);
-        }
-    }
-
-    private String withWeak(PublicKey key) {
-        if (DISABLED_CHECK.permits(SIG_PRIMITIVE_SET, key)) {
-            return String.format(
-                    rb.getString("key.bit"), KeyUtil.getKeySize(key));
-        } else {
-            seeWeak = true;
-            return String.format(
-                    rb.getString("key.bit.weak"), KeyUtil.getKeySize(key));
-        }
     }
 
     private static MessageFormat validityTimeForm = null;
@@ -1443,8 +1273,8 @@ public class Main {
             try {
                 block =
                     sf.generateBlock(privateKey, sigalg, certChain,
-                        externalSF, tsaUrl, tsaCert, tSAPolicyID, tSADigestAlg,
-                        signingMechanism, args, zipFile);
+                        externalSF, tsaUrl, tsaCert, tSAPolicyID, signingMechanism, args,
+                        zipFile);
             } catch (SocketTimeoutException e) {
                 // Provide a helpful message when TSA is beyond a firewall
                 error(rb.getString("unable.to.sign.jar.") +
@@ -1692,7 +1522,22 @@ public class Main {
      * . META-INF/*.EC
      */
     private boolean signatureRelated(String name) {
-        return SignatureFileVerifier.isSigningRelated(name);
+        String ucName = name.toUpperCase(Locale.ENGLISH);
+        if (ucName.equals(JarFile.MANIFEST_NAME) ||
+            ucName.equals(META_INF) ||
+            (ucName.startsWith(SIG_PREFIX) &&
+                ucName.indexOf("/") == ucName.lastIndexOf("/"))) {
+            return true;
+        }
+
+        if (ucName.startsWith(META_INF) &&
+            SignatureFileVerifier.isBlockOrSF(ucName)) {
+            // .SF/.DSA/.RSA/.EC files in META-INF subdirs
+            // are not considered signature-related
+            return (ucName.indexOf("/") == ucName.lastIndexOf("/"));
+        }
+
+        return false;
     }
 
     Map<CodeSigner,String> cacheForSignerInfo = new IdentityHashMap<>();
@@ -1726,7 +1571,8 @@ public class Main {
             first = false;
         }
         try {
-            validateCertChain(certs);
+            CertPath cp = certificateFactory.generateCertPath(certs);
+            validator.validate(cp, pkixParameters);
         } catch (Exception e) {
             if (debug) {
                 e.printStackTrace();
@@ -2036,7 +1882,8 @@ public class Main {
             printCert("", certChain[0], true, null, true);
 
             try {
-                validateCertChain(Arrays.asList(certChain));
+                CertPath cp = certificateFactory.generateCertPath(Arrays.asList(certChain));
+                validator.validate(cp, pkixParameters);
             } catch (Exception e) {
                 if (debug) {
                     e.printStackTrace();
@@ -2099,22 +1946,6 @@ public class Main {
             e.printStackTrace();
         }
         System.exit(1);
-    }
-
-    void validateCertChain(List<? extends Certificate> certs) throws Exception {
-        int cpLen = 0;
-        out: for (; cpLen<certs.size(); cpLen++) {
-            for (TrustAnchor ta: pkixParameters.getTrustAnchors()) {
-                if (ta.getTrustedCert().equals(certs.get(cpLen))) {
-                    break out;
-                }
-            }
-        }
-        if (cpLen > 0) {
-            CertPath cp = certificateFactory.generateCertPath(
-                    (cpLen == certs.size())? certs: certs.subList(0, cpLen));
-            validator.validate(cp, pkixParameters);
-        }
     }
 
     char[] getPass(String prompt)
@@ -2441,14 +2272,13 @@ class SignatureFile {
                                boolean externalSF, String tsaUrl,
                                X509Certificate tsaCert,
                                String tSAPolicyID,
-                               String tSADigestAlg,
                                ContentSigner signingMechanism,
                                String[] args, ZipFile zipFile)
         throws NoSuchAlgorithmException, InvalidKeyException, IOException,
             SignatureException, CertificateException
     {
         return new Block(this, privateKey, sigalg, certChain, externalSF,
-                tsaUrl, tsaCert, tSAPolicyID, tSADigestAlg, signingMechanism, args, zipFile);
+                tsaUrl, tsaCert, tSAPolicyID, signingMechanism, args, zipFile);
     }
 
 
@@ -2462,8 +2292,8 @@ class SignatureFile {
          */
         Block(SignatureFile sfg, PrivateKey privateKey, String sigalg,
             X509Certificate[] certChain, boolean externalSF, String tsaUrl,
-            X509Certificate tsaCert, String tSAPolicyID, String tSADigestAlg,
-            ContentSigner signingMechanism, String[] args, ZipFile zipFile)
+            X509Certificate tsaCert, String tSAPolicyID, ContentSigner signingMechanism,
+            String[] args, ZipFile zipFile)
             throws NoSuchAlgorithmException, InvalidKeyException, IOException,
             SignatureException, CertificateException {
 
@@ -2545,8 +2375,7 @@ class SignatureFile {
 
             // Assemble parameters for the signing mechanism
             ContentSignerParameters params =
-                new JarSignerParameters(args, tsaUri, tsaCert, tSAPolicyID,
-                        tSADigestAlg, signature,
+                new JarSignerParameters(args, tsaUri, tsaCert, tSAPolicyID, signature,
                     signatureAlgorithm, certChain, content, zipFile);
 
             // Generate the signature block
@@ -2573,5 +2402,122 @@ class SignatureFile {
         {
             out.write(block);
         }
+    }
+}
+
+
+/*
+ * This object encapsulates the parameters used to perform content signing.
+ */
+class JarSignerParameters implements ContentSignerParameters {
+
+    private String[] args;
+    private URI tsa;
+    private X509Certificate tsaCertificate;
+    private byte[] signature;
+    private String signatureAlgorithm;
+    private X509Certificate[] signerCertificateChain;
+    private byte[] content;
+    private ZipFile source;
+    private String tSAPolicyID;
+
+    /**
+     * Create a new object.
+     */
+    JarSignerParameters(String[] args, URI tsa, X509Certificate tsaCertificate,
+        String tSAPolicyID,
+        byte[] signature, String signatureAlgorithm,
+        X509Certificate[] signerCertificateChain, byte[] content,
+        ZipFile source) {
+
+        if (signature == null || signatureAlgorithm == null ||
+            signerCertificateChain == null) {
+            throw new NullPointerException();
+        }
+        this.args = args;
+        this.tsa = tsa;
+        this.tsaCertificate = tsaCertificate;
+        this.tSAPolicyID = tSAPolicyID;
+        this.signature = signature;
+        this.signatureAlgorithm = signatureAlgorithm;
+        this.signerCertificateChain = signerCertificateChain;
+        this.content = content;
+        this.source = source;
+    }
+
+    /**
+     * Retrieves the command-line arguments.
+     *
+     * @return The command-line arguments. May be null.
+     */
+    public String[] getCommandLine() {
+        return args;
+    }
+
+    /**
+     * Retrieves the identifier for a Timestamping Authority (TSA).
+     *
+     * @return The TSA identifier. May be null.
+     */
+    public URI getTimestampingAuthority() {
+        return tsa;
+    }
+
+    /**
+     * Retrieves the certificate for a Timestamping Authority (TSA).
+     *
+     * @return The TSA certificate. May be null.
+     */
+    public X509Certificate getTimestampingAuthorityCertificate() {
+        return tsaCertificate;
+    }
+
+    public String getTSAPolicyID() {
+        return tSAPolicyID;
+    }
+
+    /**
+     * Retrieves the signature.
+     *
+     * @return The non-null signature bytes.
+     */
+    public byte[] getSignature() {
+        return signature;
+    }
+
+    /**
+     * Retrieves the name of the signature algorithm.
+     *
+     * @return The non-null string name of the signature algorithm.
+     */
+    public String getSignatureAlgorithm() {
+        return signatureAlgorithm;
+    }
+
+    /**
+     * Retrieves the signer's X.509 certificate chain.
+     *
+     * @return The non-null array of X.509 public-key certificates.
+     */
+    public X509Certificate[] getSignerCertificateChain() {
+        return signerCertificateChain;
+    }
+
+    /**
+     * Retrieves the content that was signed.
+     *
+     * @return The content bytes. May be null.
+     */
+    public byte[] getContent() {
+        return content;
+    }
+
+    /**
+     * Retrieves the original source ZIP file before it was signed.
+     *
+     * @return The original ZIP file. May be null.
+     */
+    public ZipFile getSource() {
+        return source;
     }
 }

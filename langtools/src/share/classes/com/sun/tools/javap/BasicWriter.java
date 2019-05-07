@@ -151,22 +151,12 @@ public class BasicWriter {
             for (int i = 0; i < s.length(); i++) {
                 char c = s.charAt(i);
                 switch (c) {
-                    case ' ':
-                        pendingSpaces++;
-                        break;
-
                     case '\n':
                         println();
                         break;
-
                     default:
                         if (buffer.length() == 0)
                             indent();
-                        if (pendingSpaces > 0) {
-                            for (int sp = 0; sp < pendingSpaces; sp++)
-                                buffer.append(' ');
-                            pendingSpaces = 0;
-                        }
                         buffer.append(c);
                 }
             }
@@ -174,8 +164,6 @@ public class BasicWriter {
         }
 
         protected void println() {
-            // ignore/discard pending spaces
-            pendingSpaces = 0;
             out.println(buffer);
             buffer.setLength(0);
         }
@@ -185,21 +173,26 @@ public class BasicWriter {
         }
 
         protected void tab() {
-            int col = indentCount * indentWidth + tabColumn;
-            pendingSpaces += (col <= buffer.length() ? 1 : col - buffer.length());
+            if (buffer.length() == 0)
+                indent();
+            space(indentCount * indentWidth + tabColumn - buffer.length());
         }
 
         private void indent() {
-            pendingSpaces += (indentCount * indentWidth);
+            space(indentCount * indentWidth);
         }
 
-        private final PrintWriter out;
-        private final StringBuilder buffer;
+        private void space(int n) {
+            for (int i = 0; i < n; i++)
+                buffer.append(' ');
+        }
+
+        private PrintWriter out;
+        private StringBuilder buffer;
         private int indentCount;
-        private final int indentWidth;
-        private final int tabColumn;
+        private int indentWidth;
+        private int tabColumn;
         private boolean pendingNewline;
-        private int pendingSpaces;
     }
 }
 

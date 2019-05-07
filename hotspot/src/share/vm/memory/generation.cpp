@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 1997, 2014, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 1997, 2013, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -42,8 +42,6 @@
 #include "runtime/java.hpp"
 #include "utilities/copy.hpp"
 #include "utilities/events.hpp"
-
-PRAGMA_FORMAT_MUTE_WARNINGS_FOR_GCC
 
 Generation::Generation(ReservedSpace rs, size_t initial_size, int level) :
   _level(level),
@@ -187,7 +185,7 @@ bool Generation::promotion_attempt_is_safe(size_t max_promotion_in_bytes) const 
   bool   res = (available >= max_promotion_in_bytes);
   if (PrintGC && Verbose) {
     gclog_or_tty->print_cr(
-      "Generation: promo attempt is%s safe: available("SIZE_FORMAT") %s max_promo("SIZE_FORMAT")",
+      "Generation: promo attempt is%s safe: available(" SIZE_FORMAT") %s max_promo(" SIZE_FORMAT")",
       res? "":" not", available, res? ">=":"<",
       max_promotion_in_bytes);
   }
@@ -297,16 +295,22 @@ bool Generation::block_is_obj(const HeapWord* p) const {
 
 class GenerationOopIterateClosure : public SpaceClosure {
  public:
-  ExtendedOopClosure* _cl;
+  ExtendedOopClosure* cl;
+  MemRegion mr;
   virtual void do_space(Space* s) {
-    s->oop_iterate(_cl);
+    s->oop_iterate(mr, cl);
   }
-  GenerationOopIterateClosure(ExtendedOopClosure* cl) :
-    _cl(cl) {}
+  GenerationOopIterateClosure(ExtendedOopClosure* _cl, MemRegion _mr) :
+    cl(_cl), mr(_mr) {}
 };
 
 void Generation::oop_iterate(ExtendedOopClosure* cl) {
-  GenerationOopIterateClosure blk(cl);
+  GenerationOopIterateClosure blk(cl, _reserved);
+  space_iterate(&blk);
+}
+
+void Generation::oop_iterate(MemRegion mr, ExtendedOopClosure* cl) {
+  GenerationOopIterateClosure blk(cl, mr);
   space_iterate(&blk);
 }
 

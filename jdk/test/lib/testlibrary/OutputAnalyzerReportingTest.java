@@ -27,6 +27,7 @@
  * @summary Test the OutputAnalyzer reporting functionality,
  *     such as printing additional diagnostic info
  *     (exit code, stdout, stderr, command line, etc.)
+ * @library /testlibrary
  */
 
 import java.io.ByteArrayOutputStream;

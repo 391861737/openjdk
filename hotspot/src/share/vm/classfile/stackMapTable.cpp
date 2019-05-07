@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2003, 2016, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2003, 2012, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -78,10 +78,9 @@ bool StackMapTable::match_stackmap(
 // Match and/or update current_frame to the frame in stackmap table with
 // specified offset and frame index. Return true if the two frames match.
 //
-// The values of match and update are:                  _match__update
+// The values of match and update are:                  _match__update_
 //
-// checking a branch target:                             true   false
-// checking an exception handler:                        true   false
+// checking a branch target/exception handler:           true   false
 // linear bytecode verification following an
 // unconditional branch:                                 false  true
 // linear bytecode verification not following an
@@ -99,9 +98,11 @@ bool StackMapTable::match_stackmap(
   StackMapFrame *stackmap_frame = _frame_array[frame_index];
   bool result = true;
   if (match) {
+    // when checking handler target, match == true && update == false
+    bool is_exception_handler = !update;
     // Has direct control flow from last instruction, need to match the two
     // frames.
-    result = frame->is_assignable_to(stackmap_frame,
+    result = frame->is_assignable_to(stackmap_frame, is_exception_handler,
         ctx, CHECK_VERIFY_(frame->verifier(), result));
   }
   if (update) {
@@ -129,6 +130,19 @@ void StackMapTable::check_jump_target(
   if (!match || (target < 0 || target >= _code_length)) {
     frame->verifier()->verify_error(ctx,
         "Inconsistent stackmap frames at branch target %d", target);
+    return;
+  }
+  // check if uninitialized objects exist on backward branches
+  check_new_object(frame, target, CHECK_VERIFY(frame->verifier()));
+}
+
+void StackMapTable::check_new_object(
+    const StackMapFrame* frame, int32_t target, TRAPS) const {
+  if (frame->offset() > target && frame->has_new_object()) {
+    frame->verifier()->verify_error(
+        ErrorContext::bad_code(frame->offset()),
+        "Uninitialized object exists on backward branch %d", target);
+    return;
   }
 }
 
@@ -185,6 +199,7 @@ VerificationType StackMapReader::parse_verification_type(u1* flags, TRAPS) {
     u2 offset = _stream->get_u2(THREAD);
     if (offset >= _code_length ||
         _code_data[offset] != ClassVerifier::NEW_OFFSET) {
+      ResourceMark rm(THREAD);
       _verifier->class_format_error(
         "StackMapTable format error: bad offset for Uninitialized");
       return VerificationType::bogus_type();

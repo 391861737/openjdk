@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2001, 2014, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2001, 2012, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -79,7 +79,6 @@ extern int assert_failed(const char*);
 #define ERROR_RESOURCE  "Cannot extract resource file"
 #define ERROR_OVERFLOW  "Internal buffer overflow"
 #define ERROR_INTERNAL  "Internal error"
-#define ERROR_INIT      "cannot init class members"
 
 #define LOGFILE_STDOUT "-"
 #define LOGFILE_STDERR ""
@@ -158,6 +157,10 @@ enum { false, true };
 #define CHECK                   _CHECK_DO(aborting(), return)
 #define CHECK_(y)               _CHECK_DO(aborting(), return y)
 #define CHECK_0                 _CHECK_DO(aborting(), return 0)
+
+#define CHECK_NULL(p)           _CHECK_DO((p)==null, return)
+#define CHECK_NULL_(y,p)        _CHECK_DO((p)==null, return y)
+#define CHECK_NULL_0(p)         _CHECK_DO((p)==null, return 0)
 
 #define CHECK_COUNT(t)          if (t < 0){abort("bad value count");} CHECK
 

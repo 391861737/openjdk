@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 1997, 2014, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 1997, 2013, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -48,7 +48,6 @@ void RegisterMap::check_location_valid() {
 }
 #endif
 
-PRAGMA_FORMAT_MUTE_WARNINGS_FOR_GCC
 
 // Profiling/safepoint support
 
@@ -216,8 +215,7 @@ bool frame::safe_for_sender(JavaThread *thread) {
     if (sender_blob->is_nmethod()) {
         nmethod* nm = sender_blob->as_nmethod_or_null();
         if (nm != NULL) {
-            if (nm->is_deopt_mh_entry(sender_pc) || nm->is_deopt_entry(sender_pc) ||
-                nm->method()->is_method_handle_intrinsic()) {
+            if (nm->is_deopt_mh_entry(sender_pc) || nm->is_deopt_entry(sender_pc)) {
                 return false;
             }
         }
@@ -370,16 +368,13 @@ frame frame::sender_for_entry_frame(RegisterMap* map) const {
   JavaFrameAnchor* jfa = entry_frame_call_wrapper()->anchor();
   assert(!entry_frame_is_first(), "next Java fp must be non zero");
   assert(jfa->last_Java_sp() > sp(), "must be above this frame on stack");
-  // Since we are walking the stack now this nested anchor is obviously walkable
-  // even if it wasn't when it was stacked.
-  if (!jfa->walkable()) {
-    // Capture _last_Java_pc (if needed) and mark anchor walkable.
-    jfa->capture_last_Java_pc();
-  }
   map->clear();
   assert(map->include_argument_oops(), "should be set by clear");
-  assert(jfa->last_Java_pc() != NULL, "not walkable");
-  frame fr(jfa->last_Java_sp(), jfa->last_Java_fp(), jfa->last_Java_pc());
+  if (jfa->last_Java_pc() != NULL ) {
+    frame fr(jfa->last_Java_sp(), jfa->last_Java_fp(), jfa->last_Java_pc());
+    return fr;
+  }
+  frame fr(jfa->last_Java_sp(), jfa->last_Java_fp());
   return fr;
 }
 
@@ -387,9 +382,10 @@ frame frame::sender_for_entry_frame(RegisterMap* map) const {
 // frame::verify_deopt_original_pc
 //
 // Verifies the calculated original PC of a deoptimization PC for the
-// given unextended SP.
+// given unextended SP.  The unextended SP might also be the saved SP
+// for MethodHandle call sites.
 #ifdef ASSERT
-void frame::verify_deopt_original_pc(nmethod* nm, intptr_t* unextended_sp) {
+void frame::verify_deopt_original_pc(nmethod* nm, intptr_t* unextended_sp, bool is_method_handle_return) {
   frame fr;
 
   // This is ugly but it's better than to change {get,set}_original_pc
@@ -399,22 +395,32 @@ void frame::verify_deopt_original_pc(nmethod* nm, intptr_t* unextended_sp) {
 
   address original_pc = nm->get_original_pc(&fr);
   assert(nm->insts_contains(original_pc), "original PC must be in nmethod");
+  assert(nm->is_method_handle_return(original_pc) == is_method_handle_return, "must be");
 }
 #endif
 
 //------------------------------------------------------------------------------
 // frame::adjust_unextended_sp
 void frame::adjust_unextended_sp() {
-  // On x86, sites calling method handle intrinsics and lambda forms are treated
-  // as any other call site. Therefore, no special action is needed when we are
-  // returning to any of these call sites.
+  // If we are returning to a compiled MethodHandle call site, the
+  // saved_fp will in fact be a saved value of the unextended SP.  The
+  // simplest way to tell whether we are returning to such a call site
+  // is as follows:
 
   nmethod* sender_nm = (_cb == NULL) ? NULL : _cb->as_nmethod_or_null();
   if (sender_nm != NULL) {
-    // If the sender PC is a deoptimization point, get the original PC.
-    if (sender_nm->is_deopt_entry(_pc) ||
-        sender_nm->is_deopt_mh_entry(_pc)) {
+    // If the sender PC is a deoptimization point, get the original
+    // PC.  For MethodHandle call site the unextended_sp is stored in
+    // saved_fp.
+    if (sender_nm->is_deopt_mh_entry(_pc)) {
+      DEBUG_ONLY(verify_deopt_mh_original_pc(sender_nm, _fp));
+      _unextended_sp = _fp;
+    }
+    else if (sender_nm->is_deopt_entry(_pc)) {
       DEBUG_ONLY(verify_deopt_original_pc(sender_nm, _unextended_sp));
+    }
+    else if (sender_nm->is_method_handle_return(_pc)) {
+      _unextended_sp = _fp;
     }
   }
 }
@@ -709,29 +715,4 @@ intptr_t* frame::real_fp() const {
   // else rely on fp()
   assert(! is_compiled_frame(), "unknown compiled frame size");
   return fp();
-}
-
-#ifndef PRODUCT
-// This is a generic constructor which is only used by pns() in debug.cpp.
-frame::frame(void* sp, void* fp, void* pc) {
-  init((intptr_t*)sp, (intptr_t*)fp, (address)pc);
-}
-#endif
-
-void JavaFrameAnchor::make_walkable(JavaThread* thread) {
-  // last frame set?
-  if (last_Java_sp() == NULL) return;
-  // already walkable?
-  if (walkable()) return;
-  assert(Thread::current() == (Thread*)thread, "not current thread");
-  assert(last_Java_sp() != NULL, "not called from Java code?");
-  assert(last_Java_pc() == NULL, "already walkable");
-  capture_last_Java_pc();
-  assert(walkable(), "something went wrong");
-}
-
-void JavaFrameAnchor::capture_last_Java_pc() {
-  assert(_last_Java_sp != NULL, "no last frame set");
-  assert(_last_Java_pc == NULL, "already walkable");
-  _last_Java_pc = (address)_last_Java_sp[-1];
 }

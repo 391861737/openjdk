@@ -48,10 +48,6 @@ public class FileImageSource extends InputStreamImageSource {
     }
 
     protected ImageDecoder getDecoder() {
-        if (imagefile == null) {
-            return null;
-        }
-
         InputStream is;
         try {
             is = new BufferedInputStream(new FileInputStream(imagefile));

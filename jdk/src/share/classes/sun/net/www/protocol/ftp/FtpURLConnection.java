@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 1994, 2016, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 1994, 2010, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -298,17 +298,10 @@ public class FtpURLConnection extends URLConnection {
             // Just keep throwing for now.
             throw e;
         } catch (FtpProtocolException fe) {
-            if (ftp != null) {
-                try {
-                    ftp.close();
-                } catch (IOException ioe) {
-                    fe.addSuppressed(ioe);
-                }
-            }
             throw new IOException(fe);
         }
         try {
-            ftp.login(user, password == null ? null : password.toCharArray());
+            ftp.login(user, password.toCharArray());
         } catch (sun.net.ftp.FtpProtocolException e) {
             ftp.close();
             // Backward compatibility
@@ -487,34 +480,11 @@ public class FtpURLConnection extends URLConnection {
                 msgh.add("content-type", "text/plain");
                 msgh.add("access-type", "directory");
             } catch (IOException ex) {
-                FileNotFoundException fnfe = new FileNotFoundException(fullpath);
-                if (ftp != null) {
-                    try {
-                        ftp.close();
-                    } catch (IOException ioe) {
-                        fnfe.addSuppressed(ioe);
-                    }
-                }
-                throw fnfe;
+                throw new FileNotFoundException(fullpath);
             } catch (FtpProtocolException ex2) {
-                FileNotFoundException fnfe = new FileNotFoundException(fullpath);
-                if (ftp != null) {
-                    try {
-                        ftp.close();
-                    } catch (IOException ioe) {
-                        fnfe.addSuppressed(ioe);
-                    }
-                }
-                throw fnfe;
+                throw new FileNotFoundException(fullpath);
             }
         } catch (FtpProtocolException ftpe) {
-            if (ftp != null) {
-                try {
-                    ftp.close();
-                } catch (IOException ioe) {
-                    ftpe.addSuppressed(ioe);
-                }
-            }
             throw new IOException(ftpe);
         }
         setProperties(msgh);

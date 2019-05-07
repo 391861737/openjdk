@@ -35,7 +35,6 @@ import javax.tools.JavaFileManager;
 
 import com.sun.javadoc.*;
 import com.sun.tools.doclets.internal.toolkit.util.*;
-import com.sun.tools.javac.util.StringUtils;
 
 /**
  * Manages the<code>Taglet</code>s used by doclets.
@@ -305,7 +304,7 @@ public class TagletManager {
             return;
         }
         Taglet tag = customTags.get(tagName);
-        locations = StringUtils.toLowerCase(locations);
+        locations = locations.toLowerCase();
         if (tag == null || header != null) {
             customTags.remove(tagName);
             customTags.put(tagName, new SimpleTaglet(tagName, header, locations));
@@ -376,7 +375,7 @@ public class TagletManager {
                 name = name.substring(1, name.length());
             }
             if (! (standardTags.contains(name) || customTags.containsKey(name))) {
-                if (standardTagsLowercase.contains(StringUtils.toLowerCase(name))) {
+                if (standardTagsLowercase.contains(name.toLowerCase())) {
                     message.warning(tags[i].position(), "doclet.UnknownTagLowercase", tags[i].name());
                     continue;
                 } else {
@@ -709,7 +708,7 @@ public class TagletManager {
     private void initStandardTagsLowercase() {
         Iterator<String> it = standardTags.iterator();
         while (it.hasNext()) {
-            standardTagsLowercase.add(StringUtils.toLowerCase(it.next()));
+            standardTagsLowercase.add(it.next().toLowerCase());
         }
     }
 

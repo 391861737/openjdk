@@ -25,7 +25,6 @@
 #ifndef SHARE_VM_MEMORY_METADATAFACTORY_HPP
 #define SHARE_VM_MEMORY_METADATAFACTORY_HPP
 
-#include "classfile/classLoaderData.hpp"
 #include "utilities/array.hpp"
 #include "utilities/exceptions.hpp"
 #include "utilities/globalDefinitions.hpp"
@@ -64,12 +63,6 @@ class MetadataFactory : AllStatic {
 
   template <typename T>
   static void free_array(ClassLoaderData* loader_data, Array<T>* data) {
-    if (DumpSharedSpaces) {
-      // FIXME: the freeing code is buggy, especially when PrintSharedSpaces is enabled.
-      // Disable for now -- this means if you specify bad classes in your classlist you
-      // may have wasted space inside the archive.
-      return;
-    }
     if (data != NULL) {
       assert(loader_data != NULL, "shouldn't pass null");
       assert(!data->is_shared(), "cannot deallocate array in shared spaces");
@@ -85,12 +78,6 @@ class MetadataFactory : AllStatic {
   // Deallocation method for metadata
   template <class T>
   static void free_metadata(ClassLoaderData* loader_data, T md) {
-    if (DumpSharedSpaces) {
-      // FIXME: the freeing code is buggy, especially when PrintSharedSpaces is enabled.
-      // Disable for now -- this means if you specify bad classes in your classlist you
-      // may have wasted space inside the archive.
-      return;
-    }
     if (md != NULL) {
       assert(loader_data != NULL, "shouldn't pass null");
       int size = md->size();

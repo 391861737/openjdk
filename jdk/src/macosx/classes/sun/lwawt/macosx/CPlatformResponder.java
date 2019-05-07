@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2011, 2014, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2011, 2013, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -28,13 +28,12 @@ package sun.lwawt.macosx;
 import sun.awt.SunToolkit;
 import sun.lwawt.LWWindowPeer;
 import sun.lwawt.PlatformEventNotifier;
-
+import sun.lwawt.macosx.event.NSEvent;
 import java.awt.Toolkit;
 import java.awt.event.MouseEvent;
 import java.awt.event.InputEvent;
 import java.awt.event.MouseWheelEvent;
 import java.awt.event.KeyEvent;
-import java.util.Locale;
 
 /**
  * Translates NSEvents/NPCocoaEvents into AWT events.
@@ -44,8 +43,6 @@ final class CPlatformResponder {
     private final PlatformEventNotifier eventNotifier;
     private final boolean isNpapiCallback;
     private int lastKeyPressCode = KeyEvent.VK_UNDEFINED;
-    private final DeltaAccumulator deltaAccumulatorX = new DeltaAccumulator();
-    private final DeltaAccumulator deltaAccumulatorY = new DeltaAccumulator();
 
     CPlatformResponder(final PlatformEventNotifier eventNotifier,
                        final boolean isNpapiCallback) {
@@ -92,44 +89,43 @@ final class CPlatformResponder {
      * Handles scroll events.
      */
     void handleScrollEvent(final int x, final int y, final int modifierFlags,
-                           final double deltaX, final double deltaY,
-                           final int scrollPhase) {
+                           final double deltaX, final double deltaY) {
         final int buttonNumber = CocoaConstants.kCGMouseButtonCenter;
         int jmodifiers = NSEvent.nsToJavaMouseModifiers(buttonNumber,
                                                         modifierFlags);
         final boolean isShift = (jmodifiers & InputEvent.SHIFT_DOWN_MASK) != 0;
 
-        int roundDeltaX = deltaAccumulatorX.getRoundedDelta(deltaX, scrollPhase);
-        int roundDeltaY = deltaAccumulatorY.getRoundedDelta(deltaY, scrollPhase);
-
         // Vertical scroll.
-        if (!isShift && (deltaY != 0.0 || roundDeltaY != 0)) {
-            dispatchScrollEvent(x, y, jmodifiers, roundDeltaY, deltaY);
+        if (!isShift && deltaY != 0.0) {
+            dispatchScrollEvent(x, y, jmodifiers, deltaY);
         }
         // Horizontal scroll or shirt+vertical scroll.
         final double delta = isShift && deltaY != 0.0 ? deltaY : deltaX;
-        final int roundDelta = isShift && roundDeltaY != 0 ? roundDeltaY : roundDeltaX;
-        if (delta != 0.0 || roundDelta != 0) {
+        if (delta != 0.0) {
             jmodifiers |= InputEvent.SHIFT_DOWN_MASK;
-            dispatchScrollEvent(x, y, jmodifiers, roundDelta, delta);
+            dispatchScrollEvent(x, y, jmodifiers, delta);
         }
     }
 
     private void dispatchScrollEvent(final int x, final int y,
-                                     final int modifiers,
-                                     final int roundDelta, final double delta) {
+                                     final int modifiers, final double delta) {
         final long when = System.currentTimeMillis();
         final int scrollType = MouseWheelEvent.WHEEL_UNIT_SCROLL;
         final int scrollAmount = 1;
+        int wheelRotation = (int) delta;
+        int signum = (int) Math.signum(delta);
+        if (signum * delta < 1) {
+            wheelRotation = signum;
+        }
         // invert the wheelRotation for the peer
         eventNotifier.notifyMouseWheelEvent(when, x, y, modifiers, scrollType,
-                scrollAmount, -roundDelta, -delta, null);
+                scrollAmount, -wheelRotation, -delta, null);
     }
 
     /**
      * Handles key events.
      */
-    void handleKeyEvent(int eventType, int modifierFlags, String chars, String charsIgnoringModifiers,
+    void handleKeyEvent(int eventType, int modifierFlags, String chars,
                         short keyCode, boolean needsKeyTyped, boolean needsKeyReleased) {
         boolean isFlagsChangedEvent =
             isNpapiCallback ? (eventType == CocoaConstants.NPCocoaEventFlagsChanged) :
@@ -157,10 +153,7 @@ final class CPlatformResponder {
                 testChar = chars.charAt(0);
             }
 
-            char testCharIgnoringModifiers = charsIgnoringModifiers != null && charsIgnoringModifiers.length() > 0 ?
-                    charsIgnoringModifiers.charAt(0) : KeyEvent.CHAR_UNDEFINED;
-
-            int[] in = new int[] {testCharIgnoringModifiers, isDeadChar ? 1 : 0, modifierFlags, keyCode};
+            int[] in = new int[] {testChar, isDeadChar ? 1 : 0, modifierFlags, keyCode};
             int[] out = new int[3]; // [jkeyCode, jkeyLocation, deadChar]
 
             postsTyped = NSEvent.nsToJavaKeyInfo(in, out);
@@ -173,16 +166,6 @@ final class CPlatformResponder {
                 if(testChar == 0){
                     return;
                 }
-            }
-
-            // If Pinyin Simplified input method is selected, CAPS_LOCK key is supposed to switch
-            // input to latin letters.
-            // It is necessary to use testCharIgnoringModifiers instead of testChar for event
-            // generation in such case to avoid uppercase letters in text components.
-            LWCToolkit lwcToolkit = (LWCToolkit)Toolkit.getDefaultToolkit();
-            if (lwcToolkit.getLockingKeyState(KeyEvent.VK_CAPS_LOCK) &&
-                    Locale.SIMPLIFIED_CHINESE.equals(lwcToolkit.getDefaultKeyboardLocale())) {
-                testChar = testCharIgnoringModifiers;
             }
 
             jkeyCode = out[0];
@@ -258,44 +241,5 @@ final class CPlatformResponder {
 
     void handleWindowFocusEvent(boolean gained, LWWindowPeer opposite) {
         eventNotifier.notifyActivation(gained, opposite);
-    }
-
-    static class DeltaAccumulator {
-
-        double accumulatedDelta;
-        boolean accumulate;
-
-        int getRoundedDelta(double delta, int scrollPhase) {
-
-            int roundDelta = (int) Math.round(delta);
-
-            if (scrollPhase == NSEvent.SCROLL_PHASE_UNSUPPORTED) { // mouse wheel
-                if (roundDelta == 0 && delta != 0) {
-                    roundDelta = delta > 0 ? 1 : -1;
-                }
-            } else { // trackpad
-                if (scrollPhase == NSEvent.SCROLL_PHASE_BEGAN) {
-                    accumulatedDelta = 0;
-                    accumulate = true;
-                }
-                else if (scrollPhase == NSEvent.SCROLL_PHASE_MOMENTUM_BEGAN) {
-                    accumulate = true;
-                }
-                if (accumulate) {
-
-                    accumulatedDelta += delta;
-
-                    roundDelta = (int) Math.round(accumulatedDelta);
-
-                    accumulatedDelta -= roundDelta;
-
-                    if (scrollPhase == NSEvent.SCROLL_PHASE_ENDED) {
-                        accumulate = false;
-                    }
-                }
-            }
-
-            return roundDelta;
-        }
     }
 }

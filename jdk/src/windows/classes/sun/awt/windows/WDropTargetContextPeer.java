@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 1997, 2014, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 1997, 2007, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -79,7 +79,6 @@ final class WDropTargetContextPeer extends SunDropTargetContextPeer {
         return new WDropTargetContextPeerIStream(istream);
     }
 
-    @Override
     protected Object getNativeData(long format) {
         return getData(getNativeDragContext(), format);
     }
@@ -88,17 +87,14 @@ final class WDropTargetContextPeer extends SunDropTargetContextPeer {
      * signal drop complete
      */
 
-    @Override
     protected void doDropDone(boolean success, int dropAction,
                               boolean isLocal) {
         dropDone(getNativeDragContext(), success, dropAction);
     }
 
-    @Override
     protected void eventPosted(final SunDropTargetEvent e) {
         if (e.getID() != SunDropTargetEvent.MOUSE_DROPPED) {
             Runnable runnable = new Runnable() {
-                    @Override
                     public void run() {
                         e.getDispatcher().unregisterAllEvents();
                     }
@@ -128,7 +124,7 @@ final class WDropTargetContextPeer extends SunDropTargetContextPeer {
  * package private class to handle file transfers
  */
 
-final class WDropTargetContextPeerFileStream extends FileInputStream {
+class WDropTargetContextPeerFileStream extends FileInputStream {
 
     /**
      * construct file input stream
@@ -146,7 +142,6 @@ final class WDropTargetContextPeerFileStream extends FileInputStream {
      * close
      */
 
-    @Override
     public void close() throws IOException {
         if (stgmedium != 0) {
             super.close();
@@ -172,7 +167,7 @@ final class WDropTargetContextPeerFileStream extends FileInputStream {
  * Package private class to access IStream objects
  */
 
-final class WDropTargetContextPeerIStream extends InputStream {
+class WDropTargetContextPeerIStream extends InputStream {
 
     /**
      * construct a WDropTargetContextPeerIStream wrapper
@@ -190,7 +185,6 @@ final class WDropTargetContextPeerIStream extends InputStream {
      * @return bytes available
      */
 
-    @Override
     public int available() throws IOException {
         if (istream == 0) throw new IOException("No IStream");
         return Available(istream);
@@ -202,7 +196,6 @@ final class WDropTargetContextPeerIStream extends InputStream {
      * read
      */
 
-    @Override
     public int read() throws IOException {
         if (istream == 0) throw new IOException("No IStream");
         return Read(istream);
@@ -214,7 +207,6 @@ final class WDropTargetContextPeerIStream extends InputStream {
      * read into buffer
      */
 
-    @Override
     public int read(byte[] b, int off, int len) throws IOException {
         if (istream == 0) throw new IOException("No IStream");
         return ReadBytes(istream, b, off, len);
@@ -226,7 +218,6 @@ final class WDropTargetContextPeerIStream extends InputStream {
      * close
      */
 
-    @Override
     public void close() throws IOException {
         if (istream != 0) {
             super.close();

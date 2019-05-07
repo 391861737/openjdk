@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2005, 2014, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2005, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -26,7 +26,7 @@
 // Because all the tests are marked @ignore as they require special hardware,
 // we cannot use jtreg to do this.
 
-import java.lang.reflect.Method;
+import java.lang.reflect.*;
 
 public class TestAll {
 
@@ -40,7 +40,6 @@ public class TestAll {
         TestMultiplePresent.class,
         TestPresent.class,
         TestTransmit.class,
-        TestDirect.class,
     };
 
     public static void main(String[] args) throws Exception {

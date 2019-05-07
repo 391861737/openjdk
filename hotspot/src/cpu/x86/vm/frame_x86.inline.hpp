@@ -40,7 +40,7 @@ inline frame::frame() {
   _deopt_state = unknown;
 }
 
-inline void frame::init(intptr_t* sp, intptr_t* fp, address pc) {
+inline frame::frame(intptr_t* sp, intptr_t* fp, address pc) {
   _sp = sp;
   _unextended_sp = sp;
   _fp = fp;
@@ -56,10 +56,6 @@ inline void frame::init(intptr_t* sp, intptr_t* fp, address pc) {
   } else {
     _deopt_state = not_deoptimized;
   }
-}
-
-inline frame::frame(intptr_t* sp, intptr_t* fp, address pc) {
-  init(sp, fp, pc);
 }
 
 inline frame::frame(intptr_t* sp, intptr_t* unextended_sp, intptr_t* fp, address pc) {
@@ -93,10 +89,9 @@ inline frame::frame(intptr_t* sp, intptr_t* fp) {
   // find_blob call. This is also why we can have no asserts on the validity
   // of the pc we find here. AsyncGetCallTrace -> pd_get_top_frame_for_signal_handler
   // -> pd_last_frame should use a specialized version of pd_last_frame which could
-  // call a specialized frame constructor instead of this one.
+  // call a specilaized frame constructor instead of this one.
   // Then we could use the assert below. However this assert is of somewhat dubious
   // value.
-  // UPDATE: this constructor is only used by trace_method_handle_stub() now.
   // assert(_pc != NULL, "no pc?");
 
   _cb = CodeCache::find_blob(_pc);
@@ -250,10 +245,6 @@ inline intptr_t* frame::interpreter_frame_tos_address() const {
     assert(last_sp <= (intptr_t*) interpreter_frame_monitor_end(), "bad tos");
     return last_sp;
   }
-}
-
-inline oop* frame::interpreter_frame_temp_oop_addr() const {
-  return (oop *)(fp() + interpreter_frame_oop_temp_offset);
 }
 
 #endif /* CC_INTERP */

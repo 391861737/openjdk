@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2003, 2014, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2003, 2013, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -25,7 +25,6 @@
 #include "precompiled.hpp"
 #include "classfile/systemDictionary.hpp"
 #include "interpreter/interpreter.hpp"
-#include "interpreter/oopMapCache.hpp"
 #include "jvmtifiles/jvmtiEnv.hpp"
 #include "memory/resourceArea.hpp"
 #include "oops/instanceKlass.hpp"
@@ -414,7 +413,7 @@ void  JvmtiBreakpoints::print() {
     JvmtiBreakpoint& bp = _bps.at(i);
     tty->print("%d: ", i);
     bp.print();
-    tty->cr();
+    tty->print_cr("");
   }
 #endif
 }
@@ -745,13 +744,6 @@ bool VM_GetOrSetLocal::doit_prologue() {
 }
 
 void VM_GetOrSetLocal::doit() {
-  InterpreterOopMap oop_mask;
-  _jvf->method()->mask_for(_jvf->bci(), &oop_mask);
-  if (oop_mask.is_dead(_index)) {
-    // The local can be invalid and uninitialized in the scope of current bci
-    _result = JVMTI_ERROR_INVALID_SLOT;
-    return;
-  }
   if (_set) {
     // Force deoptimization of frame if compiled because it's
     // possible the compiler emitted some locals as constant values,

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2005, 2016, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2005, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -30,11 +30,10 @@
  * @run main/manual TestExclusive
  */
 
-import javax.smartcardio.Card;
-import javax.smartcardio.CardChannel;
-import javax.smartcardio.CardException;
-import javax.smartcardio.CardTerminal;
-import javax.smartcardio.CommandAPDU;
+import java.io.*;
+import java.util.*;
+
+import javax.smartcardio.*;
 
 public class TestExclusive extends Utils {
 
@@ -44,11 +43,6 @@ public class TestExclusive extends Utils {
 
     public static void main(String[] args) throws Exception {
         CardTerminal terminal = getTerminal(args);
-        if (terminal == null) {
-            System.out.println("Skipping the test: " +
-                    "no card terminals available");
-            return;
-        }
 
         // establish a connection with the card
         Card card = terminal.connect("T=0");
@@ -89,9 +83,9 @@ public class TestExclusive extends Utils {
         Thread.sleep(1000);
 
         // disconnect
-        card.disconnect(true);
+        card.disconnect(false);
 
-        if (! otherOK) {
+        if (otherOK == false) {
             throw new Exception("Secondary thread failed");
         }
 

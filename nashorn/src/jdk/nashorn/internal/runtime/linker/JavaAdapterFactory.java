@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2010, 2015, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2010, 2013, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -48,34 +48,30 @@ import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import jdk.internal.dynalink.beans.StaticClass;
 import jdk.internal.dynalink.support.LinkRequestImpl;
+import jdk.nashorn.internal.objects.NativeJava;
 import jdk.nashorn.internal.runtime.Context;
 import jdk.nashorn.internal.runtime.ECMAException;
 import jdk.nashorn.internal.runtime.ScriptFunction;
 import jdk.nashorn.internal.runtime.ScriptObject;
 
 /**
- * A factory class that generates adapter classes. Adapter classes allow
- * implementation of Java interfaces and extending of Java classes from
- * JavaScript. For every combination of a superclass to extend and interfaces to
- * implement (collectively: "original types"), exactly one adapter class is
- * generated that extends the specified superclass and implements the specified
- * interfaces. (But see the discussion of class-based overrides for exceptions.)
- * <p>
- * The adapter class is generated in a new secure class loader that inherits
- * Nashorn's protection domain, and has either one of the original types' class
- * loader or the Nashorn's class loader as its parent - the parent class loader
- * is chosen so that all the original types and the Nashorn core classes are
- * visible from it (as the adapter will have constant pool references to
- * ScriptObject and ScriptFunction classes). In case none of the candidate class
- * loaders has visibility of all the required types, an error is thrown. The
- * class uses {@link JavaAdapterBytecodeGenerator} to generate the adapter class
- * itself; see its documentation for details about the generated class.
- * <p>
- * You normally don't use this class directly, but rather either create adapters
- * from script using {@link jdk.nashorn.internal.objects.NativeJava#extend(Object, Object...)},
- * using the {@code new} operator on abstract classes and interfaces (see
- * {@link jdk.nashorn.internal.objects.NativeJava#type(Object, Object)}), or
- * implicitly when passing script functions to Java methods expecting SAM types.
+ * <p>A factory class that generates adapter classes. Adapter classes allow implementation of Java interfaces and
+ * extending of Java classes from JavaScript. For every combination of a superclass to extend and interfaces to
+ * implement (collectively: "original types"), exactly one adapter class is generated that extends the specified
+ * superclass and implements the specified interfaces. (But see the discussion of class-based overrides for exceptions.)
+ * </p><p>
+ * The adapter class is generated in a new secure class loader that inherits Nashorn's protection domain, and has either
+ * one of the original types' class loader or the Nashorn's class loader as its parent - the parent class loader
+ * is chosen so that all the original types and the Nashorn core classes are visible from it (as the adapter will have
+ * constant pool references to ScriptObject and ScriptFunction classes). In case none of the candidate class loaders has
+ * visibility of all the required types, an error is thrown. The class uses {@link JavaAdapterBytecodeGenerator} to
+ * generate the adapter class itself; see its documentation for details about the generated class.
+ * </p><p>
+ * You normally don't use this class directly, but rather either create adapters from script using
+ * {@link NativeJava#extend(Object, Object...)}, using the {@code new} operator on abstract classes and interfaces (see
+ * {@link NativeJava#type(Object, Object)}), or implicitly when passing script functions to Java methods expecting SAM
+ * types.
+ * </p>
  */
 
 @SuppressWarnings("javadoc")
@@ -98,49 +94,35 @@ public final class JavaAdapterFactory {
     };
 
     /**
-     * Returns an adapter class for the specified original types. The adapter
-     * class extends/implements the original class/interfaces.
-     *
-     * @param types the original types. The caller must pass at least one Java
-     *        type representing either a public interface or a non-final public
-     *        class with at least one public or protected constructor. If more
-     *        than one type is specified, at most one can be a class and the
-     *        rest have to be interfaces. The class can be in any position in
-     *        the array. Invoking the method twice with exactly the same types
-     *        in the same order will return the same adapter class, any
-     *        reordering of types or even addition or removal of redundant types
-     *        (i.e., interfaces that other types in the list already
-     *        implement/extend, or {@code java.lang.Object} in a list of types
-     *        consisting purely of interfaces) will result in a different
-     *        adapter class, even though those adapter classes are functionally
-     *        identical; we deliberately don't want to incur the additional
-     *        processing cost of canonicalizing type lists.
-     * @param classOverrides a JavaScript object with functions serving as the
-     *        class-level overrides and implementations. These overrides are
-     *        defined for all instances of the class, and can be further
-     *        overridden on a per-instance basis by passing additional objects
-     *        in the constructor.
-     * @param lookup the lookup object identifying the caller class. The
-     *        generated adapter class will have the protection domain of the
-     *        caller class iff the lookup object is full-strength, otherwise it
-     *        will be completely unprivileged.
-     *
-     * @return an adapter class. See this class' documentation for details on
-     *         the generated adapter class.
-     *
-     * @throws ECMAException with a TypeError if the adapter class can not be
-     *         generated because the original class is final, non-public, or has
-     *         no public or protected constructors.
+     * Returns an adapter class for the specified original types. The adapter class extends/implements the original
+     * class/interfaces.
+     * @param types the original types. The caller must pass at least one Java type representing either a public
+     * interface or a non-final public class with at least one public or protected constructor. If more than one type is
+     * specified, at most one can be a class and the rest have to be interfaces. The class can be in any position in the
+     * array. Invoking the method twice with exactly the same types in the same order will return the same adapter
+     * class, any reordering of types or even addition or removal of redundant types (i.e. interfaces that other types
+     * in the list already implement/extend, or {@code java.lang.Object} in a list of types consisting purely of
+     * interfaces) will result in a different adapter class, even though those adapter classes are functionally
+     * identical; we deliberately don't want to incur the additional processing cost of canonicalizing type lists.
+     * @param classOverrides a JavaScript object with functions serving as the class-level overrides and
+     * implementations. These overrides are defined for all instances of the class, and can be further overridden on a
+     * per-instance basis by passing additional objects in the constructor.
+     * @param lookup the lookup object identifying the caller class. The generated adapter class will have the
+     * protection domain of the caller class iff the lookup object is full-strength, otherwise it will be completely
+     * unprivileged.
+     * @return an adapter class. See this class' documentation for details on the generated adapter class.
+     * @throws ECMAException with a TypeError if the adapter class can not be generated because the original class is
+     * final, non-public, or has no public or protected constructors.
      */
-    public static StaticClass getAdapterClassFor(final Class<?>[] types, final ScriptObject classOverrides, final MethodHandles.Lookup lookup) {
+    public static StaticClass getAdapterClassFor(final Class<?>[] types, ScriptObject classOverrides, final MethodHandles.Lookup lookup) {
         return getAdapterClassFor(types, classOverrides, getProtectionDomain(lookup));
     }
 
-    private static StaticClass getAdapterClassFor(final Class<?>[] types, final ScriptObject classOverrides, final ProtectionDomain protectionDomain) {
+    private static StaticClass getAdapterClassFor(final Class<?>[] types, ScriptObject classOverrides, final ProtectionDomain protectionDomain) {
         assert types != null && types.length > 0;
         final SecurityManager sm = System.getSecurityManager();
         if (sm != null) {
-            for (final Class<?> type : types) {
+            for (Class<?> type : types) {
                 // check for restricted package access
                 Context.checkPackageAccess(type);
                 // check for classes, interfaces in reflection
@@ -167,46 +149,33 @@ public final class JavaAdapterFactory {
     }
 
     /**
-     * Returns a method handle representing a constructor that takes a single
-     * argument of the source type (which, really, should be one of {@link ScriptObject},
-     * {@link ScriptFunction}, or {@link Object}, and returns an instance of the
-     * adapter for the target type. Used to implement the function autoconverters
-     * as well as the Nashorn JSR-223 script engine's {@code getInterface()}
-     * method.
-     *
-     * @param sourceType the source type; should be either {@link ScriptObject},
-     *        {@link ScriptFunction}, or {@link Object}. In case of {@code Object},
-     *        it will return a method handle that dispatches to either the script
-     *        object or function constructor at invocation based on the actual
-     *        argument.
+     * Returns a method handle representing a constructor that takes a single argument of the source type (which,
+     * really, should be one of {@link ScriptObject}, {@link ScriptFunction}, or {@link Object}, and returns an instance
+     * of the adapter for the target type. Used to implement the function autoconverters as well as the Nashorn's
+     * JSR-223 script engine's {@code getInterface()} method.
+     * @param sourceType the source type; should be either {@link ScriptObject}, {@link ScriptFunction}, or
+     * {@link Object}. In case of {@code Object}, it will return a method handle that dispatches to either the script
+     * object or function constructor at invocation based on the actual argument.
      * @param targetType the target type, for which adapter instances will be created
-     * @param lookup method handle lookup to use
-     *
      * @return the constructor method handle.
-     *
      * @throws Exception if anything goes wrong
      */
     public static MethodHandle getConstructor(final Class<?> sourceType, final Class<?> targetType, final MethodHandles.Lookup lookup) throws Exception {
         final StaticClass adapterClass = getAdapterClassFor(new Class<?>[] { targetType }, null, lookup);
         return MH.bindTo(Bootstrap.getLinkerServices().getGuardedInvocation(new LinkRequestImpl(
                 NashornCallSiteDescriptor.get(lookup, "dyn:new",
-                        MethodType.methodType(targetType, StaticClass.class, sourceType), 0), null, 0, false,
+                        MethodType.methodType(targetType, StaticClass.class, sourceType), 0), false,
                         adapterClass, null)).getInvocation(), adapterClass);
     }
 
     /**
-     * Returns whether an instance of the specified class/interface can be
-     * generated from a ScriptFunction. Returns {@code true} iff: the adapter
-     * for the class/interface can be created, it is abstract (this includes
-     * interfaces), it has at least one abstract method, all the abstract
-     * methods share the same name, and it has a public or protected default
-     * constructor. Note that invoking this class will most likely result in the
-     * adapter class being defined in the JVM if it hasn't been already.
-     *
+     * Returns whether an instance of the specified class/interface can be generated from a ScriptFunction. Returns true
+     * iff: the adapter for the class/interface can be created, it is abstract (this includes interfaces), it has at
+     * least one abstract method, all the abstract methods share the same name, and it has a public or protected default
+     * constructor. Note that invoking this class will most likely result in the adapter class being defined in the JVM
+     * if it hasn't been already.
      * @param clazz the inspected class
-     *
-     * @return {@code true} iff an instance of the specified class/interface can
-     *         be generated from a ScriptFunction.
+     * @return true iff an instance of the specified class/interface can be generated from a ScriptFunction.
      */
     static boolean isAutoConvertibleFromFunction(final Class<?> clazz) {
         return getAdapterInfo(new Class<?>[] { clazz }).autoConvertibleFromFunction;
@@ -216,7 +185,7 @@ public final class JavaAdapterFactory {
         final ClassAndLoader definingClassAndLoader = ClassAndLoader.getDefiningClassAndLoader(types);
 
         final Map<List<Class<?>>, AdapterInfo> adapterInfoMap = ADAPTER_INFO_MAPS.get(definingClassAndLoader.getRepresentativeClass());
-        final List<Class<?>> typeList = types.length == 1 ? Collections.<Class<?>>singletonList(types[0]) : Arrays.asList(types.clone());
+        final List<Class<?>> typeList = types.length == 1 ? getSingletonClassList(types[0]) : Arrays.asList(types.clone());
         AdapterInfo adapterInfo;
         synchronized(adapterInfoMap) {
             adapterInfo = adapterInfoMap.get(typeList);
@@ -228,11 +197,14 @@ public final class JavaAdapterFactory {
         return adapterInfo;
     }
 
+    @SuppressWarnings({ "unchecked", "rawtypes" })
+    private static List<Class<?>> getSingletonClassList(final Class<?> clazz) {
+        return (List)Collections.singletonList(clazz);
+    }
+
    /**
      * For a given class, create its adapter class and associated info.
-     *
      * @param type the class for which the adapter is created
-     *
      * @return the adapter info for the class.
      */
     private static AdapterInfo createAdapterInfo(final Class<?>[] types, final ClassAndLoader definingClassAndLoader) {
@@ -270,15 +242,13 @@ public final class JavaAdapterFactory {
                     return new AdapterInfo(effectiveSuperClass, interfaces, definingClassAndLoader);
                 } catch (final AdaptationException e) {
                     return new AdapterInfo(e.getAdaptationResult());
-                } catch (final RuntimeException e) {
-                    return new AdapterInfo(new AdaptationResult(AdaptationResult.Outcome.ERROR_OTHER, Arrays.toString(types), e.toString()));
                 }
             }
         }, CREATE_ADAPTER_INFO_ACC_CTXT);
     }
 
     private static class AdapterInfo {
-        private static final ClassAndLoader SCRIPT_OBJECT_LOADER = new ClassAndLoader(ScriptFunction.class, true);
+        private static final ClassAndLoader SCRIPT_OBJECT_LOADER = new ClassAndLoader(ScriptObject.class, true);
 
         private final ClassLoader commonLoader;
         // TODO: soft reference the JavaAdapterClassLoader objects. They can be recreated when needed.
@@ -288,7 +258,7 @@ public final class JavaAdapterFactory {
         final boolean autoConvertibleFromFunction;
         final AdaptationResult adaptationResult;
 
-        AdapterInfo(final Class<?> superClass, final List<Class<?>> interfaces, final ClassAndLoader definingLoader) throws AdaptationException {
+        AdapterInfo(Class<?> superClass, List<Class<?>> interfaces, ClassAndLoader definingLoader) throws AdaptationException {
             this.commonLoader = findCommonLoader(definingLoader);
             final JavaAdapterBytecodeGenerator gen = new JavaAdapterBytecodeGenerator(superClass, interfaces, commonLoader, false);
             this.autoConvertibleFromFunction = gen.isAutoConvertibleFromFunction();
@@ -345,14 +315,11 @@ public final class JavaAdapterFactory {
         }
 
         /**
-         * Choose between the passed class loader and the class loader that defines the
-         * ScriptObject class, based on which of the two can see the classes in both.
-         *
-         * @param classAndLoader the loader and a representative class from it that will
-         *        be used to add the generated adapter to its ADAPTER_INFO_MAPS.
-         *
+         * Choose between the passed class loader and the class loader that defines the ScriptObject class, based on which
+         * of the two can see the classes in both.
+         * @param classAndLoader the loader and a representative class from it that will be used to add the generated
+         * adapter to its ADAPTER_INFO_MAPS.
          * @return the class loader that sees both the specified class and Nashorn classes.
-         *
          * @throws IllegalStateException if no such class loader is found.
          */
         private static ClassLoader findCommonLoader(final ClassAndLoader classAndLoader) throws AdaptationException {
@@ -370,7 +337,6 @@ public final class JavaAdapterFactory {
     private static ProtectionDomain createMinimalPermissionDomain() {
         // Generated classes need to have at least the permission to access Nashorn runtime and runtime.linker packages.
         final Permissions permissions = new Permissions();
-        permissions.add(new RuntimePermission("accessClassInPackage.jdk.nashorn.internal.objects"));
         permissions.add(new RuntimePermission("accessClassInPackage.jdk.nashorn.internal.runtime"));
         permissions.add(new RuntimePermission("accessClassInPackage.jdk.nashorn.internal.runtime.linker"));
         return new ProtectionDomain(new CodeSource(null, (CodeSigner[])null), permissions);

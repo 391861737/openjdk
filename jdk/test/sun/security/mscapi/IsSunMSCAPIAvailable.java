@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2005, 2015, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2005, 2007, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -33,6 +33,16 @@ public class IsSunMSCAPIAvailable {
 
     public static void main(String[] args) throws Exception {
 
+        // Check if the provider is available
+        try {
+            Class.forName("sun.security.mscapi.SunMSCAPI");
+
+        } catch (Exception e) {
+            System.out.println(
+                "The SunMSCAPI provider is not available on this platform");
+            return;
+        }
+
         // Dynamically register the SunMSCAPI provider
         Security.addProvider(new sun.security.mscapi.SunMSCAPI());
 
@@ -48,6 +58,7 @@ public class IsSunMSCAPIAvailable {
         /*
          * Secure Random
          */
+
         SecureRandom random = SecureRandom.getInstance("Windows-PRNG", p);
         System.out.println("    Windows-PRNG is implemented by: " +
             random.getClass().getName());

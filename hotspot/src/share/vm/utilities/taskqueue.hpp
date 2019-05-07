@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2001, 2016, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2001, 2013, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -28,8 +28,37 @@
 #include "memory/allocation.hpp"
 #include "memory/allocation.inline.hpp"
 #include "runtime/mutex.hpp"
-#include "runtime/orderAccess.inline.hpp"
 #include "utilities/stack.hpp"
+#ifdef TARGET_OS_ARCH_linux_x86
+# include "orderAccess_linux_x86.inline.hpp"
+#endif
+#ifdef TARGET_OS_ARCH_linux_sparc
+# include "orderAccess_linux_sparc.inline.hpp"
+#endif
+#ifdef TARGET_OS_ARCH_linux_zero
+# include "orderAccess_linux_zero.inline.hpp"
+#endif
+#ifdef TARGET_OS_ARCH_solaris_x86
+# include "orderAccess_solaris_x86.inline.hpp"
+#endif
+#ifdef TARGET_OS_ARCH_solaris_sparc
+# include "orderAccess_solaris_sparc.inline.hpp"
+#endif
+#ifdef TARGET_OS_ARCH_windows_x86
+# include "orderAccess_windows_x86.inline.hpp"
+#endif
+#ifdef TARGET_OS_ARCH_linux_arm
+# include "orderAccess_linux_arm.inline.hpp"
+#endif
+#ifdef TARGET_OS_ARCH_linux_ppc
+# include "orderAccess_linux_ppc.inline.hpp"
+#endif
+#ifdef TARGET_OS_ARCH_bsd_x86
+# include "orderAccess_bsd_x86.inline.hpp"
+#endif
+#ifdef TARGET_OS_ARCH_bsd_zero
+# include "orderAccess_bsd_zero.inline.hpp"
+#endif
 
 // Simple TaskQueue stats that are collected by default in debug builds.
 
@@ -453,9 +482,6 @@ public:
   // Push task t onto the queue or onto the overflow stack.  Return true.
   inline bool push(E t);
 
-  // Try to push task t onto the queue only. Returns true if successful, false otherwise.
-  inline bool try_push_to_taskqueue(E t);
-
   // Attempt to pop from the overflow stack; return true if anything was popped.
   inline bool pop_overflow(E& t);
 
@@ -489,10 +515,6 @@ bool OverflowTaskQueue<E, F, N>::pop_overflow(E& t)
   return true;
 }
 
-template <class E, MEMFLAGS F, unsigned int N>
-bool OverflowTaskQueue<E, F, N>::try_push_to_taskqueue(E t) {
-  return taskqueue_t::push(t);
-}
 class TaskQueueSetSuper {
 protected:
   static int randomParkAndMiller(int* seed0);

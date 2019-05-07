@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2009, 2017, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2009, 2011, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -41,9 +41,7 @@ extern "C" {
 void ThrowException(JNIEnv *env, const char *exceptionName)
 {
     jclass exceptionClazz = env->FindClass(exceptionName);
-    if (exceptionClazz != NULL) {
-        env->ThrowNew(exceptionClazz, NULL);
-    }
+    env->ThrowNew(exceptionClazz, NULL);
 }
 
 /*
@@ -66,47 +64,27 @@ void FreeECParams(ECParams *ecparams, jboolean freeStruct)
         free(ecparams);
 }
 
-jbyteArray getEncodedBytes(JNIEnv *env, SECItem *hSECItem)
-{
-    SECItem *s = (SECItem *)hSECItem;
-
-    jbyteArray jEncodedBytes = env->NewByteArray(s->len);
-    if (jEncodedBytes == NULL) {
-        return NULL;
-    }
-    // Copy bytes from a native SECItem buffer to Java byte array
-    env->SetByteArrayRegion(jEncodedBytes, 0, s->len, (jbyte *)s->data);
-    if (env->ExceptionCheck()) { // should never happen
-        return NULL;
-    }
-    return jEncodedBytes;
-}
-
 /*
  * Class:     sun_security_ec_ECKeyPairGenerator
  * Method:    generateECKeyPair
- * Signature: (I[B[B)[[B
+ * Signature: (I[B[B)[J
  */
-JNIEXPORT jobjectArray
+JNIEXPORT jlongArray
 JNICALL Java_sun_security_ec_ECKeyPairGenerator_generateECKeyPair
   (JNIEnv *env, jclass clazz, jint keySize, jbyteArray encodedParams, jbyteArray seed)
 {
-    ECPrivateKey *privKey = NULL; // contains both public and private values
+    ECPrivateKey *privKey;      /* contains both public and private values */
     ECParams *ecparams = NULL;
     SECKEYECParams params_item;
     jint jSeedLength;
     jbyte* pSeedBuffer = NULL;
-    jobjectArray result = NULL;
-    jclass baCls = NULL;
-    jbyteArray jba;
+    jlongArray result = NULL;
+    jlong* resultElements = NULL;
 
     // Initialize the ECParams struct
     params_item.len = env->GetArrayLength(encodedParams);
     params_item.data =
         (unsigned char *) env->GetByteArrayElements(encodedParams, 0);
-    if (params_item.data == NULL) {
-        goto cleanup;
-    }
 
     // Fill a new ECParams using the supplied OID
     if (EC_DecodeParams(&params_item, &ecparams, 0) != SECSuccess) {
@@ -128,59 +106,58 @@ JNICALL Java_sun_security_ec_ECKeyPairGenerator_generateECKeyPair
     }
 
     jboolean isCopy;
-    baCls = env->FindClass("[B");
-    if (baCls == NULL) {
-        goto cleanup;
-    }
-    result = env->NewObjectArray(2, baCls, NULL);
-    if (result == NULL) {
-        goto cleanup;
-    }
-    jba = getEncodedBytes(env, &(privKey->privateValue));
-    if (jba == NULL) {
-        result = NULL;
-        goto cleanup;
-    }
-    env->SetObjectArrayElement(result, 0, jba); // big integer
-    if (env->ExceptionCheck()) { // should never happen
-        result = NULL;
-        goto cleanup;
-    }
+    result = env->NewLongArray(2);
+    resultElements = env->GetLongArrayElements(result, &isCopy);
 
-    jba = getEncodedBytes(env, &(privKey->publicValue));
-    if (jba == NULL) {
-        result = NULL;
-        goto cleanup;
-    }
-    env->SetObjectArrayElement(result, 1, jba); // encoded ec point
-    if (env->ExceptionCheck()) { // should never happen
-        result = NULL;
-        goto cleanup;
+    resultElements[0] = (jlong) &(privKey->privateValue); // private big integer
+    resultElements[1] = (jlong) &(privKey->publicValue); // encoded ec point
+
+    // If the array is a copy then we must write back our changes
+    if (isCopy == JNI_TRUE) {
+        env->ReleaseLongArrayElements(result, resultElements, 0);
     }
 
 cleanup:
     {
-        if (params_item.data) {
+        if (params_item.data)
             env->ReleaseByteArrayElements(encodedParams,
                 (jbyte *) params_item.data, JNI_ABORT);
-        }
-        if (ecparams) {
+
+        if (ecparams)
             FreeECParams(ecparams, true);
-        }
+
         if (privKey) {
             FreeECParams(&privKey->ecParams, false);
             SECITEM_FreeItem(&privKey->version, B_FALSE);
-            SECITEM_FreeItem(&privKey->privateValue, B_FALSE);
-            SECITEM_FreeItem(&privKey->publicValue, B_FALSE);
-            free(privKey);
+            // Don't free privKey->privateValue and privKey->publicValue
         }
 
-        if (pSeedBuffer) {
+        if (pSeedBuffer)
             delete [] pSeedBuffer;
-        }
     }
 
     return result;
+}
+
+/*
+ * Class:     sun_security_ec_ECKeyPairGenerator
+ * Method:    getEncodedBytes
+ * Signature: (J)[B
+ */
+JNIEXPORT jbyteArray
+JNICALL Java_sun_security_ec_ECKeyPairGenerator_getEncodedBytes
+  (JNIEnv *env, jclass clazz, jlong hSECItem)
+{
+    SECItem *s = (SECItem *)hSECItem;
+    jbyteArray jEncodedBytes = env->NewByteArray(s->len);
+
+    // Copy bytes from a native SECItem buffer to Java byte array
+    env->SetByteArrayRegion(jEncodedBytes, 0, s->len, (jbyte *)s->data);
+
+    // Use B_FALSE to free only the SECItem->data
+    SECITEM_FreeItem(s, B_FALSE);
+
+    return jEncodedBytes;
 }
 
 /*
@@ -190,7 +167,7 @@ cleanup:
  */
 JNIEXPORT jbyteArray
 JNICALL Java_sun_security_ec_ECDSASignature_signDigest
-  (JNIEnv *env, jclass clazz, jbyteArray digest, jbyteArray privateKey, jbyteArray encodedParams, jbyteArray seed, jint timing)
+  (JNIEnv *env, jclass clazz, jbyteArray digest, jbyteArray privateKey, jbyteArray encodedParams, jbyteArray seed)
 {
     jbyte* pDigestBuffer = NULL;
     jint jDigestLength = env->GetArrayLength(digest);
@@ -211,7 +188,6 @@ JNICALL Java_sun_security_ec_ECDSASignature_signDigest
     digest_item.len = jDigestLength;
 
     ECPrivateKey privKey;
-    privKey.privateValue.data = NULL;
 
     // Initialize the ECParams struct
     ECParams *ecparams = NULL;
@@ -219,9 +195,6 @@ JNICALL Java_sun_security_ec_ECDSASignature_signDigest
     params_item.len = env->GetArrayLength(encodedParams);
     params_item.data =
         (unsigned char *) env->GetByteArrayElements(encodedParams, 0);
-    if (params_item.data == NULL) {
-        goto cleanup;
-    }
 
     // Fill a new ECParams using the supplied OID
     if (EC_DecodeParams(&params_item, &ecparams, 0) != SECSuccess) {
@@ -235,9 +208,6 @@ JNICALL Java_sun_security_ec_ECDSASignature_signDigest
     privKey.privateValue.len = env->GetArrayLength(privateKey);
     privKey.privateValue.data =
         (unsigned char *) env->GetByteArrayElements(privateKey, 0);
-    if (privKey.privateValue.data == NULL) {
-        goto cleanup;
-    }
 
     // Prepare a buffer for the signature (twice the key length)
     pSignedDigestBuffer = new jbyte[ecparams->order.len * 2];
@@ -250,16 +220,13 @@ JNICALL Java_sun_security_ec_ECDSASignature_signDigest
 
     // Sign the digest (using the supplied seed)
     if (ECDSA_SignDigest(&privKey, &signature_item, &digest_item,
-        (unsigned char *) pSeedBuffer, jSeedLength, 0, timing) != SECSuccess) {
+        (unsigned char *) pSeedBuffer, jSeedLength, 0) != SECSuccess) {
         ThrowException(env, KEY_EXCEPTION);
         goto cleanup;
     }
 
     // Create new byte array
     temp = env->NewByteArray(signature_item.len);
-    if (temp == NULL) {
-        goto cleanup;
-    }
 
     // Copy data from native buffer
     env->SetByteArrayRegion(temp, 0, signature_item.len, pSignedDigestBuffer);
@@ -267,26 +234,21 @@ JNICALL Java_sun_security_ec_ECDSASignature_signDigest
 
 cleanup:
     {
-        if (params_item.data) {
+        if (params_item.data)
             env->ReleaseByteArrayElements(encodedParams,
                 (jbyte *) params_item.data, JNI_ABORT);
-        }
-        if (privKey.privateValue.data) {
-            env->ReleaseByteArrayElements(privateKey,
-                (jbyte *) privKey.privateValue.data, JNI_ABORT);
-        }
-        if (pDigestBuffer) {
+
+        if (pDigestBuffer)
             delete [] pDigestBuffer;
-        }
-        if (pSignedDigestBuffer) {
+
+        if (pSignedDigestBuffer)
             delete [] pSignedDigestBuffer;
-        }
-        if (pSeedBuffer) {
+
+        if (pSeedBuffer)
             delete [] pSeedBuffer;
-        }
-        if (ecparams) {
+
+        if (ecparams)
             FreeECParams(ecparams, true);
-        }
     }
 
     return jSignedDigest;
@@ -332,9 +294,6 @@ JNICALL Java_sun_security_ec_ECDSASignature_verifySignedDigest
     params_item.len = env->GetArrayLength(encodedParams);
     params_item.data =
         (unsigned char *) env->GetByteArrayElements(encodedParams, 0);
-    if (params_item.data == NULL) {
-        goto cleanup;
-    }
 
     // Fill a new ECParams using the supplied OID
     if (EC_DecodeParams(&params_item, &ecparams, 0) != SECSuccess) {
@@ -387,37 +346,25 @@ JNICALL Java_sun_security_ec_ECDHKeyAgreement_deriveKey
   (JNIEnv *env, jclass clazz, jbyteArray privateKey, jbyteArray publicKey, jbyteArray encodedParams)
 {
     jbyteArray jSecret = NULL;
-    ECParams *ecparams = NULL;
-    SECItem privateValue_item;
-    privateValue_item.data = NULL;
-    SECItem publicValue_item;
-    publicValue_item.data = NULL;
-    SECKEYECParams params_item;
-    params_item.data = NULL;
 
     // Extract private key value
+    SECItem privateValue_item;
     privateValue_item.len = env->GetArrayLength(privateKey);
     privateValue_item.data =
             (unsigned char *) env->GetByteArrayElements(privateKey, 0);
-    if (privateValue_item.data == NULL) {
-        goto cleanup;
-    }
 
     // Extract public key value
+    SECItem publicValue_item;
     publicValue_item.len = env->GetArrayLength(publicKey);
     publicValue_item.data =
         (unsigned char *) env->GetByteArrayElements(publicKey, 0);
-    if (publicValue_item.data == NULL) {
-        goto cleanup;
-    }
 
     // Initialize the ECParams struct
+    ECParams *ecparams = NULL;
+    SECKEYECParams params_item;
     params_item.len = env->GetArrayLength(encodedParams);
     params_item.data =
         (unsigned char *) env->GetByteArrayElements(encodedParams, 0);
-    if (params_item.data == NULL) {
-        goto cleanup;
-    }
 
     // Fill a new ECParams using the supplied OID
     if (EC_DecodeParams(&params_item, &ecparams, 0) != SECSuccess) {
@@ -439,9 +386,6 @@ JNICALL Java_sun_security_ec_ECDHKeyAgreement_deriveKey
 
     // Create new byte array
     jSecret = env->NewByteArray(secret_item.len);
-    if (jSecret == NULL) {
-        goto cleanup;
-    }
 
     // Copy bytes from the SECItem buffer to a Java byte array
     env->SetByteArrayRegion(jSecret, 0, secret_item.len,

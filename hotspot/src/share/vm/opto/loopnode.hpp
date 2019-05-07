@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 1998, 2015, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 1998, 2013, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -403,9 +403,6 @@ public:
   // encountered.
   void allpaths_check_safepts(VectorSet &visited, Node_List &stack);
 
-  // Remove safepoints from loop. Optionally keeping one.
-  void remove_safepoints(PhaseIdealLoop* phase, bool keep_one);
-
   // Convert to counted loops where possible
   void counted_loop( PhaseIdealLoop *phase );
 
@@ -605,8 +602,6 @@ class PhaseIdealLoop : public PhaseTransform {
     return ctrl;
   }
 
-  bool cast_incr_before_loop(Node* incr, Node* ctrl, Node* loop);
-
 public:
   bool has_node( Node* n ) const {
     guarantee(n != NULL, "No Node.");
@@ -660,18 +655,13 @@ public:
   }
 
 private:
-  Node *get_ctrl_no_update_helper(Node *i) const {
-    assert(has_ctrl(i), "should be control, not loop");
-    return (Node*)(((intptr_t)_nodes[i->_idx]) & ~1);
-  }
-
-  Node *get_ctrl_no_update(Node *i) const {
+  Node *get_ctrl_no_update( Node *i ) const {
     assert( has_ctrl(i), "" );
-    Node *n = get_ctrl_no_update_helper(i);
+    Node *n = (Node*)(((intptr_t)_nodes[i->_idx]) & ~1);
     if (!n->in(0)) {
       // Skip dead CFG nodes
       do {
-        n = get_ctrl_no_update_helper(n);
+        n = (Node*)(((intptr_t)_nodes[n->_idx]) & ~1);
       } while (!n->in(0));
       n = find_non_split_ctrl(n);
     }
@@ -693,15 +683,22 @@ private:
   // from old_node to new_node to support the lazy update.  Reference
   // replaces loop reference, since that is not needed for dead node.
 public:
-  void lazy_update(Node *old_node, Node *new_node) {
-    assert(old_node != new_node, "no cycles please");
-    // Re-use the side array slot for this node to provide the
-    // forwarding pointer.
-    _nodes.map(old_node->_idx, (Node*)((intptr_t)new_node + 1));
+  void lazy_update( Node *old_node, Node *new_node ) {
+    assert( old_node != new_node, "no cycles please" );
+    //old_node->set_req( 1, new_node /*NO DU INFO*/ );
+    // Nodes always have DU info now, so re-use the side array slot
+    // for this node to provide the forwarding pointer.
+    _nodes.map( old_node->_idx, (Node*)((intptr_t)new_node + 1) );
   }
-  void lazy_replace(Node *old_node, Node *new_node) {
-    _igvn.replace_node(old_node, new_node);
-    lazy_update(old_node, new_node);
+  void lazy_replace( Node *old_node, Node *new_node ) {
+    _igvn.replace_node( old_node, new_node );
+    lazy_update( old_node, new_node );
+  }
+  void lazy_replace_proj( Node *old_node, Node *new_node ) {
+    assert( old_node->req() == 1, "use this for Projs" );
+    _igvn.hash_delete(old_node); // Must hash-delete before hacking edges
+    old_node->add_req( NULL );
+    lazy_replace( old_node, new_node );
   }
 
 private:
@@ -905,8 +902,8 @@ public:
   // Construct a range check for a predicate if
   BoolNode* rc_predicate(IdealLoopTree *loop, Node* ctrl,
                          int scale, Node* offset,
-                         Node* init, Node* limit, jint stride,
-                         Node* range, bool upper, bool &overflow);
+                         Node* init, Node* limit, Node* stride,
+                         Node* range, bool upper);
 
   // Implementation of the loop predication to promote checks outside the loop
   bool loop_predication_impl(IdealLoopTree *loop);

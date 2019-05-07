@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 1997, 2014, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 1997, 2013, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -121,9 +121,34 @@ public class Collections {
      *
      * <p>The specified list must be modifiable, but need not be resizable.
      *
-     * @implNote
-     * This implementation defers to the {@link List#sort(Comparator)}
-     * method using the specified list and a {@code null} comparator.
+     * <p>Implementation note: This implementation is a stable, adaptive,
+     * iterative mergesort that requires far fewer than n lg(n) comparisons
+     * when the input array is partially sorted, while offering the
+     * performance of a traditional mergesort when the input array is
+     * randomly ordered.  If the input array is nearly sorted, the
+     * implementation requires approximately n comparisons.  Temporary
+     * storage requirements vary from a small constant for nearly sorted
+     * input arrays to n/2 object references for randomly ordered input
+     * arrays.
+     *
+     * <p>The implementation takes equal advantage of ascending and
+     * descending order in its input array, and can take advantage of
+     * ascending and descending order in different parts of the same
+     * input array.  It is well-suited to merging two or more sorted arrays:
+     * simply concatenate the arrays and sort the resulting array.
+     *
+     * <p>The implementation was adapted from Tim Peters's list sort for Python
+     * (<a href="http://svn.python.org/projects/python/trunk/Objects/listsort.txt">
+     * TimSort</a>).  It uses techniques from Peter McIlroy's "Optimistic
+     * Sorting and Information Theoretic Complexity", in Proceedings of the
+     * Fourth Annual ACM-SIAM Symposium on Discrete Algorithms, pp 467-474,
+     * January 1993.
+     *
+     * <p>This implementation dumps the specified list into an array, sorts
+     * the array, and iterates over the list resetting each element
+     * from the corresponding position in the array.  This avoids the
+     * n<sup>2</sup> log(n) performance that would result from attempting
+     * to sort a linked list in place.
      *
      * @param  <T> the class of the objects in the list
      * @param  list the list to be sorted.
@@ -134,11 +159,16 @@ public class Collections {
      * @throws IllegalArgumentException (optional) if the implementation
      *         detects that the natural ordering of the list elements is
      *         found to violate the {@link Comparable} contract
-     * @see List#sort(Comparator)
      */
     @SuppressWarnings("unchecked")
     public static <T extends Comparable<? super T>> void sort(List<T> list) {
-        list.sort(null);
+        Object[] a = list.toArray();
+        Arrays.sort(a);
+        ListIterator<T> i = list.listIterator();
+        for (int j=0; j<a.length; j++) {
+            i.next();
+            i.set((T)a[j]);
+        }
     }
 
     /**
@@ -153,9 +183,34 @@ public class Collections {
      *
      * <p>The specified list must be modifiable, but need not be resizable.
      *
-     * @implNote
-     * This implementation defers to the {@link List#sort(Comparator)}
-     * method using the specified list and comparator.
+     * <p>Implementation note: This implementation is a stable, adaptive,
+     * iterative mergesort that requires far fewer than n lg(n) comparisons
+     * when the input array is partially sorted, while offering the
+     * performance of a traditional mergesort when the input array is
+     * randomly ordered.  If the input array is nearly sorted, the
+     * implementation requires approximately n comparisons.  Temporary
+     * storage requirements vary from a small constant for nearly sorted
+     * input arrays to n/2 object references for randomly ordered input
+     * arrays.
+     *
+     * <p>The implementation takes equal advantage of ascending and
+     * descending order in its input array, and can take advantage of
+     * ascending and descending order in different parts of the same
+     * input array.  It is well-suited to merging two or more sorted arrays:
+     * simply concatenate the arrays and sort the resulting array.
+     *
+     * <p>The implementation was adapted from Tim Peters's list sort for Python
+     * (<a href="http://svn.python.org/projects/python/trunk/Objects/listsort.txt">
+     * TimSort</a>).  It uses techniques from Peter McIlroy's "Optimistic
+     * Sorting and Information Theoretic Complexity", in Proceedings of the
+     * Fourth Annual ACM-SIAM Symposium on Discrete Algorithms, pp 467-474,
+     * January 1993.
+     *
+     * <p>This implementation dumps the specified list into an array, sorts
+     * the array, and iterates over the list resetting each element
+     * from the corresponding position in the array.  This avoids the
+     * n<sup>2</sup> log(n) performance that would result from attempting
+     * to sort a linked list in place.
      *
      * @param  <T> the class of the objects in the list
      * @param  list the list to be sorted.
@@ -168,11 +223,16 @@ public class Collections {
      *         list-iterator does not support the {@code set} operation.
      * @throws IllegalArgumentException (optional) if the comparator is
      *         found to violate the {@link Comparator} contract
-     * @see List#sort(Comparator)
      */
     @SuppressWarnings({"unchecked", "rawtypes"})
     public static <T> void sort(List<T> list, Comparator<? super T> c) {
-        list.sort(c);
+        Object[] a = list.toArray();
+        Arrays.sort(a, (Comparator)c);
+        ListIterator<T> i = list.listIterator();
+        for (int j=0; j<a.length; j++) {
+            i.next();
+            i.set((T)a[j]);
+        }
     }
 
 
@@ -1466,9 +1526,9 @@ public class Collections {
             throw new UnsupportedOperationException();
         }
 
-        private transient Set<K> keySet;
-        private transient Set<Map.Entry<K,V>> entrySet;
-        private transient Collection<V> values;
+        private transient Set<K> keySet = null;
+        private transient Set<Map.Entry<K,V>> entrySet = null;
+        private transient Collection<V> values = null;
 
         public Set<K> keySet() {
             if (keySet==null)
@@ -2342,7 +2402,7 @@ public class Collections {
 
         public NavigableSet<E> tailSet(E fromElement, boolean inclusive) {
             synchronized (mutex) {
-                return new SynchronizedNavigableSet<>(ns.tailSet(fromElement, inclusive), mutex);
+                return new SynchronizedNavigableSet<>(ns.tailSet(fromElement, inclusive));
             }
         }
     }
@@ -2597,9 +2657,9 @@ public class Collections {
             synchronized (mutex) {m.clear();}
         }
 
-        private transient Set<K> keySet;
-        private transient Set<Map.Entry<K,V>> entrySet;
-        private transient Collection<V> values;
+        private transient Set<K> keySet = null;
+        private transient Set<Map.Entry<K,V>> entrySet = null;
+        private transient Collection<V> values = null;
 
         public Set<K> keySet() {
             synchronized (mutex) {
@@ -3031,11 +3091,9 @@ public class Collections {
         final Collection<E> c;
         final Class<E> type;
 
-        @SuppressWarnings("unchecked")
-        E typeCheck(Object o) {
+        void typeCheck(Object o) {
             if (o != null && !type.isInstance(o))
                 throw new ClassCastException(badElementMsg(o));
-            return (E) o;
         }
 
         private String badElementMsg(Object o) {
@@ -3044,8 +3102,10 @@ public class Collections {
         }
 
         CheckedCollection(Collection<E> c, Class<E> type) {
-            this.c = Objects.requireNonNull(c, "c");
-            this.type = Objects.requireNonNull(type, "type");
+            if (c==null || type == null)
+                throw new NullPointerException();
+            this.c = c;
+            this.type = type;
         }
 
         public int size()                 { return c.size(); }
@@ -3077,9 +3137,12 @@ public class Collections {
                 public void remove()     {        it.remove(); }};
         }
 
-        public boolean add(E e)          { return c.add(typeCheck(e)); }
+        public boolean add(E e) {
+            typeCheck(e);
+            return c.add(e);
+        }
 
-        private E[] zeroLengthElementArray; // Lazily initialized
+        private E[] zeroLengthElementArray = null; // Lazily initialized
 
         private E[] zeroLengthElementArray() {
             return zeroLengthElementArray != null ? zeroLengthElementArray :
@@ -3088,7 +3151,7 @@ public class Collections {
 
         @SuppressWarnings("unchecked")
         Collection<E> checkedCopyOf(Collection<? extends E> coll) {
-            Object[] a;
+            Object[] a = null;
             try {
                 E[] z = zeroLengthElementArray();
                 a = coll.toArray(z);
@@ -3184,7 +3247,11 @@ public class Collections {
         public E peek()                 {return queue.peek();}
         public E poll()                 {return queue.poll();}
         public E remove()               {return queue.remove();}
-        public boolean offer(E e)       {return queue.offer(typeCheck(e));}
+
+        public boolean offer(E e) {
+            typeCheck(e);
+            return add(e);
+        }
     }
 
     /**
@@ -3433,11 +3500,13 @@ public class Collections {
         public int lastIndexOf(Object o) { return list.lastIndexOf(o); }
 
         public E set(int index, E element) {
-            return list.set(index, typeCheck(element));
+            typeCheck(element);
+            return list.set(index, element);
         }
 
         public void add(int index, E element) {
-            list.add(index, typeCheck(element));
+            typeCheck(element);
+            list.add(index, element);
         }
 
         public boolean addAll(int index, Collection<? extends E> c) {
@@ -3458,11 +3527,13 @@ public class Collections {
                 public void remove()         {        i.remove(); }
 
                 public void set(E e) {
-                    i.set(typeCheck(e));
+                    typeCheck(e);
+                    i.set(e);
                 }
 
                 public void add(E e) {
-                    i.add(typeCheck(e));
+                    typeCheck(e);
+                    i.add(e);
                 }
 
                 @Override
@@ -3476,20 +3547,10 @@ public class Collections {
             return new CheckedList<>(list.subList(fromIndex, toIndex), type);
         }
 
-        /**
-         * {@inheritDoc}
-         *
-         * @throws ClassCastException if the class of an element returned by the
-         *         operator prevents it from being added to this collection. The
-         *         exception may be thrown after some elements of the list have
-         *         already been replaced.
-         */
         @Override
         public void replaceAll(UnaryOperator<E> operator) {
-            Objects.requireNonNull(operator);
-            list.replaceAll(e -> typeCheck(operator.apply(e)));
+            list.replaceAll(operator);
         }
-
         @Override
         public void sort(Comparator<? super E> c) {
             list.sort(c);
@@ -3642,7 +3703,7 @@ public class Collections {
                 m.put(e.getKey(), e.getValue());
         }
 
-        private transient Set<Map.Entry<K,V>> entrySet;
+        private transient Set<Map.Entry<K,V>> entrySet = null;
 
         public Set<Map.Entry<K,V>> entrySet() {
             if (entrySet==null)
@@ -4403,12 +4464,10 @@ public class Collections {
      * <pre>
      *     List&lt;String&gt; s = Collections.emptyList();
      * </pre>
-     *
-     * @implNote
-     * Implementations of this method need not create a separate <tt>List</tt>
-     * object for each call.   Using this method is likely to have comparable
-     * cost to using the like-named field.  (Unlike this method, the field does
-     * not provide type safety.)
+     * Implementation note:  Implementations of this method need not
+     * create a separate <tt>List</tt> object for each call.   Using this
+     * method is likely to have comparable cost to using the like-named
+     * field.  (Unlike this method, the field does not provide type safety.)
      *
      * @param <T> type of elements, if there were any, in the list
      * @return an empty immutable list
@@ -4876,9 +4935,9 @@ public class Collections {
         public boolean containsValue(Object value)       {return eq(value, v);}
         public V get(Object key)              {return (eq(key, k) ? v : null);}
 
-        private transient Set<K> keySet;
-        private transient Set<Map.Entry<K,V>> entrySet;
-        private transient Collection<V> values;
+        private transient Set<K> keySet = null;
+        private transient Set<Map.Entry<K,V>> entrySet = null;
+        private transient Collection<V> values = null;
 
         public Set<K> keySet() {
             if (keySet==null)

@@ -35,9 +35,6 @@
 #ifdef TARGET_ARCH_arm
 # include "c2_globals_arm.hpp"
 #endif
-#ifdef TARGET_ARCH_ppc
-# include "c2_globals_ppc.hpp"
-#endif
 #ifdef TARGET_OS_FAMILY_linux
 # include "c2_globals_linux.hpp"
 #endif
@@ -46,9 +43,6 @@
 #endif
 #ifdef TARGET_OS_FAMILY_windows
 # include "c2_globals_windows.hpp"
-#endif
-#ifdef TARGET_OS_FAMILY_aix
-# include "c2_globals_aix.hpp"
 #endif
 #ifdef TARGET_OS_FAMILY_bsd
 # include "c2_globals_bsd.hpp"
@@ -205,9 +199,6 @@
   notproduct(bool, TraceProfileTripCount, false,                            \
           "Trace profile loop trip count information")                      \
                                                                             \
-  product(bool, UseCountedLoopSafepoints, false,                            \
-          "Force counted loops to keep a safepoint")                        \
-                                                                            \
   product(bool, UseLoopPredicate, true,                                     \
           "Generate a predicate to select fast/slow loop versions")         \
                                                                             \
@@ -232,8 +223,7 @@
   diagnostic(bool, UnrollLimitCheck, true,                                  \
           "Additional overflow checks during loop unroll")                  \
                                                                             \
-  /* OptimizeFill not yet supported on PowerPC. */                          \
-  product(bool, OptimizeFill, true PPC64_ONLY(&& false),                    \
+  product(bool, OptimizeFill, true,                                         \
           "convert fill/copy loops into intrinsic")                         \
                                                                             \
   develop(bool, TraceOptimizeFill, false,                                   \
@@ -452,16 +442,13 @@
   diagnostic(bool, PrintPreciseBiasedLockingStatistics, false,              \
           "Print per-lock-site statistics of biased locking in JVM")        \
                                                                             \
-  diagnostic(bool, PrintPreciseRTMLockingStatistics, false,                 \
-          "Print per-lock-site statistics of rtm locking in JVM")           \
-                                                                            \
   notproduct(bool, PrintEliminateLocks, false,                              \
           "Print out when locks are eliminated")                            \
                                                                             \
-  product(bool, EliminateAutoBox, true,                                     \
+  product(bool, EliminateAutoBox, false,                                    \
           "Control optimizations for autobox elimination")                  \
                                                                             \
-  diagnostic(bool, UseImplicitStableValues, true,                           \
+  experimental(bool, UseImplicitStableValues, false,                        \
           "Mark well-known stable fields as such (e.g. String.value)")      \
                                                                             \
   product(intx, AutoBoxCacheMax, 128,                                       \
@@ -470,14 +457,8 @@
   experimental(bool, AggressiveUnboxing, false,                             \
           "Control optimizations for aggressive boxing elimination")        \
                                                                             \
-  develop(bool, TracePostallocExpand, false, "Trace expanding nodes after"  \
-          " register allocation.")                                          \
-                                                                            \
   product(bool, DoEscapeAnalysis, true,                                     \
           "Perform escape analysis")                                        \
-                                                                            \
-  product(double, EscapeAnalysisTimeout, 20. DEBUG_ONLY(+40.),              \
-          "Abort EA when it reaches time limit (in sec)")                   \
                                                                             \
   develop(bool, ExitEscapeAnalysisOnTimeout, true,                          \
           "Exit or throw assert in EA when it reaches time limit")          \
@@ -650,43 +631,20 @@
   develop(bool, AlwaysIncrementalInline, false,                             \
           "do all inlining incrementally")                                  \
                                                                             \
-  product(intx, LiveNodeCountInliningCutoff, 40000,                         \
+  product(intx, LiveNodeCountInliningCutoff, 20000,                         \
           "max number of live nodes in a method")                           \
                                                                             \
   diagnostic(bool, OptimizeExpensiveOps, true,                              \
           "Find best control for expensive operations")                     \
                                                                             \
-  product(bool, UseMathExactIntrinsics, true,                               \
+  experimental(bool, UseMathExactIntrinsics, false,                         \
           "Enables intrinsification of various java.lang.Math functions")   \
                                                                             \
-  product(bool, UseMultiplyToLenIntrinsic, false,                           \
-          "Enables intrinsification of BigInteger.multiplyToLen()")         \
+  experimental(bool, ReplaceInParentMaps, false,                            \
+          "Propagate type improvements in callers of inlinee if possible")  \
                                                                             \
-  product(bool, UseSquareToLenIntrinsic, false,                             \
-          "Enables intrinsification of BigInteger.squareToLen()")           \
-                                                                            \
-  product(bool, UseMulAddIntrinsic, false,                                  \
-          "Enables intrinsification of BigInteger.mulAdd()")                \
-                                                                            \
-  product(bool, UseMontgomeryMultiplyIntrinsic, false,                      \
-          "Enables intrinsification of BigInteger.montgomeryMultiply()")    \
-                                                                            \
-  product(bool, UseMontgomerySquareIntrinsic, false,                        \
-          "Enables intrinsification of BigInteger.montgomerySquare()")      \
-                                                                            \
-  product(bool, UseTypeSpeculation, true,                                   \
-          "Speculatively propagate types from profiles")                    \
-                                                                            \
-  diagnostic(bool, UseInlineDepthForSpeculativeTypes, true,                 \
-          "Carry inline depth of profile point with speculative type "      \
-          "and give priority to profiling from lower inline depth")         \
-                                                                            \
-  product_pd(bool, TrapBasedRangeChecks,                                    \
-          "Generate code for range checks that uses a cmp and trap "        \
-          "instruction raising SIGTRAP. Used on PPC64.")                    \
-                                                                            \
-  develop(bool, RenumberLiveNodes, true,                                    \
-          "Renumber live nodes")                                            \
+  experimental(bool, UseTypeSpeculation, false,                             \
+          "Speculatively propagate types from profiles")
 
 C2_FLAGS(DECLARE_DEVELOPER_FLAG, DECLARE_PD_DEVELOPER_FLAG, DECLARE_PRODUCT_FLAG, DECLARE_PD_PRODUCT_FLAG, DECLARE_DIAGNOSTIC_FLAG, DECLARE_EXPERIMENTAL_FLAG, DECLARE_NOTPRODUCT_FLAG)
 

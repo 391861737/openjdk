@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2005, 2016, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2005, 2013, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -343,7 +343,7 @@ void LIRGenerator::do_StoreIndexed(StoreIndexed* x) {
     length.set_instruction(x->length());
     length.load_item();
   }
-  if (needs_store_check || x->check_boolean()) {
+  if (needs_store_check) {
     value.load_item();
   } else {
     value.load_for_store(x->elt_type());
@@ -388,8 +388,7 @@ void LIRGenerator::do_StoreIndexed(StoreIndexed* x) {
     pre_barrier(LIR_OprFact::address(array_addr), LIR_OprFact::illegalOpr /* pre_val */,
                 true /* do_load */, false /* patch */, NULL);
   }
-  LIR_Opr result = maybe_mask_boolean(x, array.result(), value.result(), null_check_info);
-  __ move(result, array_addr, null_check_info);
+  __ move(value.result(), array_addr, null_check_info);
   if (obj_store) {
     // Precise card mark
     post_barrier(LIR_OprFact::address(array_addr), value.result());
@@ -873,19 +872,21 @@ void LIRGenerator::do_Convert(Convert* x) {
 
 
 void LIRGenerator::do_NewInstance(NewInstance* x) {
-  print_if_not_loaded(x);
-
   // This instruction can be deoptimized in the slow path : use
   // O0 as result register.
   const LIR_Opr reg = result_register_for(x->type());
-
+#ifndef PRODUCT
+  if (PrintNotLoaded && !x->klass()->is_loaded()) {
+    tty->print_cr("   ###class not loaded at new bci %d", x->printable_bci());
+  }
+#endif
   CodeEmitInfo* info = state_for(x, x->state());
   LIR_Opr tmp1 = FrameMap::G1_oop_opr;
   LIR_Opr tmp2 = FrameMap::G3_oop_opr;
   LIR_Opr tmp3 = FrameMap::G4_oop_opr;
   LIR_Opr tmp4 = FrameMap::O1_oop_opr;
   LIR_Opr klass_reg = FrameMap::G5_metadata_opr;
-  new_instance(reg, x->klass(), x->is_unresolved(), tmp1, tmp2, tmp3, tmp4, klass_reg, info);
+  new_instance(reg, x->klass(), tmp1, tmp2, tmp3, tmp4, klass_reg, info);
   LIR_Opr result = rlock_result(x);
   __ move(reg, result);
 }
@@ -1023,16 +1024,11 @@ void LIRGenerator::do_CheckCast(CheckCast* x) {
   obj.load_item();
   LIR_Opr out_reg = rlock_result(x);
   CodeStub* stub;
-  CodeEmitInfo* info_for_exception =
-      (x->needs_exception_state() ? state_for(x) :
-                                    state_for(x, x->state_before(), true /*ignore_xhandler*/));
+  CodeEmitInfo* info_for_exception = state_for(x);
 
   if (x->is_incompatible_class_change_check()) {
     assert(patching_info == NULL, "can't patch this");
     stub = new SimpleExceptionStub(Runtime1::throw_incompatible_class_change_error_id, LIR_OprFact::illegalOpr, info_for_exception);
-  } else if (x->is_invokespecial_receiver_check()) {
-    assert(patching_info == NULL, "can't patch this");
-    stub = new DeoptimizeStub(info_for_exception);
   } else {
     stub = new SimpleExceptionStub(Runtime1::throw_class_cast_exception_id, obj.result(), info_for_exception);
   }
@@ -1225,8 +1221,10 @@ void LIRGenerator::do_UnsafeGetAndSetObject(UnsafeGetAndSetObject* x) {
   bool is_obj = (type == T_ARRAY || type == T_OBJECT);
   LIR_Opr offset = off.result();
 
-  // Because we want a 2-arg form of xchg
-  __ move(data, dst);
+  if (data != dst) {
+    __ move(data, dst);
+    data = dst;
+  }
 
   assert (!x->is_add() && (type == T_INT || (is_obj LP64_ONLY(&& UseCompressedOops))), "unexpected type");
   LIR_Address* addr;
@@ -1256,7 +1254,7 @@ void LIRGenerator::do_UnsafeGetAndSetObject(UnsafeGetAndSetObject* x) {
     pre_barrier(ptr, LIR_OprFact::illegalOpr /* pre_val */,
                 true /* do_load */, false /* patch */, NULL);
   }
-  __ xchg(LIR_OprFact::address(addr), dst, dst, tmp);
+  __ xchg(LIR_OprFact::address(addr), data, dst, tmp);
   if (is_obj) {
     // Seems to be a precise address
     post_barrier(ptr, data);

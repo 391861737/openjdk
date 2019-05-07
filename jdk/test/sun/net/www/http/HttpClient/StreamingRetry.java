@@ -23,8 +23,8 @@
 
 /*
  * @test
- * @bug 6672144 8050983
- * @summary Do not retry failed request with a streaming body.
+ * @bug 6672144
+ * @summary HttpURLConnection.getInputStream sends POST request after failed chunked send
  */
 
 import java.net.HttpURLConnection;
@@ -33,41 +33,31 @@ import java.net.URL;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
-import static java.lang.System.out;
 
 public class StreamingRetry implements Runnable {
     static final int ACCEPT_TIMEOUT = 20 * 1000; // 20 seconds
-    volatile ServerSocket ss;
+    ServerSocket ss;
 
-    public static void main(String[] args) throws Exception {
+    public static void main(String[] args) throws IOException {
         (new StreamingRetry()).instanceMain();
     }
 
-    void instanceMain() throws Exception {
-        out.println("Test with default method");
-        test(null);
-        out.println("Test with POST method");
-        test("POST");
-        out.println("Test with PUT method");
-        test("PUT");
-
+    void instanceMain() throws IOException {
+        test();
         if (failed > 0) throw new RuntimeException("Some tests failed");
     }
 
-    void test(String method) throws Exception {
+    void test() throws IOException {
         ss = new ServerSocket(0);
         ss.setSoTimeout(ACCEPT_TIMEOUT);
         int port = ss.getLocalPort();
 
-        Thread otherThread = new Thread(this);
-        otherThread.start();
+        (new Thread(this)).start();
 
         try {
             URL url = new URL("http://localhost:" + port + "/");
             HttpURLConnection uc = (HttpURLConnection) url.openConnection();
             uc.setDoOutput(true);
-            if (method != null)
-                uc.setRequestMethod(method);
             uc.setChunkedStreamingMode(4096);
             OutputStream os = uc.getOutputStream();
             os.write("Hello there".getBytes());
@@ -78,7 +68,6 @@ public class StreamingRetry implements Runnable {
             //expected.printStackTrace();
         } finally {
             ss.close();
-            otherThread.join();
         }
     }
 
@@ -90,7 +79,7 @@ public class StreamingRetry implements Runnable {
             ss.close();
             fail("The server shouldn't accept a second connection");
          } catch (IOException e) {
-            //OK, the client will close the server socket if successful
+            //OK, the clien will close the server socket if successfull
         }
     }
 

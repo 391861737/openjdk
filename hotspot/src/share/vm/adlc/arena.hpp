@@ -67,11 +67,14 @@ class AllStatic {
 
 
 //------------------------------Chunk------------------------------------------
+
+enum class m_size_t : size_t {};
+
 // Linked list of raw memory chunks
 class Chunk: public CHeapObj {
  public:
-  void* operator new(size_t size, size_t length) throw();
-  void  operator delete(void* p, size_t length);
+  void* operator new(size_t size, m_size_t length) throw();
+  void  operator delete(void* p, m_size_t length);
   Chunk(size_t length);
 
   enum {

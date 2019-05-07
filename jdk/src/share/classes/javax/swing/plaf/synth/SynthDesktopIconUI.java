@@ -142,7 +142,9 @@ public class SynthDesktopIconUI extends BasicDesktopIconUI
     }
 
     private SynthContext getContext(JComponent c, int state) {
-        return SynthContext.getContext(c, style, state);
+        Region region = SynthLookAndFeel.getRegion(c);
+        return SynthContext.getContext(SynthContext.class, c, region,
+                                       style, state);
     }
 
     private int getComponentState(JComponent c) {

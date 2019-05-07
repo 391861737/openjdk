@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2000, 2014, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2000, 2013, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -25,10 +25,10 @@
 
 package sun.awt.datatransfer;
 
+import java.awt.AWTError;
 import java.awt.EventQueue;
-import java.awt.Graphics;
 import java.awt.Image;
-import java.awt.Toolkit;
+import java.awt.Graphics;
 
 import java.awt.datatransfer.DataFlavor;
 import java.awt.datatransfer.FlavorMap;
@@ -77,7 +77,6 @@ import java.util.Comparator;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Iterator;
-import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.SortedMap;
@@ -87,7 +86,6 @@ import java.util.Stack;
 import java.util.TreeMap;
 import java.util.TreeSet;
 
-import sun.awt.ComponentFactory;
 import sun.util.logging.PlatformLogger;
 
 import sun.awt.AppContext;
@@ -138,6 +136,16 @@ import java.io.FilePermission;
  * @since 1.3.1
  */
 public abstract class DataTransferer {
+
+    /**
+     * Cached value of Class.forName("[C");
+     */
+    public static final Class charArrayClass;
+
+    /**
+     * Cached value of Class.forName("[B");
+     */
+    public static final Class byteArrayClass;
 
     /**
      * The <code>DataFlavor</code> representing plain text with Unicode
@@ -233,6 +241,15 @@ public abstract class DataTransferer {
     private static final PlatformLogger dtLog = PlatformLogger.getLogger("sun.awt.datatransfer.DataTransfer");
 
     static {
+        Class tCharArrayClass = null, tByteArrayClass = null;
+        try {
+            tCharArrayClass = Class.forName("[C");
+            tByteArrayClass = Class.forName("[B");
+        } catch (ClassNotFoundException cannotHappen) {
+        }
+        charArrayClass = tCharArrayClass;
+        byteArrayClass = tByteArrayClass;
+
         DataFlavor tPlainTextStringFlavor = null;
         try {
             tPlainTextStringFlavor = new DataFlavor
@@ -273,8 +290,63 @@ public abstract class DataTransferer {
      * that in a headless environment, there may be no DataTransferer instance;
      * instead, null will be returned.
      */
-    public static synchronized DataTransferer getInstance() {
-        return ((ComponentFactory) Toolkit.getDefaultToolkit()).getDataTransferer();
+    public static DataTransferer getInstance() {
+        synchronized (DataTransferer.class) {
+            if (transferer == null) {
+                final String name = SunToolkit.getDataTransfererClassName();
+                if (name != null) {
+                    PrivilegedAction<DataTransferer> action = new PrivilegedAction<DataTransferer>()
+                    {
+                      public DataTransferer run() {
+                          Class cls = null;
+                          Method method = null;
+                          DataTransferer ret = null;
+
+                          try {
+                              cls = Class.forName(name);
+                          } catch (ClassNotFoundException e) {
+                              ClassLoader cl = ClassLoader.
+                                  getSystemClassLoader();
+                              if (cl != null) {
+                                  try {
+                                      cls = cl.loadClass(name);
+                                  } catch (ClassNotFoundException ee) {
+                                      ee.printStackTrace();
+                                      throw new AWTError("DataTransferer not found: " + name);
+                                  }
+                              }
+                          }
+                          if (cls != null) {
+                              try {
+                                  method = cls.getDeclaredMethod("getInstanceImpl");
+                                  method.setAccessible(true);
+                              } catch (NoSuchMethodException e) {
+                                  e.printStackTrace();
+                                  throw new AWTError("Cannot instantiate DataTransferer: " + name);
+                              } catch (SecurityException e) {
+                                  e.printStackTrace();
+                                  throw new AWTError("Access is denied for DataTransferer: " + name);
+                              }
+                          }
+                          if (method != null) {
+                              try {
+                                  ret = (DataTransferer) method.invoke(null);
+                              } catch (InvocationTargetException e) {
+                                  e.printStackTrace();
+                                  throw new AWTError("Cannot instantiate DataTransferer: " + name);
+                              } catch (IllegalAccessException e) {
+                                  e.printStackTrace();
+                                  throw new AWTError("Cannot access DataTransferer: " + name);
+                              }
+                          }
+                          return ret;
+                      }
+                    };
+                    transferer = AccessController.doPrivileged(action);
+                }
+            }
+        }
+        return transferer;
     }
 
     /**
@@ -387,14 +459,14 @@ public abstract class DataTransferer {
         if (flavor.isRepresentationClassReader() ||
             String.class.equals(rep_class) ||
             flavor.isRepresentationClassCharBuffer() ||
-            char[].class.equals(rep_class))
+            DataTransferer.charArrayClass.equals(rep_class))
         {
             return true;
         }
 
         if (!(flavor.isRepresentationClassInputStream() ||
               flavor.isRepresentationClassByteBuffer() ||
-              byte[].class.equals(rep_class))) {
+              DataTransferer.byteArrayClass.equals(rep_class))) {
             return false;
         }
 
@@ -418,7 +490,8 @@ public abstract class DataTransferer {
 
         return (flavor.isRepresentationClassInputStream() ||
                 flavor.isRepresentationClassByteBuffer() ||
-                byte[].class.equals(flavor.getRepresentationClass()));
+                DataTransferer.byteArrayClass.
+                    equals(flavor.getRepresentationClass()));
     }
 
     /**
@@ -1170,7 +1243,7 @@ search:
                 format);
 
         // Source data is a char array. Convert to a String and recur.
-        } else if (char[].class.equals(flavor.getRepresentationClass())) {
+        } else if (charArrayClass.equals(flavor.getRepresentationClass())) {
             if (!(isFlavorCharsetTextType(flavor) && isTextFormat(format))) {
                 throw new IOException
                     ("cannot transfer non-text data as char array");
@@ -1201,7 +1274,7 @@ search:
         // Source data is a byte array. For arbitrary flavors, simply return
         // the array. For text flavors, decode back to a String and recur to
         // reencode according to the requested format.
-        } else if (byte[].class.equals(flavor.getRepresentationClass())) {
+        } else if (byteArrayClass.equals(flavor.getRepresentationClass())) {
             byte[] bytes = (byte[])obj;
 
             if (isFlavorCharsetTextType(flavor) && isTextFormat(format)) {
@@ -1295,15 +1368,6 @@ search:
         // bytes and dump them into a byte array. For text flavors, decode back
         // to a String and recur to reencode according to the requested format.
         } else if (flavor.isRepresentationClassInputStream()) {
-
-            // Workaround to JDK-8024061: Exception thrown when drag and drop
-            //      between two components is executed quickly.
-            // and JDK-8065098:  JColorChooser no longer supports drag and drop
-            //      between two JVM instances
-            if (!(obj instanceof InputStream)) {
-                return new byte[0];
-            }
-
             try (ByteArrayOutputStream bos = new ByteArrayOutputStream()) {
                 try (InputStream is = (InputStream)obj) {
                     boolean eof = false;
@@ -1587,7 +1651,7 @@ search:
 
             // Target data is a char array. Recur to obtain String and convert to
             // char array.
-        } else if (char[].class.equals(flavor.getRepresentationClass())) {
+        } else if (charArrayClass.equals(flavor.getRepresentationClass())) {
             if (!(isFlavorCharsetTextType(flavor) && isTextFormat(format))) {
                 throw new IOException
                           ("cannot transfer non-text data as char array");
@@ -1615,7 +1679,7 @@ search:
             // the raw bytes. For text flavors, convert to a String to strip
             // terminators and search-and-replace EOLN, then reencode according to
             // the requested flavor.
-        } else if (byte[].class.equals(flavor.getRepresentationClass())) {
+        } else if (byteArrayClass.equals(flavor.getRepresentationClass())) {
             if (isFlavorCharsetTextType(flavor) && isTextFormat(format)) {
                 theObject = translateBytesToString(
                     bytes, format, localeTransferable
@@ -1743,7 +1807,7 @@ search:
 
             theObject = constructFlavoredObject(reader, flavor, Reader.class);
             // Target data is a byte array
-        } else if (byte[].class.equals(flavor.getRepresentationClass())) {
+        } else if (byteArrayClass.equals(flavor.getRepresentationClass())) {
             if(isFlavorCharsetTextType(flavor) && isTextFormat(format)) {
                 theObject = translateBytesToString(inputStreamToByteArray(str), format, localeTransferable)
                         .getBytes(DataTransferer.getTextCharset(flavor));
@@ -2434,8 +2498,8 @@ search:
      * If there are no platform-specific mappings for this native, the method
      * returns an empty <code>List</code>.
      */
-    public LinkedHashSet<DataFlavor> getPlatformMappingsForNative(String nat) {
-       return new LinkedHashSet<>();
+    public List getPlatformMappingsForNative(String nat) {
+        return new ArrayList();
     }
 
     /**
@@ -2443,8 +2507,8 @@ search:
      * If there are no platform-specific mappings for this flavor, the method
      * returns an empty <code>List</code>.
      */
-    public LinkedHashSet<String> getPlatformMappingsForFlavor(DataFlavor df) {
-        return new LinkedHashSet<>();
+    public List getPlatformMappingsForFlavor(DataFlavor df) {
+        return new ArrayList();
     }
 
     /**
@@ -2793,7 +2857,7 @@ search:
                 HashMap decodedTextRepresentationsMap = new HashMap(4, 1.0f);
 
                 decodedTextRepresentationsMap.put
-                    (char[].class, Integer.valueOf(0));
+                    (DataTransferer.charArrayClass, Integer.valueOf(0));
                 decodedTextRepresentationsMap.put
                     (java.nio.CharBuffer.class, Integer.valueOf(1));
                 decodedTextRepresentationsMap.put
@@ -2809,7 +2873,7 @@ search:
                 HashMap encodedTextRepresentationsMap = new HashMap(3, 1.0f);
 
                 encodedTextRepresentationsMap.put
-                    (byte[].class, Integer.valueOf(0));
+                    (DataTransferer.byteArrayClass, Integer.valueOf(0));
                 encodedTextRepresentationsMap.put
                     (java.nio.ByteBuffer.class, Integer.valueOf(1));
                 encodedTextRepresentationsMap.put
@@ -2898,18 +2962,9 @@ search:
                     return comp;
                 }
             } else {
-                // First, prefer text types
-                if (flavor1.isFlavorTextType()) {
-                    return 1;
-                }
-
-                if (flavor2.isFlavorTextType()) {
-                    return -1;
-                }
-
-                // Next, prefer application types.
+                // First, prefer application types.
                 comp = compareIndices(primaryTypes, primaryType1, primaryType2,
-                        UNKNOWN_OBJECT_LOSES);
+                                      UNKNOWN_OBJECT_LOSES);
                 if (comp != 0) {
                     return comp;
                 }

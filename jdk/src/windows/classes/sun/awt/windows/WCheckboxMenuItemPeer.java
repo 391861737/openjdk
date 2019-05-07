@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 1996, 2014, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 1996, 2006, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -24,16 +24,14 @@
  */
 package sun.awt.windows;
 
-import java.awt.CheckboxMenuItem;
+import java.awt.*;
+import java.awt.peer.*;
 import java.awt.event.ItemEvent;
-import java.awt.peer.CheckboxMenuItemPeer;
 
-final class WCheckboxMenuItemPeer extends WMenuItemPeer
-        implements CheckboxMenuItemPeer {
+class WCheckboxMenuItemPeer extends WMenuItemPeer implements CheckboxMenuItemPeer {
 
     // CheckboxMenuItemPeer implementation
 
-    @Override
     public native void setState(boolean t);
 
     // Toolkit & peer internals
@@ -48,7 +46,6 @@ final class WCheckboxMenuItemPeer extends WMenuItemPeer
     public void handleAction(final boolean state) {
         final CheckboxMenuItem target = (CheckboxMenuItem)this.target;
         WToolkit.executeOnEventHandlerThread(target, new Runnable() {
-            @Override
             public void run() {
                 target.setState(state);
                 postEvent(new ItemEvent(target, ItemEvent.ITEM_STATE_CHANGED,

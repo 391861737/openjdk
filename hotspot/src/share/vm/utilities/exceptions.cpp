@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 1998, 2014, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 1998, 2013, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -35,7 +35,6 @@
 #include "utilities/events.hpp"
 #include "utilities/exceptions.hpp"
 
-PRAGMA_FORMAT_MUTE_WARNINGS_FOR_GCC
 
 // Implementation of ThreadShadow
 void check_ThreadShadow() {
@@ -85,13 +84,9 @@ bool Exceptions::special_exception(Thread* thread, const char* file, int line, H
 #endif // ASSERT
 
   if (thread->is_VM_thread()
-      || thread->is_Compiler_thread()
-      || DumpSharedSpaces ) {
+      || thread->is_Compiler_thread() ) {
     // We do not care what kind of exception we get for the vm-thread or a thread which
     // is compiling.  We just install a dummy exception object
-    //
-    // We also cannot throw a proper exception when dumping, because we cannot run
-    // Java bytecodes now. A dummy exception will suffice.
     thread->set_pending_exception(Universe::vm_exception(), file, line);
     return true;
   }
@@ -112,13 +107,9 @@ bool Exceptions::special_exception(Thread* thread, const char* file, int line, S
   }
 
   if (thread->is_VM_thread()
-      || thread->is_Compiler_thread()
-      || DumpSharedSpaces ) {
+      || thread->is_Compiler_thread() ) {
     // We do not care what kind of exception we get for the vm-thread or a thread which
     // is compiling.  We just install a dummy exception object
-    //
-    // We also cannot throw a proper exception when dumping, because we cannot run
-    // Java bytecodes now. A dummy exception will suffice.
     thread->set_pending_exception(Universe::vm_exception(), file, line);
     return true;
   }
@@ -240,12 +231,11 @@ void Exceptions::fthrow(Thread* thread, const char* file, int line, Symbol* h_na
   va_list ap;
   va_start(ap, format);
   char msg[max_msg_size];
-  vsnprintf(msg, max_msg_size, format, ap);
+  jvsnprintf(msg, max_msg_size, format, ap);
   msg[max_msg_size-1] = '\0';
   va_end(ap);
   _throw_msg(thread, file, line, h_name, msg);
 }
-
 
 // Creates an exception oop, calls the <init> method with the given signature.
 // and returns a Handle

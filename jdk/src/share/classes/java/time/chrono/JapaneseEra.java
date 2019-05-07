@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2012, 2017, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2012, 2013, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -73,13 +73,11 @@ import java.io.ObjectStreamException;
 import java.io.Serializable;
 import java.time.DateTimeException;
 import java.time.LocalDate;
-import java.time.format.TextStyle;
 import java.time.temporal.ChronoField;
 import java.time.temporal.TemporalField;
 import java.time.temporal.UnsupportedTemporalTypeException;
 import java.time.temporal.ValueRange;
 import java.util.Arrays;
-import java.util.Locale;
 import java.util.Objects;
 
 import sun.util.calendar.CalendarDate;
@@ -127,9 +125,9 @@ public final class JapaneseEra
      */
     public static final JapaneseEra HEISEI = new JapaneseEra(2, LocalDate.of(1989, 1, 8));
 
-    // The number of predefined JapaneseEra constants.
-    // There may be a supplemental era defined by the property.
-    private static final int N_ERA_CONSTANTS = HEISEI.getValue() + ERA_OFFSET;
+    // the number of defined JapaneseEra constants.
+    // There could be an extra era defined in its configuration.
+    private static final int N_ERA_CONSTANTS = HEISEI.getValue() + ERA_OFFSET + 1;
 
     /**
      * Serialization version.
@@ -150,7 +148,7 @@ public final class JapaneseEra
         for (int i = N_ERA_CONSTANTS; i < ERA_CONFIG.length; i++) {
             CalendarDate date = ERA_CONFIG[i].getSinceDate();
             LocalDate isoDate = LocalDate.of(date.getYear(), date.getMonth(), date.getDayOfMonth());
-            KNOWN_ERAS[i] = new JapaneseEra(i - ERA_OFFSET + 1, isoDate);
+            KNOWN_ERAS[i] = new JapaneseEra(i - ERA_OFFSET, isoDate);
         }
     };
 
@@ -197,7 +195,7 @@ public final class JapaneseEra
      * @throws DateTimeException if the value is invalid
      */
     public static JapaneseEra of(int japaneseEra) {
-        if (japaneseEra < MEIJI.eraValue || japaneseEra + ERA_OFFSET > KNOWN_ERAS.length) {
+        if (japaneseEra < MEIJI.eraValue || japaneseEra + ERA_OFFSET - 1 >= KNOWN_ERAS.length) {
             throw new DateTimeException("Invalid era: " + japaneseEra);
         }
         return KNOWN_ERAS[ordinal(japaneseEra)];
@@ -236,23 +234,6 @@ public final class JapaneseEra
      */
     public static JapaneseEra[] values() {
         return Arrays.copyOf(KNOWN_ERAS, KNOWN_ERAS.length);
-    }
-
-    /**
-     * {@inheritDoc}
-     *
-     * @param style {@inheritDoc}
-     * @param locale {@inheritDoc}
-     */
-    @Override
-    public String getDisplayName(TextStyle style, Locale locale) {
-        // If this JapaneseEra is a supplemental one, obtain the name from
-        // the era definition.
-        if (getValue() > N_ERA_CONSTANTS - ERA_OFFSET) {
-            Objects.requireNonNull(locale, "locale");
-            return style.asNormal() == TextStyle.NARROW ? getAbbreviation() : getName();
-        }
-        return Era.super.getDisplayName(style, locale);
     }
 
     //-----------------------------------------------------------------------
@@ -356,7 +337,11 @@ public final class JapaneseEra
 
     //-----------------------------------------------------------------------
     String getAbbreviation() {
-        return ERA_CONFIG[ordinal(getValue())].getAbbreviation();
+        int index = ordinal(getValue());
+        if (index == 0) {
+            return "";
+        }
+        return ERA_CONFIG[index].getAbbreviation();
     }
 
     String getName() {
@@ -372,7 +357,6 @@ public final class JapaneseEra
     /**
      * Defend against malicious streams.
      *
-     * @param s the stream to read
      * @throws InvalidObjectException always
      */
     private void readObject(ObjectInputStream s) throws InvalidObjectException {

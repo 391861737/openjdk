@@ -1,5 +1,5 @@
 #
-# Copyright (c) 2011, 2015, Oracle and/or its affiliates. All rights reserved.
+# Copyright (c) 2011, 2012, Oracle and/or its affiliates. All rights reserved.
 # DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
 #
 # This code is free software; you can redistribute it and/or modify it
@@ -48,12 +48,6 @@ AC_DEFUN([PLATFORM_EXTRACT_VARS_FROM_CPU],
       VAR_CPU_BITS=32
       VAR_CPU_ENDIAN=little
       ;;
-    aarch64)
-      VAR_CPU=aarch64
-      VAR_CPU_ARCH=aarch64
-      VAR_CPU_BITS=64
-      VAR_CPU_ENDIAN=little
-      ;;
     powerpc)
       VAR_CPU=ppc
       VAR_CPU_ARCH=ppc
@@ -65,12 +59,6 @@ AC_DEFUN([PLATFORM_EXTRACT_VARS_FROM_CPU],
       VAR_CPU_ARCH=ppc
       VAR_CPU_BITS=64
       VAR_CPU_ENDIAN=big
-      ;;
-    powerpc64le)
-      VAR_CPU=ppc64
-      VAR_CPU_ARCH=ppc
-      VAR_CPU_BITS=64
-      VAR_CPU_ENDIAN=little
       ;;
     s390)
       VAR_CPU=s390
@@ -90,7 +78,7 @@ AC_DEFUN([PLATFORM_EXTRACT_VARS_FROM_CPU],
       VAR_CPU_BITS=32
       VAR_CPU_ENDIAN=big
       ;;
-    sparcv9|sparc64)
+    sparcv9)
       VAR_CPU=sparcv9
       VAR_CPU_ARCH=sparc
       VAR_CPU_BITS=64
@@ -137,11 +125,6 @@ AC_DEFUN([PLATFORM_EXTRACT_VARS_FROM_OS],
       VAR_OS=windows
       VAR_OS_API=winapi
       VAR_OS_ENV=windows.msys
-      ;;
-    *aix*)
-      VAR_OS=aix
-      VAR_OS_API=posix
-      VAR_OS_ENV=aix
       ;;
     *)
       AC_MSG_ERROR([unsupported operating system $1])
@@ -371,8 +354,7 @@ AC_DEFUN([PLATFORM_SETUP_LEGACY_VARS],
 
   # ZERO_ARCHDEF is used to enable architecture-specific code
   case "${OPENJDK_TARGET_CPU}" in
-    ppc)     ZERO_ARCHDEF=PPC32 ;;
-    ppc64)   ZERO_ARCHDEF=PPC64 ;;
+    ppc*)    ZERO_ARCHDEF=PPC   ;;
     s390*)   ZERO_ARCHDEF=S390  ;;
     sparc*)  ZERO_ARCHDEF=SPARC ;;
     x86_64*) ZERO_ARCHDEF=AMD64 ;;
@@ -450,9 +432,9 @@ AC_DEFUN([PLATFORM_SET_COMPILER_TARGET_BITS_FLAGS],
   # keep track of these additions in ADDED_CFLAGS etc. These
   # will later be checked to make sure only controlled additions
   # have been made to CFLAGS etc.
-  ADDED_CFLAGS=" ${COMPILER_TARGET_BITS_FLAG}${OPENJDK_TARGET_CPU_BITS}"
-  ADDED_CXXFLAGS=" ${COMPILER_TARGET_BITS_FLAG}${OPENJDK_TARGET_CPU_BITS}"
-  ADDED_LDFLAGS=" ${COMPILER_TARGET_BITS_FLAG}${OPENJDK_TARGET_CPU_BITS}"
+  ADDED_CFLAGS=" -m${OPENJDK_TARGET_CPU_BITS}"
+  ADDED_CXXFLAGS=" -m${OPENJDK_TARGET_CPU_BITS}"
+  ADDED_LDFLAGS=" -m${OPENJDK_TARGET_CPU_BITS}"
 
   CFLAGS="${CFLAGS}${ADDED_CFLAGS}"
   CXXFLAGS="${CXXFLAGS}${ADDED_CXXFLAGS}"
@@ -472,9 +454,8 @@ AC_DEFUN_ONCE([PLATFORM_SETUP_OPENJDK_TARGET_BITS],
   # is made at runtime.)
   #
 
-  if test "x$OPENJDK_TARGET_OS" = xsolaris || test "x$OPENJDK_TARGET_OS" = xaix; then
-    # Always specify -m flag on Solaris
-    # And -q on AIX because otherwise the compiler produces 32-bit objects by default
+  if test "x$OPENJDK_TARGET_OS" = xsolaris; then
+    # Always specify -m flags on Solaris
     PLATFORM_SET_COMPILER_TARGET_BITS_FLAGS
   elif test "x$COMPILE_TYPE" = xreduced; then
     if test "x$OPENJDK_TARGET_OS" != xwindows; then
@@ -496,34 +477,19 @@ AC_DEFUN_ONCE([PLATFORM_SETUP_OPENJDK_TARGET_BITS],
 
   AC_CHECK_SIZEOF([int *], [1111])
 
-  # AC_CHECK_SIZEOF defines 'ac_cv_sizeof_int_p' to hold the number of bytes used by an 'int*'
-  if test "x$ac_cv_sizeof_int_p" = x; then
+  if test "x$SIZEOF_INT_P" != "x$ac_cv_sizeof_int_p"; then
+    # Workaround autoconf bug, see http://lists.gnu.org/archive/html/autoconf/2010-07/msg00004.html
+    SIZEOF_INT_P="$ac_cv_sizeof_int_p"
+  fi
+
+  if test "x$SIZEOF_INT_P" = x; then
     # The test failed, lets stick to the assumed value.
     AC_MSG_WARN([The number of bits in the target could not be determined, using $OPENJDK_TARGET_CPU_BITS.])
   else
-    TESTED_TARGET_CPU_BITS=`expr 8 \* $ac_cv_sizeof_int_p`
+    TESTED_TARGET_CPU_BITS=`expr 8 \* $SIZEOF_INT_P`
 
     if test "x$TESTED_TARGET_CPU_BITS" != "x$OPENJDK_TARGET_CPU_BITS"; then
-      # This situation may happen on 64-bit platforms where the compiler by default only generates 32-bit objects
-      # Let's try to implicitely set the compilers target architecture and retry the test
-      AC_MSG_NOTICE([The tested number of bits in the target ($TESTED_TARGET_CPU_BITS) differs from the number of bits expected to be found in the target ($OPENJDK_TARGET_CPU_BITS).])
-      AC_MSG_NOTICE([I'll retry after setting the platforms compiler target bits flag to ${COMPILER_TARGET_BITS_FLAG}${OPENJDK_TARGET_CPU_BITS}])
-      PLATFORM_SET_COMPILER_TARGET_BITS_FLAGS
-
-      # We have to unset 'ac_cv_sizeof_int_p' first, otherwise AC_CHECK_SIZEOF will use the previously cached value!
-      unset ac_cv_sizeof_int_p
-      # And we have to undef the definition of SIZEOF_INT_P in confdefs.h by the previous invocation of AC_CHECK_SIZEOF
-      cat >>confdefs.h <<_ACEOF
-#undef SIZEOF_INT_P
-_ACEOF
-
-      AC_CHECK_SIZEOF([int *], [1111])
-
-      TESTED_TARGET_CPU_BITS=`expr 8 \* $ac_cv_sizeof_int_p`
-
-      if test "x$TESTED_TARGET_CPU_BITS" != "x$OPENJDK_TARGET_CPU_BITS"; then
-        AC_MSG_ERROR([The tested number of bits in the target ($TESTED_TARGET_CPU_BITS) differs from the number of bits expected to be found in the target ($OPENJDK_TARGET_CPU_BITS)])
-      fi
+      AC_MSG_ERROR([The tested number of bits in the target ($TESTED_TARGET_CPU_BITS) differs from the number of bits expected to be found in the target ($OPENJDK_TARGET_CPU_BITS)])
     fi
   fi
 

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2001, 2014, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2001, 2012, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -38,14 +38,12 @@
 JNIEXPORT jint JNICALL
 Java_java_util_prefs_FileSystemPreferences_chmod(JNIEnv *env,
                        jclass thisclass, jstring java_fname, jint permission) {
-    const char *fname = JNU_GetStringPlatformChars(env, java_fname, NULL);
-    int result = -1;
-    if (fname) {
-        result =  chmod(fname, permission);
-        if (result != 0)
-            result = errno;
-        JNU_ReleaseStringPlatformChars(env, java_fname, fname);
-    }
+    const char *fname = JNU_GetStringPlatformChars(env, java_fname, JNI_FALSE);
+    int result;
+    result =  chmod(fname, permission);
+    if (result != 0)
+       result = errno;
+    JNU_ReleaseStringPlatformChars(env, java_fname, fname);
     return (jint) result;
 }
 
@@ -63,15 +61,12 @@ typedef struct flock64 FLOCK;
 JNIEXPORT jintArray JNICALL
 Java_java_util_prefs_FileSystemPreferences_lockFile0(JNIEnv *env,
     jclass thisclass, jstring java_fname, jint permission, jboolean shared) {
-    const char *fname = JNU_GetStringPlatformChars(env, java_fname, NULL);
+    const char *fname = JNU_GetStringPlatformChars(env, java_fname, JNI_FALSE);
     int fd, rc;
     int result[2];
-    jintArray javaResult = NULL;
+    jintArray javaResult;
     int old_umask;
     FLOCK fl;
-
-    if (!fname)
-        return javaResult;
 
     fl.l_whence = SEEK_SET;
     fl.l_len = 0;
@@ -109,8 +104,7 @@ Java_java_util_prefs_FileSystemPreferences_lockFile0(JNIEnv *env,
     }
     JNU_ReleaseStringPlatformChars(env, java_fname, fname);
     javaResult = (*env)->NewIntArray(env,2);
-    if (javaResult)
-        (*env)->SetIntArrayRegion(env, javaResult, 0, 2, result);
+    (*env)->SetIntArrayRegion(env, javaResult, 0, 2, result);
     return javaResult;
 }
 

@@ -377,6 +377,7 @@ public class HKSCS {
                             dst[dp++] = repl[1];
                         continue;
                     }
+                    sp++;
                 }
                 if (bb > MAX_SINGLEBYTE) {        // DoubleByte
                     dst[dp++] = (byte)(bb >> 8);

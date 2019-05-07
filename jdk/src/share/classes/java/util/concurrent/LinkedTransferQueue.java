@@ -780,9 +780,7 @@ public class LinkedTransferQueue<E> extends AbstractQueue<E>
     }
 
     /**
-     * Version of firstOfMode used by Spliterator. Callers must
-     * recheck if the returned node's item field is null or
-     * self-linked before using.
+     * Version of firstOfMode used by Spliterator
      */
     final Node firstDataNode() {
         for (Node p = head; p != null;) {
@@ -955,12 +953,11 @@ public class LinkedTransferQueue<E> extends AbstractQueue<E>
                 Object[] a = new Object[n];
                 int i = 0;
                 do {
-                    Object e = p.item;
-                    if (e != p && (a[i] = e) != null)
+                    if ((a[i] = p.item) != null)
                         ++i;
                     if (p == (p = p.next))
                         p = q.firstDataNode();
-                } while (p != null && i < n && p.isData);
+                } while (p != null && i < n);
                 if ((current = p) == null)
                     exhausted = true;
                 if (i > 0) {
@@ -983,11 +980,11 @@ public class LinkedTransferQueue<E> extends AbstractQueue<E>
                 exhausted = true;
                 do {
                     Object e = p.item;
-                    if (e != null && e != p)
-                        action.accept((E)e);
                     if (p == (p = p.next))
                         p = q.firstDataNode();
-                } while (p != null && p.isData);
+                    if (e != null)
+                        action.accept((E)e);
+                } while (p != null);
             }
         }
 
@@ -1000,11 +997,10 @@ public class LinkedTransferQueue<E> extends AbstractQueue<E>
                 ((p = current) != null || (p = q.firstDataNode()) != null)) {
                 Object e;
                 do {
-                    if ((e = p.item) == p)
-                        e = null;
+                    e = p.item;
                     if (p == (p = p.next))
                         p = q.firstDataNode();
-                } while (e == null && p != null && p.isData);
+                } while (e == null && p != null);
                 if ((current = p) == null)
                     exhausted = true;
                 if (e != null) {

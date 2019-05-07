@@ -30,9 +30,7 @@
 
 int ZeroStack::suggest_size(Thread *thread) const {
   assert(needs_setup(), "already set up");
-  int abi_available = abi_stack_available(thread);
-  assert(abi_available >= 0, "available abi stack must be >= 0");
-  return align_size_down(abi_available / 2, wordSize);
+  return align_size_down(abi_stack_available(thread) / 2, wordSize);
 }
 
 void ZeroStack::handle_overflow(TRAPS) {

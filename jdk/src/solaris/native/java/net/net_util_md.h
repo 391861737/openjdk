@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 1997, 2016, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 1997, 2012, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -37,23 +37,9 @@
 #endif
 
 
-/*
-   AIX needs a workaround for I/O cancellation, see:
-   http://publib.boulder.ibm.com/infocenter/pseries/v5r3/index.jsp?topic=/com.ibm.aix.basetechref/doc/basetrf1/close.htm
-   ...
-   The close subroutine is blocked until all subroutines which use the file
-   descriptor return to usr space. For example, when a thread is calling close
-   and another thread is calling select with the same file descriptor, the
-   close subroutine does not return until the select call returns.
-   ...
-*/
-#if !defined(__solaris__)
+#if defined(__linux__) || defined(MACOSX)
 extern int NET_Timeout(int s, long timeout);
-extern int NET_Timeout0(int s, long timeout, long currentTime);
 extern int NET_Read(int s, void* buf, size_t len);
-extern int NET_NonBlockingRead(int s, void* buf, size_t len);
-extern int NET_TimeoutWithCurrentTime(int s, long timeout, long currentTime);
-extern long NET_GetCurrentTime();
 extern int NET_RecvFrom(int s, void *buf, int len, unsigned int flags,
        struct sockaddr *from, int *fromlen);
 extern int NET_ReadV(int s, const struct iovec * vector, int count);
@@ -97,46 +83,23 @@ int getDefaultIPv6Interface(struct in6_addr *target_addr);
 
 #ifdef __solaris__
 extern int net_getParam(char *driver, char *param);
+#endif
 
-#ifndef SO_FLOW_SLA
-#define SO_FLOW_SLA 0x1018
+/* needed from libsocket on Solaris 8 */
 
-#if _LONG_LONG_ALIGNMENT == 8 && _LONG_LONG_ALIGNMENT_32 == 4
-#pragma pack(4)
- #endif
+typedef int (*getaddrinfo_f)(const char *nodename, const char *servname,
+    const struct addrinfo *hints, struct addrinfo **res);
 
-/*
- * Used with the setsockopt(SO_FLOW_SLA, ...) call to set
- * per socket service level properties.
- * When the application uses per-socket API, we will enforce the properties
- * on both outbound and inbound packets.
- *
- * For now, only priority and maxbw are supported in SOCK_FLOW_PROP_VERSION1.
- */
-typedef struct sock_flow_props_s {
-        int             sfp_version;
-        uint32_t        sfp_mask;
-        int             sfp_priority;   /* flow priority */
-        uint64_t        sfp_maxbw;      /* bandwidth limit in bps */
-        int             sfp_status;     /* flow create status for getsockopt */
-} sock_flow_props_t;
+typedef void (*freeaddrinfo_f)(struct addrinfo *);
 
-#define SOCK_FLOW_PROP_VERSION1 1
+typedef const char * (*gai_strerror_f)(int ecode);
 
-/* bit mask values for sfp_mask */
-#define SFP_MAXBW       0x00000001      /* Flow Bandwidth Limit */
-#define SFP_PRIORITY    0x00000008      /* Flow priority */
+typedef int (*getnameinfo_f)(const struct sockaddr *, size_t,
+    char *, size_t, char *, size_t, int);
 
-/* possible values for sfp_priority */
-#define SFP_PRIO_NORMAL 1
-#define SFP_PRIO_HIGH   2
-
-#if _LONG_LONG_ALIGNMENT == 8 && _LONG_LONG_ALIGNMENT_32 == 4
-#pragma pack()
-#endif /* _LONG_LONG_ALIGNMENT */
-
-#endif /* SO_FLOW_SLA */
-#endif /* __solaris__ */
+extern getaddrinfo_f getaddrinfo_ptr;
+extern freeaddrinfo_f freeaddrinfo_ptr;
+extern getnameinfo_f getnameinfo_ptr;
 
 void ThrowUnknownHostExceptionWithGaiError(JNIEnv *env,
                                            const char* hostname,

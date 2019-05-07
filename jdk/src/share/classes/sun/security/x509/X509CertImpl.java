@@ -271,7 +271,7 @@ public class X509CertImpl extends X509Certificate implements DerEncoder {
                         der = new DerValue(decstream.toByteArray());
                         break;
                     } else {
-                        decstream.write(Pem.decode(line));
+                        decstream.write(Base64.getMimeDecoder().decode(line));
                     }
                 }
             } catch (IOException ioe2) {
@@ -1008,7 +1008,9 @@ public class X509CertImpl extends X509Certificate implements DerEncoder {
     public byte[] getSignature() {
         if (signature == null)
             return null;
-        return signature.clone();
+        byte[] dup = new byte[signature.length];
+        System.arraycopy(signature, 0, dup, 0, dup.length);
+        return dup;
     }
 
     /**
@@ -1932,19 +1934,18 @@ public class X509CertImpl extends X509Certificate implements DerEncoder {
 
     public String getFingerprint(String algorithm) {
         return fingerprints.computeIfAbsent(algorithm,
-                x -> getFingerprint(x, this));
+                x -> getCertificateFingerPrint(x));
     }
 
     /**
      * Gets the requested finger print of the certificate. The result
      * only contains 0-9 and A-F. No small case, no colon.
      */
-    public static String getFingerprint(String algorithm,
-            X509Certificate cert) {
+    private String getCertificateFingerPrint(String mdAlg) {
         String fingerPrint = "";
         try {
-            byte[] encCertInfo = cert.getEncoded();
-            MessageDigest md = MessageDigest.getInstance(algorithm);
+            byte[] encCertInfo = getEncoded();
+            MessageDigest md = MessageDigest.getInstance(mdAlg);
             byte[] digest = md.digest(encCertInfo);
             StringBuffer buf = new StringBuffer();
             for (int i = 0; i < digest.length; i++) {

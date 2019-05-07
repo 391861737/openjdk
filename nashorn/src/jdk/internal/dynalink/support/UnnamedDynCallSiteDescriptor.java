@@ -90,7 +90,7 @@ class UnnamedDynCallSiteDescriptor extends AbstractCallSiteDescriptor {
     private final MethodType methodType;
     private final String op;
 
-    UnnamedDynCallSiteDescriptor(final String op, final MethodType methodType) {
+    UnnamedDynCallSiteDescriptor(String op, MethodType methodType) {
         this.op = op;
         this.methodType = methodType;
     }
@@ -105,7 +105,7 @@ class UnnamedDynCallSiteDescriptor extends AbstractCallSiteDescriptor {
     }
 
     @Override
-    public String getNameToken(final int i) {
+    public String getNameToken(int i) {
         switch(i) {
             case 0: return "dyn";
             case 1: return op;
@@ -119,7 +119,7 @@ class UnnamedDynCallSiteDescriptor extends AbstractCallSiteDescriptor {
     }
 
     @Override
-    public CallSiteDescriptor changeMethodType(final MethodType newMethodType) {
+    public CallSiteDescriptor changeMethodType(MethodType newMethodType) {
         return CallSiteDescriptorFactory.getCanonicalPublicDescriptor(new UnnamedDynCallSiteDescriptor(op,
                 newMethodType));
     }

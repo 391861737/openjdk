@@ -3,7 +3,10 @@
     "body": [
         {
             "type": "LabeledStatement",
-            "label": "label",
+            "label": {
+                "type": "Identifier",
+                "name": "label"
+            },
             "body": {
                 "type": "BlockStatement",
                 "body": [
@@ -18,7 +21,10 @@
                             "body": [
                                 {
                                     "type": "BreakStatement",
-                                    "label": "label"
+                                    "label": {
+                                        "type": "Identifier",
+                                        "name": "label"
+                                    }
                                 }
                             ]
                         }

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 1997, 2017, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 1997, 2013, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -39,14 +39,11 @@ class PhaseTransform;
 //------------------------------MemNode----------------------------------------
 // Load or Store, possibly throwing a NULL pointer exception
 class MemNode : public Node {
-private:
-  bool _unaligned_access; // Unaligned access from unsafe
-  bool _mismatched_access; // Mismatched access from unsafe: byte read in integer array for instance
 protected:
 #ifdef ASSERT
   const TypePtr* _adr_type;     // What kind of memory is being addressed?
 #endif
-  virtual uint size_of() const;
+  virtual uint size_of() const; // Size is bigger (ASSERT only)
 public:
   enum { Control,               // When is it safe to do this load?
          Memory,                // Chunk of memory is being loaded from
@@ -54,28 +51,22 @@ public:
          ValueIn,               // Value to store
          OopStore               // Preceeding oop store, only in StoreCM
   };
-  typedef enum { unordered = 0,
-                 acquire,       // Load has to acquire or be succeeded by MemBarAcquire.
-                 release        // Store has to release or be preceded by MemBarRelease.
-  } MemOrd;
 protected:
   MemNode( Node *c0, Node *c1, Node *c2, const TypePtr* at )
-    : Node(c0,c1,c2   ), _unaligned_access(false), _mismatched_access(false) {
+    : Node(c0,c1,c2   ) {
     init_class_id(Class_Mem);
     debug_only(_adr_type=at; adr_type();)
   }
   MemNode( Node *c0, Node *c1, Node *c2, const TypePtr* at, Node *c3 )
-    : Node(c0,c1,c2,c3), _unaligned_access(false), _mismatched_access(false) {
+    : Node(c0,c1,c2,c3) {
     init_class_id(Class_Mem);
     debug_only(_adr_type=at; adr_type();)
   }
   MemNode( Node *c0, Node *c1, Node *c2, const TypePtr* at, Node *c3, Node *c4)
-    : Node(c0,c1,c2,c3,c4), _unaligned_access(false), _mismatched_access(false) {
+    : Node(c0,c1,c2,c3,c4) {
     init_class_id(Class_Mem);
     debug_only(_adr_type=at; adr_type();)
   }
-
-  static bool check_if_adr_maybe_raw(Node* adr);
 
 public:
   // Helpers for the optimizer.  Documented in memnode.cpp.
@@ -134,11 +125,6 @@ public:
   // the given memory state?  (The state may or may not be in(Memory).)
   Node* can_see_stored_value(Node* st, PhaseTransform* phase) const;
 
-  void set_unaligned_access() { _unaligned_access = true; }
-  bool is_unaligned_access() const { return _unaligned_access; }
-  void set_mismatched_access() { _mismatched_access = true; }
-  bool is_mismatched_access() const { return _mismatched_access; }
-
 #ifndef PRODUCT
   static void dump_adr_type(const Node* mem, const TypePtr* adr_type, outputStream *st);
   virtual void dump_spec(outputStream *st) const;
@@ -148,61 +134,20 @@ public:
 //------------------------------LoadNode---------------------------------------
 // Load value; requires Memory and Address
 class LoadNode : public MemNode {
-public:
-  // Some loads (from unsafe) should be pinned: they don't depend only
-  // on the dominating test.  The boolean field _depends_only_on_test
-  // below records whether that node depends only on the dominating
-  // test.
-  // Methods used to build LoadNodes pass an argument of type enum
-  // ControlDependency instead of a boolean because those methods
-  // typically have multiple boolean parameters with default values:
-  // passing the wrong boolean to one of these parameters by mistake
-  // goes easily unnoticed. Using an enum, the compiler can check that
-  // the type of a value and the type of the parameter match.
-  enum ControlDependency {
-    Pinned,
-    DependsOnlyOnTest
-  };
-private:
-  // LoadNode::hash() doesn't take the _depends_only_on_test field
-  // into account: If the graph already has a non-pinned LoadNode and
-  // we add a pinned LoadNode with the same inputs, it's safe for GVN
-  // to replace the pinned LoadNode with the non-pinned LoadNode,
-  // otherwise it wouldn't be safe to have a non pinned LoadNode with
-  // those inputs in the first place. If the graph already has a
-  // pinned LoadNode and we add a non pinned LoadNode with the same
-  // inputs, it's safe (but suboptimal) for GVN to replace the
-  // non-pinned LoadNode by the pinned LoadNode.
-  bool _depends_only_on_test;
-
-  // On platforms with weak memory ordering (e.g., PPC, Ia64) we distinguish
-  // loads that can be reordered, and such requiring acquire semantics to
-  // adhere to the Java specification.  The required behaviour is stored in
-  // this field.
-  const MemOrd _mo;
-
 protected:
-  virtual uint cmp(const Node &n) const;
+  virtual uint cmp( const Node &n ) const;
   virtual uint size_of() const; // Size is bigger
-  // Should LoadNode::Ideal() attempt to remove control edges?
-  virtual bool can_remove_control() const;
   const Type* const _type;      // What kind of value is loaded?
 public:
 
-  LoadNode(Node *c, Node *mem, Node *adr, const TypePtr* at, const Type *rt, MemOrd mo, ControlDependency control_dependency)
-    : MemNode(c,mem,adr,at), _type(rt), _mo(mo), _depends_only_on_test(control_dependency == DependsOnlyOnTest) {
+  LoadNode( Node *c, Node *mem, Node *adr, const TypePtr* at, const Type *rt )
+    : MemNode(c,mem,adr,at), _type(rt) {
     init_class_id(Class_Load);
-  }
-  inline bool is_unordered() const { return !is_acquire(); }
-  inline bool is_acquire() const {
-    assert(_mo == unordered || _mo == acquire, "unexpected");
-    return _mo == acquire;
   }
 
   // Polymorphic factory method:
-   static Node* make(PhaseGVN& gvn, Node *c, Node *mem, Node *adr,
-                     const TypePtr* at, const Type *rt, BasicType bt,
-                     MemOrd mo, ControlDependency control_dependency = DependsOnlyOnTest);
+  static Node* make( PhaseGVN& gvn, Node *c, Node *mem, Node *adr,
+                     const TypePtr* at, const Type *rt, BasicType bt );
 
   virtual uint hash()   const;  // Check the type
 
@@ -210,10 +155,8 @@ public:
   // we are equivalent to.  We look for Load of a Store.
   virtual Node *Identity( PhaseTransform *phase );
 
-  // If the load is from Field memory and the pointer is non-null, it might be possible to
+  // If the load is from Field memory and the pointer is non-null, we can
   // zero out the control input.
-  // If the offset is constant and the base is an object allocation,
-  // try to hook me up to the exact initializing store.
   virtual Node *Ideal(PhaseGVN *phase, bool can_reshape);
 
   // Split instance field load through Phi.
@@ -270,15 +213,16 @@ protected:
   // which produce results (new raw memory state) inside of loops preventing all
   // manner of other optimizations).  Basically, it's ugly but so is the alternative.
   // See comment in macro.cpp, around line 125 expand_allocate_common().
-  virtual bool depends_only_on_test() const { return adr_type() != TypeRawPtr::BOTTOM && _depends_only_on_test; }
+  virtual bool depends_only_on_test() const { return adr_type() != TypeRawPtr::BOTTOM; }
+
 };
 
 //------------------------------LoadBNode--------------------------------------
 // Load a byte (8bits signed) from memory
 class LoadBNode : public LoadNode {
 public:
-  LoadBNode(Node *c, Node *mem, Node *adr, const TypePtr* at, const TypeInt *ti, MemOrd mo, ControlDependency control_dependency = DependsOnlyOnTest)
-    : LoadNode(c, mem, adr, at, ti, mo, control_dependency) {}
+  LoadBNode( Node *c, Node *mem, Node *adr, const TypePtr* at, const TypeInt *ti = TypeInt::BYTE )
+    : LoadNode(c,mem,adr,at,ti) {}
   virtual int Opcode() const;
   virtual uint ideal_reg() const { return Op_RegI; }
   virtual Node *Ideal(PhaseGVN *phase, bool can_reshape);
@@ -291,8 +235,8 @@ public:
 // Load a unsigned byte (8bits unsigned) from memory
 class LoadUBNode : public LoadNode {
 public:
-  LoadUBNode(Node* c, Node* mem, Node* adr, const TypePtr* at, const TypeInt* ti, MemOrd mo, ControlDependency control_dependency = DependsOnlyOnTest)
-    : LoadNode(c, mem, adr, at, ti, mo, control_dependency) {}
+  LoadUBNode(Node* c, Node* mem, Node* adr, const TypePtr* at, const TypeInt* ti = TypeInt::UBYTE )
+    : LoadNode(c, mem, adr, at, ti) {}
   virtual int Opcode() const;
   virtual uint ideal_reg() const { return Op_RegI; }
   virtual Node* Ideal(PhaseGVN *phase, bool can_reshape);
@@ -305,8 +249,8 @@ public:
 // Load an unsigned short/char (16bits unsigned) from memory
 class LoadUSNode : public LoadNode {
 public:
-  LoadUSNode(Node *c, Node *mem, Node *adr, const TypePtr* at, const TypeInt *ti, MemOrd mo, ControlDependency control_dependency = DependsOnlyOnTest)
-    : LoadNode(c, mem, adr, at, ti, mo, control_dependency) {}
+  LoadUSNode( Node *c, Node *mem, Node *adr, const TypePtr* at, const TypeInt *ti = TypeInt::CHAR )
+    : LoadNode(c,mem,adr,at,ti) {}
   virtual int Opcode() const;
   virtual uint ideal_reg() const { return Op_RegI; }
   virtual Node *Ideal(PhaseGVN *phase, bool can_reshape);
@@ -319,8 +263,8 @@ public:
 // Load a short (16bits signed) from memory
 class LoadSNode : public LoadNode {
 public:
-  LoadSNode(Node *c, Node *mem, Node *adr, const TypePtr* at, const TypeInt *ti, MemOrd mo, ControlDependency control_dependency = DependsOnlyOnTest)
-    : LoadNode(c, mem, adr, at, ti, mo, control_dependency) {}
+  LoadSNode( Node *c, Node *mem, Node *adr, const TypePtr* at, const TypeInt *ti = TypeInt::SHORT )
+    : LoadNode(c,mem,adr,at,ti) {}
   virtual int Opcode() const;
   virtual uint ideal_reg() const { return Op_RegI; }
   virtual Node *Ideal(PhaseGVN *phase, bool can_reshape);
@@ -333,8 +277,8 @@ public:
 // Load an integer from memory
 class LoadINode : public LoadNode {
 public:
-  LoadINode(Node *c, Node *mem, Node *adr, const TypePtr* at, const TypeInt *ti, MemOrd mo, ControlDependency control_dependency = DependsOnlyOnTest)
-    : LoadNode(c, mem, adr, at, ti, mo, control_dependency) {}
+  LoadINode( Node *c, Node *mem, Node *adr, const TypePtr* at, const TypeInt *ti = TypeInt::INT )
+    : LoadNode(c,mem,adr,at,ti) {}
   virtual int Opcode() const;
   virtual uint ideal_reg() const { return Op_RegI; }
   virtual int store_Opcode() const { return Op_StoreI; }
@@ -345,8 +289,8 @@ public:
 // Load an array length from the array
 class LoadRangeNode : public LoadINode {
 public:
-  LoadRangeNode(Node *c, Node *mem, Node *adr, const TypeInt *ti = TypeInt::POS)
-    : LoadINode(c, mem, adr, TypeAryPtr::RANGE, ti, MemNode::unordered) {}
+  LoadRangeNode( Node *c, Node *mem, Node *adr, const TypeInt *ti = TypeInt::POS )
+    : LoadINode(c,mem,adr,TypeAryPtr::RANGE,ti) {}
   virtual int Opcode() const;
   virtual const Type *Value( PhaseTransform *phase ) const;
   virtual Node *Identity( PhaseTransform *phase );
@@ -365,16 +309,18 @@ class LoadLNode : public LoadNode {
   const bool _require_atomic_access;  // is piecewise load forbidden?
 
 public:
-  LoadLNode(Node *c, Node *mem, Node *adr, const TypePtr* at, const TypeLong *tl,
-            MemOrd mo, ControlDependency control_dependency = DependsOnlyOnTest, bool require_atomic_access = false)
-    : LoadNode(c, mem, adr, at, tl, mo, control_dependency), _require_atomic_access(require_atomic_access) {}
+  LoadLNode( Node *c, Node *mem, Node *adr, const TypePtr* at,
+             const TypeLong *tl = TypeLong::LONG,
+             bool require_atomic_access = false )
+    : LoadNode(c,mem,adr,at,tl)
+    , _require_atomic_access(require_atomic_access)
+  {}
   virtual int Opcode() const;
   virtual uint ideal_reg() const { return Op_RegL; }
   virtual int store_Opcode() const { return Op_StoreL; }
   virtual BasicType memory_type() const { return T_LONG; }
-  bool require_atomic_access() const { return _require_atomic_access; }
-  static LoadLNode* make_atomic(Compile *C, Node* ctl, Node* mem, Node* adr, const TypePtr* adr_type,
-                                const Type* rt, MemOrd mo, ControlDependency control_dependency = DependsOnlyOnTest);
+  bool require_atomic_access() { return _require_atomic_access; }
+  static LoadLNode* make_atomic(Compile *C, Node* ctl, Node* mem, Node* adr, const TypePtr* adr_type, const Type* rt);
 #ifndef PRODUCT
   virtual void dump_spec(outputStream *st) const {
     LoadNode::dump_spec(st);
@@ -387,8 +333,8 @@ public:
 // Load a long from unaligned memory
 class LoadL_unalignedNode : public LoadLNode {
 public:
-  LoadL_unalignedNode(Node *c, Node *mem, Node *adr, const TypePtr* at, MemOrd mo, ControlDependency control_dependency = DependsOnlyOnTest)
-    : LoadLNode(c, mem, adr, at, TypeLong::LONG, mo, control_dependency) {}
+  LoadL_unalignedNode( Node *c, Node *mem, Node *adr, const TypePtr* at )
+    : LoadLNode(c,mem,adr,at) {}
   virtual int Opcode() const;
 };
 
@@ -396,8 +342,8 @@ public:
 // Load a float (64 bits) from memory
 class LoadFNode : public LoadNode {
 public:
-  LoadFNode(Node *c, Node *mem, Node *adr, const TypePtr* at, const Type *t, MemOrd mo, ControlDependency control_dependency = DependsOnlyOnTest)
-    : LoadNode(c, mem, adr, at, t, mo, control_dependency) {}
+  LoadFNode( Node *c, Node *mem, Node *adr, const TypePtr* at, const Type *t = Type::FLOAT )
+    : LoadNode(c,mem,adr,at,t) {}
   virtual int Opcode() const;
   virtual uint ideal_reg() const { return Op_RegF; }
   virtual int store_Opcode() const { return Op_StoreF; }
@@ -407,39 +353,21 @@ public:
 //------------------------------LoadDNode--------------------------------------
 // Load a double (64 bits) from memory
 class LoadDNode : public LoadNode {
-  virtual uint hash() const { return LoadNode::hash() + _require_atomic_access; }
-  virtual uint cmp( const Node &n ) const {
-    return _require_atomic_access == ((LoadDNode&)n)._require_atomic_access
-      && LoadNode::cmp(n);
-  }
-  virtual uint size_of() const { return sizeof(*this); }
-  const bool _require_atomic_access;  // is piecewise load forbidden?
-
 public:
-  LoadDNode(Node *c, Node *mem, Node *adr, const TypePtr* at, const Type *t,
-            MemOrd mo, ControlDependency control_dependency = DependsOnlyOnTest, bool require_atomic_access = false)
-    : LoadNode(c, mem, adr, at, t, mo, control_dependency), _require_atomic_access(require_atomic_access) {}
+  LoadDNode( Node *c, Node *mem, Node *adr, const TypePtr* at, const Type *t = Type::DOUBLE )
+    : LoadNode(c,mem,adr,at,t) {}
   virtual int Opcode() const;
   virtual uint ideal_reg() const { return Op_RegD; }
   virtual int store_Opcode() const { return Op_StoreD; }
   virtual BasicType memory_type() const { return T_DOUBLE; }
-  bool require_atomic_access() const { return _require_atomic_access; }
-  static LoadDNode* make_atomic(Compile *C, Node* ctl, Node* mem, Node* adr, const TypePtr* adr_type,
-                                const Type* rt, MemOrd mo, ControlDependency control_dependency = DependsOnlyOnTest);
-#ifndef PRODUCT
-  virtual void dump_spec(outputStream *st) const {
-    LoadNode::dump_spec(st);
-    if (_require_atomic_access)  st->print(" Atomic!");
-  }
-#endif
 };
 
 //------------------------------LoadD_unalignedNode----------------------------
 // Load a double from unaligned memory
 class LoadD_unalignedNode : public LoadDNode {
 public:
-  LoadD_unalignedNode(Node *c, Node *mem, Node *adr, const TypePtr* at, MemOrd mo, ControlDependency control_dependency = DependsOnlyOnTest)
-    : LoadDNode(c, mem, adr, at, Type::DOUBLE, mo, control_dependency) {}
+  LoadD_unalignedNode( Node *c, Node *mem, Node *adr, const TypePtr* at )
+    : LoadDNode(c,mem,adr,at) {}
   virtual int Opcode() const;
 };
 
@@ -447,8 +375,8 @@ public:
 // Load a pointer from memory (either object or array)
 class LoadPNode : public LoadNode {
 public:
-  LoadPNode(Node *c, Node *mem, Node *adr, const TypePtr *at, const TypePtr* t, MemOrd mo, ControlDependency control_dependency = DependsOnlyOnTest)
-    : LoadNode(c, mem, adr, at, t, mo, control_dependency) {}
+  LoadPNode( Node *c, Node *mem, Node *adr, const TypePtr *at, const TypePtr* t )
+    : LoadNode(c,mem,adr,at,t) {}
   virtual int Opcode() const;
   virtual uint ideal_reg() const { return Op_RegP; }
   virtual int store_Opcode() const { return Op_StoreP; }
@@ -460,8 +388,8 @@ public:
 // Load a narrow oop from memory (either object or array)
 class LoadNNode : public LoadNode {
 public:
-  LoadNNode(Node *c, Node *mem, Node *adr, const TypePtr *at, const Type* t, MemOrd mo, ControlDependency control_dependency = DependsOnlyOnTest)
-    : LoadNode(c, mem, adr, at, t, mo, control_dependency) {}
+  LoadNNode( Node *c, Node *mem, Node *adr, const TypePtr *at, const Type* t )
+    : LoadNode(c,mem,adr,at,t) {}
   virtual int Opcode() const;
   virtual uint ideal_reg() const { return Op_RegN; }
   virtual int store_Opcode() const { return Op_StoreN; }
@@ -471,29 +399,25 @@ public:
 //------------------------------LoadKlassNode----------------------------------
 // Load a Klass from an object
 class LoadKlassNode : public LoadPNode {
-protected:
-  // In most cases, LoadKlassNode does not have the control input set. If the control
-  // input is set, it must not be removed (by LoadNode::Ideal()).
-  virtual bool can_remove_control() const;
 public:
-  LoadKlassNode(Node *c, Node *mem, Node *adr, const TypePtr *at, const TypeKlassPtr *tk, MemOrd mo)
-    : LoadPNode(c, mem, adr, at, tk, mo) {}
+  LoadKlassNode( Node *c, Node *mem, Node *adr, const TypePtr *at, const TypeKlassPtr *tk )
+    : LoadPNode(c,mem,adr,at,tk) {}
   virtual int Opcode() const;
   virtual const Type *Value( PhaseTransform *phase ) const;
   virtual Node *Identity( PhaseTransform *phase );
   virtual bool depends_only_on_test() const { return true; }
 
   // Polymorphic factory method:
-  static Node* make(PhaseGVN& gvn, Node* ctl, Node* mem, Node* adr, const TypePtr* at,
-                    const TypeKlassPtr* tk = TypeKlassPtr::OBJECT);
+  static Node* make( PhaseGVN& gvn, Node *mem, Node *adr, const TypePtr* at,
+                     const TypeKlassPtr *tk = TypeKlassPtr::OBJECT );
 };
 
 //------------------------------LoadNKlassNode---------------------------------
 // Load a narrow Klass from an object.
 class LoadNKlassNode : public LoadNNode {
 public:
-  LoadNKlassNode(Node *c, Node *mem, Node *adr, const TypePtr *at, const TypeNarrowKlass *tk, MemOrd mo)
-    : LoadNNode(c, mem, adr, at, tk, mo) {}
+  LoadNKlassNode( Node *c, Node *mem, Node *adr, const TypePtr *at, const TypeNarrowKlass *tk )
+    : LoadNNode(c,mem,adr,at,tk) {}
   virtual int Opcode() const;
   virtual uint ideal_reg() const { return Op_RegN; }
   virtual int store_Opcode() const { return Op_StoreNKlass; }
@@ -508,14 +432,6 @@ public:
 //------------------------------StoreNode--------------------------------------
 // Store value; requires Store, Address and Value
 class StoreNode : public MemNode {
-private:
-  // On platforms with weak memory ordering (e.g., PPC, Ia64) we distinguish
-  // stores that can be reordered, and such requiring release semantics to
-  // adhere to the Java specification.  The required behaviour is stored in
-  // this field.
-  const MemOrd _mo;
-  // Needed for proper cloning.
-  virtual uint size_of() const { return sizeof(*this); }
 protected:
   virtual uint cmp( const Node &n ) const;
   virtual bool depends_only_on_test() const { return false; }
@@ -524,44 +440,18 @@ protected:
   Node *Ideal_sign_extended_input(PhaseGVN *phase, int  num_bits);
 
 public:
-  // We must ensure that stores of object references will be visible
-  // only after the object's initialization. So the callers of this
-  // procedure must indicate that the store requires `release'
-  // semantics, if the stored value is an object reference that might
-  // point to a new object and may become externally visible.
-  StoreNode(Node *c, Node *mem, Node *adr, const TypePtr* at, Node *val, MemOrd mo)
-    : MemNode(c, mem, adr, at, val), _mo(mo) {
+  StoreNode( Node *c, Node *mem, Node *adr, const TypePtr* at, Node *val )
+    : MemNode(c,mem,adr,at,val) {
     init_class_id(Class_Store);
   }
-  StoreNode(Node *c, Node *mem, Node *adr, const TypePtr* at, Node *val, Node *oop_store, MemOrd mo)
-    : MemNode(c, mem, adr, at, val, oop_store), _mo(mo) {
+  StoreNode( Node *c, Node *mem, Node *adr, const TypePtr* at, Node *val, Node *oop_store )
+    : MemNode(c,mem,adr,at,val,oop_store) {
     init_class_id(Class_Store);
   }
 
-  inline bool is_unordered() const { return !is_release(); }
-  inline bool is_release() const {
-    assert((_mo == unordered || _mo == release), "unexpected");
-    return _mo == release;
-  }
-
-  // Conservatively release stores of object references in order to
-  // ensure visibility of object initialization.
-  static inline MemOrd release_if_reference(const BasicType t) {
-    const MemOrd mo = (t == T_ARRAY ||
-                       t == T_ADDRESS || // Might be the address of an object reference (`boxing').
-                       t == T_OBJECT) ? release : unordered;
-    return mo;
-  }
-
-  // Polymorphic factory method
-  //
-  // We must ensure that stores of object references will be visible
-  // only after the object's initialization. So the callers of this
-  // procedure must indicate that the store requires `release'
-  // semantics, if the stored value is an object reference that might
-  // point to a new object and may become externally visible.
-  static StoreNode* make(PhaseGVN& gvn, Node *c, Node *mem, Node *adr,
-                         const TypePtr* at, Node *val, BasicType bt, MemOrd mo);
+  // Polymorphic factory method:
+  static StoreNode* make( PhaseGVN& gvn, Node *c, Node *mem, Node *adr,
+                          const TypePtr* at, Node *val, BasicType bt );
 
   virtual uint hash() const;    // Check the type
 
@@ -592,8 +482,7 @@ public:
 // Store byte to memory
 class StoreBNode : public StoreNode {
 public:
-  StoreBNode(Node *c, Node *mem, Node *adr, const TypePtr* at, Node *val, MemOrd mo)
-    : StoreNode(c, mem, adr, at, val, mo) {}
+  StoreBNode( Node *c, Node *mem, Node *adr, const TypePtr* at, Node *val ) : StoreNode(c,mem,adr,at,val) {}
   virtual int Opcode() const;
   virtual Node *Ideal(PhaseGVN *phase, bool can_reshape);
   virtual BasicType memory_type() const { return T_BYTE; }
@@ -603,8 +492,7 @@ public:
 // Store char/short to memory
 class StoreCNode : public StoreNode {
 public:
-  StoreCNode(Node *c, Node *mem, Node *adr, const TypePtr* at, Node *val, MemOrd mo)
-    : StoreNode(c, mem, adr, at, val, mo) {}
+  StoreCNode( Node *c, Node *mem, Node *adr, const TypePtr* at, Node *val ) : StoreNode(c,mem,adr,at,val) {}
   virtual int Opcode() const;
   virtual Node *Ideal(PhaseGVN *phase, bool can_reshape);
   virtual BasicType memory_type() const { return T_CHAR; }
@@ -614,8 +502,7 @@ public:
 // Store int to memory
 class StoreINode : public StoreNode {
 public:
-  StoreINode(Node *c, Node *mem, Node *adr, const TypePtr* at, Node *val, MemOrd mo)
-    : StoreNode(c, mem, adr, at, val, mo) {}
+  StoreINode( Node *c, Node *mem, Node *adr, const TypePtr* at, Node *val ) : StoreNode(c,mem,adr,at,val) {}
   virtual int Opcode() const;
   virtual BasicType memory_type() const { return T_INT; }
 };
@@ -632,12 +519,15 @@ class StoreLNode : public StoreNode {
   const bool _require_atomic_access;  // is piecewise store forbidden?
 
 public:
-  StoreLNode(Node *c, Node *mem, Node *adr, const TypePtr* at, Node *val, MemOrd mo, bool require_atomic_access = false)
-    : StoreNode(c, mem, adr, at, val, mo), _require_atomic_access(require_atomic_access) {}
+  StoreLNode( Node *c, Node *mem, Node *adr, const TypePtr* at, Node *val,
+              bool require_atomic_access = false )
+    : StoreNode(c,mem,adr,at,val)
+    , _require_atomic_access(require_atomic_access)
+  {}
   virtual int Opcode() const;
   virtual BasicType memory_type() const { return T_LONG; }
-  bool require_atomic_access() const { return _require_atomic_access; }
-  static StoreLNode* make_atomic(Compile *C, Node* ctl, Node* mem, Node* adr, const TypePtr* adr_type, Node* val, MemOrd mo);
+  bool require_atomic_access() { return _require_atomic_access; }
+  static StoreLNode* make_atomic(Compile *C, Node* ctl, Node* mem, Node* adr, const TypePtr* adr_type, Node* val);
 #ifndef PRODUCT
   virtual void dump_spec(outputStream *st) const {
     StoreNode::dump_spec(st);
@@ -650,8 +540,7 @@ public:
 // Store float to memory
 class StoreFNode : public StoreNode {
 public:
-  StoreFNode(Node *c, Node *mem, Node *adr, const TypePtr* at, Node *val, MemOrd mo)
-    : StoreNode(c, mem, adr, at, val, mo) {}
+  StoreFNode( Node *c, Node *mem, Node *adr, const TypePtr* at, Node *val ) : StoreNode(c,mem,adr,at,val) {}
   virtual int Opcode() const;
   virtual BasicType memory_type() const { return T_FLOAT; }
 };
@@ -659,36 +548,17 @@ public:
 //------------------------------StoreDNode-------------------------------------
 // Store double to memory
 class StoreDNode : public StoreNode {
-  virtual uint hash() const { return StoreNode::hash() + _require_atomic_access; }
-  virtual uint cmp( const Node &n ) const {
-    return _require_atomic_access == ((StoreDNode&)n)._require_atomic_access
-      && StoreNode::cmp(n);
-  }
-  virtual uint size_of() const { return sizeof(*this); }
-  const bool _require_atomic_access;  // is piecewise store forbidden?
 public:
-  StoreDNode(Node *c, Node *mem, Node *adr, const TypePtr* at, Node *val,
-             MemOrd mo, bool require_atomic_access = false)
-    : StoreNode(c, mem, adr, at, val, mo), _require_atomic_access(require_atomic_access) {}
+  StoreDNode( Node *c, Node *mem, Node *adr, const TypePtr* at, Node *val ) : StoreNode(c,mem,adr,at,val) {}
   virtual int Opcode() const;
   virtual BasicType memory_type() const { return T_DOUBLE; }
-  bool require_atomic_access() const { return _require_atomic_access; }
-  static StoreDNode* make_atomic(Compile *C, Node* ctl, Node* mem, Node* adr, const TypePtr* adr_type, Node* val, MemOrd mo);
-#ifndef PRODUCT
-  virtual void dump_spec(outputStream *st) const {
-    StoreNode::dump_spec(st);
-    if (_require_atomic_access)  st->print(" Atomic!");
-  }
-#endif
-
 };
 
 //------------------------------StorePNode-------------------------------------
 // Store pointer to memory
 class StorePNode : public StoreNode {
 public:
-  StorePNode(Node *c, Node *mem, Node *adr, const TypePtr* at, Node *val, MemOrd mo)
-    : StoreNode(c, mem, adr, at, val, mo) {}
+  StorePNode( Node *c, Node *mem, Node *adr, const TypePtr* at, Node *val ) : StoreNode(c,mem,adr,at,val) {}
   virtual int Opcode() const;
   virtual BasicType memory_type() const { return T_ADDRESS; }
 };
@@ -697,8 +567,7 @@ public:
 // Store narrow oop to memory
 class StoreNNode : public StoreNode {
 public:
-  StoreNNode(Node *c, Node *mem, Node *adr, const TypePtr* at, Node *val, MemOrd mo)
-    : StoreNode(c, mem, adr, at, val, mo) {}
+  StoreNNode( Node *c, Node *mem, Node *adr, const TypePtr* at, Node *val ) : StoreNode(c,mem,adr,at,val) {}
   virtual int Opcode() const;
   virtual BasicType memory_type() const { return T_NARROWOOP; }
 };
@@ -707,8 +576,7 @@ public:
 // Store narrow klass to memory
 class StoreNKlassNode : public StoreNNode {
 public:
-  StoreNKlassNode(Node *c, Node *mem, Node *adr, const TypePtr* at, Node *val, MemOrd mo)
-    : StoreNNode(c, mem, adr, at, val, mo) {}
+  StoreNKlassNode( Node *c, Node *mem, Node *adr, const TypePtr* at, Node *val ) : StoreNNode(c,mem,adr,at,val) {}
   virtual int Opcode() const;
   virtual BasicType memory_type() const { return T_NARROWKLASS; }
 };
@@ -729,7 +597,7 @@ class StoreCMNode : public StoreNode {
 
 public:
   StoreCMNode( Node *c, Node *mem, Node *adr, const TypePtr* at, Node *val, Node *oop_store, int oop_alias_idx ) :
-    StoreNode(c, mem, adr, at, val, oop_store, MemNode::release),
+    StoreNode(c,mem,adr,at,val,oop_store),
     _oop_alias_idx(oop_alias_idx) {
     assert(_oop_alias_idx >= Compile::AliasIdxRaw ||
            _oop_alias_idx == Compile::AliasIdxBot && Compile::current()->AliasLevel() == 0,
@@ -749,8 +617,8 @@ public:
 // On PowerPC and friends it's a real load-locked.
 class LoadPLockedNode : public LoadPNode {
 public:
-  LoadPLockedNode(Node *c, Node *mem, Node *adr, MemOrd mo)
-    : LoadPNode(c, mem, adr, TypeRawPtr::BOTTOM, TypeRawPtr::BOTTOM, mo) {}
+  LoadPLockedNode( Node *c, Node *mem, Node *adr )
+    : LoadPNode(c,mem,adr,TypeRawPtr::BOTTOM, TypeRawPtr::BOTTOM) {}
   virtual int Opcode() const;
   virtual int store_Opcode() const { return Op_StorePConditional; }
   virtual bool depends_only_on_test() const { return true; }
@@ -1073,34 +941,12 @@ public:
   virtual int Opcode() const;
 };
 
-// "Acquire" - no following ref can move before (but earlier refs can
-// follow, like an early Load stalled in cache).  Requires multi-cpu
-// visibility.  Inserted independ of any load, as required
-// for intrinsic sun.misc.Unsafe.loadFence().
-class LoadFenceNode: public MemBarNode {
-public:
-  LoadFenceNode(Compile* C, int alias_idx, Node* precedent)
-    : MemBarNode(C, alias_idx, precedent) {}
-  virtual int Opcode() const;
-};
-
 // "Release" - no earlier ref can move after (but later refs can move
 // up, like a speculative pipelined cache-hitting Load).  Requires
 // multi-cpu visibility.  Inserted before a volatile store.
 class MemBarReleaseNode: public MemBarNode {
 public:
   MemBarReleaseNode(Compile* C, int alias_idx, Node* precedent)
-    : MemBarNode(C, alias_idx, precedent) {}
-  virtual int Opcode() const;
-};
-
-// "Release" - no earlier ref can move after (but later refs can move
-// up, like a speculative pipelined cache-hitting Load).  Requires
-// multi-cpu visibility.  Inserted independent of any store, as required
-// for intrinsic sun.misc.Unsafe.storeFence().
-class StoreFenceNode: public MemBarNode {
-public:
-  StoreFenceNode(Compile* C, int alias_idx, Node* precedent)
     : MemBarNode(C, alias_idx, precedent) {}
   virtual int Opcode() const;
 };

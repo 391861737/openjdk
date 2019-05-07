@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 1996, 2014, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 1996, 2011, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -49,16 +49,6 @@
 struct SetLabelStruct {
     jobject menuitem;
     jstring label;
-};
-// struct for _SetEnable() method
-struct SetEnableStruct {
-    jobject menuitem;
-    jboolean isEnabled;
-};
-// struct for _setState() method
-struct SetStateStruct {
-    jobject menuitem;
-    jboolean isChecked;
 };
 /************************************************************************
  * AwtMenuItem fields
@@ -114,7 +104,6 @@ void AwtMenuItem::RemoveCmdID()
 {
     if (m_freeId) {
         AwtToolkit::GetInstance().RemoveCmdID( GetID() );
-        m_freeId = FALSE;
     }
 }
 void AwtMenuItem::Dispose()
@@ -123,7 +112,6 @@ void AwtMenuItem::Dispose()
 
     JNIEnv *env = (JNIEnv *)JNU_GetEnv(jvm, JNI_VERSION_1_2);
     if (m_peerObject != NULL) {
-        JNI_SET_DESTROYED(m_peerObject);
         JNI_SET_PDATA(m_peerObject, NULL);
         env->DeleteGlobalRef(m_peerObject);
         m_peerObject = NULL;
@@ -164,9 +152,6 @@ BOOL AwtMenuItem::CheckMenuCreation(JNIEnv *env, jobject self, HMENU hMenu)
         if (dw == ERROR_OUTOFMEMORY)
         {
             jstring errorMsg = JNU_NewStringPlatform(env, L"too many menu handles");
-            if (errorMsg == NULL) {
-                throw std::bad_alloc();
-            }
             createError = JNU_NewObjectByName(env, "java/lang/OutOfMemoryError",
                                                    "(Ljava/lang/String;)V",
                                                    errorMsg);
@@ -179,19 +164,16 @@ BOOL AwtMenuItem::CheckMenuCreation(JNIEnv *env, jobject self, HMENU hMenu)
                 NULL, dw, MAKELANGID(LANG_NEUTRAL, SUBLANG_DEFAULT),
                 (LPTSTR)&buf, 0, NULL);
             jstring s = JNU_NewStringPlatform(env, buf);
-            if (s == NULL) {
-                throw std::bad_alloc();
-            }
             createError = JNU_NewObjectByName(env, "java/lang/InternalError",
                                                    "(Ljava/lang/String;)V", s);
             LocalFree(buf);
             env->DeleteLocalRef(s);
         }
-        if (createError == NULL) {
-            throw std::bad_alloc();
-        }
         env->SetObjectField(self, AwtObject::createErrorID, createError);
-        env->DeleteLocalRef(createError);
+        if (createError != NULL)
+        {
+            env->DeleteLocalRef(createError);
+        }
         return FALSE;
     }
     return TRUE;
@@ -217,12 +199,13 @@ AwtMenuItem* AwtMenuItem::Create(jobject peer, jobject menuPeer)
         if (env->EnsureLocalCapacity(1) < 0) {
             return NULL;
         }
-        JNI_CHECK_NULL_RETURN_NULL(menuPeer, "peer");
+        PDATA pData;
+        JNI_CHECK_PEER_RETURN_NULL(menuPeer);
 
         /* target is a java.awt.MenuItem  */
         target = env->GetObjectField(peer, AwtObject::targetID);
 
-        AwtMenu* menu = (AwtMenu *)JNI_GET_PDATA(menuPeer);
+        AwtMenu* menu = (AwtMenu *)pData;
         item = new AwtMenuItem();
         jboolean isCheckbox =
             (jboolean)env->GetBooleanField(peer, AwtMenuItem::isCheckboxID);
@@ -233,9 +216,7 @@ AwtMenuItem* AwtMenuItem::Create(jobject peer, jobject menuPeer)
         item->LinkObjects(env, peer);
         item->SetMenuContainer(menu);
         item->SetNewID();
-        if (menu != NULL) {
-            menu->AddItem(item);
-        }
+        menu->AddItem(item);
     } catch (...) {
         env->DeleteLocalRef(target);
         throw;
@@ -257,18 +238,12 @@ AwtMenuItem::GetFont(JNIEnv *env)
     jobject self = GetPeer(env);
     jobject target = env->GetObjectField(self, AwtObject::targetID);
     jobject font = JNU_CallMethodByName(env, 0, target, "getFont_NoClientCode", "()Ljava/awt/Font;").l;
-    env->DeleteLocalRef(target);
-    if (env->ExceptionCheck()) {
-        throw std::bad_alloc();
-    }
 
     if (font == NULL) {
         font = env->NewLocalRef(GetDefaultFont(env));
-        if (env->ExceptionCheck()) {
-            throw std::bad_alloc();
-        }
     }
 
+    env->DeleteLocalRef(target);
     return font;
 }
 
@@ -276,22 +251,13 @@ jobject
 AwtMenuItem::GetDefaultFont(JNIEnv *env) {
     if (AwtMenuItem::systemFont == NULL) {
         jclass cls = env->FindClass("sun/awt/windows/WMenuItemPeer");
-        if (cls == NULL) {
-            throw std::bad_alloc();
-        }
+        DASSERT(cls != NULL);
 
         AwtMenuItem::systemFont =
             env->CallStaticObjectMethod(cls, AwtMenuItem::getDefaultFontMID);
-        if (env->ExceptionCheck()) {
-            env->DeleteLocalRef(cls);
-            throw std::bad_alloc();
-        }
+        DASSERT(AwtMenuItem::systemFont);
 
         AwtMenuItem::systemFont = env->NewGlobalRef(AwtMenuItem::systemFont);
-        if (systemFont == NULL) {
-            env->DeleteLocalRef(cls);
-            throw std::bad_alloc();
-        }
     }
     return AwtMenuItem::systemFont;
 }
@@ -318,19 +284,8 @@ AwtMenuItem::DrawSelf(DRAWITEMSTRUCT& drawInfo)
     DWORD crBack,crText;
     HBRUSH hbrBack;
 
-    jobject font;
-    try {
-        font = GetFont(env);
-    } catch (std::bad_alloc&) {
-        env->DeleteLocalRef(target);
-        throw;
-    }
-
+    jobject font = GetFont(env);
     jstring text = GetJavaString(env);
-    if (env->ExceptionCheck()) {
-        env->DeleteLocalRef(target);
-        throw std::bad_alloc();
-    }
     size = AwtFont::getMFStringSize(hDC, font, text);
 
     /* 4700350: If the font size is taller than the menubar, change to the
@@ -339,13 +294,7 @@ AwtMenuItem::DrawSelf(DRAWITEMSTRUCT& drawInfo)
      */
     if (IsTopMenu() && size.cy > ::GetSystemMetrics(SM_CYMENU)) {
         env->DeleteLocalRef(font);
-        try {
-            font = env->NewLocalRef(GetDefaultFont(env));
-        } catch (std::bad_alloc&) {
-            env->DeleteLocalRef(target);
-            env->DeleteLocalRef(text);
-            throw;
-        }
+        font = env->NewLocalRef(GetDefaultFont(env));
         size = AwtFont::getMFStringSize(hDC, font, text);
     }
 
@@ -503,10 +452,6 @@ void AwtMenuItem::MeasureSelf(HDC hDC, MEASUREITEMSTRUCT& measureInfo)
     /* font is a java.awt.Font */
     jobject font = GetFont(env);
     jstring text = GetJavaString(env);
-    if (env->ExceptionCheck()) {
-        env->DeleteLocalRef(font);
-        throw std::bad_alloc();
-    }
     SIZE size = AwtFont::getMFStringSize(hDC, font, text);
 
     /* 4700350: If the font size is taller than the menubar, change to the
@@ -514,14 +459,7 @@ void AwtMenuItem::MeasureSelf(HDC hDC, MEASUREITEMSTRUCT& measureInfo)
      * client area.  -bchristi
      */
     if (IsTopMenu() && size.cy > ::GetSystemMetrics(SM_CYMENU)) {
-        jobject defFont;
-        try {
-            defFont = GetDefaultFont(env);
-        } catch (std::bad_alloc&) {
-            env->DeleteLocalRef(text);
-            env->DeleteLocalRef(font);
-            throw;
-        }
+        jobject defFont = GetDefaultFont(env);
         env->DeleteLocalRef(font);
         font = env->NewLocalRef(defFont);
         size = AwtFont::getMFStringSize(hDC, font, text);
@@ -530,31 +468,13 @@ void AwtMenuItem::MeasureSelf(HDC hDC, MEASUREITEMSTRUCT& measureInfo)
     jstring fontName =
         (jstring)JNU_CallMethodByName(env, 0,font, "getName",
                                       "()Ljava/lang/String;").l;
-    if (env->ExceptionCheck()) {
-        env->DeleteLocalRef(text);
-        env->DeleteLocalRef(font);
-        throw std::bad_alloc();
-    }
-
     /* fontMetrics is a Hsun_awt_windows_WFontMetrics */
     jobject fontMetrics =  GetFontMetrics(env, font);
-    if (env->ExceptionCheck()) {
-        env->DeleteLocalRef(text);
-        env->DeleteLocalRef(font);
-        env->DeleteLocalRef(fontName);
-        throw std::bad_alloc();
-    }
+
 
 //     int height = env->GetIntField(fontMetrics, AwtFont::heightID);
     int height = (jint)JNU_CallMethodByName(env, 0, fontMetrics, "getHeight",
                                             "()I").i;
-    if (env->ExceptionCheck()) {
-        env->DeleteLocalRef(text);
-        env->DeleteLocalRef(font);
-        env->DeleteLocalRef(fontName);
-        env->DeleteLocalRef(fontMetrics);
-        throw std::bad_alloc();
-    }
 
     measureInfo.itemHeight = height;
     measureInfo.itemHeight += measureInfo.itemHeight/3;
@@ -600,14 +520,10 @@ jobject AwtMenuItem::GetFontMetrics(JNIEnv *env, jobject font)
         if (env->PushLocalFrame(2) < 0)
             return NULL;
         jclass cls = env->FindClass("java/awt/Toolkit");
-        CHECK_NULL_RETURN(cls, NULL);
         jobject toolkitLocal =
             env->CallStaticObjectMethod(cls, AwtToolkit::getDefaultToolkitMID);
-        env->DeleteLocalRef(cls);
-        CHECK_NULL_RETURN(toolkitLocal, NULL);
         toolkit = env->NewGlobalRef(toolkitLocal);
-        env->DeleteLocalRef(toolkitLocal);
-        CHECK_NULL_RETURN(toolkit, NULL);
+        DASSERT(!safe_ExceptionOccurred(env));
         env->PopLocalFrame(0);
     }
     /*
@@ -776,6 +692,30 @@ void AwtMenuItem::UpdateContainerLayout() {
     }
 }
 
+LRESULT AwtMenuItem::WinThreadExecProc(ExecuteArgs * args)
+{
+    switch( args->cmdId ) {
+        case MENUITEM_ENABLE:
+        {
+            BOOL        isEnabled = (BOOL)args->param1;
+            this->Enable(isEnabled);
+        }
+        break;
+
+        case MENUITEM_SETSTATE:
+        {
+            BOOL        isChecked = (BOOL)args->param1;
+            this->SetState(isChecked);
+        }
+        break;
+
+        default:
+            AwtObject::WinThreadExecProc(args);
+            break;
+    }
+    return 0L;
+}
+
 void AwtMenuItem::_SetLabel(void *param) {
     if (AwtToolkit::IsMainThread()) {
         JNIEnv *env = (JNIEnv *)JNU_GetEnv(jvm, JNI_VERSION_1_2);
@@ -798,10 +738,6 @@ void AwtMenuItem::_SetLabel(void *param) {
             if (JNU_IsNull(env, label))
             {
                 empty = JNU_NewStringPlatform(env, TEXT(""));
-            }
-            if (env->ExceptionCheck()) {
-                badAlloc = 1;
-                goto ret;
             }
             LPCTSTR labelPtr;
             if (empty != NULL)
@@ -875,53 +811,6 @@ ret:
     }
 }
 
-void AwtMenuItem::_SetEnable(void *param)
-{
-    if (AwtToolkit::IsMainThread()) {
-        JNIEnv *env = (JNIEnv *)JNU_GetEnv(jvm, JNI_VERSION_1_2);
-
-        SetEnableStruct *ses = (SetEnableStruct*) param;
-        jobject self = ses->menuitem;
-        jboolean isEnabled = ses->isEnabled;
-
-        AwtMenuItem *m = NULL;
-
-        PDATA pData;
-        JNI_CHECK_PEER_GOTO(self, ret);
-
-        m = (AwtMenuItem *)pData;
-
-        m->Enable(isEnabled);
-ret:
-        env->DeleteGlobalRef(self);
-        delete ses;
-    } else {
-        AwtToolkit::GetInstance().InvokeFunction(AwtMenuItem::_SetEnable, param);
-    }
-}
-
-void AwtMenuItem::_SetState(void *param)
-{
-    if (AwtToolkit::IsMainThread()) {
-        JNIEnv *env = (JNIEnv *)JNU_GetEnv(jvm, JNI_VERSION_1_2);
-
-        SetStateStruct *sts = (SetStateStruct*) param;
-        jobject self = sts->menuitem;
-        jboolean isChecked = sts->isChecked;
-
-        AwtMenuItem *m = NULL;
-
-        PDATA pData;
-        JNI_CHECK_PEER_GOTO(self, ret);
-        m = (AwtMenuItem *)pData;
-        m->SetState(isChecked);
-ret:
-        env->DeleteGlobalRef(self);
-        delete sts;
-    } else {
-        AwtToolkit::GetInstance().InvokeFunction(AwtMenuItem::_SetState, param);
-    }
-}
 BOOL AwtMenuItem::IsSeparator() {
     JNIEnv *env = (JNIEnv *)JNU_GetEnv(jvm, JNI_VERSION_1_2);
     if (env->EnsureLocalCapacity(2) < 0) {
@@ -957,8 +846,9 @@ Java_java_awt_MenuComponent_initIDs(JNIEnv *env, jclass cls)
     TRY;
 
     AwtMenuItem::fontID = env->GetFieldID(cls, "font", "Ljava/awt/Font;");
-    CHECK_NULL(AwtMenuItem::fontID);
     AwtMenuItem::appContextID = env->GetFieldID(cls, "appContext", "Lsun/awt/AppContext;");
+
+    DASSERT(AwtMenuItem::fontID != NULL);
 
     CATCH_BAD_ALLOC;
 }
@@ -978,8 +868,10 @@ Java_java_awt_MenuItem_initIDs(JNIEnv *env, jclass cls)
     TRY;
 
     AwtMenuItem::labelID = env->GetFieldID(cls, "label", "Ljava/lang/String;");
-    CHECK_NULL(AwtMenuItem::labelID);
     AwtMenuItem::enabledID = env->GetFieldID(cls, "enabled", "Z");
+
+    DASSERT(AwtMenuItem::labelID != NULL);
+    DASSERT(AwtMenuItem::enabledID != NULL);
 
     CATCH_BAD_ALLOC;
 }
@@ -999,6 +891,8 @@ Java_java_awt_CheckboxMenuItem_initIDs(JNIEnv *env, jclass cls)
     TRY;
 
     AwtMenuItem::stateID = env->GetFieldID(cls, "state", "Z");
+
+    DASSERT(AwtMenuItem::stateID != NULL);
 
     CATCH_BAD_ALLOC;
 }
@@ -1023,12 +917,14 @@ Java_sun_awt_windows_WMenuItemPeer_initIDs(JNIEnv *env, jclass cls)
     TRY;
 
     AwtMenuItem::isCheckboxID = env->GetFieldID(cls, "isCheckbox", "Z");
-    CHECK_NULL(AwtMenuItem::isCheckboxID);
     AwtMenuItem::shortcutLabelID = env->GetFieldID(cls, "shortcutLabel",
                                                    "Ljava/lang/String;");
-    CHECK_NULL(AwtMenuItem::shortcutLabelID);
     AwtMenuItem::getDefaultFontMID =
         env->GetStaticMethodID(cls, "getDefaultFont", "()Ljava/awt/Font;");
+
+    DASSERT(AwtMenuItem::isCheckboxID != NULL);
+    DASSERT(AwtMenuItem::shortcutLabelID != NULL);
+    DASSERT(AwtMenuItem::getDefaultFontMID != NULL);
 
     CATCH_BAD_ALLOC;
 }
@@ -1085,9 +981,13 @@ Java_sun_awt_windows_WMenuItemPeer_create(JNIEnv *env, jobject self,
 {
     TRY;
 
+    JNI_CHECK_NULL_RETURN(menu, "null Menu");
     AwtToolkit::CreateComponent(self, menu,
                                 (AwtToolkit::ComponentFactory)
                                 AwtMenuItem::Create);
+    PDATA pData;
+    JNI_CHECK_PEER_CREATION_RETURN(self);
+
     CATCH_BAD_ALLOC;
 }
 
@@ -1102,12 +1002,9 @@ Java_sun_awt_windows_WMenuItemPeer_enable(JNIEnv *env, jobject self,
 {
     TRY;
 
-    SetEnableStruct *ses = new SetEnableStruct;
-    ses->menuitem = env->NewGlobalRef(self);
-    ses->isEnabled = on;
-
-    AwtToolkit::GetInstance().SyncCall(AwtMenuItem::_SetEnable, ses);
-    // global refs and ses are deleted in _SetEnable
+    PDATA pData;
+    JNI_CHECK_PEER_RETURN(self);
+    AwtObject::WinThreadExec(self, AwtMenuItem::MENUITEM_ENABLE, (LPARAM)on );
 
     CATCH_BAD_ALLOC;
 }
@@ -1146,12 +1043,9 @@ Java_sun_awt_windows_WCheckboxMenuItemPeer_setState(JNIEnv *env, jobject self,
 {
     TRY;
 
-    SetStateStruct *sts = new SetStateStruct;
-    sts->menuitem = env->NewGlobalRef(self);
-    sts->isChecked = on;
-
-    AwtToolkit::GetInstance().SyncCall(AwtMenuItem::_SetState, sts);
-    // global refs and sts are deleted in _SetState
+    PDATA pData;
+    JNI_CHECK_PEER_RETURN(self);
+    AwtObject::WinThreadExec(self, AwtMenuItem::MENUITEM_SETSTATE, (LPARAM)on);
 
     CATCH_BAD_ALLOC;
 }

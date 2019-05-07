@@ -74,10 +74,8 @@ class Main {
      * Mflag: DO NOT generate a manifest file (just ZIP)
      * iflag: generate jar index
      * nflag: Perform jar normalization at the end
-     * pflag: preserve/don't strip leading slash and .. component from file name
-     *
      */
-    boolean cflag, uflag, xflag, tflag, vflag, flag0, Mflag, iflag, nflag, pflag;
+    boolean cflag, uflag, xflag, tflag, vflag, flag0, Mflag, iflag, nflag;
 
     static final String MANIFEST_DIR = "META-INF/";
     static final String VERSION = "1.0";
@@ -189,7 +187,6 @@ class Main {
                         addMainClass(manifest, ename);
                     }
                 }
-                expand(null, files, false);
                 OutputStream out;
                 if (fname != null) {
                     out = new FileOutputStream(fname);
@@ -211,12 +208,13 @@ class Main {
                     tmpfile = createTemporaryFile(tmpbase, ".jar");
                     out = new FileOutputStream(tmpfile);
                 }
+                expand(null, files, false);
                 create(new BufferedOutputStream(out, 4096), manifest);
                 if (in != null) {
                     in.close();
                 }
                 out.close();
-                if (nflag) {
+                if(nflag) {
                     JarFile jarFile = null;
                     File packFile = null;
                     JarOutputStream jos = null;
@@ -293,7 +291,7 @@ class Main {
                     list(fname, files);
                 } else {
                     InputStream in = new FileInputStream(FileDescriptor.in);
-                    try {
+                    try{
                         list(new BufferedInputStream(in), files);
                     } finally {
                         in.close();
@@ -411,9 +409,6 @@ class Main {
                     break;
                 case 'e':
                      ename = args[count++];
-                     break;
-                case 'P':
-                     pflag = true;
                      break;
                 default:
                     error(formatMsg("error.illegal.option",
@@ -667,6 +662,7 @@ class Main {
         return updateOk;
     }
 
+
     private void addIndex(JarIndex index, ZipOutputStream zos)
         throws IOException
     {
@@ -703,47 +699,6 @@ class Main {
         return true;
     }
 
-    private static final boolean isWinDriveLetter(char c) {
-        return ((c >= 'a') && (c <= 'z')) || ((c >= 'A') && (c <= 'Z'));
-    }
-
-    private String safeName(String name) {
-        if (!pflag) {
-            int len = name.length();
-            int i = name.lastIndexOf("../");
-            if (i == -1) {
-                i = 0;
-            } else {
-                i += 3; // strip any dot-dot components
-            }
-            if (File.separatorChar == '\\') {
-                // the spec requests no drive letter. skip if
-                // the entry name has one.
-                while (i < len) {
-                    int off = i;
-                    if (i + 1 < len &&
-                        name.charAt(i + 1) == ':' &&
-                        isWinDriveLetter(name.charAt(i))) {
-                        i += 2;
-                    }
-                    while (i < len && name.charAt(i) == '/') {
-                        i++;
-                    }
-                    if (i == off) {
-                        break;
-                    }
-                }
-            } else {
-                while (i < len && name.charAt(i) == '/') {
-                    i++;
-                }
-            }
-            if (i != 0) {
-                name = name.substring(i);
-            }
-        }
-        return name;
-    }
 
     private String entryName(String name) {
         name = name.replace(File.separatorChar, '/');
@@ -755,10 +710,10 @@ class Main {
             }
         }
         name = name.substring(matchPath.length());
-        name = safeName(name);
-        // the old implementaton doesn't remove
-        // "./" if it was led by "/" (?)
-        if (name.startsWith("./")) {
+
+        if (name.startsWith("/")) {
+            name = name.substring(1);
+        } else if (name.startsWith("./")) {
             name = name.substring(2);
         }
         return name;
@@ -958,11 +913,8 @@ class Main {
         for (ZipEntry ze : zes) {
             long lastModified = ze.getTime();
             if (lastModified != -1) {
-                String name = safeName(ze.getName().replace(File.separatorChar, '/'));
-                if (name.length() != 0) {
-                    File f = new File(name.replace('/', File.separatorChar));
-                    f.setLastModified(lastModified);
-                }
+                File f = new File(ze.getName().replace('/', File.separatorChar));
+                f.setLastModified(lastModified);
             }
         }
     }
@@ -1006,6 +958,7 @@ class Main {
         Enumeration<? extends ZipEntry> zes = zf.entries();
         while (zes.hasMoreElements()) {
             ZipEntry e = zes.nextElement();
+            InputStream is;
             if (files == null) {
                 dirs.add(extractFile(zf.getInputStream(e), e));
             } else {
@@ -1029,16 +982,8 @@ class Main {
      */
     ZipEntry extractFile(InputStream is, ZipEntry e) throws IOException {
         ZipEntry rc = null;
-        // The spec requres all slashes MUST be forward '/', it is possible
-        // an offending zip/jar entry may uses the backwards slash in its
-        // name. It might cause problem on Windows platform as it skips
-        // our "safe" check for leading slahs and dot-dot. So replace them
-        // with '/'.
-        String name = safeName(e.getName().replace(File.separatorChar, '/'));
-        if (name.length() == 0) {
-            return rc;    // leading '/' or 'dot-dot' only path
-        }
-        File f = new File(name.replace('/', File.separatorChar));
+        String name = e.getName();
+        File f = new File(e.getName().replace('/', File.separatorChar));
         if (e.isDirectory()) {
             if (f.exists()) {
                 if (!f.isDirectory()) {

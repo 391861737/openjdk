@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 1997, 2017, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 1997, 2013, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -180,12 +180,10 @@ class JarVerifier {
 
         // only set the jev object for entries that have a signature
         // (either verified or not)
-        if (!name.equals(JarFile.MANIFEST_NAME)) {
-            if (sigFileSigners.get(name) != null ||
-                    verifiedSigners.get(name) != null) {
-                mev.setEntry(name, je);
-                return;
-            }
+        if (sigFileSigners.get(name) != null ||
+                verifiedSigners.get(name) != null) {
+            mev.setEntry(name, je);
+            return;
         }
 
         // don't compute the digest for this entry
@@ -689,8 +687,6 @@ class JarVerifier {
                 } else {
                     matchUnsigned = true;
                 }
-            } else {
-                matchUnsigned = true;
             }
         }
 
@@ -793,7 +789,23 @@ class JarVerifier {
 
     // true if file is part of the signature mechanism itself
     static boolean isSigningRelated(String name) {
-        return SignatureFileVerifier.isSigningRelated(name);
+        name = name.toUpperCase(Locale.ENGLISH);
+        if (!name.startsWith("META-INF/")) {
+            return false;
+        }
+        name = name.substring(9);
+        if (name.indexOf('/') != -1) {
+            return false;
+        }
+        if (name.endsWith(".DSA")
+                || name.endsWith(".RSA")
+                || name.endsWith(".SF")
+                || name.endsWith(".EC")
+                || name.startsWith("SIG-")
+                || name.equals("MANIFEST.MF")) {
+            return true;
+        }
+        return false;
     }
 
     private Enumeration<String> unsignedEntryNames(JarFile jar) {

@@ -171,13 +171,6 @@ public class TrueTypeFont extends FileFont {
     private String localeFamilyName;
     private String localeFullName;
 
-    public TrueTypeFont(String platname, Object nativeNames, int fIndex,
-                 boolean javaRasterizer)
-        throws FontFormatException
-    {
-        this(platname, nativeNames, fIndex, javaRasterizer, true);
-    }
-
     /**
      * - does basic verification of the file
      * - reads the header table for this font (within a collection)
@@ -188,17 +181,14 @@ public class TrueTypeFont extends FileFont {
      * or fails verification,  or there's no usable cmap
      */
     public TrueTypeFont(String platname, Object nativeNames, int fIndex,
-                 boolean javaRasterizer, boolean useFilePool)
+                 boolean javaRasterizer)
         throws FontFormatException {
         super(platname, nativeNames);
         useJavaRasterizer = javaRasterizer;
         fontRank = Font2D.TTF_RANK;
         try {
-            verify(useFilePool);
+            verify();
             init(fIndex);
-            if (!useFilePool) {
-               close();
-            }
         } catch (Throwable t) {
             close();
             if (t instanceof FontFormatException) {
@@ -285,10 +275,6 @@ public class TrueTypeFont extends FileFont {
     }
 
 
-    private synchronized FileChannel open() throws FontFormatException {
-        return open(true);
-     }
-
     /* This is intended to be called, and the returned value used,
      * from within a block synchronized on this font object.
      * ie the channel returned may be nulled out at any time by "close()"
@@ -296,8 +282,7 @@ public class TrueTypeFont extends FileFont {
      * Deadlock warning: FontManager.addToPool(..) acquires a global lock,
      * which means nested locks may be in effect.
      */
-    private synchronized FileChannel open(boolean usePool)
-                                     throws FontFormatException {
+    private synchronized FileChannel open() throws FontFormatException {
         if (disposerRecord.channel == null) {
             if (FontUtilities.isLogging()) {
                 FontUtilities.getLogger().info("open TTF: " + platName);
@@ -316,11 +301,9 @@ public class TrueTypeFont extends FileFont {
                 });
                 disposerRecord.channel = raf.getChannel();
                 fileSize = (int)disposerRecord.channel.size();
-                if (usePool) {
-                    FontManager fm = FontManagerFactory.getInstance();
-                    if (fm instanceof SunFontManager) {
-                        ((SunFontManager) fm).addToPool(this);
-                    }
+                FontManager fm = FontManagerFactory.getInstance();
+                if (fm instanceof SunFontManager) {
+                    ((SunFontManager) fm).addToPool(this);
                 }
             } catch (NullPointerException e) {
                 close();
@@ -504,8 +487,8 @@ public class TrueTypeFont extends FileFont {
         }
     }
 
-    private void verify(boolean usePool) throws FontFormatException {
-        open(usePool);
+    private void verify() throws FontFormatException {
+        open();
     }
 
     /* sizes, in bytes, of TT/TTC header records */
@@ -976,18 +959,6 @@ public class TrueTypeFont extends FileFont {
         setStyle(getTableBuffer(os_2Tag));
     }
 
-    private int fontWidth = 0;
-    @Override
-    public int getWidth() {
-       return (fontWidth > 0) ? fontWidth : super.getWidth();
-    }
-
-    private int fontWeight = 0;
-    @Override
-    public int getWeight() {
-       return (fontWeight > 0) ? fontWeight : super.getWeight();
-    }
-
     /* TrueTypeFont can use the fsSelection fields of OS/2 table
      * to determine the style. In the unlikely case that doesn't exist,
      * can use macStyle in the 'head' table but simpler to
@@ -1003,15 +974,8 @@ public class TrueTypeFont extends FileFont {
     private static final int fsSelectionBoldBit    = 0x00020;
     private static final int fsSelectionRegularBit = 0x00040;
     private void setStyle(ByteBuffer os_2Table) {
-        if (os_2Table == null) {
-            return;
-        }
-        if (os_2Table.capacity() >= 8) {
-            fontWeight = os_2Table.getChar(4) & 0xffff;
-            fontWidth  = os_2Table.getChar(6) & 0xffff;
-        }
         /* fsSelection is unsigned short at buffer offset 62 */
-        if (os_2Table.capacity() < 64) {
+        if (os_2Table == null || os_2Table.capacity() < 64) {
             super.setStyle();
             return;
         }

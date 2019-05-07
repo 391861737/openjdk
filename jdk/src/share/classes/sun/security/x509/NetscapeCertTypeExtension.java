@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 1998, 2015, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 1998, 2011, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -136,8 +136,7 @@ implements CertAttrSet<String> {
      * @param position the position in the bit string to check.
      */
     private boolean isSet(int position) {
-        return (position < bitString.length) &&
-                bitString[position];
+        return bitString[position];
     }
 
     /**
@@ -237,34 +236,27 @@ implements CertAttrSet<String> {
      * Returns a printable representation of the NetscapeCertType.
      */
     public String toString() {
-        StringBuilder sb = new StringBuilder();
-        sb.append(super.toString());
-        sb.append("NetscapeCertType [\n");
+        String s = super.toString() + "NetscapeCertType [\n";
 
-        if (isSet(0)) {
-            sb.append("   SSL client\n");
-        }
-        if (isSet(1)) {
-            sb.append("   SSL server\n");
-        }
-        if (isSet(2)) {
-            sb.append("   S/MIME\n");
-        }
-        if (isSet(3)) {
-            sb.append("   Object Signing\n");
-        }
-        if (isSet(5)) {
-            sb.append("   SSL CA\n");
-        }
-        if (isSet(6)) {
-            sb.append("   S/MIME CA\n");
-        }
-        if (isSet(7)) {
-            sb.append("   Object Signing CA");
-        }
+        try {
+           if (isSet(getPosition(SSL_CLIENT)))
+               s += "   SSL client\n";
+           if (isSet(getPosition(SSL_SERVER)))
+               s += "   SSL server\n";
+           if (isSet(getPosition(S_MIME)))
+               s += "   S/MIME\n";
+           if (isSet(getPosition(OBJECT_SIGNING)))
+               s += "   Object Signing\n";
+           if (isSet(getPosition(SSL_CA)))
+               s += "   SSL CA\n";
+           if (isSet(getPosition(S_MIME_CA)))
+               s += "   S/MIME CA\n";
+           if (isSet(getPosition(OBJECT_SIGNING_CA)))
+               s += "   Object Signing CA" ;
+        } catch (Exception e) { }
 
-        sb.append("]\n");
-        return sb.toString();
+        s += "]\n";
+        return (s);
     }
 
     /**

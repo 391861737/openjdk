@@ -104,10 +104,7 @@ public class InstanceFilter extends TestScaffold {
             return;
         }
         if (theThis == null) {
-            // This happens when the thread has exited or when a
-            // static method is called. Setting an instance
-            // filter does not prevent this event from being
-            // emitted with a this that is null.
+            // This happens when the thread has exited.
             methodEntryRequest.disable();
             return;
         }
@@ -141,10 +138,6 @@ public class InstanceFilter extends TestScaffold {
         EventRequestManager mgr = vm().eventRequestManager();
         methodEntryRequest = mgr.createMethodEntryRequest();
         methodEntryRequest.addInstanceFilter(theInstance);
-        // Thread filter is needed to prevent MethodEntry events
-        // to be emitted by the debugee when a static method
-        // is called on any thread.
-        methodEntryRequest.addThreadFilter(bpe.thread());
         methodEntryRequest.enable();
 
         listenUntilVMDisconnect();

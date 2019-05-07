@@ -1,13 +1,13 @@
 /*
- * Copyright (c) 2015, Oracle and/or its affiliates. All rights reserved.
+ * reserved comment block
+ * DO NOT REMOVE OR ALTER!
  */
 /*
- * Licensed to the Apache Software Foundation (ASF) under one or more
- * contributor license agreements.  See the NOTICE file distributed with
- * this work for additional information regarding copyright ownership.
- * The ASF licenses this file to You under the Apache License, Version 2.0
- * (the "License"); you may not use this file except in compliance with
- * the License.  You may obtain a copy of the License at
+ * Copyright 2000-2002,2004 The Apache Software Foundation.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
  *
  *      http://www.apache.org/licenses/LICENSE-2.0
  *
@@ -20,15 +20,14 @@
 
 package com.sun.org.apache.xerces.internal.util;
 
-import com.sun.org.apache.xerces.internal.xni.Augmentations;
-import java.util.Collections;
+import java.util.Hashtable;
 import java.util.Enumeration;
-import java.util.HashMap;
-import java.util.Map;
+
+import com.sun.org.apache.xerces.internal.xni.Augmentations;
 
 /**
  * This class provides an implementation for Augmentations interface.
- * Augmentations interface defines a map of additional data that could
+ * Augmentations interface defines a hashtable of additional data that could
  * be passed along the document pipeline. The information can contain extra
  * arguments or infoset augmentations, for example PSVI. This additional
  * information is identified by a String key.
@@ -195,18 +194,18 @@ public class AugmentationsImpl implements Augmentations{
         }
 
         public String toString() {
-            StringBuilder buff = new StringBuilder();
-            buff.append("SmallContainer - fNumEntries == ").append(fNumEntries);
+            StringBuffer buff = new StringBuffer();
+            buff.append("SmallContainer - fNumEntries == " + fNumEntries);
 
             for (int i = 0; i < SIZE_LIMIT*2; i=i+2) {
-                buff.append("\nfAugmentations[")
-                    .append(i)
-                    .append("] == ")
-                    .append(fAugmentations[i])
-                    .append("; fAugmentations[")
-                    .append(i+1)
-                    .append("] == ")
-                    .append(fAugmentations[i+1]);
+                buff.append("\nfAugmentations[");
+                buff.append(i);
+                buff.append("] == ");
+                buff.append(fAugmentations[i]);
+                buff.append("; fAugmentations[");
+                buff.append(i+1);
+                buff.append("] == ");
+                buff.append(fAugmentations[i+1]);
             }
 
             return buff.toString();
@@ -241,7 +240,7 @@ public class AugmentationsImpl implements Augmentations{
     }
 
     class LargeContainer extends AugmentationsItemsContainer {
-        final Map<Object, Object> fAugmentations = new HashMap<>();
+        final Hashtable fAugmentations = new Hashtable();
 
         public Object getItem(Object key) {
             return fAugmentations.get(key);
@@ -256,7 +255,7 @@ public class AugmentationsImpl implements Augmentations{
         }
 
         public Enumeration keys() {
-            return Collections.enumeration(fAugmentations.keySet());
+            return fAugmentations.keys();
         }
 
         public void clear() {
@@ -272,14 +271,18 @@ public class AugmentationsImpl implements Augmentations{
         }
 
         public String toString() {
-            StringBuilder buff = new StringBuilder();
+            StringBuffer buff = new StringBuffer();
             buff.append("LargeContainer");
-            for(Object key : fAugmentations.keySet()) {
+            Enumeration keys = fAugmentations.keys();
+
+            while (keys.hasMoreElements()) {
+                Object key = keys.nextElement();
                 buff.append("\nkey == ");
                 buff.append(key);
                 buff.append("; value == ");
                 buff.append(fAugmentations.get(key));
             }
+
             return buff.toString();
         }
     }

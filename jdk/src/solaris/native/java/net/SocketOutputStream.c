@@ -103,35 +103,31 @@ Java_java_net_SocketOutputStream_socketWrite0(JNIEnv *env, jobject this,
         int llen = chunkLen;
         (*env)->GetByteArrayRegion(env, data, off, chunkLen, (jbyte *)bufP);
 
-        if ((*env)->ExceptionCheck(env)) {
-            break;
-        } else {
-            while(llen > 0) {
-                int n = NET_Send(fd, bufP + loff, llen, 0);
-                if (n > 0) {
-                    llen -= n;
-                    loff += n;
-                    continue;
-                }
-                if (n == JVM_IO_INTR) {
-                    JNU_ThrowByName(env, "java/io/InterruptedIOException", 0);
-                } else {
-                    if (errno == ECONNRESET) {
-                        JNU_ThrowByName(env, "sun/net/ConnectionResetException",
-                            "Connection reset");
-                    } else {
-                        NET_ThrowByNameWithLastError(env, "java/net/SocketException",
-                            "Write failed");
-                    }
-                }
-                if (bufP != BUF) {
-                    free(bufP);
-                }
-                return;
+        while(llen > 0) {
+            int n = NET_Send(fd, bufP + loff, llen, 0);
+            if (n > 0) {
+                llen -= n;
+                loff += n;
+                continue;
             }
-            len -= chunkLen;
-            off += chunkLen;
+            if (n == JVM_IO_INTR) {
+                JNU_ThrowByName(env, "java/io/InterruptedIOException", 0);
+            } else {
+                if (errno == ECONNRESET) {
+                    JNU_ThrowByName(env, "sun/net/ConnectionResetException",
+                        "Connection reset");
+                } else {
+                    NET_ThrowByNameWithLastError(env, "java/net/SocketException",
+                        "Write failed");
+                }
+            }
+            if (bufP != BUF) {
+                free(bufP);
+            }
+            return;
         }
+        len -= chunkLen;
+        off += chunkLen;
     }
 
     if (bufP != BUF) {

@@ -59,8 +59,7 @@ import java.nio.charset.Charset;
 
 import java.util.Iterator;
 import java.util.HashSet;
-import java.util.Map;
-import java.util.Set;
+
 
 public class IPPPrintService implements PrintService, SunPrinterJobService {
 
@@ -415,7 +414,6 @@ public class IPPPrintService implements PrintService, SunPrinterJobService {
                     mediaSizeNames = cps.getMediaSizeNames();
                     mediaTrays = cps.getMediaTrays();
                     customMediaSizeNames = cps.getCustomMediaSizeNames();
-                    defaultMediaIndex = cps.getDefaultMediaIndex();
                     urlConnection.disconnect();
                     init = true;
                     return;
@@ -995,9 +993,7 @@ public class IPPPrintService implements PrintService, SunPrinterJobService {
 
     public synchronized Class[] getSupportedAttributeCategories() {
         if (supportedCats != null) {
-            Class<?> [] copyCats = new Class<?>[supportedCats.length];
-            System.arraycopy(supportedCats, 0, copyCats, 0, copyCats.length);
-            return copyCats;
+            return supportedCats;
         }
 
         initAttributes();
@@ -1054,9 +1050,7 @@ public class IPPPrintService implements PrintService, SunPrinterJobService {
         }
         supportedCats = new Class[catList.size()];
         catList.toArray(supportedCats);
-        Class<?>[] copyCats = new Class<?>[supportedCats.length];
-        System.arraycopy(supportedCats, 0, copyCats, 0, copyCats.length);
-        return copyCats;
+        return supportedCats;
     }
 
 
@@ -1438,9 +1432,7 @@ public class IPPPrintService implements PrintService, SunPrinterJobService {
                 return JobSheets.STANDARD;
             }
         } else if (category == Media.class) {
-            if (defaultMediaIndex == -1) {
-                defaultMediaIndex = 0;
-            }
+            defaultMediaIndex = 0;
             if (mediaSizeNames.length == 0) {
                 String defaultCountry = Locale.getDefault().getCountry();
                 if (defaultCountry != null &&
@@ -1456,7 +1448,17 @@ public class IPPPrintService implements PrintService, SunPrinterJobService {
             if (attribClass != null) {
                 String name = attribClass.getStringValue();
                 if (isCupsPrinter) {
-                    return mediaSizeNames[defaultMediaIndex];
+                    for (int i=0; i< customMediaSizeNames.length; i++) {
+                        //REMIND:  get default from PPD. In native _getMedia,
+                        // move default (ppd_option_t->defchoice) to index 0.
+                        // In the meantime, use indexOf because PPD name
+                        // may be different from the IPP attribute name.
+                        if (customMediaSizeNames[i].toString().indexOf(name)
+                            != -1) {
+                            defaultMediaIndex = i;
+                            return mediaSizeNames[defaultMediaIndex];
+                        }
+                    }
                 } else {
                     for (int i=0; i< mediaSizeNames.length; i++) {
                         if (mediaSizeNames[i].toString().indexOf(name) != -1) {
@@ -1699,20 +1701,6 @@ public class IPPPrintService implements PrintService, SunPrinterJobService {
 
                     if (responseMap != null && responseMap.length > 0) {
                         getAttMap = responseMap[0];
-                        // If there is extra hashmap created due to duplicate
-                        // key/attribute present in IPPresponse, then use that
-                        // map too by appending to getAttMap after removing the
-                        // duplicate key/value
-                        if (responseMap.length > 1) {
-                            for (int i = 1; i < responseMap.length; i++) {
-                                Set<Map.Entry<String, AttributeClass>> entries = responseMap[i].entrySet();
-                                for (Map.Entry<String, AttributeClass> entry : entries) {
-                                    if (!getAttMap.containsKey(entry.getValue())) {
-                                        getAttMap.put(entry.getKey(), entry.getValue());
-                                    }
-                                }
-                            }
-                        }
                     }
                 } else {
                     debug_println(debugPrefix+"opGetAttributes - null input stream");
@@ -1918,8 +1906,9 @@ public class IPPPrintService implements PrintService, SunPrinterJobService {
                                   new HashMap[respList.size()]);
             } else {
                 debug_println(debugPrefix+
-                          "readIPPResponse client error, IPP status code: 0x"+
-                          toHex(response[2]) + toHex(response[3]));
+                              "readIPPResponse client error, IPP status code-"
+                                   +Integer.toHexString(response[2])+" & "
+                                   +Integer.toHexString(response[3]));
                 return null;
             }
 
@@ -1932,10 +1921,6 @@ public class IPPPrintService implements PrintService, SunPrinterJobService {
         }
     }
 
-    private static String toHex(byte v) {
-        String s = Integer.toHexString(v&0xff);
-        return (s.length() == 2) ? s :  "0"+s;
-    }
 
     public String toString() {
         return "IPP Printer : " + getName();

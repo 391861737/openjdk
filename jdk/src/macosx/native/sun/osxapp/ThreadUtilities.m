@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2011, 2014, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2011, 2013, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -33,43 +33,21 @@
 // The following must be named "jvm", as there are extern references to it in AWT
 JavaVM *jvm = NULL;
 static JNIEnv *appKitEnv = NULL;
-static jobject appkitThreadGroup = NULL;
-static BOOL awtEmbedded = NO;
-
-inline void attachCurrentThread(void** env) {
-    if ([NSThread isMainThread]) {
-        JavaVMAttachArgs args;
-        args.version = JNI_VERSION_1_4;
-        args.name = "AppKit Thread";
-        args.group = appkitThreadGroup;
-        (*jvm)->AttachCurrentThreadAsDaemon(jvm, env, &args);
-    } else {
-        (*jvm)->AttachCurrentThreadAsDaemon(jvm, env, NULL);
-    }
-}
 
 @implementation ThreadUtilities
 
 + (JNIEnv*)getJNIEnv {
 AWT_ASSERT_APPKIT_THREAD;
     if (appKitEnv == NULL) {
-        attachCurrentThread((void **)&appKitEnv);
+        (*jvm)->AttachCurrentThreadAsDaemon(jvm, (void **)&appKitEnv, NULL);
     }
     return appKitEnv;
 }
 
 + (JNIEnv*)getJNIEnvUncached {
     JNIEnv *env = NULL;
-    attachCurrentThread((void **)&env);
+    (*jvm)->AttachCurrentThreadAsDaemon(jvm, (void **)&env, nil);
     return env;
-}
-
-+ (void)detachCurrentThread {
-    (*jvm)->DetachCurrentThread(jvm);
-}
-
-+ (void)setAppkitThreadGroup:(jobject)group {
-    appkitThreadGroup = group;
 }
 
 + (void)performOnMainThreadWaiting:(BOOL)wait block:(void (^)())block {
@@ -86,14 +64,6 @@ AWT_ASSERT_APPKIT_THREAD;
     } else {
         [JNFRunLoop performOnMainThread:aSelector on:target withObject:arg waitUntilDone:wait];
     }
-}
-
-+ (void)setAWTEmbedded:(BOOL)embedded {
-    awtEmbedded = embedded;
-}
-
-+ (BOOL)isAWTEmbedded {
-    return awtEmbedded;
 }
 
 @end

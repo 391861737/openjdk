@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 1997, 2014, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 1997, 2011, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -30,12 +30,10 @@
 #include "memory/resourceArea.hpp"
 #include "runtime/init.hpp"
 #include "runtime/interfaceSupport.hpp"
-#include "runtime/orderAccess.inline.hpp"
 #include "runtime/threadLocalStorage.hpp"
 #include "runtime/vframe.hpp"
 #include "utilities/preserveException.hpp"
 
-PRAGMA_FORMAT_MUTE_WARNINGS_FOR_GCC
 
 // Implementation of InterfaceSupport
 
@@ -85,7 +83,7 @@ void InterfaceSupport::gc_alot() {
   // Short-circuit any possible re-entrant gc-a-lot attempt
   if (thread->skip_gcalot()) return;
 
-  if (Threads::is_vm_complete()) {
+  if (is_init_completed()) {
 
     if (++_fullgc_alot_invocation < FullGCALotStart) {
       return;
@@ -185,22 +183,19 @@ void InterfaceSupport::zap_dead_locals_old() {
 
 # endif
 
-// invocation counter for InterfaceSupport::deoptimizeAll/zombieAll functions
+
 int deoptimizeAllCounter = 0;
 int zombieAllCounter = 0;
 
+
 void InterfaceSupport::zombieAll() {
-  // This method is called by all threads when a thread make
-  // transition to VM state (for example, runtime calls).
-  // Divide number of calls by number of threads to avoid
-  // dependence of ZombieAll events frequency on number of threads.
-  int value = zombieAllCounter / Threads::number_of_threads();
-  if (is_init_completed() && value > ZombieALotInterval) {
+  if (is_init_completed() && zombieAllCounter > ZombieALotInterval) {
     zombieAllCounter = 0;
     VM_ZombieAll op;
     VMThread::execute(&op);
+  } else {
+    zombieAllCounter++;
   }
-  zombieAllCounter++;
 }
 
 void InterfaceSupport::unlinkSymbols() {
@@ -209,17 +204,12 @@ void InterfaceSupport::unlinkSymbols() {
 }
 
 void InterfaceSupport::deoptimizeAll() {
-  // This method is called by all threads when a thread make
-  // transition to VM state (for example, runtime calls).
-  // Divide number of calls by number of threads to avoid
-  // dependence of DeoptimizeAll events frequency on number of threads.
-  int value = deoptimizeAllCounter / Threads::number_of_threads();
-  if (is_init_completed()) {
-    if (DeoptimizeALot && value > DeoptimizeALotInterval) {
+  if (is_init_completed() ) {
+    if (DeoptimizeALot && deoptimizeAllCounter > DeoptimizeALotInterval) {
       deoptimizeAllCounter = 0;
       VM_DeoptimizeAll op;
       VMThread::execute(&op);
-    } else if (DeoptimizeRandom && (value & 0x1F) == (os::random() & 0x1F)) {
+    } else if (DeoptimizeRandom && (deoptimizeAllCounter & 0x1f) == (os::random() & 0x1f)) {
       VM_DeoptimizeAll op;
       VMThread::execute(&op);
     }

@@ -196,8 +196,7 @@ public class TestLogConfigurationDeadLock {
                     if (ids.length == 1) {
                         throw new RuntimeException("Found 1 deadlocked thread: "+ids[0]);
                     } else if (ids.length > 0) {
-                        ThreadInfo[] infos = ManagementFactory.getThreadMXBean()
-                            .getThreadInfo(ids, Integer.MAX_VALUE);
+                        ThreadInfo[] infos = ManagementFactory.getThreadMXBean().getThreadInfo(ids);
                         System.err.println("Found "+ids.length+" deadlocked threads: ");
                         for (ThreadInfo inf : infos) {
                             System.err.println(inf.toString());

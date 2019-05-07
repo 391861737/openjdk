@@ -31,4 +31,3 @@
 #[windows]sun.tools.attach.WindowsAttachProvider
 #[linux]sun.tools.attach.LinuxAttachProvider
 #[macosx]sun.tools.attach.BsdAttachProvider
-#[aix]sun.tools.attach.AixAttachProvider

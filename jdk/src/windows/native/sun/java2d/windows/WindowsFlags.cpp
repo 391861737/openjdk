@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2003, 2014, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2003, 2010, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -47,15 +47,12 @@ void SetIDs(JNIEnv *env, jclass wFlagsClass)
 {
     wFlagsClassID = (jclass)env->NewGlobalRef(wFlagsClass);
     d3dEnabledID = env->GetStaticFieldID(wFlagsClass, "d3dEnabled", "Z");
-    CHECK_NULL(d3dEnabledID);
     d3dSetID = env->GetStaticFieldID(wFlagsClass, "d3dSet", "Z");
-    CHECK_NULL(d3dSetID);
 }
 
 BOOL GetStaticBoolean(JNIEnv *env, jclass wfClass, const char *fieldName)
 {
     jfieldID fieldID = env->GetStaticFieldID(wfClass, fieldName, "Z");
-    CHECK_NULL_RETURN(fieldID, FALSE);
     return env->GetStaticBooleanField(wfClass, fieldID);
 }
 
@@ -63,7 +60,6 @@ jobject GetStaticObject(JNIEnv *env, jclass wfClass, const char *fieldName,
                         const char *signature)
 {
     jfieldID fieldID = env->GetStaticFieldID(wfClass, fieldName, signature);
-    CHECK_NULL_RETURN(fieldID, NULL);
     return env->GetStaticObjectField(wfClass, fieldID);
 }
 
@@ -94,17 +90,15 @@ void GetFlagValues(JNIEnv *env, jclass wFlagsClass)
     forceD3DUsage = d3dSet;
     g_offscreenSharing = GetStaticBoolean(env, wFlagsClass,
                                           "offscreenSharingEnabled");
-    JNU_CHECK_EXCEPTION(env);
     accelReset = GetStaticBoolean(env, wFlagsClass, "accelReset");
-    JNU_CHECK_EXCEPTION(env);
     checkRegistry = GetStaticBoolean(env, wFlagsClass, "checkRegistry");
-    JNU_CHECK_EXCEPTION(env);
     disableRegistry = GetStaticBoolean(env, wFlagsClass, "disableRegistry");
-    JNU_CHECK_EXCEPTION(env);
+    jstring javaVersionString = (jstring)GetStaticObject(env, wFlagsClass,
+                                                         "javaVersion",
+                                                         "Ljava/lang/String;");
 
     setHighDPIAware =
         (IS_WINVISTA && GetStaticBoolean(env, wFlagsClass, "setHighDPIAware"));
-    JNU_CHECK_EXCEPTION(env);
 
     J2dTraceLn(J2D_TRACE_INFO, "WindowsFlags (native):");
     J2dTraceLn1(J2D_TRACE_INFO, "  d3dEnabled = %s",
@@ -172,7 +166,6 @@ Java_sun_java2d_windows_WindowsFlags_initNativeFlags(JNIEnv *env,
                                                      jclass wFlagsClass)
 {
     SetIDs(env, wFlagsClass);
-    JNU_CHECK_EXCEPTION(env);
     GetFlagValues(env, wFlagsClass);
 }
 

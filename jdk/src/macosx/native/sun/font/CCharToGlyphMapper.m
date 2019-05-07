@@ -101,13 +101,10 @@ JNF_COCOA_ENTER(env);
     jchar *unicodesAsChars =
         (*env)->GetPrimitiveArrayCritical(env, unicodes, NULL);
 
-    if (unicodesAsChars != NULL) {
-        AllocateGlyphBuffer(env, awtFont, count,
-                           (UniChar *)unicodesAsChars, glyphs);
+    AllocateGlyphBuffer(env, awtFont, count, (UniChar *)unicodesAsChars, glyphs);
 
     (*env)->ReleasePrimitiveArrayCritical(env, unicodes,
                                           unicodesAsChars, JNI_ABORT);
-    }
 
 JNF_COCOA_EXIT(env);
 }

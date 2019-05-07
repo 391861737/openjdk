@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2011, 2015, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2011, 2013, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -81,14 +81,6 @@ public final class XalanConstants {
      */
     public static final String JDK_GENERAL_ENTITY_SIZE_LIMIT =
             ORACLE_JAXP_PROPERTY_PREFIX + "maxGeneralEntitySizeLimit";
-
-    /**
-     * JDK node count limit in entities that limits the total number of nodes
-     * in all of entity references.
-     */
-    public static final String JDK_ENTITY_REPLACEMENT_LIMIT =
-            ORACLE_JAXP_PROPERTY_PREFIX + "entityReplacementLimit";
-
     /**
      * JDK maximum parameter entity size limit
      */
@@ -99,13 +91,6 @@ public final class XalanConstants {
      */
     public static final String JDK_XML_NAME_LIMIT =
             ORACLE_JAXP_PROPERTY_PREFIX + "maxXMLNameLimit";
-
-    /**
-     * JDK maxElementDepth limit
-     */
-    public static final String JDK_MAX_ELEMENT_DEPTH =
-            ORACLE_JAXP_PROPERTY_PREFIX + "maxElementDepth";
-
     /**
      * JDK property indicating whether the parser shall print out entity
      * count information
@@ -145,13 +130,6 @@ public final class XalanConstants {
      * JDK maximum general entity size limit
      */
     public static final String SP_GENERAL_ENTITY_SIZE_LIMIT = "jdk.xml.maxGeneralEntitySizeLimit";
-
-    /**
-     * JDK node count limit in entities that limits the total number of nodes
-     * in all of entity references.
-     */
-    public static final String SP_ENTITY_REPLACEMENT_LIMIT = "jdk.xml.entityReplacementLimit";
-
     /**
      * JDK maximum parameter entity size limit
      */
@@ -160,21 +138,6 @@ public final class XalanConstants {
      * JDK maximum XML name limit
      */
     public static final String SP_XML_NAME_LIMIT = "jdk.xml.maxXMLNameLimit";
-
-    /**
-     * JDK maxElementDepth limit
-     */
-    public static final String SP_MAX_ELEMENT_DEPTH = "jdk.xml.maxElementDepth";
-
-    /**
-     * JDK TransformerFactory and Transformer attribute that specifies a class
-     * loader that will be used for extension functions class loading
-     * Value: a "null", the default value, means that the default EF class loading
-     * path will be used.
-     * Instance of ClassLoader: the specified instance of ClassLoader will be used
-     * for extension functions loading during translation process
-     */
-    public static final String JDK_EXTENSION_CLASSLOADER = "jdk.xml.transform.extensionClassLoader";
 
     //legacy System Properties
     public final static String ENTITY_EXPANSION_LIMIT = "entityExpansionLimit";

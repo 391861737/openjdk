@@ -278,7 +278,8 @@ public class SynthSpinnerUI extends BasicSpinnerUI
     }
 
     private SynthContext getContext(JComponent c, int state) {
-        return SynthContext.getContext(c, style, state);
+        return SynthContext.getContext(SynthContext.class, c,
+                    SynthLookAndFeel.getRegion(c), style, state);
     }
 
     /**

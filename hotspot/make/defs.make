@@ -1,5 +1,5 @@
 #
-# Copyright (c) 2006, 2016, Oracle and/or its affiliates. All rights reserved.
+# Copyright (c) 2006, 2013, Oracle and/or its affiliates. All rights reserved.
 # DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
 #
 # This code is free software; you can redistribute it and/or modify it
@@ -116,18 +116,6 @@ endif
 # hotspot version definitions
 include $(GAMMADIR)/make/hotspot_version
 
-# When config parameter --with-update-version is defined,
-# Hotspot minor version should be set to that
-ifneq ($(JDK_UPDATE_VERSION),)
-  HS_MINOR_VER=$(JDK_UPDATE_VERSION)
-endif
-
-# When config parameter --with-build-number is defined,
-# Hotspot build number should be set to that
-ifneq ($(JDK_BUILD_NUMBER),)
-  HS_BUILD_NUMBER=$(subst b,,$(JDK_BUILD_NUMBER))
-endif
-
 # Java versions needed
 ifeq ($(PREVIOUS_JDK_VERSION),)
   PREVIOUS_JDK_VERSION=$(JDK_PREVIOUS_VERSION)
@@ -188,15 +176,11 @@ ifeq ($(OS),)
   HOST := $(shell uname -n)
 endif
 
-# If not SunOS, not Linux not BSD and not AIX, assume Windows
+# If not SunOS, not Linux and not BSD, assume Windows
 ifneq ($(OS), Linux)
   ifneq ($(OS), SunOS)
     ifneq ($(OS), bsd)
-      ifneq ($(OS), AIX)
-        OSNAME=windows
-      else
-        OSNAME=aix
-      endif
+      OSNAME=windows
     else
       OSNAME=bsd
     endif
@@ -285,7 +269,7 @@ ifneq ($(OSNAME),windows)
 
   # Use uname output for SRCARCH, but deal with platform differences. If ARCH
   # is not explicitly listed below, it is treated as x86.
-  SRCARCH    ?= $(ARCH/$(filter sparc sparc64 ia64 amd64 x86_64 ppc ppc64 zero,$(ARCH)))
+  SRCARCH     = $(ARCH/$(filter sparc sparc64 ia64 amd64 x86_64 arm ppc zero,$(ARCH)))
   ARCH/       = x86
   ARCH/sparc  = sparc
   ARCH/sparc64= sparc
@@ -294,10 +278,11 @@ ifneq ($(OSNAME),windows)
   ARCH/x86_64 = x86
   ARCH/ppc64  = ppc
   ARCH/ppc    = ppc
+  ARCH/arm    = arm
   ARCH/zero   = zero
 
   # BUILDARCH is usually the same as SRCARCH, except for sparcv9
-  BUILDARCH ?= $(SRCARCH)
+  BUILDARCH = $(SRCARCH)
   ifeq ($(BUILDARCH), x86)
     ifdef LP64
       BUILDARCH = amd64
@@ -310,23 +295,20 @@ ifneq ($(OSNAME),windows)
       BUILDARCH = sparcv9
     endif
   endif
-  ifeq ($(BUILDARCH), ppc)
-    ifdef LP64
-      BUILDARCH = ppc64
-    endif
-  endif
 
   # LIBARCH is 1:1 mapping from BUILDARCH
-  LIBARCH        ?= $(LIBARCH/$(BUILDARCH))
+  LIBARCH         = $(LIBARCH/$(BUILDARCH))
   LIBARCH/i486    = i386
   LIBARCH/amd64   = amd64
   LIBARCH/sparc   = sparc
   LIBARCH/sparcv9 = sparcv9
   LIBARCH/ia64    = ia64
-  LIBARCH/ppc64   = ppc64
+  LIBARCH/ppc64   = ppc
+  LIBARCH/ppc     = ppc
+  LIBARCH/arm     = arm
   LIBARCH/zero    = $(ZERO_LIBARCH)
 
-  LP64_ARCH += sparcv9 amd64 ia64 ppc64 zero
+  LP64_ARCH = sparcv9 amd64 ia64 zero
 endif
 
 # Required make macro settings for all platforms

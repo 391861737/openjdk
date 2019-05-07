@@ -24,6 +24,7 @@ import static jdk.nashorn.internal.runtime.regexp.joni.Option.isDynamic;
 import static jdk.nashorn.internal.runtime.regexp.joni.Option.isIgnoreCase;
 import static jdk.nashorn.internal.runtime.regexp.joni.Option.isMultiline;
 import static jdk.nashorn.internal.runtime.regexp.joni.ast.QuantifierNode.isRepeatInfinite;
+
 import jdk.nashorn.internal.runtime.regexp.joni.ast.AnchorNode;
 import jdk.nashorn.internal.runtime.regexp.joni.ast.BackRefNode;
 import jdk.nashorn.internal.runtime.regexp.joni.ast.CClassNode;
@@ -46,13 +47,13 @@ final class ArrayCompiler extends Compiler {
     private char[][] templates;
     private int templateNum;
 
-    ArrayCompiler(final Analyser analyser) {
+    ArrayCompiler(Analyser analyser) {
         super(analyser);
     }
 
     @Override
     protected final void prepare() {
-        final int codeSize = Config.USE_STRING_TEMPLATES ? 8 : ((analyser.getEnd() - analyser.getBegin()) * 2 + 2);
+        int codeSize = Config.USE_STRING_TEMPLATES ? 8 : ((analyser.getEnd() - analyser.getBegin()) * 2 + 2);
         code = new int[codeSize];
         codeLength = 0;
     }
@@ -70,7 +71,7 @@ final class ArrayCompiler extends Compiler {
     }
 
     @Override
-    protected void compileAltNode(final ConsAltNode node) {
+    protected void compileAltNode(ConsAltNode node) {
         ConsAltNode aln = node;
         int len = 0;
 
@@ -81,7 +82,7 @@ final class ArrayCompiler extends Compiler {
             }
         } while ((aln = aln.cdr) != null);
 
-        final int pos = codeLength + len;  /* goal position */
+        int pos = codeLength + len;  /* goal position */
 
         aln = node;
         do {
@@ -97,15 +98,15 @@ final class ArrayCompiler extends Compiler {
         } while ((aln = aln.cdr) != null);
     }
 
-    private static boolean isNeedStrLenOpExact(final int op) {
+    private boolean isNeedStrLenOpExact(int op) {
         return  op == OPCode.EXACTN || op == OPCode.EXACTN_IC;
     }
 
-    private static boolean opTemplated(final int op) {
+    private boolean opTemplated(int op) {
         return isNeedStrLenOpExact(op);
     }
 
-    private static int selectStrOpcode(final int strLength, final boolean ignoreCase) {
+    private int selectStrOpcode(int strLength, boolean ignoreCase) {
         int op;
 
         if (ignoreCase) {
@@ -126,8 +127,8 @@ final class ArrayCompiler extends Compiler {
         return op;
     }
 
-    private void compileTreeEmptyCheck(final Node node, final int emptyInfo) {
-        final int savedNumNullCheck = regex.numNullCheck;
+    private void compileTreeEmptyCheck(Node node, int emptyInfo) {
+        int savedNumNullCheck = regex.numNullCheck;
 
         if (emptyInfo != 0) {
             addOpcode(OPCode.NULL_CHECK_START);
@@ -138,14 +139,15 @@ final class ArrayCompiler extends Compiler {
         compileTree(node);
 
         if (emptyInfo != 0) {
-            switch (emptyInfo) {
+            switch(emptyInfo) {
             case TargetInfo.IS_EMPTY:
                 addOpcode(OPCode.NULL_CHECK_END);
                 break;
             case TargetInfo.IS_EMPTY_MEM:
                 addOpcode(OPCode.NULL_CHECK_END_MEMST);
                 break;
-            default:
+            case TargetInfo.IS_EMPTY_REC:
+                addOpcode(OPCode.NULL_CHECK_END_MEMST_PUSH);
                 break;
             } // switch
 
@@ -153,25 +155,23 @@ final class ArrayCompiler extends Compiler {
         }
     }
 
-    private static int addCompileStringlength(final char[] chars, final int p, final int strLength, final boolean ignoreCase) {
-        final int op = selectStrOpcode(strLength, ignoreCase);
+    private int addCompileStringlength(char[] chars, int p, int strLength, boolean ignoreCase) {
+        int op = selectStrOpcode(strLength, ignoreCase);
         int len = OPSize.OPCODE;
 
         if (Config.USE_STRING_TEMPLATES && opTemplated(op)) {
             // string length, template index, template string pointer
             len += OPSize.LENGTH + OPSize.INDEX + OPSize.INDEX;
         } else {
-            if (isNeedStrLenOpExact(op)) {
-                len += OPSize.LENGTH;
-            }
+            if (isNeedStrLenOpExact(op)) len += OPSize.LENGTH;
             len += strLength;
         }
         return len;
     }
 
     @Override
-    protected final void addCompileString(final char[] chars, final int p, final int strLength, final boolean ignoreCase) {
-        final int op = selectStrOpcode(strLength, ignoreCase);
+    protected final void addCompileString(char[] chars, int p, int strLength, boolean ignoreCase) {
+        int op = selectStrOpcode(strLength, ignoreCase);
         addOpcode(op);
 
         if (isNeedStrLenOpExact(op)) {
@@ -187,17 +187,15 @@ final class ArrayCompiler extends Compiler {
         }
     }
 
-    private static int compileLengthStringNode(final Node node) {
-        final StringNode sn = (StringNode)node;
-        if (sn.length() <= 0) {
-            return 0;
-        }
-        final boolean ambig = sn.isAmbig();
+    private int compileLengthStringNode(Node node) {
+        StringNode sn = (StringNode)node;
+        if (sn.length() <= 0) return 0;
+        boolean ambig = sn.isAmbig();
 
         int p, prev;
         p = prev = sn.p;
-        final int end = sn.end;
-        final char[] chars = sn.chars;
+        int end = sn.end;
+        char[] chars = sn.chars;
         p++;
 
         int slen = 1;
@@ -207,27 +205,23 @@ final class ArrayCompiler extends Compiler {
             slen++;
             p++;
         }
-        final int r = addCompileStringlength(chars, prev, slen, ambig);
+        int r = addCompileStringlength(chars, prev, slen, ambig);
         rlen += r;
         return rlen;
     }
 
-    private static int compileLengthStringRawNode(final StringNode sn) {
-        if (sn.length() <= 0) {
-            return 0;
-        }
+    private int compileLengthStringRawNode(StringNode sn) {
+        if (sn.length() <= 0) return 0;
         return addCompileStringlength(sn.chars, sn.p, sn.length(), false);
     }
 
-    private void addMultiByteCClass(final CodeRangeBuffer mbuf) {
+    private void addMultiByteCClass(CodeRangeBuffer mbuf) {
         addLength(mbuf.used);
         addInts(mbuf.p, mbuf.used);
     }
 
-    private static int compileLengthCClassNode(final CClassNode cc) {
-        if (cc.isShare()) {
-            return OPSize.OPCODE + OPSize.POINTER;
-        }
+    private int compileLengthCClassNode(CClassNode cc) {
+        if (cc.isShare()) return OPSize.OPCODE + OPSize.POINTER;
 
         int len;
         if (cc.mbuf == null) {
@@ -245,7 +239,7 @@ final class ArrayCompiler extends Compiler {
     }
 
     @Override
-    protected void compileCClassNode(final CClassNode cc) {
+    protected void compileCClassNode(CClassNode cc) {
         if (cc.isShare()) { // shared char class
             addOpcode(OPCode.CCLASS_NODE);
             addPointer(cc);
@@ -290,7 +284,7 @@ final class ArrayCompiler extends Compiler {
     }
 
     @Override
-    protected void compileBackrefNode(final BackRefNode node) {
+    protected void compileBackrefNode(BackRefNode node) {
         if (isIgnoreCase(regex.options)) {
             addOpcode(OPCode.BACKREFN_IC);
             addMemNum(node.backRef);
@@ -311,7 +305,7 @@ final class ArrayCompiler extends Compiler {
     }
 
     private static final int REPEAT_RANGE_ALLOC = 8;
-    private void entryRepeatRange(final int id, final int lower, final int upper) {
+    private void entryRepeatRange(int id, int lower, int upper) {
         if (regex.repeatRangeLo == null) {
             regex.repeatRangeLo = new int[REPEAT_RANGE_ALLOC];
             regex.repeatRangeHi = new int[REPEAT_RANGE_ALLOC];
@@ -328,8 +322,8 @@ final class ArrayCompiler extends Compiler {
         regex.repeatRangeHi[id] = isRepeatInfinite(upper) ? 0x7fffffff : upper;
     }
 
-    private void compileRangeRepeatNode(final QuantifierNode qn, final int targetLen, final int emptyInfo) {
-        final int numRepeat = regex.numRepeat;
+    private void compileRangeRepeatNode(QuantifierNode qn, int targetLen, int emptyInfo) {
+        int numRepeat = regex.numRepeat;
         addOpcode(qn.greedy ? OPCode.REPEAT : OPCode.REPEAT_NG);
         addMemNum(numRepeat); /* OP_REPEAT ID */
         regex.numRepeat++;
@@ -351,23 +345,24 @@ final class ArrayCompiler extends Compiler {
     private static final int QUANTIFIER_EXPAND_LIMIT_SIZE   = 50; // was 50
 
     @SuppressWarnings("unused")
-    private static boolean cknOn(final int ckn) {
+    private static boolean cknOn(int ckn) {
         return ckn > 0;
     }
 
-    private int compileNonCECLengthQuantifierNode(final QuantifierNode qn) {
-        final boolean infinite = isRepeatInfinite(qn.upper);
-        final int emptyInfo = qn.targetEmptyInfo;
+    private int compileNonCECLengthQuantifierNode(QuantifierNode qn) {
+        boolean infinite = isRepeatInfinite(qn.upper);
+        int emptyInfo = qn.targetEmptyInfo;
 
-        final int tlen = compileLengthTree(qn.target);
+        int tlen = compileLengthTree(qn.target);
 
         /* anychar repeat */
         if (qn.target.getType() == NodeType.CANY) {
             if (qn.greedy && infinite) {
                 if (qn.nextHeadExact != null) {
                     return OPSize.ANYCHAR_STAR_PEEK_NEXT + tlen * qn.lower;
+                } else {
+                    return OPSize.ANYCHAR_STAR + tlen * qn.lower;
                 }
-                return OPSize.ANYCHAR_STAR + tlen * qn.lower;
             }
         }
 
@@ -413,11 +408,11 @@ final class ArrayCompiler extends Compiler {
     }
 
     @Override
-    protected void compileNonCECQuantifierNode(final QuantifierNode qn) {
-        final boolean infinite = isRepeatInfinite(qn.upper);
-        final int emptyInfo = qn.targetEmptyInfo;
+    protected void compileNonCECQuantifierNode(QuantifierNode qn) {
+        boolean infinite = isRepeatInfinite(qn.upper);
+        int emptyInfo = qn.targetEmptyInfo;
 
-        final int tlen = compileLengthTree(qn.target);
+        int tlen = compileLengthTree(qn.target);
 
         if (qn.isAnyCharStar()) {
             compileTreeNTimes(qn.target, qn.lower);
@@ -427,16 +422,17 @@ final class ArrayCompiler extends Compiler {
                 } else {
                     addOpcode(OPCode.ANYCHAR_STAR_PEEK_NEXT);
                 }
-                final StringNode sn = (StringNode)qn.nextHeadExact;
+                StringNode sn = (StringNode)qn.nextHeadExact;
                 addChars(sn.chars, sn.p, 1);
                 return;
-            }
-            if (isMultiline(regex.options)) {
-                addOpcode(OPCode.ANYCHAR_ML_STAR);
             } else {
-                addOpcode(OPCode.ANYCHAR_STAR);
+                if (isMultiline(regex.options)) {
+                    addOpcode(OPCode.ANYCHAR_ML_STAR);
+                } else {
+                    addOpcode(OPCode.ANYCHAR_STAR);
+                }
+                return;
             }
-            return;
         }
 
         int modTLen;
@@ -465,13 +461,13 @@ final class ArrayCompiler extends Compiler {
             if (qn.greedy) {
                 if (qn.headExact != null) {
                     addOpcodeRelAddr(OPCode.PUSH_OR_JUMP_EXACT1, modTLen + OPSize.JUMP);
-                    final StringNode sn = (StringNode)qn.headExact;
+                    StringNode sn = (StringNode)qn.headExact;
                     addChars(sn.chars, sn.p, 1);
                     compileTreeEmptyCheck(qn.target, emptyInfo);
                     addOpcodeRelAddr(OPCode.JUMP, -(modTLen + OPSize.JUMP + OPSize.PUSH_OR_JUMP_EXACT1));
                 } else if (qn.nextHeadExact != null) {
                     addOpcodeRelAddr(OPCode.PUSH_IF_PEEK_NEXT, modTLen + OPSize.JUMP);
-                    final StringNode sn = (StringNode)qn.nextHeadExact;
+                    StringNode sn = (StringNode)qn.nextHeadExact;
                     addChars(sn.chars, sn.p, 1);
                     compileTreeEmptyCheck(qn.target, emptyInfo);
                     addOpcodeRelAddr(OPCode.JUMP, -(modTLen + OPSize.JUMP + OPSize.PUSH_IF_PEEK_NEXT));
@@ -490,7 +486,7 @@ final class ArrayCompiler extends Compiler {
             compileTree(qn.target);
         } else if (!infinite && qn.greedy &&
                   (qn.upper == 1 || (tlen + OPSize.PUSH) * qn.upper <= QUANTIFIER_EXPAND_LIMIT_SIZE)) {
-            final int n = qn.upper - qn.lower;
+            int n = qn.upper - qn.lower;
             compileTreeNTimes(qn.target, qn.lower);
 
             for (int i=0; i<n; i++) {
@@ -506,21 +502,22 @@ final class ArrayCompiler extends Compiler {
         }
     }
 
-    private int compileLengthOptionNode(final EncloseNode node) {
-        final int prev = regex.options;
+    private int compileLengthOptionNode(EncloseNode node) {
+        int prev = regex.options;
         regex.options = node.option;
-        final int tlen = compileLengthTree(node.target);
+        int tlen = compileLengthTree(node.target);
         regex.options = prev;
 
         if (isDynamic(prev ^ node.option)) {
             return OPSize.SET_OPTION_PUSH + OPSize.SET_OPTION + OPSize.FAIL + tlen + OPSize.SET_OPTION;
+        } else {
+            return tlen;
         }
-        return tlen;
     }
 
     @Override
-    protected void compileOptionNode(final EncloseNode node) {
-        final int prev = regex.options;
+    protected void compileOptionNode(EncloseNode node) {
+        int prev = regex.options;
 
         if (isDynamic(prev ^ node.option)) {
             addOpcodeOption(OPCode.SET_OPTION_PUSH, node.option);
@@ -537,7 +534,7 @@ final class ArrayCompiler extends Compiler {
         }
     }
 
-    private int compileLengthEncloseNode(final EncloseNode node) {
+    private int compileLengthEncloseNode(EncloseNode node) {
         if (node.isOption()) {
             return compileLengthOptionNode(node);
         }
@@ -562,7 +559,7 @@ final class ArrayCompiler extends Compiler {
 
         case EncloseType.STOP_BACKTRACK:
             if (node.isStopBtSimpleRepeat()) {
-                final QuantifierNode qn = (QuantifierNode)node.target;
+                QuantifierNode qn = (QuantifierNode)node.target;
                 tlen = compileLengthTree(qn.target);
                 len = tlen * qn.lower + OPSize.PUSH + tlen + OPSize.POP + OPSize.JUMP;
             } else {
@@ -578,7 +575,7 @@ final class ArrayCompiler extends Compiler {
     }
 
     @Override
-    protected void compileEncloseNode(final EncloseNode node) {
+    protected void compileEncloseNode(EncloseNode node) {
         int len;
         switch (node.type) {
         case EncloseType.MEMORY:
@@ -601,7 +598,7 @@ final class ArrayCompiler extends Compiler {
 
         case EncloseType.STOP_BACKTRACK:
             if (node.isStopBtSimpleRepeat()) {
-                final QuantifierNode qn = (QuantifierNode)node.target;
+                QuantifierNode qn = (QuantifierNode)node.target;
 
                 compileTreeNTimes(qn.target, qn.lower);
 
@@ -623,7 +620,7 @@ final class ArrayCompiler extends Compiler {
         } // switch
     }
 
-    private int compileLengthAnchorNode(final AnchorNode node) {
+    private int compileLengthAnchorNode(AnchorNode node) {
         int tlen;
         if (node.target != null) {
             tlen = compileLengthTree(node.target);
@@ -657,7 +654,7 @@ final class ArrayCompiler extends Compiler {
     }
 
     @Override
-    protected void compileAnchorNode(final AnchorNode node) {
+    protected void compileAnchorNode(AnchorNode node) {
         int len;
         int n;
 
@@ -678,15 +675,13 @@ final class ArrayCompiler extends Compiler {
             break;
 
         case AnchorType.WORD_BEGIN:
-            if (Config.USE_WORD_BEGIN_END) {
+            if (Config.USE_WORD_BEGIN_END)
                 addOpcode(OPCode.WORD_BEGIN);
-            }
             break;
 
         case AnchorType.WORD_END:
-            if (Config.USE_WORD_BEGIN_END) {
+            if (Config.USE_WORD_BEGIN_END)
                 addOpcode(OPCode.WORD_END);
-            }
             break;
 
         case AnchorType.PREC_READ:
@@ -706,9 +701,7 @@ final class ArrayCompiler extends Compiler {
             addOpcode(OPCode.LOOK_BEHIND);
             if (node.charLength < 0) {
                 n = analyser.getCharLengthTree(node.target);
-                if (analyser.returnCode != 0) {
-                    newSyntaxException(ERR_INVALID_LOOK_BEHIND_PATTERN);
-                }
+                if (analyser.returnCode != 0) newSyntaxException(ERR_INVALID_LOOK_BEHIND_PATTERN);
             } else {
                 n = node.charLength;
             }
@@ -721,9 +714,7 @@ final class ArrayCompiler extends Compiler {
             addOpcodeRelAddr(OPCode.PUSH_LOOK_BEHIND_NOT, len + OPSize.FAIL_LOOK_BEHIND_NOT);
             if (node.charLength < 0) {
                 n = analyser.getCharLengthTree(node.target);
-                if (analyser.returnCode != 0) {
-                    newSyntaxException(ERR_INVALID_LOOK_BEHIND_PATTERN);
-                }
+                if (analyser.returnCode != 0) newSyntaxException(ERR_INVALID_LOOK_BEHIND_PATTERN);
             } else {
                 n = node.charLength;
             }
@@ -737,7 +728,7 @@ final class ArrayCompiler extends Compiler {
         } // switch
     }
 
-    private int compileLengthTree(final Node node) {
+    private int compileLengthTree(Node node) {
         int len = 0;
 
         switch (node.getType()) {
@@ -759,7 +750,7 @@ final class ArrayCompiler extends Compiler {
             break;
 
         case NodeType.STR:
-            final StringNode sn = (StringNode)node;
+            StringNode sn = (StringNode)node;
             if (sn.isRaw()) {
                 len = compileLengthStringRawNode(sn);
             } else {
@@ -777,7 +768,7 @@ final class ArrayCompiler extends Compiler {
             break;
 
         case NodeType.BREF:
-            final BackRefNode br = (BackRefNode)node;
+            BackRefNode br = (BackRefNode)node;
 
             len = ((!isIgnoreCase(regex.options) && br.backRef <= 2)
                     ? OPSize.OPCODE : (OPSize.OPCODE + OPSize.MEMNUM));
@@ -802,37 +793,35 @@ final class ArrayCompiler extends Compiler {
         return len;
     }
 
-    private void ensure(final int size) {
+    private void ensure(int size) {
         if (size >= code.length) {
             int length = code.length << 1;
-            while (length <= size) {
-                length <<= 1;
-            }
-            final int[]tmp = new int[length];
+            while (length <= size) length <<= 1;
+            int[]tmp = new int[length];
             System.arraycopy(code, 0, tmp, 0, code.length);
             code = tmp;
         }
     }
 
-    private void addInt(final int i) {
+    private void addInt(int i) {
         if (codeLength >= code.length) {
-            final int[]tmp = new int[code.length << 1];
+            int[]tmp = new int[code.length << 1];
             System.arraycopy(code, 0, tmp, 0, code.length);
             code = tmp;
         }
         code[codeLength++] = i;
     }
 
-    void setInt(final int i, final int offset) {
+    void setInt(int i, int offset) {
         ensure(offset);
         regex.code[offset] = i;
     }
 
-    private void addObject(final Object o) {
+    private void addObject(Object o) {
         if (regex.operands == null) {
             regex.operands = new Object[4];
         } else if (regex.operandLength >= regex.operands.length) {
-            final Object[]tmp = new Object[regex.operands.length << 1];
+            Object[]tmp = new Object[regex.operands.length << 1];
             System.arraycopy(regex.operands, 0, tmp, 0, regex.operands.length);
             regex.operands = tmp;
         }
@@ -840,23 +829,20 @@ final class ArrayCompiler extends Compiler {
         regex.operands[regex.operandLength++] = o;
     }
 
-    private void addChars(final char[] chars, final int pp ,final int length) {
+    private void addChars(char[] chars, int p ,int length) {
         ensure(codeLength + length);
-        int p = pp;
-        final int end = p + length;
+        int end = p + length;
 
-        while (p < end) {
-            code[codeLength++] = chars[p++];
-        }
+        while (p < end) code[codeLength++] = chars[p++];
     }
 
-    private void addInts(final int[]ints, final int length) {
+    private void addInts(int[]ints, int length) {
         ensure(codeLength + length);
         System.arraycopy(ints, 0, code, codeLength, length);
         codeLength += length;
     }
 
-    private void addOpcode(final int opcode) {
+    private void addOpcode(int opcode) {
         addInt(opcode);
 
         switch(opcode) {
@@ -890,57 +876,54 @@ final class ArrayCompiler extends Compiler {
         case OPCode.CALL:
         case OPCode.RETURN: // it will appear only with CALL though
             regex.stackNeeded = true;
-            break;
-        default:
-            break;
         }
     }
 
     @SuppressWarnings("unused")
-    private void addStateCheckNum(final int num) {
+    private void addStateCheckNum(int num) {
         addInt(num);
     }
 
-    private void addRelAddr(final int addr) {
+    private void addRelAddr(int addr) {
         addInt(addr);
     }
 
     @SuppressWarnings("unused")
-    private void addAbsAddr(final int addr) {
+    private void addAbsAddr(int addr) {
         addInt(addr);
     }
 
-    private void addLength(final int length) {
+    private void addLength(int length) {
         addInt(length);
     }
 
-    private void addMemNum(final int num) {
+    private void addMemNum(int num) {
         addInt(num);
     }
 
-    private void addPointer(final Object o) {
+    private void addPointer(Object o) {
         addObject(o);
     }
 
-    private void addOption(final int option) {
+    private void addOption(int option) {
         addInt(option);
     }
 
-    private void addOpcodeRelAddr(final int opcode, final int addr) {
+    private void addOpcodeRelAddr(int opcode, int addr) {
         addOpcode(opcode);
         addRelAddr(addr);
     }
 
-    private void addOpcodeOption(final int opcode, final int option) {
+    private void addOpcodeOption(int opcode, int option) {
         addOpcode(opcode);
         addOption(option);
     }
 
-    private void addTemplate(final char[] chars) {
+    private void addTemplate(char[] chars) {
         if (templateNum == 0) {
             templates = new char[2][];
         } else if (templateNum == templates.length) {
-            final char[][] tmp = new char[templateNum * 2][];
+            char[][] tmp = new char[templateNum * 2][];
             System.arraycopy(templates, 0, tmp, 0, templateNum);
             templates = tmp;
         }

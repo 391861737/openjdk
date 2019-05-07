@@ -32,7 +32,7 @@ import sun.reflect.misc.ReflectUtil;
     afterward, switches to bytecode-based implementation */
 
 class NativeConstructorAccessorImpl extends ConstructorAccessorImpl {
-    private final Constructor<?> c;
+    private Constructor<?> c;
     private DelegatingConstructorAccessorImpl parent;
     private int numInvocations;
 

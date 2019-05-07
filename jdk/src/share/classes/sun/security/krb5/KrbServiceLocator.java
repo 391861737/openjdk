@@ -25,11 +25,6 @@
 
 package sun.security.krb5;
 
-import sun.security.krb5.internal.Krb5;
-
-import java.security.AccessController;
-import java.security.PrivilegedActionException;
-import java.security.PrivilegedExceptionAction;
 import java.util.Arrays;
 import java.util.Hashtable;
 import java.util.Random;
@@ -57,8 +52,6 @@ class KrbServiceLocator {
 
     private static final Random random = new Random();
 
-    private static final boolean DEBUG = Krb5.DEBUG;
-
     private KrbServiceLocator() {
     }
 
@@ -69,7 +62,8 @@ class KrbServiceLocator {
      * Information on the mapping of DNS hostnames and domain names
      * to Kerberos realms is stored using DNS TXT records
      *
-     * @param realmName A string realm name.
+     * @param domainName A string domain name.
+     * @param environment The possibly null environment of the context.
      * @return An ordered list of hostports for the Kerberos service or null if
      *          the service has not been located.
      */
@@ -87,18 +81,8 @@ class KrbServiceLocator {
             if (!(ctx instanceof DirContext)) {
                 return null; // cannot create a DNS context
             }
-            Attributes attrs = null;
-            try {
-                // both connect and accept are needed since DNS is thru UDP
-                attrs = AccessController.doPrivileged(
-                        (PrivilegedExceptionAction<Attributes>)
-                                () -> ((DirContext)ctx).getAttributes(
-                                        dnsUrl, SRV_TXT_ATTR),
-                        null,
-                        new java.net.SocketPermission("*", "connect,accept"));
-            } catch (PrivilegedActionException e) {
-                throw (NamingException)e.getCause();
-            }
+            Attributes attrs =
+                ((DirContext)ctx).getAttributes(dnsUrl, SRV_TXT_ATTR);
             Attribute attr;
 
             if (attrs != null && ((attr = attrs.get(SRV_TXT)) != null)) {
@@ -140,8 +124,7 @@ class KrbServiceLocator {
      * Queries DNS for a list of KERBEROS Service Location Records (SRV) for a
      * given domain name.
      *
-     * @param realmName A string realm name.
-     * @param protocol the protocol string, can be "_udp" or "_tcp"
+     * @param domainName A string domain name.
      * @return An ordered list of hostports for the Kerberos service or null if
      *          the service has not been located.
      */
@@ -159,20 +142,8 @@ class KrbServiceLocator {
             if (!(ctx instanceof DirContext)) {
                 return null; // cannot create a DNS context
             }
-
-            Attributes attrs = null;
-            try {
-                // both connect and accept are needed since DNS is thru UDP
-                attrs = AccessController.doPrivileged(
-                        (PrivilegedExceptionAction<Attributes>)
-                                () -> ((DirContext)ctx).getAttributes(
-                                        dnsUrl, SRV_RR_ATTR),
-                        null,
-                        new java.net.SocketPermission("*", "connect,accept"));
-            } catch (PrivilegedActionException e) {
-                throw (NamingException)e.getCause();
-            }
-
+            Attributes attrs =
+                ((DirContext)ctx).getAttributes(dnsUrl, SRV_RR_ATTR);
             Attribute attr;
 
             if (attrs != null && ((attr = attrs.get(SRV_RR)) != null)) {

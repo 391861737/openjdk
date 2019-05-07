@@ -28,7 +28,6 @@ package jdk.nashorn.api.scripting;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
-import java.util.Objects;
 import javax.script.ScriptEngine;
 import javax.script.ScriptEngineFactory;
 import jdk.nashorn.internal.runtime.Context;
@@ -45,10 +44,7 @@ import jdk.nashorn.internal.runtime.Version;
  * </ul>
  * Programs executing in engines created using {@link #getScriptEngine(String[])} will have the passed arguments
  * accessible as a global variable named {@code "arguments"}.
- *
- * @since 1.8u40
  */
-@jdk.Exported
 public final class NashornScriptEngineFactory implements ScriptEngineFactory {
     @Override
     public String getEngineName() {
@@ -124,7 +120,7 @@ public final class NashornScriptEngineFactory implements ScriptEngineFactory {
             // used to execute scripts concurrently on multiple threads.
             return null;
         default:
-            return null;
+            throw new IllegalArgumentException("Invalid key");
         }
     }
 
@@ -139,13 +135,10 @@ public final class NashornScriptEngineFactory implements ScriptEngineFactory {
         return sb.toString();
     }
 
-    // default options passed to Nashorn script engine
-    private static final String[] DEFAULT_OPTIONS = new String[] { "-doe" };
-
     @Override
     public ScriptEngine getScriptEngine() {
         try {
-            return new NashornScriptEngine(this, DEFAULT_OPTIONS, getAppClassLoader(), null);
+            return new NashornScriptEngine(this, getAppClassLoader());
         } catch (final RuntimeException e) {
             if (Context.DEBUG) {
                 e.printStackTrace();
@@ -155,87 +148,37 @@ public final class NashornScriptEngineFactory implements ScriptEngineFactory {
     }
 
     /**
-     * Create a new Script engine initialized with the given class loader.
+     * Create a new Script engine initialized by given class loader.
      *
      * @param appLoader class loader to be used as script "app" class loader.
      * @return newly created script engine.
-     * @throws SecurityException
-     *         if the security manager's {@code checkPermission}
-     *         denies {@code RuntimePermission("nashorn.setConfig")}
      */
     public ScriptEngine getScriptEngine(final ClassLoader appLoader) {
-        return newEngine(DEFAULT_OPTIONS, appLoader, null);
+        checkConfigPermission();
+        return new NashornScriptEngine(this, appLoader);
     }
 
     /**
-     * Create a new Script engine initialized with the given class filter.
-     *
-     * @param classFilter class filter to use.
-     * @return newly created script engine.
-     * @throws NullPointerException if {@code classFilter} is {@code null}
-     * @throws SecurityException
-     *         if the security manager's {@code checkPermission}
-     *         denies {@code RuntimePermission("nashorn.setConfig")}
-     */
-    public ScriptEngine getScriptEngine(final ClassFilter classFilter) {
-        return newEngine(DEFAULT_OPTIONS, getAppClassLoader(), Objects.requireNonNull(classFilter));
-    }
-
-    /**
-     * Create a new Script engine initialized with the given arguments.
+     * Create a new Script engine initialized by given arguments.
      *
      * @param args arguments array passed to script engine.
      * @return newly created script engine.
-     * @throws NullPointerException if {@code args} is {@code null}
-     * @throws SecurityException
-     *         if the security manager's {@code checkPermission}
-     *         denies {@code RuntimePermission("nashorn.setConfig")}
      */
-    public ScriptEngine getScriptEngine(final String... args) {
-        return newEngine(Objects.requireNonNull(args), getAppClassLoader(), null);
+    public ScriptEngine getScriptEngine(final String[] args) {
+        checkConfigPermission();
+        return new NashornScriptEngine(this, args, getAppClassLoader());
     }
 
     /**
-     * Create a new Script engine initialized with the given arguments and the given class loader.
+     * Create a new Script engine initialized by given arguments.
      *
      * @param args arguments array passed to script engine.
      * @param appLoader class loader to be used as script "app" class loader.
      * @return newly created script engine.
-     * @throws NullPointerException if {@code args} is {@code null}
-     * @throws SecurityException
-     *         if the security manager's {@code checkPermission}
-     *         denies {@code RuntimePermission("nashorn.setConfig")}
      */
     public ScriptEngine getScriptEngine(final String[] args, final ClassLoader appLoader) {
-        return newEngine(Objects.requireNonNull(args), appLoader, null);
-    }
-
-    /**
-     * Create a new Script engine initialized with the given arguments, class loader and class filter.
-     *
-     * @param args arguments array passed to script engine.
-     * @param appLoader class loader to be used as script "app" class loader.
-     * @param classFilter class filter to use.
-     * @return newly created script engine.
-     * @throws NullPointerException if {@code args} or {@code classFilter} is {@code null}
-     * @throws SecurityException
-     *         if the security manager's {@code checkPermission}
-     *         denies {@code RuntimePermission("nashorn.setConfig")}
-     */
-    public ScriptEngine getScriptEngine(final String[] args, final ClassLoader appLoader, final ClassFilter classFilter) {
-        return newEngine(Objects.requireNonNull(args), appLoader, Objects.requireNonNull(classFilter));
-    }
-
-    private ScriptEngine newEngine(final String[] args, final ClassLoader appLoader, final ClassFilter classFilter) {
         checkConfigPermission();
-        try {
-            return new NashornScriptEngine(this, args, appLoader, classFilter);
-        } catch (final RuntimeException e) {
-            if (Context.DEBUG) {
-                e.printStackTrace();
-            }
-            throw e;
-        }
+        return new NashornScriptEngine(this, args, appLoader);
     }
 
     // -- Internals only below this point
@@ -277,7 +220,7 @@ public final class NashornScriptEngineFactory implements ScriptEngineFactory {
         // Revisit: script engine implementation needs the capability to
         // find the class loader of the context in which the script engine
         // is running so that classes will be found and loaded properly
-        final ClassLoader ccl = Thread.currentThread().getContextClassLoader();
+        ClassLoader ccl = Thread.currentThread().getContextClassLoader();
         return (ccl == null)? NashornScriptEngineFactory.class.getClassLoader() : ccl;
     }
 }

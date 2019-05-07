@@ -214,7 +214,7 @@ public class AquaKeyBindings {
             "PAGE_DOWN", "aquaSelectPageDown",
             "HOME", "aquaSelectHome",
             "END", "aquaSelectEnd",
-            "ENTER", "enterPressed",
+            "ENTER", "aquaEnterPressed",
             "UP", "aquaSelectPrevious",
             "KP_UP", "aquaSelectPrevious",
             "DOWN", "aquaSelectNext",

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 1997, 2014, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 1997, 2013, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -80,12 +80,7 @@ import java.util.Map;
  */
 public class ProviderImpl extends Provider {
 
-    private final static ContextClassloaderLocal<JAXBContext> eprjc = new ContextClassloaderLocal<JAXBContext>() {
-        @Override
-        protected JAXBContext initialValue() throws Exception {
-            return getEPRJaxbContext();
-        }
-    };
+    private final static JAXBContext eprjc = getEPRJaxbContext();
 
     /**
      * Convenient singleton instance.
@@ -147,12 +142,19 @@ public class ProviderImpl extends Provider {
     }
 
     public EndpointReference readEndpointReference(final Source eprInfoset) {
-        try {
-            Unmarshaller unmarshaller = eprjc.get().createUnmarshaller();
-            return (EndpointReference) unmarshaller.unmarshal(eprInfoset);
-        } catch (JAXBException e) {
-            throw new WebServiceException("Error creating Marshaller or marshalling.", e);
-        }
+        // EPR constructors are private, so we need privilege escalation.
+        // this unmarshalling can only access instances of a fixed, known set of classes,
+        // so doing that shouldn't introduce security vulnerability.
+        return AccessController.doPrivileged(new PrivilegedAction<EndpointReference>() {
+            public EndpointReference run() {
+                try {
+                    Unmarshaller unmarshaller = eprjc.createUnmarshaller();
+                    return (EndpointReference) unmarshaller.unmarshal(eprInfoset);
+                } catch (JAXBException e) {
+                    throw new WebServiceException("Error creating Marshaller or marshalling.", e);
+                }
+            }
+        });
     }
 
     public <T> T getPort(EndpointReference endpointReference, Class<T> clazz, WebServiceFeature... webServiceFeatures) {

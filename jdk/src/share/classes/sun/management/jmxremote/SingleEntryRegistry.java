@@ -32,7 +32,6 @@
 
 package sun.management.jmxremote;
 
-import sun.misc.ObjectInputFilter;
 import java.rmi.AccessException;
 import java.rmi.NotBoundException;
 import java.rmi.Remote;
@@ -57,7 +56,7 @@ public class SingleEntryRegistry extends RegistryImpl {
                         String name,
                         Remote object)
             throws RemoteException {
-        super(port, csf, ssf, SingleEntryRegistry::singleRegistryFilter);
+        super(port, csf, ssf);
         this.name = name;
         this.object = object;
     }
@@ -83,23 +82,6 @@ public class SingleEntryRegistry extends RegistryImpl {
 
     public void unbind(String name) throws AccessException {
         throw new AccessException("Cannot modify this registry");
-    }
-
-    /**
-     * ObjectInputFilter to check parameters to SingleEntryRegistry.
-     * Since it is a read-only Registry, no classes are accepted.
-     * String arguments are accepted without passing them to the serialFilter.
-     *
-     * @param info a reference to the serialization filter information
-     * @return Status.REJECTED if parameters are out of range
-     */
-    private static ObjectInputFilter.Status singleRegistryFilter(ObjectInputFilter.FilterInfo info) {
-        return (info.serialClass() != null ||
-                info.depth() > 2 ||
-                info.references() > 4 ||
-                info.arrayLength() >= 0)
-        ? ObjectInputFilter.Status.REJECTED
-        : ObjectInputFilter.Status.ALLOWED;
     }
 
     private final String name;

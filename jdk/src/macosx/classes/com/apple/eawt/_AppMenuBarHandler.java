@@ -121,7 +121,7 @@ class _AppMenuBarHandler {
         }
 
         // grab the pointer to the CMenuBar, and retain it in native
-        ((CMenuBar) peer).execute(_AppMenuBarHandler::nativeSetDefaultMenuBar);
+        nativeSetDefaultMenuBar(((CMenuBar)peer).getModel());
     }
 
     void setAboutMenuItemVisible(final boolean present) {

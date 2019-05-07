@@ -29,11 +29,13 @@
 <xsl:template match="/">
   <xsl:call-template name="file-header"/>
 
-#ifndef TRACEFILES_TRACEEVENTIDS_HPP
-#define TRACEFILES_TRACEEVENTIDS_HPP
+#ifndef TRACEFILES_JFREVENTIDS_HPP
+#define TRACEFILES_JFREVENTIDS_HPP
 
 #include "utilities/macros.hpp"
+
 #if INCLUDE_TRACE
+
 #include "trace/traceDataTypes.hpp"
 
 /**
@@ -65,8 +67,8 @@ enum TraceStructId {
 typedef enum TraceEventId  TraceEventId;
 typedef enum TraceStructId TraceStructId;
 
-#endif // INCLUDE_TRACE
-#endif // TRACEFILES_TRACEEVENTIDS_HPP
+#endif
+#endif
 </xsl:template>
 
 </xsl:stylesheet>

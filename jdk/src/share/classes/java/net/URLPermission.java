@@ -170,8 +170,7 @@ public final class URLPermission extends Permission {
         parseURI(getName());
         int colon = actions.indexOf(':');
         if (actions.lastIndexOf(':') != colon) {
-            throw new IllegalArgumentException(
-                "Invalid actions string: \"" + actions + "\"");
+            throw new IllegalArgumentException("invalid actions string");
         }
 
         String methods, headers;
@@ -372,8 +371,7 @@ public final class URLPermission extends Permission {
                     l.add(s);
                 b = new StringBuilder();
             } else if (c == ' ' || c == '\t') {
-                throw new IllegalArgumentException(
-                    "White space not allowed in methods: \"" + methods + "\"");
+                throw new IllegalArgumentException("white space not allowed");
             } else {
                 if (c >= 'a' && c <= 'z') {
                     c += 'A' - 'a';
@@ -400,8 +398,7 @@ public final class URLPermission extends Permission {
                 }
                 b.append(c);
             } else if (c == ' ' || c == '\t') {
-                throw new IllegalArgumentException(
-                    "White space not allowed in headers: \"" + headers + "\"");
+                throw new IllegalArgumentException("white space not allowed");
             } else if (c == '-') {
                     capitalizeNext = true;
                 b.append(c);
@@ -426,16 +423,14 @@ public final class URLPermission extends Permission {
         int len = url.length();
         int delim = url.indexOf(':');
         if (delim == -1 || delim + 1 == len) {
-            throw new IllegalArgumentException(
-                "Invalid URL string: \"" + url + "\"");
+            throw new IllegalArgumentException("invalid URL string");
         }
         scheme = url.substring(0, delim).toLowerCase();
         this.ssp = url.substring(delim + 1);
 
         if (!ssp.startsWith("//")) {
             if (!ssp.equals("*")) {
-                throw new IllegalArgumentException(
-                    "Invalid URL string: \"" + url + "\"");
+                throw new IllegalArgumentException("invalid URL string");
             }
             this.authority = new Authority(scheme, "*");
             return;

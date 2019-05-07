@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2010, 2013, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2010, 2012, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -24,6 +24,7 @@
  */
 package sun.awt.X11;
 
+import java.awt.Dialog;
 import java.awt.FileDialog;
 import java.awt.peer.FileDialogPeer;
 import java.io.File;
@@ -35,15 +36,15 @@ import sun.awt.AWTAccessor;
  *
  * @author Costantino Cerbo (c.cerbo@gmail.com)
  */
-final class GtkFileDialogPeer extends XDialogPeer implements FileDialogPeer {
+class GtkFileDialogPeer extends XDialogPeer implements FileDialogPeer {
 
-    private final FileDialog fd;
+    private FileDialog fd;
 
     // A pointer to the native GTK FileChooser widget
     private volatile long widget = 0L;
 
-    GtkFileDialogPeer(FileDialog fd) {
-        super(fd);
+    public GtkFileDialogPeer(FileDialog fd) {
+        super((Dialog) fd);
         this.fd = fd;
     }
 
@@ -171,7 +172,9 @@ final class GtkFileDialogPeer extends XDialogPeer implements FileDialogPeer {
                 dirname = file.getParent();
             }
         }
-        run(fd.getTitle(), fd.getMode(), dirname, filename,
-            fd.getFilenameFilter(), fd.isMultipleMode(), fd.getX(), fd.getY());
+        GtkFileDialogPeer.this.run(fd.getTitle(), fd.getMode(), dirname,
+                                   filename, fd.getFilenameFilter(),
+                                   fd.isMultipleMode(), fd.getX(), fd.getY());
     }
+
 }

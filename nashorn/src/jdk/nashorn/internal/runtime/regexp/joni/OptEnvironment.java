@@ -26,7 +26,7 @@ final class OptEnvironment {
     int caseFoldFlag;
     ScanEnvironment scanEnv;
 
-    void copy(final OptEnvironment other) {
+    void copy(OptEnvironment other) {
         mmd.copy(other.mmd);
         options = other.options;
         caseFoldFlag = other.caseFoldFlag;

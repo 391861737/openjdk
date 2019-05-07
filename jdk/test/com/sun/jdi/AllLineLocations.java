@@ -27,6 +27,7 @@
  *  @summary Test ReferenceType.allLineLocations
  *  @author Gordon Hirsch
  *
+ *  @library scaffold
  *  @run build JDIScaffold VMConnection
  *  @run compile -g RefTypes.java
  *  @run build AllLineLocations

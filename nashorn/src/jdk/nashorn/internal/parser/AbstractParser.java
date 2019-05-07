@@ -26,12 +26,10 @@
 package jdk.nashorn.internal.parser;
 
 import static jdk.nashorn.internal.parser.TokenType.COMMENT;
-import static jdk.nashorn.internal.parser.TokenType.DIRECTIVE_COMMENT;
 import static jdk.nashorn.internal.parser.TokenType.EOF;
 import static jdk.nashorn.internal.parser.TokenType.EOL;
 import static jdk.nashorn.internal.parser.TokenType.IDENT;
-import java.util.HashMap;
-import java.util.Map;
+
 import jdk.nashorn.internal.ir.IdentNode;
 import jdk.nashorn.internal.ir.LiteralNode;
 import jdk.nashorn.internal.parser.Lexer.LexerToken;
@@ -58,9 +56,6 @@ public abstract class AbstractParser {
 
     /** Index of current token. */
     protected int k;
-
-    /** Previous token - accessible to sub classes */
-    protected long previousToken;
 
     /** Descriptor of current token. */
     protected long token;
@@ -89,20 +84,14 @@ public abstract class AbstractParser {
     /** Is this parser running under strict mode? */
     protected boolean isStrictMode;
 
-    /** What should line numbers be counted from? */
-    protected final int lineOffset;
-
-    private final Map<String, String> canonicalNames = new HashMap<>();
-
     /**
      * Construct a parser.
      *
-     * @param source     Source to parse.
-     * @param errors     Error reporting manager.
-     * @param strict     True if we are in strict mode
-     * @param lineOffset Offset from which lines should be counted
+     * @param source  Source to parse.
+     * @param errors  Error reporting manager.
+     * @param strict  True if we are in strict mode
      */
-    protected AbstractParser(final Source source, final ErrorManager errors, final boolean strict, final int lineOffset) {
+    protected AbstractParser(final Source source, final ErrorManager errors, final boolean strict) {
         this.source       = source;
         this.errors       = errors;
         this.k            = -1;
@@ -110,7 +99,6 @@ public abstract class AbstractParser {
         this.type         = EOL;
         this.last         = EOL;
         this.isStrictMode = strict;
-        this.lineOffset   = lineOffset;
     }
 
     /**
@@ -168,30 +156,9 @@ public abstract class AbstractParser {
     protected final TokenType nextOrEOL() {
         do {
             nextToken();
-            if (type == DIRECTIVE_COMMENT) {
-                checkDirectiveComment();
-            }
-        } while (type == COMMENT || type == DIRECTIVE_COMMENT);
+        } while (type == COMMENT);
 
         return type;
-    }
-
-    // sourceURL= after directive comment
-    private static final String SOURCE_URL_PREFIX = "sourceURL=";
-
-    // currently only @sourceURL=foo supported
-    private void checkDirectiveComment() {
-        // if already set, ignore this one
-        if (source.getExplicitURL() != null) {
-            return;
-        }
-
-        final String comment = (String) lexer.getValueOf(token, isStrictMode);
-        final int len = comment.length();
-        // 4 characters for directive comment marker //@\s or //#\s
-        if (len > 4 && comment.substring(4).startsWith(SOURCE_URL_PREFIX)) {
-            source.setExplicitURL(comment.substring(4 + SOURCE_URL_PREFIX.length()));
-        }
     }
 
     /**
@@ -199,17 +166,14 @@ public abstract class AbstractParser {
      *
      * @return tokenType of next token.
      */
-    private TokenType nextToken() {
-        // Capture last token type, but ignore comments (which are irrelevant for the purpose of newline detection).
-        if (type != COMMENT) {
-            last = type;
-        }
+    private final TokenType nextToken() {
+        // Capture last token tokenType.
+        last = type;
         if (type != EOF) {
 
             // Set up next token.
             k++;
             final long lastToken = token;
-            previousToken = token;
             token = getToken(k);
             type = Token.descType(token);
 
@@ -219,7 +183,7 @@ public abstract class AbstractParser {
             }
 
             if (type == EOL) {
-                line         = Token.descLength(token);
+                line = Token.descLength(token);
                 linePosition = Token.descPosition(token);
             } else {
                 start = Token.descPosition(token);
@@ -327,28 +291,18 @@ public abstract class AbstractParser {
     }
 
     /**
-     * Check current token and advance to the next token.
+     * Check next token and advance.
      *
      * @param expected Expected tokenType.
      *
      * @throws ParserException on unexpected token type
      */
     protected final void expect(final TokenType expected) throws ParserException {
-        expectDontAdvance(expected);
-        next();
-    }
-
-    /**
-     * Check current token, but don't advance to the next token.
-     *
-     * @param expected Expected tokenType.
-     *
-     * @throws ParserException on unexpected token type
-     */
-    protected final void expectDontAdvance(final TokenType expected) throws ParserException {
         if (type != expected) {
             throw error(expectMessage(expected));
         }
+
+        next();
     }
 
     /**
@@ -424,7 +378,7 @@ public abstract class AbstractParser {
             next();
 
             // Create IDENT node.
-            return createIdentNode(identToken, finish, ident).setIsFutureStrictName();
+            return new IdentNode(identToken, finish, ident).setIsFutureStrictName();
         }
 
         // Get IDENT.
@@ -433,22 +387,7 @@ public abstract class AbstractParser {
             return null;
         }
         // Create IDENT node.
-        return createIdentNode(identToken, finish, ident);
-    }
-
-    /**
-     * Creates a new {@link IdentNode} as if invoked with a {@link IdentNode#IdentNode(long, int, String)
-     * constructor} but making sure that the {@code name} is deduplicated within this parse job.
-     * @param identToken the token for the new {@code IdentNode}
-     * @param identFinish the finish for the new {@code IdentNode}
-     * @param name the name for the new {@code IdentNode}. It will be de-duplicated.
-     * @return a newly constructed {@code IdentNode} with the specified token, finish, and name; the name will
-     * be deduplicated.
-     */
-    protected IdentNode createIdentNode(final long identToken, final int identFinish, final String name) {
-        final String existingName = canonicalNames.putIfAbsent(name, name);
-        final String canonicalName = existingName != null ? existingName : name;
-        return new IdentNode(identToken, identFinish, canonicalName);
+        return new IdentNode(identToken, finish, ident);
     }
 
     /**
@@ -461,19 +400,6 @@ public abstract class AbstractParser {
         if (kind == TokenKind.KEYWORD || kind == TokenKind.FUTURE || kind == TokenKind.FUTURESTRICT) {
             return true;
         }
-
-        // only literals allowed are null, false and true
-        if (kind == TokenKind.LITERAL) {
-            switch (type) {
-                case FALSE:
-                case NULL:
-                case TRUE:
-                    return true;
-                default:
-                    return false;
-            }
-        }
-
         // Fake out identifier.
         final long identToken = Token.recast(token, IDENT);
         // Get IDENT.
@@ -496,7 +422,7 @@ public abstract class AbstractParser {
             final String ident = (String)getValue(identToken);
             next();
             // Create IDENT node.
-            return createIdentNode(identToken, finish, ident);
+            return new IdentNode(identToken, finish, ident);
         } else {
             expect(IDENT);
             return null;

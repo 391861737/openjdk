@@ -25,8 +25,6 @@
 
 package jdk.nashorn.internal.runtime.linker;
 
-import static jdk.nashorn.internal.runtime.ECMAErrors.typeError;
-
 import java.lang.reflect.Modifier;
 import java.lang.reflect.Proxy;
 import jdk.internal.dynalink.CallSiteDescriptor;
@@ -35,46 +33,22 @@ import jdk.internal.dynalink.linker.LinkRequest;
 import jdk.internal.dynalink.linker.LinkerServices;
 import jdk.internal.dynalink.linker.TypeBasedGuardingDynamicLinker;
 import jdk.internal.dynalink.support.CallSiteDescriptorFactory;
-import jdk.nashorn.api.scripting.ClassFilter;
 import jdk.nashorn.internal.runtime.Context;
-import jdk.nashorn.internal.objects.Global;
 
 /**
  * Check java reflection permission for java reflective and java.lang.invoke access from scripts
  */
 final class ReflectionCheckLinker implements TypeBasedGuardingDynamicLinker{
-    private static final Class<?> STATEMENT_CLASS  = getBeanClass("Statement");
-    private static final Class<?> XMLENCODER_CLASS = getBeanClass("XMLEncoder");
-    private static final Class<?> XMLDECODER_CLASS = getBeanClass("XMLDecoder");
-
-    private static Class<?> getBeanClass(final String name) {
-        try {
-            return Class.forName("java.beans." + name);
-        } catch (final ClassNotFoundException cnfe) {
-            // Possible to miss this class in other profiles.
-            return null;
-        }
-    }
-
     @Override
     public boolean canLinkType(final Class<?> type) {
         return isReflectionClass(type);
     }
 
     private static boolean isReflectionClass(final Class<?> type) {
-        // Class or ClassLoader subclasses
         if (type == Class.class || ClassLoader.class.isAssignableFrom(type)) {
             return true;
         }
 
-        // check for bean reflection
-        if ((STATEMENT_CLASS != null && STATEMENT_CLASS.isAssignableFrom(type)) ||
-            (XMLENCODER_CLASS != null && XMLENCODER_CLASS.isAssignableFrom(type)) ||
-            (XMLDECODER_CLASS != null && XMLDECODER_CLASS.isAssignableFrom(type))) {
-            return true;
-        }
-
-        // package name check
         final String name = type.getName();
         return name.startsWith("java.lang.reflect.") || name.startsWith("java.lang.invoke.");
     }
@@ -104,12 +78,6 @@ final class ReflectionCheckLinker implements TypeBasedGuardingDynamicLinker{
     }
 
     static void checkReflectionAccess(final Class<?> clazz, final boolean isStatic) {
-        final Global global = Context.getGlobal();
-        final ClassFilter cf = global.getClassFilter();
-        if (cf != null && isReflectiveCheckNeeded(clazz, isStatic)) {
-            throw typeError("no.reflection.with.classfilter");
-        }
-
         final SecurityManager sm = System.getSecurityManager();
         if (sm != null && isReflectiveCheckNeeded(clazz, isStatic)) {
             checkReflectionPermission(sm);
@@ -117,12 +85,6 @@ final class ReflectionCheckLinker implements TypeBasedGuardingDynamicLinker{
     }
 
     private static void checkLinkRequest(final LinkRequest origRequest) {
-        final Global global = Context.getGlobal();
-        final ClassFilter cf = global.getClassFilter();
-        if (cf != null) {
-            throw typeError("no.reflection.with.classfilter");
-        }
-
         final SecurityManager sm = System.getSecurityManager();
         if (sm != null) {
             final LinkRequest requestWithoutContext = origRequest.withoutRuntimeContext(); // Nashorn has no runtime context
@@ -131,8 +93,7 @@ final class ReflectionCheckLinker implements TypeBasedGuardingDynamicLinker{
             if ((self instanceof Class) && Modifier.isPublic(((Class<?>)self).getModifiers())) {
                 final CallSiteDescriptor desc = requestWithoutContext.getCallSiteDescriptor();
                 if(CallSiteDescriptorFactory.tokenizeOperators(desc).contains("getProp")) {
-                    if (desc.getNameTokenCount() > CallSiteDescriptor.NAME_OPERAND &&
-                        "static".equals(desc.getNameToken(CallSiteDescriptor.NAME_OPERAND))) {
+                    if ("static".equals(desc.getNameToken(CallSiteDescriptor.NAME_OPERAND))) {
                         if (Context.isAccessibleClass((Class<?>)self) && !isReflectionClass((Class<?>)self)) {
 
                             // If "getProp:static" passes access checks, allow access.

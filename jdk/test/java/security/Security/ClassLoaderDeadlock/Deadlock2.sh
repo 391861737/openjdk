@@ -70,10 +70,6 @@ case "$OS" in
     PATHSEP=":"
     FILESEP="/"
     ;;
-  AIX )
-    PATHSEP=":"
-    FILESEP="/"
-    ;;
   Windows* )
     PATHSEP=";"
     FILESEP="\\"

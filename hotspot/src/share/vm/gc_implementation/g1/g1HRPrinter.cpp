@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2011, 2014, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2011, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -26,8 +26,6 @@
 #include "gc_implementation/g1/g1HRPrinter.hpp"
 #include "gc_implementation/g1/heapRegion.hpp"
 #include "utilities/ostream.hpp"
-
-PRAGMA_FORMAT_MUTE_WARNINGS_FOR_GCC
 
 const char* G1HRPrinter::action_name(ActionType action) {
   switch(action) {
@@ -84,18 +82,18 @@ void G1HRPrinter::print(ActionType action, RegionType type,
 
   if (type_str != NULL) {
     if (top != NULL) {
-      gclog_or_tty->print_cr(G1HR_PREFIX" %s(%s) "PTR_FORMAT" "PTR_FORMAT,
+      gclog_or_tty->print_cr(G1HR_PREFIX" %s(%s) " PTR_FORMAT" " PTR_FORMAT,
                              action_str, type_str, bottom, top);
     } else {
-      gclog_or_tty->print_cr(G1HR_PREFIX" %s(%s) "PTR_FORMAT,
+      gclog_or_tty->print_cr(G1HR_PREFIX" %s(%s) " PTR_FORMAT,
                              action_str, type_str, bottom);
     }
   } else {
     if (top != NULL) {
-      gclog_or_tty->print_cr(G1HR_PREFIX" %s "PTR_FORMAT" "PTR_FORMAT,
+      gclog_or_tty->print_cr(G1HR_PREFIX" %s " PTR_FORMAT" " PTR_FORMAT,
                              action_str, bottom, top);
     } else {
-      gclog_or_tty->print_cr(G1HR_PREFIX" %s "PTR_FORMAT,
+      gclog_or_tty->print_cr(G1HR_PREFIX" %s " PTR_FORMAT,
                              action_str, bottom);
     }
   }
@@ -104,11 +102,11 @@ void G1HRPrinter::print(ActionType action, RegionType type,
 void G1HRPrinter::print(ActionType action, HeapWord* bottom, HeapWord* end) {
   const char* action_str = action_name(action);
 
-  gclog_or_tty->print_cr(G1HR_PREFIX" %s ["PTR_FORMAT","PTR_FORMAT"]",
+  gclog_or_tty->print_cr(G1HR_PREFIX" %s [" PTR_FORMAT"," PTR_FORMAT"]",
                          action_str, bottom, end);
 }
 
 void G1HRPrinter::print(PhaseType phase, size_t phase_num) {
   const char* phase_str = phase_name(phase);
-  gclog_or_tty->print_cr(G1HR_PREFIX" #%s "SIZE_FORMAT, phase_str, phase_num);
+  gclog_or_tty->print_cr(G1HR_PREFIX" #%s " SIZE_FORMAT, phase_str, phase_num);
 }

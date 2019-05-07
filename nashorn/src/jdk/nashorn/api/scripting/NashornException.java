@@ -29,7 +29,6 @@ import java.util.ArrayList;
 import java.util.List;
 import jdk.nashorn.internal.codegen.CompilerConstants;
 import jdk.nashorn.internal.runtime.ECMAErrors;
-import jdk.nashorn.internal.runtime.ScriptObject;
 
 /**
  * This is base exception for all Nashorn exceptions. These originate from
@@ -41,27 +40,21 @@ import jdk.nashorn.internal.runtime.ScriptObject;
  * script object or Java access to script object properties via java.util.Map
  * interface. In these cases, user code will get an instance of this or
  * implementation defined subclass.
- *
- * @since 1.8u40
  */
-@jdk.Exported
 @SuppressWarnings("serial")
 public abstract class NashornException extends RuntimeException {
-    private static final long serialVersionUID = 1L;
-
     // script file name
-    private String fileName;
+    private final String fileName;
     // script line number
-    private int line;
-    // are the line and fileName unknown?
-    private boolean lineAndFileNameUnknown;
+    private final int line;
     // script column number
-    private int column;
-    // underlying ECMA error object - lazily initialized
-    private Object ecmaError;
+    private final int column;
+
+    /** script source name used for "engine.js" */
+    public static final String ENGINE_SCRIPT_SOURCE_NAME = "nashorn:engine/resources/engine.js";
 
     /**
-     * Constructor to initialize error message, file name, line and column numbers.
+     * Constructor
      *
      * @param msg       exception message
      * @param fileName  file name
@@ -73,7 +66,7 @@ public abstract class NashornException extends RuntimeException {
     }
 
     /**
-     * Constructor to initialize error message, cause exception, file name, line and column numbers.
+     * Constructor
      *
      * @param msg       exception message
      * @param cause     exception cause
@@ -89,17 +82,34 @@ public abstract class NashornException extends RuntimeException {
     }
 
     /**
-     * Constructor to initialize error message and cause exception.
+     * Constructor
      *
      * @param msg       exception message
      * @param cause     exception cause
      */
     protected NashornException(final String msg, final Throwable cause) {
         super(msg, cause == null ? null : cause);
+        // This is not so pretty - but it gets the job done. Note that the stack
+        // trace has been already filled by "fillInStackTrace" call from
+        // Throwable
+        // constructor and so we don't pay additional cost for it.
+
         // Hard luck - no column number info
         this.column = -1;
-        // We can retrieve the line number and file name from the stack trace if needed
-        this.lineAndFileNameUnknown = true;
+
+        // Find the first JavaScript frame by walking and set file, line from it
+        // Usually, we should be able to find it in just few frames depth.
+        for (final StackTraceElement ste : getStackTrace()) {
+            if (ECMAErrors.isScriptFrame(ste)) {
+                // Whatever here is compiled from JavaScript code
+                this.fileName = ste.getFileName();
+                this.line = ste.getLineNumber();
+                return;
+            }
+        }
+
+        this.fileName = null;
+        this.line = 0;
     }
 
     /**
@@ -108,18 +118,7 @@ public abstract class NashornException extends RuntimeException {
      * @return the file name
      */
     public final String getFileName() {
-        ensureLineAndFileName();
         return fileName;
-    }
-
-    /**
-     * Set the source file name for this {@code NashornException}
-     *
-     * @param fileName the file name
-     */
-    public final void setFileName(final String fileName) {
-        this.fileName = fileName;
-        lineAndFileNameUnknown = false;
     }
 
     /**
@@ -128,36 +127,16 @@ public abstract class NashornException extends RuntimeException {
      * @return the line number
      */
     public final int getLineNumber() {
-        ensureLineAndFileName();
         return line;
-    }
-
-    /**
-     * Set the line number for this {@code NashornException}
-     *
-     * @param line the line number
-     */
-    public final void setLineNumber(final int line) {
-        lineAndFileNameUnknown = false;
-        this.line = line;
     }
 
     /**
      * Get the column for this {@code NashornException}
      *
-     * @return the column number
+     * @return the column
      */
     public final int getColumnNumber() {
         return column;
-    }
-
-    /**
-     * Set the column for this {@code NashornException}
-     *
-     * @param column the column number
-     */
-    public final void setColumnNumber(final int column) {
-        this.column = column;
     }
 
     /**
@@ -173,33 +152,14 @@ public abstract class NashornException extends RuntimeException {
             if (ECMAErrors.isScriptFrame(st)) {
                 final String className = "<" + st.getFileName() + ">";
                 String methodName = st.getMethodName();
-                if (methodName.equals(CompilerConstants.PROGRAM.symbolName())) {
+                if (methodName.equals(CompilerConstants.RUN_SCRIPT.symbolName())) {
                     methodName = "<program>";
-                } else {
-                    methodName = stripMethodName(methodName);
                 }
-
                 filtered.add(new StackTraceElement(className, methodName,
                         st.getFileName(), st.getLineNumber()));
             }
         }
         return filtered.toArray(new StackTraceElement[filtered.size()]);
-    }
-
-    private static String stripMethodName(final String methodName) {
-        String name = methodName;
-
-        final int nestedSeparator = name.lastIndexOf(CompilerConstants.NESTED_FUNCTION_SEPARATOR.symbolName());
-        if (nestedSeparator >= 0) {
-            name = name.substring(nestedSeparator + 1);
-        }
-
-        final int idSeparator = name.indexOf(CompilerConstants.ID_FUNCTION_SEPARATOR.symbolName());
-        if (idSeparator >= 0) {
-            name = name.substring(0, idSeparator);
-        }
-
-        return name.contains(CompilerConstants.ANON_FUNCTION_PREFIX.symbolName()) ? "<anonymous>" : name;
     }
 
     /**
@@ -227,71 +187,5 @@ public abstract class NashornException extends RuntimeException {
             buf.deleteCharAt(len - 1);
         }
         return buf.toString();
-    }
-
-    /**
-     * Get the thrown object. Subclass responsibility
-     * @return thrown object
-     */
-    protected Object getThrown() {
-        return null;
-    }
-
-    /**
-     * Initialization function for ECMA errors. Stores the error
-     * in the ecmaError field of this class. It is only initialized
-     * once, and then reused
-     *
-     * @param global the global
-     * @return initialized exception
-     */
-    protected NashornException initEcmaError(final ScriptObject global) {
-        if (ecmaError != null) {
-            return this; // initialized already!
-        }
-
-        final Object thrown = getThrown();
-        if (thrown instanceof ScriptObject) {
-            setEcmaError(ScriptObjectMirror.wrap(thrown, global));
-        } else {
-            setEcmaError(thrown);
-        }
-
-        return this;
-    }
-
-    /**
-     * Return the underlying ECMA error object, if available.
-     *
-     * @return underlying ECMA Error object's mirror or whatever was thrown
-     *         from script such as a String, Number or a Boolean.
-     */
-    public Object getEcmaError() {
-        return ecmaError;
-    }
-
-    /**
-     * Return the underlying ECMA error object, if available.
-     *
-     * @param ecmaError underlying ECMA Error object's mirror or whatever was thrown
-     *         from script such as a String, Number or a Boolean.
-     */
-    public void setEcmaError(final Object ecmaError) {
-        this.ecmaError = ecmaError;
-    }
-
-    private void ensureLineAndFileName() {
-        if (lineAndFileNameUnknown) {
-            for (final StackTraceElement ste : getStackTrace()) {
-                if (ECMAErrors.isScriptFrame(ste)) {
-                    // Whatever here is compiled from JavaScript code
-                    fileName = ste.getFileName();
-                    line = ste.getLineNumber();
-                    return;
-                }
-            }
-
-            lineAndFileNameUnknown = false;
-        }
     }
 }

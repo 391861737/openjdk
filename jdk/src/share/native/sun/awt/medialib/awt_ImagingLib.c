@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 1997, 2016, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 1997, 2013, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -228,49 +228,6 @@ getMlibEdgeHint(jint edgeHint) {
     }
 }
 
-/*
- * We have to make sure that awt_setPixels can be safely applied to the given pair of
- * raster and mlib image.
- *
- * In particular, make sure that
- *  - dimension is the same
- *  - number of channels in mlib image corresponds to the number of bands in the raster
- *  - sample size in image and raster are the same.
- *
- * Returns:
- *  -1 to indicate failure,
- *   1 to indicate success
- */
-static int setPixelsFormMlibImage(JNIEnv *env, RasterS_t *rasterP, mlib_image* img) {
-    if (rasterP->width != img->width || rasterP->height != img->height) {
-        /* dimension does not match */
-        return -1;
-    }
-
-    if (rasterP->numBands != img->channels) {
-        /* number of bands does not match */
-        return -1;
-    }
-
-    switch (rasterP->dataType) {
-    case BYTE_DATA_TYPE:
-        if (img->type != MLIB_BYTE) {
-            return -1;
-        }
-        break;
-    case SHORT_DATA_TYPE:
-        if (img->type != MLIB_SHORT && img->type != MLIB_USHORT) {
-            return -1;
-        }
-        break;
-    default:
-        /* awt_setPixels does not support such rasters */
-        return -1;
-    }
-
-    return awt_setPixels(env, rasterP, mlib_ImageGetData(img));
-}
-
 /***************************************************************************
  *                          External Functions                             *
  ***************************************************************************/
@@ -373,14 +330,14 @@ Java_sun_awt_image_ImagingLib_convolveBI(JNIEnv *env, jobject this,
 
 
     /* Parse the source image */
-    if (awt_parseImage(env, jsrc, &srcImageP, FALSE) <= 0) {
+    if ((status = awt_parseImage(env, jsrc, &srcImageP, FALSE)) <= 0) {
         /* Can't handle any custom images */
         free(dkern);
         return 0;
     }
 
     /* Parse the destination image */
-    if (awt_parseImage(env, jdst, &dstImageP, FALSE) <= 0) {
+    if ((status = awt_parseImage(env, jdst, &dstImageP, FALSE)) <= 0) {
         /* Can't handle any custom images */
         awt_freeParsedImage(srcImageP, TRUE);
         free(dkern);
@@ -627,7 +584,7 @@ Java_sun_awt_image_ImagingLib_convolveRaster(JNIEnv *env, jobject this,
     }
 
     /* Parse the source raster */
-    if (awt_parseRaster(env, jsrc, srcRasterP) <= 0) {
+    if ((status = awt_parseRaster(env, jsrc, srcRasterP)) <= 0) {
         /* Can't handle any custom rasters */
         free(srcRasterP);
         free(dstRasterP);
@@ -636,7 +593,7 @@ Java_sun_awt_image_ImagingLib_convolveRaster(JNIEnv *env, jobject this,
     }
 
     /* Parse the destination raster */
-    if (awt_parseRaster(env, jdst, dstRasterP) <= 0) {
+    if ((status = awt_parseRaster(env, jdst, dstRasterP)) <= 0) {
         /* Can't handle any custom images */
         awt_freeParsedRaster(srcRasterP, TRUE);
         free(dstRasterP);
@@ -743,9 +700,7 @@ Java_sun_awt_image_ImagingLib_convolveRaster(JNIEnv *env, jobject this,
 
     /* Means that we couldn't write directly into the destination buffer */
     if (ddata == NULL) {
-        if (storeRasterArray(env, srcRasterP, dstRasterP, dst) < 0) {
-            retStatus = setPixelsFormMlibImage(env, dstRasterP, dst);
-        }
+        retStatus = awt_setPixels(env, dstRasterP, mlib_ImageGetData(dst));
     }
 
     /* Release the pinned memory */
@@ -772,7 +727,6 @@ Java_sun_awt_image_ImagingLib_transformBI(JNIEnv *env, jobject this,
     mlib_image *src;
     mlib_image *dst;
     int i;
-    int j = 0;
     int retStatus = 1;
     mlib_status status;
     double *matrix;
@@ -825,15 +779,6 @@ Java_sun_awt_image_ImagingLib_transformBI(JNIEnv *env, jobject this,
         return 0;
     }
 
-    /* Check for invalid double value in transformation matrix */
-    for (j = 0; j < 6; j++) {
-
-        if (!(IS_FINITE(matrix[j]))) {
-            (*env)->ReleasePrimitiveArrayCritical(env, jmatrix, matrix, JNI_ABORT);
-            return 0;
-        }
-    }
-
     if (s_printIt) {
         printf("matrix is %g %g %g %g %g %g\n", matrix[0], matrix[1],
                matrix[2], matrix[3], matrix[4], matrix[5]);
@@ -849,13 +794,13 @@ Java_sun_awt_image_ImagingLib_transformBI(JNIEnv *env, jobject this,
     (*env)->ReleasePrimitiveArrayCritical(env, jmatrix, matrix, JNI_ABORT);
 
     /* Parse the source image */
-    if (awt_parseImage(env, jsrc, &srcImageP, FALSE) <= 0) {
+    if ((status = awt_parseImage(env, jsrc, &srcImageP, FALSE)) <= 0) {
         /* Can't handle any custom images */
         return 0;
     }
 
     /* Parse the destination image */
-    if (awt_parseImage(env, jdst, &dstImageP, FALSE) <= 0) {
+    if ((status = awt_parseImage(env, jdst, &dstImageP, FALSE)) <= 0) {
         /* Can't handle any custom images */
         awt_freeParsedImage(srcImageP, TRUE);
         return 0;
@@ -990,7 +935,6 @@ Java_sun_awt_image_ImagingLib_transformRaster(JNIEnv *env, jobject this,
     mlib_image *src;
     mlib_image *dst;
     int i;
-    int j = 0;
     int retStatus = 1;
     mlib_status status;
     double *matrix;
@@ -1055,17 +999,6 @@ Java_sun_awt_image_ImagingLib_transformRaster(JNIEnv *env, jobject this,
         return 0;
     }
 
-    /* Check for invalid double value in transformation matrix */
-    for (j = 0; j < 6; j++) {
-
-        if (!(IS_FINITE(matrix[j]))) {
-            (*env)->ReleasePrimitiveArrayCritical(env, jmatrix, matrix, JNI_ABORT);
-            free(srcRasterP);
-            free(dstRasterP);
-            return 0;
-        }
-    }
-
     if (s_printIt) {
         printf("matrix is %g %g %g %g %g %g\n", matrix[0], matrix[1],
                matrix[2], matrix[3], matrix[4], matrix[5]);
@@ -1081,7 +1014,7 @@ Java_sun_awt_image_ImagingLib_transformRaster(JNIEnv *env, jobject this,
     (*env)->ReleasePrimitiveArrayCritical(env, jmatrix, matrix, JNI_ABORT);
 
     /* Parse the source raster */
-    if (awt_parseRaster(env, jsrc, srcRasterP) <= 0) {
+    if ((status = awt_parseRaster(env, jsrc, srcRasterP)) <= 0) {
         /* Can't handle any custom rasters */
         free(srcRasterP);
         free(dstRasterP);
@@ -1089,7 +1022,7 @@ Java_sun_awt_image_ImagingLib_transformRaster(JNIEnv *env, jobject this,
     }
 
     /* Parse the destination raster */
-    if (awt_parseRaster(env, jdst, dstRasterP) <= 0) {
+    if ((status = awt_parseRaster(env, jdst, dstRasterP)) <= 0) {
         /* Can't handle any custom images */
         awt_freeParsedRaster(srcRasterP, TRUE);
         free(dstRasterP);
@@ -1173,8 +1106,7 @@ fprintf(stderr,"Flags   : %d\n",dst->flags);
     if (ddata == NULL) {
         /* Need to store it back into the array */
         if (storeRasterArray(env, srcRasterP, dstRasterP, dst) < 0) {
-            (*env)->ExceptionClear(env); // Could not store the array, try another way
-            retStatus = setPixelsFormMlibImage(env, dstRasterP, dst);
+            retStatus = awt_setPixels(env, dstRasterP, mlib_ImageGetData(dst));
         }
     }
 
@@ -1328,13 +1260,13 @@ Java_sun_awt_image_ImagingLib_lookupByteBI(JNIEnv *env, jobject thisLib,
     if (s_timeIt) (*start_timer)(3600);
 
     /* Parse the source image */
-    if (awt_parseImage(env, jsrc, &srcImageP, FALSE) <= 0) {
+    if ((status = awt_parseImage(env, jsrc, &srcImageP, FALSE)) <= 0) {
         /* Can't handle any custom images */
         return 0;
     }
 
     /* Parse the destination image */
-    if (awt_parseImage(env, jdst, &dstImageP, FALSE) <= 0) {
+    if ((status = awt_parseImage(env, jdst, &dstImageP, FALSE)) <= 0) {
         /* Can't handle any custom images */
         awt_freeParsedImage(srcImageP, TRUE);
         return 0;
@@ -1500,14 +1432,6 @@ Java_sun_awt_image_ImagingLib_lookupByteBI(JNIEnv *env, jobject thisLib,
         retStatus = 0;
     }
 
-   /* Release the LUT */
-    for (i=0; i < lut_nbands; i++) {
-        (*env)->ReleasePrimitiveArrayCritical(env, jtable[i].jArray,
-            (jbyte *) jtable[i].table, JNI_ABORT);
-    }
-    free ((void *) jtable);
-    free ((void *) tbl);
-
     /*
      * Means that we couldn't write directly into
      * the destination buffer
@@ -1521,6 +1445,13 @@ Java_sun_awt_image_ImagingLib_lookupByteBI(JNIEnv *env, jobject thisLib,
         }
     }
 
+    /* Release the LUT */
+    for (i=0; i < lut_nbands; i++) {
+        (*env)->ReleasePrimitiveArrayCritical(env, jtable[i].jArray,
+            (jbyte *) jtable[i].table, JNI_ABORT);
+    }
+    free ((void *) jtable);
+    free ((void *) tbl);
 
     /* Release the pinned memory */
     freeArray(env, srcImageP, src, sdata, dstImageP, dst, ddata);
@@ -1576,14 +1507,14 @@ Java_sun_awt_image_ImagingLib_lookupByteRaster(JNIEnv *env,
     }
 
     /* Parse the source raster - reject custom images */
-    if (awt_parseRaster(env, jsrc, srcRasterP) <= 0) {
+    if ((status = awt_parseRaster(env, jsrc, srcRasterP)) <= 0) {
         free(srcRasterP);
         free(dstRasterP);
         return 0;
     }
 
     /* Parse the destination image - reject custom images */
-    if (awt_parseRaster(env, jdst, dstRasterP) <= 0) {
+    if ((status = awt_parseRaster(env, jdst, dstRasterP)) <= 0) {
         awt_freeParsedRaster(srcRasterP, TRUE);
         free(dstRasterP);
         return 0;
@@ -1738,20 +1669,18 @@ Java_sun_awt_image_ImagingLib_lookupByteRaster(JNIEnv *env,
         retStatus = 0;
     }
 
-    /* Release the LUT */
-    for (i=0; i < lut_nbands; i++) {
-        (*env)->ReleasePrimitiveArrayCritical(env, jtable[i].jArray,
-                                              (jbyte *) jtable[i].table, JNI_ABORT);
-    }
-
     /*
      * Means that we couldn't write directly into
      * the destination buffer
      */
     if (ddata == NULL) {
-        if (storeRasterArray(env, srcRasterP, dstRasterP, dst) < 0) {
-            retStatus = setPixelsFormMlibImage(env, dstRasterP, dst);
-        }
+        retStatus = awt_setPixels(env, dstRasterP, mlib_ImageGetData(dst));
+    }
+
+    /* Release the LUT */
+    for (i=0; i < lut_nbands; i++) {
+        (*env)->ReleasePrimitiveArrayCritical(env, jtable[i].jArray,
+                                              (jbyte *) jtable[i].table, JNI_ABORT);
     }
 
     /* Release the pinned memory */
@@ -2085,7 +2014,6 @@ cvtCustomToDefault(JNIEnv *env, BufImageS_t *imageP, int component,
 
     jpixels = (*env)->NewIntArray(env, nbytes);
     if (JNU_IsNull(env, jpixels)) {
-        (*env)->ExceptionClear(env);
         JNU_ThrowOutOfMemoryError(env, "Out of Memory");
         return -1;
     }
@@ -2151,7 +2079,6 @@ cvtDefaultToCustom(JNIEnv *env, BufImageS_t *imageP, int component,
 
     jpixels = (*env)->NewIntArray(env, nbytes);
     if (JNU_IsNull(env, jpixels)) {
-        (*env)->ExceptionClear(env);
         JNU_ThrowOutOfMemoryError(env, "Out of Memory");
         return -1;
     }
@@ -2713,7 +2640,7 @@ storeImageArray(JNIEnv *env, BufImageS_t *srcP, BufImageS_t *dstP,
             }
         }
         else if (mlibImP->type == MLIB_SHORT) {
-            return setPixelsFormMlibImage(env, rasterP, mlibImP);
+            return awt_setPixels(env, rasterP, mlibImP->data);
         }
     }
     else {
@@ -2848,14 +2775,21 @@ static int expandICM(JNIEnv *env, BufImageS_t *imageP, unsigned int *mDataP)
 
     /* Need to grab the lookup tables.  Right now only bytes */
     rgb = (int *) (*env)->GetPrimitiveArrayCritical(env, cmP->jrgb, NULL);
-    CHECK_NULL_RETURN(rgb, -1);
 
     /* Interleaved with shared data */
     dataP = (void *) (*env)->GetPrimitiveArrayCritical(env,
                                                        rasterP->jdata, NULL);
-    if (dataP == NULL) {
+    if (rgb == NULL || dataP == NULL) {
         /* Release the lookup tables */
-        (*env)->ReleasePrimitiveArrayCritical(env, cmP->jrgb, rgb, JNI_ABORT);
+        if (rgb) {
+            (*env)->ReleasePrimitiveArrayCritical(env, cmP->jrgb, rgb,
+                                                  JNI_ABORT);
+        }
+        if (dataP) {
+            (*env)->ReleasePrimitiveArrayCritical(env,
+                                                  rasterP->jdata, dataP,
+                                                  JNI_ABORT);
+        }
         return -1;
     }
 

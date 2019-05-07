@@ -374,10 +374,7 @@ newWeakGlobalReference(JNIEnv *env, jobject object)
 
     HPROF_ASSERT(env!=NULL);
     HPROF_ASSERT(object!=NULL);
-    CHECK_EXCEPTIONS (env) {
-      gref = JNI_FUNC_PTR(env,NewWeakGlobalRef)(env, object);
-    } END_CHECK_EXCEPTIONS;
-
+    gref = JNI_FUNC_PTR(env,NewWeakGlobalRef)(env, object);
     HPROF_ASSERT(gref!=NULL);
     return gref;
 }

@@ -26,7 +26,6 @@
 #include "code/nmethod.hpp"
 #include "compiler/compileBroker.hpp"
 #include "opto/compile.hpp"
-#include "opto/matcher.hpp"
 #include "opto/node.hpp"
 #include "opto/phase.hpp"
 
@@ -56,7 +55,6 @@ elapsedTimer Phase::_t_blockOrdering;
 elapsedTimer Phase::_t_macroEliminate;
 elapsedTimer Phase::_t_macroExpand;
 elapsedTimer Phase::_t_peephole;
-elapsedTimer Phase::_t_postalloc_expand;
 elapsedTimer Phase::_t_codeGeneration;
 elapsedTimer Phase::_t_registerMethod;
 elapsedTimer Phase::_t_temporaryTimer1;
@@ -67,8 +65,6 @@ elapsedTimer Phase::_t_idealLoopVerify;
 elapsedTimer   Phase::_t_iterGVN;
 elapsedTimer   Phase::_t_iterGVN2;
 elapsedTimer   Phase::_t_incrInline;
-elapsedTimer   Phase::_t_renumberLive;
-
 
 // Subtimers for _t_registerAllocation
 elapsedTimer   Phase::_t_ctorChaitin;
@@ -76,7 +72,6 @@ elapsedTimer   Phase::_t_buildIFGphysical;
 elapsedTimer   Phase::_t_computeLive;
 elapsedTimer   Phase::_t_regAllocSplit;
 elapsedTimer   Phase::_t_postAllocCopyRemoval;
-elapsedTimer   Phase::_t_mergeMultidefs;
 elapsedTimer   Phase::_t_fixupSpills;
 
 // Subtimers for _t_output
@@ -117,14 +112,13 @@ void Phase::print_timers() {
     }
     tty->print_cr ("      iterGVN        : %3.3f sec", Phase::_t_iterGVN.seconds());
     tty->print_cr ("      incrInline     : %3.3f sec", Phase::_t_incrInline.seconds());
-    tty->print_cr ("      renumberLive   : %3.3f sec", Phase::_t_renumberLive.seconds());
     tty->print_cr ("      idealLoop      : %3.3f sec", Phase::_t_idealLoop.seconds());
     tty->print_cr ("      idealLoopVerify: %3.3f sec", Phase::_t_idealLoopVerify.seconds());
     tty->print_cr ("      ccp            : %3.3f sec", Phase::_t_ccp.seconds());
     tty->print_cr ("      iterGVN2       : %3.3f sec", Phase::_t_iterGVN2.seconds());
     tty->print_cr ("      macroExpand    : %3.3f sec", Phase::_t_macroExpand.seconds());
     tty->print_cr ("      graphReshape   : %3.3f sec", Phase::_t_graphReshaping.seconds());
-    double optimizer_subtotal = Phase::_t_iterGVN.seconds() + Phase::_t_iterGVN2.seconds() + Phase::_t_renumberLive.seconds() +
+    double optimizer_subtotal = Phase::_t_iterGVN.seconds() + Phase::_t_iterGVN2.seconds() +
       Phase::_t_escapeAnalysis.seconds() + Phase::_t_macroEliminate.seconds() +
       Phase::_t_idealLoop.seconds() + Phase::_t_ccp.seconds() +
       Phase::_t_macroExpand.seconds() + Phase::_t_graphReshaping.seconds();
@@ -140,20 +134,16 @@ void Phase::print_timers() {
     tty->print_cr ("      computeLive    : %3.3f sec", Phase::_t_computeLive.seconds());
     tty->print_cr ("      regAllocSplit  : %3.3f sec", Phase::_t_regAllocSplit.seconds());
     tty->print_cr ("      postAllocCopyRemoval: %3.3f sec", Phase::_t_postAllocCopyRemoval.seconds());
-    tty->print_cr ("      mergeMultidefs: %3.3f sec", Phase::_t_mergeMultidefs.seconds());
     tty->print_cr ("      fixupSpills    : %3.3f sec", Phase::_t_fixupSpills.seconds());
     double regalloc_subtotal = Phase::_t_ctorChaitin.seconds() +
       Phase::_t_buildIFGphysical.seconds() + Phase::_t_computeLive.seconds() +
       Phase::_t_regAllocSplit.seconds()    + Phase::_t_fixupSpills.seconds() +
-      Phase::_t_postAllocCopyRemoval.seconds() + Phase::_t_mergeMultidefs.seconds();
+      Phase::_t_postAllocCopyRemoval.seconds();
     double percent_of_regalloc = ((regalloc_subtotal == 0.0) ? 0.0 : (regalloc_subtotal / Phase::_t_registerAllocation.seconds() * 100.0));
     tty->print_cr ("      subtotal       : %3.3f sec,  %3.2f %%", regalloc_subtotal, percent_of_regalloc);
   }
   tty->print_cr ("    blockOrdering  : %3.3f sec", Phase::_t_blockOrdering.seconds());
   tty->print_cr ("    peephole       : %3.3f sec", Phase::_t_peephole.seconds());
-  if (Matcher::require_postalloc_expand) {
-    tty->print_cr ("    postalloc_expand: %3.3f sec", Phase::_t_postalloc_expand.seconds());
-  }
   tty->print_cr ("    codeGen        : %3.3f sec", Phase::_t_codeGeneration.seconds());
   tty->print_cr ("    install_code   : %3.3f sec", Phase::_t_registerMethod.seconds());
   tty->print_cr ("    -------------- : ----------");

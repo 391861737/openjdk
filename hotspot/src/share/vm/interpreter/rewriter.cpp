@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 1998, 2014, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 1998, 2013, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -250,8 +250,8 @@ void Rewriter::rewrite_invokedynamic(address bcp, int offset, bool reverse) {
     // We will reverse the bytecode rewriting _after_ adjusting them.
     // Adjust the cache index by offset to the invokedynamic entries in the
     // cpCache plus the delta if the invokedynamic bytecodes were adjusted.
-    int adjustment = cp_cache_delta() + _first_iteration_cp_cache_limit;
-    int cp_index = invokedynamic_cp_cache_entry_pool_index(cache_index - adjustment);
+    cache_index = cp_cache_delta() + _first_iteration_cp_cache_limit;
+    int cp_index = invokedynamic_cp_cache_entry_pool_index(cache_index);
     assert(_pool->tag_at(cp_index).is_invoke_dynamic(), "wrong index");
     // zero out 4 bytes
     Bytes::put_Java_u4(p, 0);
@@ -396,45 +396,10 @@ void Rewriter::scan_method(Method* method, bool reverse, bool* invokespecial_err
           break;
         }
 
-        case Bytecodes::_putstatic      :
-        case Bytecodes::_putfield       : {
-          if (!reverse) {
-            // Check if any final field of the class given as parameter is modified
-            // outside of initializer methods of the class. Fields that are modified
-            // are marked with a flag. For marked fields, the compilers do not perform
-            // constant folding (as the field can be changed after initialization).
-            //
-            // The check is performed after verification and only if verification has
-            // succeeded. Therefore, the class is guaranteed to be well-formed.
-            InstanceKlass* klass = method->method_holder();
-            u2 bc_index = Bytes::get_Java_u2(bcp + prefix_length + 1);
-            constantPoolHandle cp(method->constants());
-            Symbol* ref_class_name = cp->klass_name_at(cp->klass_ref_index_at(bc_index));
-
-            if (klass->name() == ref_class_name) {
-              Symbol* field_name = cp->name_ref_at(bc_index);
-              Symbol* field_sig = cp->signature_ref_at(bc_index);
-
-              fieldDescriptor fd;
-              if (klass->find_field(field_name, field_sig, &fd) != NULL) {
-                if (fd.access_flags().is_final()) {
-                  if (fd.access_flags().is_static()) {
-                    if (!method->is_static_initializer()) {
-                      fd.set_has_initialized_final_update(true);
-                    }
-                  } else {
-                    if (!method->is_object_initializer()) {
-                      fd.set_has_initialized_final_update(true);
-                    }
-                  }
-                }
-              }
-            }
-          }
-        }
-        // fall through
         case Bytecodes::_getstatic      : // fall through
+        case Bytecodes::_putstatic      : // fall through
         case Bytecodes::_getfield       : // fall through
+        case Bytecodes::_putfield       : // fall through
         case Bytecodes::_invokevirtual  : // fall through
         case Bytecodes::_invokestatic   :
         case Bytecodes::_invokeinterface:
@@ -488,7 +453,18 @@ methodHandle Rewriter::rewrite_jsrs(methodHandle method, TRAPS) {
   return method;
 }
 
-void Rewriter::rewrite_bytecodes(TRAPS) {
+void Rewriter::rewrite(instanceKlassHandle klass, TRAPS) {
+  ResourceMark rm(THREAD);
+  Rewriter     rw(klass, klass->constants(), klass->methods(), CHECK);
+  // (That's all, folks.)
+}
+
+
+Rewriter::Rewriter(instanceKlassHandle klass, constantPoolHandle cpool, Array<Method*>* methods, TRAPS)
+  : _klass(klass),
+    _pool(cpool),
+    _methods(methods)
+{
   assert(_pool->cache() == NULL, "constant pool cache must not be set yet");
 
   // determine index maps for Method* rewriting
@@ -532,29 +508,6 @@ void Rewriter::rewrite_bytecodes(TRAPS) {
   // May have to fix invokedynamic bytecodes if invokestatic/InterfaceMethodref
   // entries had to be added.
   patch_invokedynamic_bytecodes();
-}
-
-void Rewriter::rewrite(instanceKlassHandle klass, TRAPS) {
-  ResourceMark rm(THREAD);
-  Rewriter     rw(klass, klass->constants(), klass->methods(), CHECK);
-  // (That's all, folks.)
-}
-
-
-Rewriter::Rewriter(instanceKlassHandle klass, constantPoolHandle cpool, Array<Method*>* methods, TRAPS)
-  : _klass(klass),
-    _pool(cpool),
-    _methods(methods)
-{
-
-  // Rewrite bytecodes - exception here exits.
-  rewrite_bytecodes(CHECK);
-
-  // Stress restoring bytecodes
-  if (StressRewriter) {
-    restore_bytecodes();
-    rewrite_bytecodes(CHECK);
-  }
 
   // allocate constant pool cache, now that we've seen all the bytecodes
   make_constant_pool_cache(THREAD);
@@ -570,7 +523,6 @@ Rewriter::Rewriter(instanceKlassHandle klass, constantPoolHandle cpool, Array<Me
   // so methods with jsrs in custom class lists in aren't attempted to be
   // rewritten in the RO section of the shared archive.
   // Relocated bytecodes don't have to be restored, only the cp cache entries
-  int len = _methods->length();
   for (int i = len-1; i >= 0; i--) {
     methodHandle m(THREAD, _methods->at(i));
 

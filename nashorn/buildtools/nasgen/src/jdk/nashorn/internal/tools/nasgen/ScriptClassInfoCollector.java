@@ -27,6 +27,7 @@ package jdk.nashorn.internal.tools.nasgen;
 
 import static jdk.nashorn.internal.tools.nasgen.ScriptClassInfo.SCRIPT_CLASS_ANNO_DESC;
 import static jdk.nashorn.internal.tools.nasgen.ScriptClassInfo.WHERE_ENUM_DESC;
+
 import java.io.BufferedInputStream;
 import java.io.FileInputStream;
 import java.io.IOException;
@@ -40,7 +41,6 @@ import jdk.internal.org.objectweb.asm.ClassVisitor;
 import jdk.internal.org.objectweb.asm.FieldVisitor;
 import jdk.internal.org.objectweb.asm.MethodVisitor;
 import jdk.internal.org.objectweb.asm.Opcodes;
-import jdk.internal.org.objectweb.asm.Type;
 import jdk.nashorn.internal.objects.annotations.Where;
 import jdk.nashorn.internal.tools.nasgen.MemberInfo.Kind;
 
@@ -118,7 +118,7 @@ public class ScriptClassInfoCollector extends ClassVisitor {
                     addScriptMember(memInfo);
 
                     return new AnnotationVisitor(Opcodes.ASM4, delegateAV) {
-                        // These could be "null" if values are not supplied,
+                        // These could be "null" if values are not suppiled,
                         // in which case we have to use the default values.
                         private String  name;
                         private Integer attributes;
@@ -194,7 +194,6 @@ public class ScriptClassInfoCollector extends ClassVisitor {
 
                     final MemberInfo memInfo = new MemberInfo();
 
-                    // annoKind == GETTER or SPECIALIZED_FUNCTION
                     memInfo.setKind(annoKind);
                     memInfo.setJavaName(methodName);
                     memInfo.setJavaDesc(methodDesc);
@@ -203,41 +202,24 @@ public class ScriptClassInfoCollector extends ClassVisitor {
                     addScriptMember(memInfo);
 
                     return new AnnotationVisitor(Opcodes.ASM4, delegateAV) {
-                        // These could be "null" if values are not supplied,
+                        // These could be "null" if values are not suppiled,
                         // in which case we have to use the default values.
                         private String  name;
                         private Integer attributes;
                         private Integer arity;
                         private Where   where;
-                        private boolean isSpecializedConstructor;
-                        private boolean isOptimistic;
-                        private Type    linkLogicClass = MethodGenerator.EMPTY_LINK_LOGIC_TYPE;
 
                         @Override
                         public void visit(final String annotationName, final Object annotationValue) {
                             switch (annotationName) {
                             case "name":
                                 this.name = (String)annotationValue;
-                                if (name.isEmpty()) {
-                                    name = null;
-                                }
                                 break;
                             case "attributes":
                                 this.attributes = (Integer)annotationValue;
                                 break;
                             case "arity":
                                 this.arity = (Integer)annotationValue;
-                                break;
-                            case "isConstructor":
-                                assert annoKind == Kind.SPECIALIZED_FUNCTION;
-                                this.isSpecializedConstructor = (Boolean)annotationValue;
-                                break;
-                            case "isOptimistic":
-                                assert annoKind == Kind.SPECIALIZED_FUNCTION;
-                                this.isOptimistic = (Boolean)annotationValue;
-                                break;
-                            case "linkLogic":
-                                this.linkLogicClass = (Type)annotationValue;
                                 break;
                             default:
                                 break;
@@ -248,19 +230,12 @@ public class ScriptClassInfoCollector extends ClassVisitor {
 
                         @Override
                         public void visitEnum(final String enumName, final String desc, final String enumValue) {
-                            switch (enumName) {
-                            case "where":
-                                if (WHERE_ENUM_DESC.equals(desc)) {
-                                    this.where = Where.valueOf(enumValue);
-                                }
-                                break;
-                            default:
-                                break;
+                            if ("where".equals(enumName) && WHERE_ENUM_DESC.equals(desc)) {
+                                this.where = Where.valueOf(enumValue);
                             }
                             super.visitEnum(enumName, desc, enumValue);
                         }
 
-                        @SuppressWarnings("fallthrough")
                         @Override
                         public void visitEnd() {
                             super.visitEnd();
@@ -281,6 +256,7 @@ public class ScriptClassInfoCollector extends ClassVisitor {
                                     case SETTER:
                                         where = Where.INSTANCE;
                                         break;
+                                    case SPECIALIZED_CONSTRUCTOR:
                                     case CONSTRUCTOR:
                                         where = Where.CONSTRUCTOR;
                                         break;
@@ -288,16 +264,12 @@ public class ScriptClassInfoCollector extends ClassVisitor {
                                         where = Where.PROTOTYPE;
                                         break;
                                     case SPECIALIZED_FUNCTION:
-                                        where = isSpecializedConstructor? Where.CONSTRUCTOR : Where.PROTOTYPE;
-                                        //fallthru
+                                        //TODO is this correct
                                     default:
                                         break;
                                 }
                             }
                             memInfo.setWhere(where);
-                            memInfo.setLinkLogicClass(linkLogicClass);
-                            memInfo.setIsSpecializedConstructor(isSpecializedConstructor);
-                            memInfo.setIsOptimistic(isOptimistic);
                         }
                     };
                 }

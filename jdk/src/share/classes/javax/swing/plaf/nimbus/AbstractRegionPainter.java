@@ -31,7 +31,6 @@ import javax.swing.*;
 import javax.swing.plaf.UIResource;
 import javax.swing.Painter;
 import java.awt.print.PrinterGraphics;
-import sun.reflect.misc.MethodUtil;
 
 /**
  * Convenient base class for defining Painter instances for rendering a
@@ -446,8 +445,8 @@ public abstract class AbstractRegionPainter implements Painter<JComponent> {
             } else {
                 String s = "get" + Character.toUpperCase(property.charAt(0)) + property.substring(1);
                 try {
-                    Method method = MethodUtil.getMethod(c.getClass(), s, null);
-                    color = (Color) MethodUtil.invoke(method, c, null);
+                    Method method = c.getClass().getMethod(s);
+                    color = (Color) method.invoke(c);
                 } catch (Exception e) {
                     //don't do anything, it just didn't work, that's all.
                     //This could be a normal occurance if you use a property
@@ -625,6 +624,7 @@ public abstract class AbstractRegionPainter implements Painter<JComponent> {
         // check if we can scale to the requested size
         Dimension canvas = ctx.canvasSize;
         Insets insets = ctx.stretchingInsets;
+
         if (w <= (canvas.width * ctx.maxHorizontalScaleFactor) && h <= (canvas.height * ctx.maxVerticalScaleFactor)) {
             // get image at canvas size
             VolatileImage img = getImage(g.getDeviceConfiguration(), c, canvas.width, canvas.height, extendedCacheKeys);

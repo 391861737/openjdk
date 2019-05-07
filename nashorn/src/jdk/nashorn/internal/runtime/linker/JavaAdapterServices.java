@@ -116,8 +116,8 @@ public final class JavaAdapterServices {
      * static initializers.
      * @return the thread-local JS object used to define methods for the class being initialized.
      */
-    public static Object getClassOverrides() {
-        final Object overrides = classOverrides.get();
+    public static ScriptObject getClassOverrides() {
+        final ScriptObject overrides = classOverrides.get();
         assert overrides != null;
         return overrides;
     }
@@ -134,23 +134,7 @@ public final class JavaAdapterServices {
         NO_PERMISSIONS_INVOKER.invokeExact(method, arg);
     }
 
-    /**
-     * Set the current global scope
-     * @param global the global scope
-     */
-    public static void setGlobal(final Object global) {
-        Context.setGlobal((ScriptObject)global);
-    }
-
-    /**
-     * Get the current global scope
-     * @return the current global scope
-     */
-    public static Object getGlobal() {
-        return Context.getGlobal();
-    }
-
-    static void setClassOverrides(final ScriptObject overrides) {
+    static void setClassOverrides(ScriptObject overrides) {
         classOverrides.set(overrides);
     }
 
@@ -183,7 +167,7 @@ public final class JavaAdapterServices {
             public ClassLoader run() {
                 return new SecureClassLoader(null) {
                     @Override
-                    protected Class<?> findClass(final String name) throws ClassNotFoundException {
+                    protected Class<?> findClass(String name) throws ClassNotFoundException {
                         if(name.equals(className)) {
                             return defineClass(name, bytes, 0, bytes.length, new ProtectionDomain(
                                     new CodeSource(null, (CodeSigner[])null), new Permissions()));
@@ -197,49 +181,8 @@ public final class JavaAdapterServices {
         try {
             return MethodHandles.lookup().findStatic(Class.forName(className, true, loader), "invoke",
                     MethodType.methodType(void.class, MethodHandle.class, Object.class));
-        } catch(final ReflectiveOperationException e) {
+        } catch(ReflectiveOperationException e) {
             throw new AssertionError(e.getMessage(), e);
         }
-    }
-
-    /**
-     * Returns a method handle used to convert a return value from a delegate method (always Object) to the expected
-     * Java return type.
-     * @param returnType the return type
-     * @return the converter for the expected return type
-     */
-    public static MethodHandle getObjectConverter(final Class<?> returnType) {
-        return Bootstrap.getLinkerServices().getTypeConverter(Object.class, returnType);
-    }
-
-    /**
-     * Invoked when returning Object from an adapted method to filter out internal Nashorn objects that must not be seen
-     * by the callers. Currently only transforms {@code ConsString} into {@code String} and transforms {@code ScriptObject} into {@code ScriptObjectMirror}.
-     * @param obj the return value
-     * @return the filtered return value.
-     */
-    public static Object exportReturnValue(final Object obj) {
-        return NashornBeansLinker.exportArgument(obj, true);
-    }
-
-    /**
-     * Invoked to convert a return value of a delegate function to primitive char. There's no suitable conversion in
-     * {@code JSType}, so we provide our own to adapters.
-     * @param obj the return value.
-     * @return the character value of the return value
-     */
-    public static char toCharPrimitive(final Object obj) {
-        return JavaArgumentConverters.toCharPrimitive(obj);
-    }
-
-    /**
-     * Invoked to convert a return value of a delegate function to String. It is similar to
-     * {@code JSType.toString(Object)}, except it doesn't handle StaticClass specially, and it returns null for null
-     * input instead of the string "null".
-     * @param obj the return value.
-     * @return the String value of the return value
-     */
-    public static String toString(final Object obj) {
-        return JavaArgumentConverters.toString(obj);
     }
 }

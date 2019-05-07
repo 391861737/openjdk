@@ -299,7 +299,7 @@ public final class Service<S> {
                 return service.cast(c.newInstance());
             } catch (Throwable x) {
                 fail(service,
-                     "Provider " + cn + " could not be instantiated",
+                     "Provider " + cn + " could not be instantiated: " + x,
                      x);
             }
             return null;        /* This cannot happen */

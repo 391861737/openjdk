@@ -104,7 +104,7 @@ import java.util.Set;
 class AccessibleMembersLookup {
     private final Map<MethodSignature, Method> methods;
     private final Set<Class<?>> innerClasses;
-    private final boolean instance;
+    private boolean instance;
 
     /**
      * Creates a mapping for all accessible methods and inner classes on a class.
@@ -112,7 +112,7 @@ class AccessibleMembersLookup {
      * @param clazz the inspected class
      * @param instance true to inspect instance methods, false to inspect static methods.
      */
-    AccessibleMembersLookup(final Class<?> clazz, final boolean instance) {
+    AccessibleMembersLookup(final Class<?> clazz, boolean instance) {
         this.methods = new HashMap<>();
         this.innerClasses = new LinkedHashSet<>();
         this.instance = instance;
@@ -153,7 +153,7 @@ class AccessibleMembersLookup {
          * @param name the name of the method this signature represents.
          * @param args the argument types of the method.
          */
-        MethodSignature(final String name, final Class<?>[] args) {
+        MethodSignature(String name, Class<?>[] args) {
             this.name = name;
             this.args = args;
         }
@@ -210,9 +210,8 @@ class AccessibleMembersLookup {
 
         if(!CheckRestrictedPackage.isRestrictedClass(clazz)) {
             searchSuperTypes = false;
-            for(final Method method: clazz.getMethods()) {
-                final boolean isStatic = Modifier.isStatic(method.getModifiers());
-                if(instance != isStatic) {
+            for(Method method: clazz.getMethods()) {
+                if(instance != Modifier.isStatic(method.getModifiers())) {
                     final MethodSignature sig = new MethodSignature(method);
                     if(!methods.containsKey(sig)) {
                         final Class<?> declaringClass = method.getDeclaringClass();
@@ -229,15 +228,12 @@ class AccessibleMembersLookup {
                             //generate the said synthetic delegators.
                             searchSuperTypes = true;
                         } else {
-                            // don't allow inherited static
-                            if (!isStatic || clazz == declaringClass) {
-                                methods.put(sig, method);
-                            }
+                            methods.put(sig, method);
                         }
                     }
                 }
             }
-            for(final Class<?> innerClass: clazz.getClasses()) {
+            for(Class<?> innerClass: clazz.getClasses()) {
                 // Add both static and non-static classes, regardless of instance flag. StaticClassLinker will just
                 // expose non-static classes with explicit constructor outer class argument.
                 // NOTE: getting inner class objects through getClasses() does not resolve them, so if those classes
@@ -249,8 +245,7 @@ class AccessibleMembersLookup {
             searchSuperTypes = true;
         }
 
-        // don't need to search super types for static methods
-        if(instance && searchSuperTypes) {
+        if(searchSuperTypes) {
             // If we reach here, the class is either not public, or it is in a restricted package. Alternatively, it is
             // public, but some of its methods claim that their declaring class is non-public. We'll try superclasses
             // and implemented interfaces then looking for public ones.

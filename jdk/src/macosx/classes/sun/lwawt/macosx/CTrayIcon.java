@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2011, 2016, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2011, 2013, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -27,6 +27,7 @@ package sun.lwawt.macosx;
 
 import sun.awt.AWTAccessor;
 import sun.awt.SunToolkit;
+import sun.lwawt.macosx.event.NSEvent;
 
 import javax.swing.*;
 import java.awt.*;
@@ -36,7 +37,6 @@ import java.awt.image.BufferedImage;
 import java.awt.peer.TrayIconPeer;
 import java.beans.PropertyChangeEvent;
 import java.beans.PropertyChangeListener;
-import java.util.concurrent.atomic.AtomicReference;
 
 public class CTrayIcon extends CFRetainedResource implements TrayIconPeer {
     private TrayIcon target;
@@ -76,9 +76,8 @@ public class CTrayIcon extends CFRetainedResource implements TrayIconPeer {
                 menuPeer = (CPopupMenu)popup.getPeer();
                 if (menuPeer == null) {
                     popup.addNotify();
-                    menuPeer = (CPopupMenu)popup.getPeer();
                 }
-            } catch (Exception e) {
+            }catch (Exception e){
                 e.printStackTrace();
             }
         }
@@ -89,22 +88,18 @@ public class CTrayIcon extends CFRetainedResource implements TrayIconPeer {
         return nativeCreate();
     }
 
+    private long getModel() {
+        return ptr;
+    }
+
     private native long nativeCreate();
 
     //invocation from the AWTTrayIcon.m
     public long getPopupMenuModel(){
         if(popup == null) {
-            PopupMenu popupMenu = target.getPopupMenu();
-            if (popupMenu != null) {
-                popup = popupMenu;
-            } else {
-                return 0L;
-            }
+            return 0L;
         }
-        // This method is executed on Appkit, so if ptr is not zero means that,
-        // it is still not deallocated(even if we call NSApp postRunnableEvent)
-        // and sent CFRelease to the native queue
-        return checkAndCreatePopupPeer().ptr;
+        return checkAndCreatePopupPeer().getModel();
     }
 
     /**
@@ -139,10 +134,6 @@ public class CTrayIcon extends CFRetainedResource implements TrayIconPeer {
 
         dummyFrame.dispose();
 
-        if (popup != null) {
-            popup.removeNotify();
-        }
-
         LWCToolkit.targetDisposedPeer(target, this);
         target = null;
 
@@ -151,7 +142,7 @@ public class CTrayIcon extends CFRetainedResource implements TrayIconPeer {
 
     @Override
     public void setToolTip(String tooltip) {
-        execute(ptr -> nativeSetToolTip(ptr, tooltip));
+        nativeSetToolTip(getModel(), tooltip);
     }
 
     //adds tooltip to the NSStatusBar's NSButton.
@@ -180,12 +171,7 @@ public class CTrayIcon extends CFRetainedResource implements TrayIconPeer {
         }
 
         CImage cimage = CImage.getCreator().createFromImage(image);
-        boolean imageAutoSize = target.isImageAutoSize();
-        cimage.execute(imagePtr -> {
-            execute(ptr -> {
-                setNativeImage(ptr, imagePtr, imageAutoSize);
-            });
-        });
+        setNativeImage(getModel(), cimage.ptr, target.isImageAutoSize());
     }
 
     private native void setNativeImage(final long model, final long nsimage, final boolean autosize);
@@ -365,14 +351,7 @@ public class CTrayIcon extends CFRetainedResource implements TrayIconPeer {
     private void showMessageDialog() {
 
         Dimension screenSize = java.awt.Toolkit.getDefaultToolkit().getScreenSize();
-        AtomicReference<Point2D> ref = new AtomicReference<>();
-        execute(ptr -> {
-            ref.set(nativeGetIconLocation(ptr));
-        });
-        Point2D iconLoc = ref.get();
-        if (iconLoc == null) {
-            return;
-        }
+        Point2D iconLoc = nativeGetIconLocation(getModel());
 
         int dialogY = (int)iconLoc.getY();
         int dialogX = (int)iconLoc.getX();

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2001, 2014, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2001, 2013, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -172,20 +172,6 @@ class CompactibleFreeListSpace: public CompactibleSpace {
   // list of size "word_sz", and must now be decremented.
   void par_get_chunk_of_blocks(size_t word_sz, size_t n, AdaptiveFreeList<FreeChunk>* fl);
 
-  // Used by par_get_chunk_of_blocks() for the chunks from the
-  // indexed_free_lists.
-  bool par_get_chunk_of_blocks_IFL(size_t word_sz, size_t n, AdaptiveFreeList<FreeChunk>* fl);
-
-  // Used by par_get_chunk_of_blocks_dictionary() to get a chunk
-  // evenly splittable into "n" "word_sz" chunks.  Returns that
-  // evenly splittable chunk.  May split a larger chunk to get the
-  // evenly splittable chunk.
-  FreeChunk* get_n_way_chunk_to_split(size_t word_sz, size_t n);
-
-  // Used by par_get_chunk_of_blocks() for the chunks from the
-  // dictionary.
-  void par_get_chunk_of_blocks_dictionary(size_t word_sz, size_t n, AdaptiveFreeList<FreeChunk>* fl);
-
   // Allocation helper functions
   // Allocate using a strategy that takes from the indexed free lists
   // first.  This allocation strategy assumes a companion sweeping
@@ -351,6 +337,10 @@ class CompactibleFreeListSpace: public CompactibleSpace {
                      unallocated_block() : end());
   }
 
+  bool is_in(const void* p) const {
+    return used_region().contains(p);
+  }
+
   virtual bool is_free_block(const HeapWord* p) const;
 
   // Resizing support
@@ -360,6 +350,7 @@ class CompactibleFreeListSpace: public CompactibleSpace {
   Mutex* freelistLock() const { return &_freelistLock; }
 
   // Iteration support
+  void oop_iterate(MemRegion mr, ExtendedOopClosure* cl);
   void oop_iterate(ExtendedOopClosure* cl);
 
   void object_iterate(ObjectClosure* blk);
@@ -372,12 +363,6 @@ class CompactibleFreeListSpace: public CompactibleSpace {
   // obj_is_alive() to determine whether it is safe to iterate of
   // an object.
   void safe_object_iterate(ObjectClosure* blk);
-
-  // Iterate over all objects that intersect with mr, calling "cl->do_object"
-  // on each.  There is an exception to this: if this closure has already
-  // been invoked on an object, it may skip such objects in some cases.  This is
-  // Most likely to happen in an "upwards" (ascending address) iteration of
-  // MemRegions.
   void object_iterate_mem(MemRegion mr, UpwardsObjectClosure* cl);
 
   // Requires that "mr" be entirely within the space.
@@ -386,8 +371,11 @@ class CompactibleFreeListSpace: public CompactibleSpace {
   // terminate the iteration and return the address of the start of the
   // subregion that isn't done.  Return of "NULL" indicates that the
   // interation completed.
- HeapWord* object_iterate_careful_m(MemRegion mr,
-                                    ObjectClosureCareful* cl);
+  virtual HeapWord*
+       object_iterate_careful_m(MemRegion mr,
+                                ObjectClosureCareful* cl);
+  virtual HeapWord*
+       object_iterate_careful(ObjectClosureCareful* cl);
 
   // Override: provides a DCTO_CL specific to this kind of space.
   DirtyCardToOopClosure* new_dcto_cl(ExtendedOopClosure* cl,
@@ -416,7 +404,7 @@ class CompactibleFreeListSpace: public CompactibleSpace {
     if (CMSTraceSweeper) {
       gclog_or_tty->print_cr(">>>>> Saving sweep limit " PTR_FORMAT
                              "  for space [" PTR_FORMAT "," PTR_FORMAT ") <<<<<<",
-                             p2i(_sweep_limit), p2i(bottom()), p2i(end()));
+                             _sweep_limit, bottom(), end());
     }
   }
   NOT_PRODUCT(

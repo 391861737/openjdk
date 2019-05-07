@@ -155,7 +155,6 @@ static char* next_arg(char* cmdline, char* arg, jboolean* wildcard) {
                 }
             }
             dest += copyCh(ch, dest);
-            slashes = 0;
             break;
 
         default:

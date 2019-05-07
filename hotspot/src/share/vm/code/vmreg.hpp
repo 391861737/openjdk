@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 1998, 2015, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 1998, 2012, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -32,18 +32,23 @@
 #ifdef COMPILER2
 #include "opto/adlcVMDeps.hpp"
 #include "utilities/ostream.hpp"
-#if defined ADGLOBALS_MD_HPP
-# include ADGLOBALS_MD_HPP
-#elif defined TARGET_ARCH_MODEL_x86_32
+#ifdef TARGET_ARCH_MODEL_x86_32
 # include "adfiles/adGlobals_x86_32.hpp"
-#elif defined TARGET_ARCH_MODEL_x86_64
+#endif
+#ifdef TARGET_ARCH_MODEL_x86_64
 # include "adfiles/adGlobals_x86_64.hpp"
-#elif defined TARGET_ARCH_MODEL_sparc
+#endif
+#ifdef TARGET_ARCH_MODEL_sparc
 # include "adfiles/adGlobals_sparc.hpp"
-#elif defined TARGET_ARCH_MODEL_zero
+#endif
+#ifdef TARGET_ARCH_MODEL_zero
 # include "adfiles/adGlobals_zero.hpp"
-#elif defined TARGET_ARCH_MODEL_ppc_64
-# include "adfiles/adGlobals_ppc_64.hpp"
+#endif
+#ifdef TARGET_ARCH_MODEL_arm
+# include "adfiles/adGlobals_arm.hpp"
+#endif
+#ifdef TARGET_ARCH_MODEL_ppc
+# include "adfiles/adGlobals_ppc.hpp"
 #endif
 #endif
 
@@ -65,7 +70,7 @@ friend class OptoReg;
 // friend class Location;
 private:
   enum {
-    BAD_REG = -1
+    BAD = -1
   };
 
 
@@ -78,7 +83,7 @@ private:
 
 public:
 
-  static VMReg  as_VMReg(int val, bool bad_ok = false) { assert(val > BAD_REG || bad_ok, "invalid"); return (VMReg) (intptr_t) val; }
+  static VMReg  as_VMReg(int val, bool bad_ok = false) { assert(val > BAD || bad_ok, "invalid"); return (VMReg) (intptr_t) val; }
 
   const char*  name() {
     if (is_reg()) {
@@ -90,8 +95,8 @@ public:
       return "STACKED REG";
     }
   }
-  static VMReg Bad() { return (VMReg) (intptr_t) BAD_REG; }
-  bool is_valid() const { return ((intptr_t) this) != BAD_REG; }
+  static VMReg Bad() { return (VMReg) (intptr_t) BAD; }
+  bool is_valid() const { return ((intptr_t) this) != BAD; }
   bool is_stack() const { return (intptr_t) this >= (intptr_t) stack0; }
   bool is_reg()   const { return is_valid() && !is_stack(); }
 

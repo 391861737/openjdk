@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 1996, 2015, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 1996, 2013, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -32,7 +32,6 @@ import java.security.*;
 import java.security.cert.*;
 import java.security.interfaces.*;
 import java.security.spec.ECParameterSpec;
-import java.math.BigInteger;
 
 import javax.crypto.SecretKey;
 import javax.crypto.spec.SecretKeySpec;
@@ -42,7 +41,6 @@ import javax.net.ssl.*;
 import javax.security.auth.Subject;
 
 import sun.security.util.KeyUtil;
-import sun.security.util.LegacyAlgorithmConstraints;
 import sun.security.action.GetPropertyAction;
 import sun.security.ssl.HandshakeMessage.*;
 import sun.security.ssl.CipherSuite.*;
@@ -92,8 +90,7 @@ final class ServerHandshaker extends Handshaker {
     // we remember it for the RSA premaster secret version check
     private ProtocolVersion clientRequestedVersion;
 
-    // client supported elliptic curves
-    private SupportedEllipticCurvesExtension requestedCurves;
+    private SupportedEllipticCurvesExtension supportedCurves;
 
     // the preferable signature algorithm used by ServerKeyExchange message
     SignatureAndHashAlgorithm preferableSignatureAlgorithm;
@@ -108,12 +105,6 @@ final class ServerHandshaker extends Handshaker {
 
     // The customized ephemeral DH key size for non-exportable cipher suites.
     private static final int customizedDHKeySize;
-
-    // legacy algorithm constraints
-    private static final AlgorithmConstraints legacyAlgorithmConstraints =
-            new LegacyAlgorithmConstraints(
-                    LegacyAlgorithmConstraints.PROPERTY_TLS_LEGACY_ALGS,
-                    new SSLAlgorithmDecomposer());
 
     static {
         String property = AccessController.doPrivileged(
@@ -138,10 +129,8 @@ final class ServerHandshaker extends Handshaker {
                 customizedDHKeySize = Integer.parseUnsignedInt(property);
                 if (customizedDHKeySize < 1024 || customizedDHKeySize > 2048) {
                     throw new IllegalArgumentException(
-                        "Unsupported customized DH key size: " +
-                        customizedDHKeySize + ". " +
-                        "The key size can only range from 1024" +
-                        " to 2048 (inclusive)");
+                        "Customized DH key size should be positive integer " +
+                        "between 1024 and 2048 bits, inclusive");
                 }
             } catch (NumberFormatException nfe) {
                 throw new IllegalArgumentException(
@@ -294,17 +283,10 @@ final class ServerHandshaker extends Handshaker {
 
             case HandshakeMessage.ht_certificate_verify:
                 this.clientCertificateVerify(new CertificateVerify(input,
-                            getLocalSupportedSignAlgs(), protocolVersion));
+                            localSupportedSignAlgs, protocolVersion));
                 break;
 
             case HandshakeMessage.ht_finished:
-                // A ChangeCipherSpec record must have been received prior to
-                // reception of the Finished message (RFC 5246, 7.4.9).
-                if (!receivedChangeCipherSpec()) {
-                    fatalSE(Alerts.alert_handshake_failure,
-                        "Received Finished message before ChangeCipherSpec");
-                }
-
                 this.clientFinished(
                     new Finished(protocolVersion, input, cipherSuite));
                 break;
@@ -417,7 +399,7 @@ final class ServerHandshaker extends Handshaker {
                 }
 
                 // verify the client_verify_data value
-                if (!MessageDigest.isEqual(clientVerifyData,
+                if (!Arrays.equals(clientVerifyData,
                                 clientHelloRI.getRenegotiatedConnection())) {
                     fatalSE(Alerts.alert_handshake_failure,
                         "Incorrect verify data in ClientHello " +
@@ -683,7 +665,7 @@ final class ServerHandshaker extends Handshaker {
                 throw new SSLException("Client did not resume a session");
             }
 
-            requestedCurves = (SupportedEllipticCurvesExtension)
+            supportedCurves = (SupportedEllipticCurvesExtension)
                         mesg.extensions.get(ExtensionType.EXT_ELLIPTIC_CURVES);
 
             // We only need to handle the "signature_algorithm" extension
@@ -703,10 +685,11 @@ final class ServerHandshaker extends Handshaker {
                     Collection<SignatureAndHashAlgorithm>
                         supportedPeerSignAlgs =
                             SignatureAndHashAlgorithm.getSupportedAlgorithms(
-                                algorithmConstraints, peerSignAlgs);
+                                                            peerSignAlgs);
                     if (supportedPeerSignAlgs.isEmpty()) {
                         throw new SSLHandshakeException(
-                            "No signature and hash algorithm in common");
+                            "No supported signature and hash algorithm " +
+                            "in common");
                     }
 
                     setPeerSupportedSignAlgs(supportedPeerSignAlgs);
@@ -1005,7 +988,6 @@ final class ServerHandshaker extends Handshaker {
             proposed = getActiveCipherSuites();
         }
 
-        List<CipherSuite> legacySuites = new ArrayList<>();
         for (CipherSuite suite : prefered.collection()) {
             if (isNegotiable(proposed, suite) == false) {
                 continue;
@@ -1017,31 +999,11 @@ final class ServerHandshaker extends Handshaker {
                     continue;
                 }
             }
-
-            if (!legacyAlgorithmConstraints.permits(null, suite.name, null)) {
-                legacySuites.add(suite);
-                continue;
-            }
-
             if (trySetCipherSuite(suite) == false) {
                 continue;
             }
-
-            if (debug != null && Debug.isOn("handshake")) {
-                System.out.println("Standard ciphersuite chosen: " + suite);
-            }
             return;
         }
-
-        for (CipherSuite suite : legacySuites) {
-            if (trySetCipherSuite(suite)) {
-                if (debug != null && Debug.isOn("handshake")) {
-                    System.out.println("Legacy ciphersuite chosen: " + suite);
-                }
-                return;
-            }
-        }
-
         fatalSE(Alerts.alert_handshake_failure, "no cipher suites in common");
     }
 
@@ -1143,13 +1105,6 @@ final class ServerHandshaker extends Handshaker {
                     supportedSignAlgs =
                         new ArrayList<SignatureAndHashAlgorithm>(1);
                     supportedSignAlgs.add(algorithm);
-
-                    supportedSignAlgs =
-                            SignatureAndHashAlgorithm.getSupportedAlgorithms(
-                                algorithmConstraints, supportedSignAlgs);
-
-                    // May be no default activated signature algorithm, but
-                    // let the following process make the final decision.
                 }
 
                 // Sets the peer supported signature algorithm to use in KM
@@ -1194,11 +1149,6 @@ final class ServerHandshaker extends Handshaker {
                     SignatureAndHashAlgorithm.getPreferableAlgorithm(
                                         supportedSignAlgs, "RSA", privateKey);
                 if (preferableSignatureAlgorithm == null) {
-                    if ((debug != null) && Debug.isOn("handshake")) {
-                        System.out.println(
-                                "No signature and hash algorithm for cipher " +
-                                suite);
-                    }
                     return false;
                 }
             }
@@ -1217,11 +1167,6 @@ final class ServerHandshaker extends Handshaker {
                     SignatureAndHashAlgorithm.getPreferableAlgorithm(
                                         supportedSignAlgs, "RSA", privateKey);
                 if (preferableSignatureAlgorithm == null) {
-                    if ((debug != null) && Debug.isOn("handshake")) {
-                        System.out.println(
-                                "No signature and hash algorithm for cipher " +
-                                suite);
-                    }
                     return false;
                 }
             }
@@ -1237,11 +1182,6 @@ final class ServerHandshaker extends Handshaker {
                     SignatureAndHashAlgorithm.getPreferableAlgorithm(
                                                 supportedSignAlgs, "DSA");
                 if (preferableSignatureAlgorithm == null) {
-                    if ((debug != null) && Debug.isOn("handshake")) {
-                        System.out.println(
-                                "No signature and hash algorithm for cipher " +
-                                suite);
-                    }
                     return false;
                 }
             }
@@ -1260,17 +1200,12 @@ final class ServerHandshaker extends Handshaker {
                     SignatureAndHashAlgorithm.getPreferableAlgorithm(
                                             supportedSignAlgs, "ECDSA");
                 if (preferableSignatureAlgorithm == null) {
-                    if ((debug != null) && Debug.isOn("handshake")) {
-                        System.out.println(
-                                "No signature and hash algorithm for cipher " +
-                                suite);
-                    }
                     return false;
                 }
             }
 
-            // need EC cert
-            if (setupPrivateKeyAndChain("EC") == false) {
+            // need EC cert signed using EC
+            if (setupPrivateKeyAndChain("EC_EC") == false) {
                 return false;
             }
             if (setupEphemeralECDHKeys() == false) {
@@ -1278,15 +1213,15 @@ final class ServerHandshaker extends Handshaker {
             }
             break;
         case K_ECDH_RSA:
-            // need EC cert
-            if (setupPrivateKeyAndChain("EC") == false) {
+            // need EC cert signed using RSA
+            if (setupPrivateKeyAndChain("EC_RSA") == false) {
                 return false;
             }
             setupStaticECDHKeys();
             break;
         case K_ECDH_ECDSA:
-            // need EC cert
-            if (setupPrivateKeyAndChain("EC") == false) {
+            // need EC cert signed using EC
+            if (setupPrivateKeyAndChain("EC_EC") == false) {
                 return false;
             }
             setupStaticECDHKeys();
@@ -1310,8 +1245,7 @@ final class ServerHandshaker extends Handshaker {
             break;
         default:
             // internal error, unknown key exchange
-            throw new RuntimeException(
-                    "Unrecognized cipherSuite: " + suite);
+            throw new RuntimeException("Unrecognized cipherSuite: " + suite);
         }
         setCipherSuite(suite);
 
@@ -1420,15 +1354,26 @@ final class ServerHandshaker extends Handshaker {
     // If we cannot continue because we do not support any of the curves that
     // the client requested, return false. Otherwise (all is well), return true.
     private boolean setupEphemeralECDHKeys() {
-        int index = (requestedCurves != null) ?
-                requestedCurves.getPreferredCurve(algorithmConstraints) :
-                SupportedEllipticCurvesExtension.getActiveCurves(algorithmConstraints);
-        if (index < 0) {
-            // no match found, cannot use this ciphersuite
-            return false;
+        int index = -1;
+        if (supportedCurves != null) {
+            // if the client sent the supported curves extension, pick the
+            // first one that we support;
+            for (int curveId : supportedCurves.curveIds()) {
+                if (SupportedEllipticCurvesExtension.isSupported(curveId)) {
+                    index = curveId;
+                    break;
+                }
+            }
+            if (index < 0) {
+                // no match found, cannot use this ciphersuite
+                return false;
+            }
+        } else {
+            // pick our preference
+            index = SupportedEllipticCurvesExtension.DEFAULT.curveIds()[0];
         }
-
-        ecdh = new ECDHCrypt(index, sslContext.getSecureRandom());
+        String oid = SupportedEllipticCurvesExtension.getCurveOid(index);
+        ecdh = new ECDHCrypt(oid, sslContext.getSecureRandom());
         return true;
     }
 
@@ -1477,9 +1422,11 @@ final class ServerHandshaker extends Handshaker {
                 return false;
             }
             ECParameterSpec params = ((ECPublicKey)publicKey).getParams();
-            int id = SupportedEllipticCurvesExtension.getCurveIndex(params);
-            if ((id <= 0) || !SupportedEllipticCurvesExtension.isSupported(id) ||
-                ((requestedCurves != null) && !requestedCurves.contains(id))) {
+            int index = SupportedEllipticCurvesExtension.getCurveIndex(params);
+            if (SupportedEllipticCurvesExtension.isSupported(index) == false) {
+                return false;
+            }
+            if ((supportedCurves != null) && !supportedCurves.contains(index)) {
                 return false;
             }
         }
@@ -1589,13 +1536,7 @@ final class ServerHandshaker extends Handshaker {
         if (debug != null && Debug.isOn("handshake")) {
             mesg.print(System.out);
         }
-
-        BigInteger publicKeyValue = mesg.getClientPublicKey();
-
-        // check algorithm constraints
-        dh.checkConstraints(algorithmConstraints, publicKeyValue);
-
-        return dh.getAgreedSecret(publicKeyValue, false);
+        return dh.getAgreedSecret(mesg.getClientPublicKey(), false);
     }
 
     private SecretKey clientKeyExchange(ECDHClientKeyExchange mesg)
@@ -1604,13 +1545,7 @@ final class ServerHandshaker extends Handshaker {
         if (debug != null && Debug.isOn("handshake")) {
             mesg.print(System.out);
         }
-
-        byte[] publicPoint = mesg.getEncodedPoint();
-
-        // check algorithm constraints
-        ecdh.checkConstraints(algorithmConstraints, publicPoint);
-
-        return ecdh.getAgreedSecret(publicPoint);
+        return ecdh.getAgreedSecret(mesg.getEncodedPoint());
     }
 
     /*

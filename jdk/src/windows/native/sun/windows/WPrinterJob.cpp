@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2000, 2014, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2000, 2013, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -130,9 +130,6 @@ Java_sun_print_Win32PrintServiceLookup_getAllPrinterNames(JNIEnv *env,
 
     jstring utf_str;
     jclass clazz = env->FindClass("java/lang/String");
-    if (clazz == NULL) {
-        return NULL;
-    }
     jobjectArray nameArray;
 
     try {
@@ -243,9 +240,6 @@ Java_sun_print_Win32PrintService_getMediaPrintableArea(JNIEnv *env,
 
     LPTSTR printerName = (LPTSTR)JNU_GetStringPlatformChars(env,
                                                             printer, NULL);
-    if (printerName == NULL) {
-        return NULL;
-    }
 
     jfloatArray printableArray = NULL;
 
@@ -268,7 +262,7 @@ Java_sun_print_Win32PrintService_getMediaPrintableArea(JNIEnv *env,
             if (pDevMode != NULL) {
                 ::GlobalFree(pDevMode);
             }
-            DeleteDC(pdc);
+
             ::ClosePrinter(hPrinter);
             JNU_ReleaseStringPlatformChars(env, printer, printerName);
             return printableArray;
@@ -289,21 +283,25 @@ Java_sun_print_Win32PrintService_getMediaPrintableArea(JNIEnv *env,
         int resy = GetDeviceCaps(pdc, LOGPIXELSY);
 
         printableArray=env->NewFloatArray(4);
-        if (printableArray != NULL) {
-            jfloat *iPrintables =
-                env->GetFloatArrayElements(printableArray, NULL);
-            if (iPrintables != NULL) {
-                iPrintables[0] = (float)left/resx;
-                iPrintables[1] = (float)top/resy;
-                iPrintables[2] = (float)width/resx;
-                iPrintables[3] = (float)height/resy;
-                env->ReleaseFloatArrayElements(printableArray, iPrintables, 0);
-            }
+        if (printableArray == NULL) {
+            throw std::bad_alloc();
         }
+        jboolean isCopy;
+        jfloat *iPrintables = env->GetFloatArrayElements(printableArray,
+                                                         &isCopy),
+            *savePrintables = iPrintables;
+
+        iPrintables[0] = (float)left/resx;
+        iPrintables[1] = (float)top/resy;
+        iPrintables[2] = (float)width/resx;
+        iPrintables[3] = (float)height/resy;
+
+        env->ReleaseFloatArrayElements(printableArray, savePrintables, 0);
+
         GlobalFree(pDevMode);
-        DeleteDC(pdc);
     }
 
+    DeleteDC(pdc);
     JNU_ReleaseStringPlatformChars(env, printer, printerName);
 
     return printableArray;
@@ -311,60 +309,6 @@ Java_sun_print_Win32PrintService_getMediaPrintableArea(JNIEnv *env,
     CATCH_BAD_ALLOC_RET(NULL);
 }
 
-jintArray getIDs(JNIEnv *env, jstring printer, jstring port, int dm_id)
-{
-
-  LPTSTR printerName = (LPTSTR)JNU_GetStringPlatformChars(env, printer, NULL);
-  LPTSTR printerPort = (LPTSTR)JNU_GetStringPlatformChars(env, port, NULL);
-
-  if (printerName == NULL || printerPort == NULL) {
-      if (printerName != NULL) {
-          JNU_ReleaseStringPlatformChars(env, printer, printerName);
-      }
-      if (printerPort != NULL) {
-          JNU_ReleaseStringPlatformChars(env, port, printerPort);
-      }
-      return NULL;
-  }
-
-  SAVE_CONTROLWORD
-  int numIDs = ::DeviceCapabilities(printerName, printerPort, dm_id,
-                                    NULL, NULL);
-  RESTORE_CONTROLWORD
-
-  jintArray idArray = NULL;
-  if (numIDs > 0) {
-      idArray = env->NewIntArray(numIDs);
-      if (idArray != NULL) {
-          jint *jpcIndices = env->GetIntArrayElements(idArray, NULL);
-          if (jpcIndices != NULL) {
-              jint *saveFormats = jpcIndices;
-              LPTSTR buf = NULL;
-              try {
-                  buf = (LPTSTR)new char[numIDs * sizeof(WORD)];
-              } catch (std::bad_alloc&) {
-                  buf = NULL;
-              }
-              if (buf != NULL) {
-                  if (::DeviceCapabilities(printerName, printerPort,
-                                           dm_id, buf, NULL) != -1) {
-                      WORD *id = (WORD *)buf;
-                      for (int i = 0; i < numIDs; i++, id++) {
-                          jpcIndices[i] = *id;
-                      }
-                  }
-                  RESTORE_CONTROLWORD
-                  delete[] buf;
-              }
-              env->ReleaseIntArrayElements(idArray, saveFormats, 0);
-          }
-      }
-  }
-
-  JNU_ReleaseStringPlatformChars(env, printer, printerName);
-  JNU_ReleaseStringPlatformChars(env, port, printerPort);
-  return idArray;
-}
 
 JNIEXPORT jintArray JNICALL
 Java_sun_print_Win32PrintService_getAllMediaIDs(JNIEnv *env,
@@ -372,7 +316,45 @@ Java_sun_print_Win32PrintService_getAllMediaIDs(JNIEnv *env,
                                                 jstring printer,
                                                 jstring port)
 {
-    return getIDs(env, printer, port, DC_PAPERS);
+  TRY;
+
+  LPTSTR printerName = (LPTSTR)JNU_GetStringPlatformChars(env, printer, NULL);
+  LPTSTR printerPort = (LPTSTR)JNU_GetStringPlatformChars(env, port, NULL);
+  jintArray mediasizeArray = NULL;
+
+  SAVE_CONTROLWORD
+  int numSizes = ::DeviceCapabilities(printerName, printerPort,
+                                      DC_PAPERS,   NULL, NULL);
+  RESTORE_CONTROLWORD
+
+  if (numSizes > 0) {
+
+    mediasizeArray = env->NewIntArray(numSizes);
+    if (mediasizeArray == NULL) {
+      throw std::bad_alloc();
+    }
+
+    jboolean isCopy;
+    jint *jpcIndices = env->GetIntArrayElements(mediasizeArray,
+                                       &isCopy), *saveFormats = jpcIndices;
+    LPTSTR papersBuf = (LPTSTR)new char[numSizes * sizeof(WORD)];
+    if (::DeviceCapabilities(printerName, printerPort,
+                             DC_PAPERS, papersBuf, NULL) != -1) {
+      RESTORE_CONTROLWORD
+      WORD *pDmPaperSize = (WORD *)papersBuf;
+      for (int i = 0; i < numSizes; i++, pDmPaperSize++) {
+        jpcIndices[i] = *pDmPaperSize;
+      }
+    }
+    delete[] papersBuf;
+    env->ReleaseIntArrayElements(mediasizeArray, saveFormats, 0);
+  }
+
+  JNU_ReleaseStringPlatformChars(env, printer, printerName);
+  JNU_ReleaseStringPlatformChars(env, port, printerPort);
+  return mediasizeArray;
+
+  CATCH_BAD_ALLOC_RET(NULL);
 }
 
 
@@ -382,7 +364,47 @@ Java_sun_print_Win32PrintService_getAllMediaTrays(JNIEnv *env,
                                                   jstring printer,
                                                   jstring port)
 {
-    return getIDs(env, printer, port, DC_BINS);
+  TRY;
+
+  LPTSTR printerName = (LPTSTR)JNU_GetStringPlatformChars(env,
+                                                          printer, NULL);
+  LPTSTR printerPort = (LPTSTR)JNU_GetStringPlatformChars(env, port, NULL);
+
+  jintArray mediaTrayArray = NULL;
+
+  SAVE_CONTROLWORD
+  int nBins = ::DeviceCapabilities(printerName, printerPort,
+                                   DC_BINS,   NULL, NULL) ;
+  RESTORE_CONTROLWORD
+  if (nBins > 0) {
+    mediaTrayArray = env->NewIntArray(nBins);
+    if (mediaTrayArray == NULL) {
+      throw std::bad_alloc();
+    }
+
+    jboolean isCopy;
+    jint *jpcIndices = env->GetIntArrayElements(mediaTrayArray,
+                                           &isCopy), *saveFormats = jpcIndices;
+
+    LPTSTR buf = (LPTSTR)new char[nBins * sizeof(WORD)];
+
+    if (::DeviceCapabilities(printerName, printerPort,
+                             DC_BINS, buf, NULL) != -1) {
+      RESTORE_CONTROLWORD
+      WORD *pBins = (WORD *)buf;
+      for (int i = 0; i < nBins; i++) {
+        jpcIndices[i] = *(pBins+i);
+      }
+    }
+    delete[] buf;
+    env->ReleaseIntArrayElements(mediaTrayArray, saveFormats, 0);
+  }
+
+  JNU_ReleaseStringPlatformChars(env, printer, printerName);
+  JNU_ReleaseStringPlatformChars(env, port, printerPort);
+  return mediaTrayArray;
+
+  CATCH_BAD_ALLOC_RET(NULL);
 }
 
 
@@ -392,139 +414,100 @@ Java_sun_print_Win32PrintService_getAllMediaSizes(JNIEnv *env,
                                                   jstring printer,
                                                   jstring port)
 {
-  LPTSTR printerName = (LPTSTR)JNU_GetStringPlatformChars(env, printer, NULL);
+  TRY;
+
+  LPTSTR printerName = (LPTSTR)JNU_GetStringPlatformChars(env,
+                                                          printer, NULL);
   LPTSTR printerPort = (LPTSTR)JNU_GetStringPlatformChars(env, port, NULL);
 
-  if (printerName == NULL || printerPort == NULL) {
-      if (printerName != NULL) {
-          JNU_ReleaseStringPlatformChars(env, printer, printerName);
-      }
-      if (printerPort != NULL) {
-          JNU_ReleaseStringPlatformChars(env, port, printerPort);
-      }
-      return NULL;
-  }
+  jintArray mediaArray = NULL;
 
   SAVE_CONTROLWORD
-  int nPapers = ::DeviceCapabilities(printerName, printerPort, DC_PAPERSIZE,
-                                     NULL, NULL) ;
+  int nPapers = ::DeviceCapabilities(printerName, printerPort,
+                                      DC_PAPERSIZE,   NULL, NULL) ;
   RESTORE_CONTROLWORD
-
-  jintArray mediaArray = NULL;
-  jint *saveFormats = NULL;
-
   if (nPapers > 0) {
-      mediaArray = env->NewIntArray(nPapers*2);
-      if (mediaArray != NULL) {
-          jint *jpcIndices = env->GetIntArrayElements(mediaArray, NULL);
-          if (jpcIndices != NULL) {
-              saveFormats = jpcIndices;
-              LPTSTR buf = NULL;
-              try {
-                  buf = (LPTSTR)new char[nPapers * sizeof(POINT)];
-              } catch (std::bad_alloc&) {
-                  buf = NULL;
-              }
-              if (buf != NULL) {
-                  if (::DeviceCapabilities(printerName, printerPort,
-                                           DC_PAPERSIZE, buf, NULL) != -1) {
-                      POINT *pDim = (POINT *)buf;
-                      for (int i = 0; i < nPapers; i++) {
-                          jpcIndices[i*2] = (pDim+i)->x;
-                          jpcIndices[i*2+1] = (pDim+i)->y;
-                      }
-                  }
-                  RESTORE_CONTROLWORD
-                  delete[] buf;
-              }
-              env->ReleaseIntArrayElements(mediaArray, saveFormats, 0);
-              saveFormats = NULL;
-          }
+    mediaArray = env->NewIntArray(nPapers*2);
+    if (mediaArray == NULL) {
+      throw std::bad_alloc();
+    }
+
+    jboolean isCopy;
+    jint *jpcIndices = env->GetIntArrayElements(mediaArray,
+                                          &isCopy), *saveFormats = jpcIndices;
+
+    LPTSTR buf = (LPTSTR)new char[nPapers * sizeof(POINT)]; // array of POINTs
+
+    if (::DeviceCapabilities(printerName, printerPort,
+                             DC_PAPERSIZE, buf, NULL) != -1) {
+
+      POINT *pDim = (POINT *)buf;
+      for (int i = 0; i < nPapers; i++) {
+        jpcIndices[i*2] = (pDim+i)->x;
+        jpcIndices[i*2+1] = (pDim+i)->y;
       }
+    }
+    RESTORE_CONTROLWORD
+    delete[] buf;
+    env->ReleaseIntArrayElements(mediaArray, saveFormats, 0);
   }
 
   JNU_ReleaseStringPlatformChars(env, printer, printerName);
   JNU_ReleaseStringPlatformChars(env, port, printerPort);
-  if (mediaArray != NULL && saveFormats != NULL) {
-      env->ReleaseIntArrayElements(mediaArray, saveFormats, 0);
-  }
   return mediaArray;
 
+  CATCH_BAD_ALLOC_RET(NULL);
 }
 
 
 jobjectArray getAllDCNames(JNIEnv *env, jobject peer, jstring printer,
                  jstring port, unsigned int dc_id, unsigned int buf_len)
 {
+  TRY;
 
-  LPTSTR printerName = (LPTSTR)JNU_GetStringPlatformChars(env, printer, NULL);
+  LPTSTR printerName = (LPTSTR)JNU_GetStringPlatformChars(env,
+                                                          printer, NULL);
   LPTSTR printerPort = (LPTSTR)JNU_GetStringPlatformChars(env, port, NULL);
 
-  if (printerName == NULL || printerPort == NULL) {
-      if (printerName != NULL) {
-          JNU_ReleaseStringPlatformChars(env, printer, printerName);
-      }
-      if (printerPort != NULL) {
-          JNU_ReleaseStringPlatformChars(env, port, printerPort);
-      }
-      return NULL;
-  }
-
   jstring utf_str;
-  jobjectArray names = NULL;
+  jclass cls = env->FindClass("java/lang/String");
+  jobjectArray names= NULL;
   LPTSTR buf = NULL;
   SAVE_CONTROLWORD
   int cReturned = ::DeviceCapabilities(printerName, printerPort,
                                          dc_id, NULL, NULL);
   RESTORE_CONTROLWORD
-  if (cReturned <= 0) {
-      JNU_ReleaseStringPlatformChars(env, printer, printerName);
-      JNU_ReleaseStringPlatformChars(env, port, printerPort);
-      return NULL;
-  }
-
-  try {
-      buf = (LPTSTR)new char[cReturned * buf_len * sizeof(TCHAR)];
-  } catch (std::bad_alloc&) {
-      buf = NULL;
-  }
-  if (buf == NULL) {
-      JNU_ReleaseStringPlatformChars(env, printer, printerName);
-      JNU_ReleaseStringPlatformChars(env, port, printerPort);
-      JNU_ThrowOutOfMemoryError(env, "OutOfMemoryError");
-     return NULL;
-  }
-
-  cReturned = ::DeviceCapabilities(printerName, printerPort,
-                                   dc_id, buf, NULL);
-  RESTORE_CONTROLWORD
-
-  JNU_ReleaseStringPlatformChars(env, printer, printerName);
-  JNU_ReleaseStringPlatformChars(env, port, printerPort);
-
   if (cReturned > 0) {
-      jclass cls = env->FindClass("java/lang/String");
-      if (cls != NULL) {
-          names = env->NewObjectArray(cReturned, cls, NULL);
-      }
-      if (names == NULL || cls == NULL) {
-          delete buf;
-          return names;
+
+    buf = (LPTSTR)new char[cReturned * buf_len * sizeof(TCHAR)];
+    if (buf == NULL) {
+      throw std::bad_alloc();
+    }
+
+    cReturned = ::DeviceCapabilities(printerName, printerPort,
+                                     dc_id, buf, NULL);
+    RESTORE_CONTROLWORD
+
+    if (cReturned > 0) {
+      names = env->NewObjectArray(cReturned, cls, NULL);
+      if (names == NULL) {
+        throw std::bad_alloc();
       }
 
       for (int i = 0; i < cReturned; i++) {
-          utf_str = JNU_NewStringPlatform(env, buf+(buf_len*i));
-            if (utf_str == NULL) {
-                delete buf;
-                return names;
-            }
-            env->SetObjectArrayElement(names, i, utf_str);
-            env->DeleteLocalRef(utf_str);
+        utf_str = JNU_NewStringPlatform(env, buf+(buf_len*i));
+        if (utf_str == NULL) {
+          throw std::bad_alloc();
         }
+        env->SetObjectArrayElement(names, i, utf_str);
+        env->DeleteLocalRef(utf_str);
+      }
     }
     delete[] buf;
-    return names;
+  }
+  return names;
 
+  CATCH_BAD_ALLOC_RET(NULL);
 }
 
 
@@ -556,16 +539,6 @@ Java_sun_print_Win32PrintService_getCopiesSupported(JNIEnv *env,
 {
   LPTSTR printerName = (LPTSTR)JNU_GetStringPlatformChars(env, printer, NULL);
   LPTSTR printerPort = (LPTSTR)JNU_GetStringPlatformChars(env, port, NULL);
-
-  if (printerName == NULL || printerPort == NULL) {
-      if (printerName != NULL) {
-          JNU_ReleaseStringPlatformChars(env, printer, printerName);
-      }
-      if (printerPort != NULL) {
-          JNU_ReleaseStringPlatformChars(env, port, printerPort);
-      }
-      return 1;
-  }
 
   SAVE_CONTROLWORD
   int numCopies = ::DeviceCapabilities(printerName, printerPort,
@@ -600,58 +573,48 @@ Java_sun_print_Win32PrintService_getAllResolutions(JNIEnv *env,
                                                    jstring printer,
                                                    jstring port)
 {
+  TRY;
+
   LPTSTR printerName = (LPTSTR)JNU_GetStringPlatformChars(env, printer, NULL);
   LPTSTR printerPort = (LPTSTR)JNU_GetStringPlatformChars(env, port, NULL);
 
- if (printerName == NULL || printerPort == NULL) {
-      if (printerName != NULL) {
-          JNU_ReleaseStringPlatformChars(env, printer, printerName);
-      }
-      if (printerPort != NULL) {
-          JNU_ReleaseStringPlatformChars(env, port, printerPort);
-      }
-      return NULL;
-  }
+  jintArray resolutionArray = NULL;
 
   SAVE_CONTROLWORD
   int nResolutions = ::DeviceCapabilities(printerName, printerPort,
                                           DC_ENUMRESOLUTIONS, NULL, NULL);
   RESTORE_CONTROLWORD
-
-  jintArray resolutionArray = NULL;
   if (nResolutions > 0) {
     resolutionArray = env->NewIntArray(nResolutions*2);
-    if (resolutionArray != NULL) {
-        jint *jpcIndices = env->GetIntArrayElements(resolutionArray, NULL);
-        if (jpcIndices != NULL) {
-            jint *saveFormats = jpcIndices;
-            LPTSTR resBuf = NULL;
-            try {
-                resBuf = (LPTSTR)new char[nResolutions * sizeof(LONG) * 2];
-            } catch (std::bad_alloc&) {
-                resBuf = NULL;
-            }
-            if (resBuf != NULL) {
-                if (::DeviceCapabilities(printerName, printerPort,
-                                         DC_ENUMRESOLUTIONS, resBuf,
-                                         NULL) != -1) {
-                    LONG *pResolution = (LONG *)resBuf;
-                    for (int i = 0; i < nResolutions; i++) {
-                        jpcIndices[i*2] = *pResolution++;
-                        jpcIndices[i*2+1] = *pResolution++;
-                    }
-                }
-                RESTORE_CONTROLWORD
-                delete[] resBuf;
-            }
-            env->ReleaseIntArrayElements(resolutionArray, saveFormats, 0);
-        }
+    if (resolutionArray == NULL) {
+      throw std::bad_alloc();
     }
+
+    jboolean isCopy;
+    jint *jpcIndices = env->GetIntArrayElements(resolutionArray,
+                                          &isCopy), *saveFormats = jpcIndices;
+
+    LPTSTR resBuf = (LPTSTR)new char[nResolutions * sizeof(LONG) * 2]; // pairs of long
+
+    if (::DeviceCapabilities(printerName, printerPort,
+                             DC_ENUMRESOLUTIONS, resBuf, NULL) != -1) {
+
+      LONG *pResolution = (LONG *)resBuf;
+      for (int i = 0; i < nResolutions; i++) {
+        jpcIndices[i*2] = *pResolution++;
+        jpcIndices[i*2+1] = *pResolution++;
+      }
+    }
+    RESTORE_CONTROLWORD
+    delete[] resBuf;
+    env->ReleaseIntArrayElements(resolutionArray, saveFormats, 0);
   }
 
   JNU_ReleaseStringPlatformChars(env, printer, printerName);
   JNU_ReleaseStringPlatformChars(env, printer, printerPort);
   return resolutionArray;
+
+  CATCH_BAD_ALLOC_RET(NULL);
 }
 
 
@@ -709,7 +672,6 @@ Java_sun_print_Win32PrintService_getPrinterPort(JNIEnv *env,
   } catch (std::bad_alloc&) {
     delete [] buffer;
     JNU_ThrowOutOfMemoryError(env, "OutOfMemoryError");
-    return NULL;
   }
 
   if (printerPort == NULL) {
@@ -730,17 +692,6 @@ Java_sun_print_Win32PrintService_getCapabilities(JNIEnv *env,
 {
   LPTSTR printerName = (LPTSTR)JNU_GetStringPlatformChars(env, printer, NULL);
   LPTSTR printerPort = (LPTSTR)JNU_GetStringPlatformChars(env, port, NULL);
-
-  if (printerName == NULL || printerPort == NULL) {
-      if (printerName != NULL) {
-          JNU_ReleaseStringPlatformChars(env, printer, printerName);
-      }
-      if (printerPort != NULL) {
-          JNU_ReleaseStringPlatformChars(env, port, printerPort);
-      }
-      return NULL;
-  }
-
   // 0x1000 is a flag to indicate that getCapabilities has already been called.
   // 0x0001 is a flag for color support and supported is the default.
   jint ret = 0x1001;
@@ -810,41 +761,28 @@ Java_sun_print_Win32PrintService_getDefaultSettings(JNIEnv *env,
   HANDLE      hPrinter;
   LPDEVMODE   pDevMode = NULL;
 
+  TRY;
+
   LPTSTR printerName = (LPTSTR)JNU_GetStringPlatformChars(env, printer, NULL);
   LPTSTR printerPort = (LPTSTR)JNU_GetStringPlatformChars(env, port, NULL);
 
-  if (printerName == NULL || printerPort == NULL) {
-      if (printerName != NULL) {
-          JNU_ReleaseStringPlatformChars(env, printer, printerName);
-      }
-      if (printerPort != NULL) {
-          JNU_ReleaseStringPlatformChars(env, port, printerPort);
-      }
-      return NULL;
-  }
-
-  jint* defIndices = NULL;
   jintArray defaultArray = env->NewIntArray(NDEFAULT);
-  if (defaultArray != NULL) {
-      defIndices = env->GetIntArrayElements(defaultArray, NULL);
-  }
-  if (defIndices == NULL) {
-      JNU_ReleaseStringPlatformChars(env, printer, printerName);
-      JNU_ReleaseStringPlatformChars(env, port, printerPort);
-      return NULL;
+  if (defaultArray == NULL) {
+      throw std::bad_alloc();
   }
 
-  jint *saveFormats = defIndices;
+  jboolean isCopy;
+  jint *defIndices = env->GetIntArrayElements(defaultArray,
+                                          &isCopy), *saveFormats = defIndices;
 
-  for (int i=0; i < NDEFAULT; i++) {
-      defIndices[i] = GETDEFAULT_ERROR;
+  for (int i=0; i<NDEFAULT; i++) {
+      defIndices[i]=GETDEFAULT_ERROR;
   }
 
   /* Start by opening the printer */
   if (!::OpenPrinter(printerName, &hPrinter, NULL)) {
       env->ReleaseIntArrayElements(defaultArray, saveFormats, 0);
       JNU_ReleaseStringPlatformChars(env, printer, printerName);
-      JNU_ReleaseStringPlatformChars(env, port, printerPort);
       return defaultArray;
   }
 
@@ -856,7 +794,6 @@ Java_sun_print_Win32PrintService_getDefaultSettings(JNIEnv *env,
       ::ClosePrinter(hPrinter);
       env->ReleaseIntArrayElements(defaultArray, saveFormats, 0);
       JNU_ReleaseStringPlatformChars(env, printer, printerName);
-      JNU_ReleaseStringPlatformChars(env, port, printerPort);
       return defaultArray;
   }
 
@@ -926,6 +863,7 @@ Java_sun_print_Win32PrintService_getDefaultSettings(JNIEnv *env,
       defIndices[8] = pDevMode->dmColor;
   }
 
+
   GlobalFree(pDevMode);
   ::ClosePrinter(hPrinter);
 
@@ -935,6 +873,8 @@ Java_sun_print_Win32PrintService_getDefaultSettings(JNIEnv *env,
   JNU_ReleaseStringPlatformChars(env, port, printerPort);
 
   return defaultArray;
+
+  CATCH_BAD_ALLOC_RET(NULL);
 }
 
 
@@ -951,9 +891,6 @@ Java_sun_print_Win32PrintService_getJobStatus(JNIEnv *env,
     int ret=0;
 
     LPTSTR printerName = (LPTSTR)JNU_GetStringPlatformChars(env, printer, NULL);
-    if (printerName == NULL) {
-        return -1;
-    }
 
     // Start by opening the printer
     if (!::OpenPrinter(printerName, &hPrinter, NULL)) {
@@ -995,7 +932,14 @@ Java_sun_print_Win32PrintService_getJobStatus(JNIEnv *env,
     if (type == GETJOBCOUNT) {
         ret = pPrinterInfo->cJobs;
     } else if (type == ACCEPTJOB) {
-        if (pPrinterInfo->Status & PRINTER_STATUS_PENDING_DELETION) {
+        if (pPrinterInfo->Status &
+            (PRINTER_STATUS_ERROR |
+             PRINTER_STATUS_NOT_AVAILABLE |
+             PRINTER_STATUS_NO_TONER |
+             PRINTER_STATUS_OUT_OF_MEMORY |
+             PRINTER_STATUS_OFFLINE |
+             PRINTER_STATUS_USER_INTERVENTION |
+             PRINTER_STATUS_DOOR_OPEN)) {
             ret = 0;
         }
         else {
@@ -1015,15 +959,13 @@ static jfieldID getIdOfLongField(JNIEnv *env, jobject self,
   jclass myClass = env->GetObjectClass(self);
   jfieldID fieldId = env->GetFieldID(myClass, fieldName, "J");
   DASSERT(fieldId != 0);
+
   return fieldId;
 }
 
 
 static inline HANDLE getHPrinter(JNIEnv *env, jobject self) {
   jfieldID fieldId = getIdOfLongField(env, self, HPRINTER_STR);
-  if (fieldId == (jfieldID)0) {
-      return (HANDLE)NULL;
-  }
   return (HANDLE)(env->GetLongField(self, fieldId));
 }
 
@@ -1037,9 +979,6 @@ Java_sun_print_Win32PrintJob_startPrintRawData(JNIEnv *env,
   HANDLE      hPrinter;
   DOC_INFO_1  DocInfo;
   LPTSTR printerName = (LPTSTR)JNU_GetStringPlatformChars(env, printer, NULL);
-  if (printerName == NULL) {
-      return false;
-  }
   DASSERT(jobname != NULL);
   LPTSTR lpJobName = (LPTSTR)JNU_GetStringPlatformChars(env, jobname, NULL);
   LPTSTR jname = _tcsdup(lpJobName);
@@ -1077,12 +1016,8 @@ Java_sun_print_Win32PrintJob_startPrintRawData(JNIEnv *env,
 
   // store handle
   jfieldID fieldId = getIdOfLongField(env, peer, HPRINTER_STR);
-  if (fieldId == (jfieldID)0) {
-      return false;
-  } else {
-      env->SetLongField(peer, fieldId, reinterpret_cast<jlong>(hPrinter));
-      return true;
-  }
+  env->SetLongField(peer, fieldId, reinterpret_cast<jlong>(hPrinter));
+  return true;
 }
 
 
@@ -1104,9 +1039,6 @@ Java_sun_print_Win32PrintJob_printRawData(JNIEnv *env,
 
   try {
     data=(jbyte *)env->GetPrimitiveArrayCritical(dataArray, 0);
-    if (data == NULL) {
-        return false;
-    }
 
     // Send the data to the printer.
     if( ! ::WritePrinter(hPrinter, data, count,(LPDWORD)&dwBytesWritten)) {

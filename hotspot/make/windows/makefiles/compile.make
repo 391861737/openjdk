@@ -53,7 +53,7 @@ CXX=cl.exe
 # improving the quality of crash log stack traces involving jvm.dll.
 
 # These are always used in all compiles
-CXX_FLAGS=$(EXTRA_CFLAGS) /nologo /W3 /WX
+CXX_FLAGS=$(EXTRA_CFLAGS) /nologo /W3 
 
 # Let's add debug information when Full Debug Symbols is enabled
 !if "$(ENABLE_FULL_DEBUG_SYMBOLS)" == "1"
@@ -268,7 +268,7 @@ LD=link.exe
 !endif
 LD_FLAGS= $(LD_FLAGS) kernel32.lib user32.lib gdi32.lib winspool.lib \
  comdlg32.lib advapi32.lib shell32.lib ole32.lib oleaut32.lib \
- uuid.lib Wsock32.lib winmm.lib version.lib /nologo /machine:$(MACHINE) /opt:REF \
+ uuid.lib Wsock32.lib winmm.lib /nologo /machine:$(MACHINE) /opt:REF \
  /opt:ICF,8
 !if "$(ENABLE_FULL_DEBUG_SYMBOLS)" == "1"
 LD_FLAGS= $(LD_FLAGS) /map /debug

@@ -58,6 +58,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 
 public class PinClientSocketFactory {
 
+    private static final int PORT = TestLibrary.getUnusedRandomPort();
     private static final int SESSIONS = 50;
 
     public interface Factory extends Remote {
@@ -95,13 +96,10 @@ public class PinClientSocketFactory {
         }
         UnicastRemoteObject.unexportObject(factoryImpl, true);
 
-        Registry registryImpl = TestLibrary.createRegistryOnEphemeralPort();
-        int port = TestLibrary.getRegistryPort(registryImpl);
-        System.out.println("Registry listening on port " + port);
-
+        Registry registryImpl = LocateRegistry.createRegistry(PORT);
         CSF csf = new CSF();
         Reference<CSF> registryRef = new WeakReference<CSF>(csf);
-        Registry registryStub = LocateRegistry.getRegistry("", port, csf);
+        Registry registryStub = LocateRegistry.getRegistry("", PORT, csf);
         csf = null;
         registryStub.list();
         registryStub = null;

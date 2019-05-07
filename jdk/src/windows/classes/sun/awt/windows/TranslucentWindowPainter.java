@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008, 2014, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2008, 2011, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -33,6 +33,7 @@ import java.awt.Window;
 import java.awt.image.BufferedImage;
 import java.awt.image.DataBufferInt;
 import java.awt.image.VolatileImage;
+import java.lang.ref.WeakReference;
 import java.security.AccessController;
 import sun.awt.image.BufImgSurfaceData;
 import sun.java2d.DestSurfaceProvider;
@@ -45,6 +46,7 @@ import sun.java2d.pipe.hw.AccelSurface;
 import sun.security.action.GetPropertyAction;
 
 import static java.awt.image.VolatileImage.*;
+import static java.awt.Transparency.*;
 import static sun.java2d.pipe.hw.AccelSurface.*;
 import static sun.java2d.pipe.hw.ContextCapabilities.*;
 
@@ -57,7 +59,7 @@ import static sun.java2d.pipe.hw.ContextCapabilities.*;
  * Note: this class does not attempt to be thread safe, it is expected to be
  * called from a single thread (EDT).
  */
-abstract class TranslucentWindowPainter {
+public abstract class TranslucentWindowPainter {
 
     protected Window window;
     protected WWindowPeer peer;
@@ -229,7 +231,6 @@ abstract class TranslucentWindowPainter {
             return (viBB != null ? !viBB.contentsLost() : true);
         }
 
-        @Override
         public void flush() {
             if (backBuffer != null) {
                 backBuffer.flush();
@@ -312,7 +313,6 @@ abstract class TranslucentWindowPainter {
                     try {
                         BufferedContext.validateContext(as);
                         rq.flushAndInvokeNow(new Runnable() {
-                            @Override
                             public void run() {
                                 long psdops = as.getNativeOps();
                                 arr[0] = updateWindowAccel(psdops, w, h);

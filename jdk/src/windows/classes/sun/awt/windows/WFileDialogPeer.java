@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 1996, 2014, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 1996, 2013, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -34,10 +34,11 @@ import java.security.PrivilegedAction;
 import java.util.ResourceBundle;
 import java.util.MissingResourceException;
 import java.util.Vector;
+import sun.awt.AppContext;
 import sun.awt.CausedFocusEvent;
 import sun.awt.AWTAccessor;
 
-final class WFileDialogPeer extends WWindowPeer implements FileDialogPeer {
+public class WFileDialogPeer extends WWindowPeer implements FileDialogPeer {
 
     static {
         initIDs();
@@ -46,12 +47,11 @@ final class WFileDialogPeer extends WWindowPeer implements FileDialogPeer {
     private WComponentPeer parent;
     private FilenameFilter fileFilter;
 
-    private Vector<WWindowPeer> blockedWindows = new Vector<>();
+    private Vector<WWindowPeer> blockedWindows = new Vector<WWindowPeer>();
 
     //Needed to fix 4152317
     private static native void setFilterString(String allFilter);
 
-    @Override
     public void setFilenameFilter(FilenameFilter filter) {
         this.fileFilter = filter;
     }
@@ -70,23 +70,19 @@ final class WFileDialogPeer extends WWindowPeer implements FileDialogPeer {
         super(target);
     }
 
-    @Override
     void create(WComponentPeer parent) {
         this.parent = parent;
     }
 
     // don't use checkCreation() from WComponentPeer to avoid hwnd check
-    @Override
     protected void checkCreation() {
     }
 
-    @Override
     void initialize() {
         setFilenameFilter(((FileDialog) target).getFilenameFilter());
     }
 
     private native void _dispose();
-    @Override
     protected void disposeImpl() {
         WToolkit.targetDisposedPeer(target, this);
         _dispose();
@@ -95,18 +91,15 @@ final class WFileDialogPeer extends WWindowPeer implements FileDialogPeer {
     private native void _show();
     private native void _hide();
 
-    @Override
     public void show() {
         new Thread(new Runnable() {
-            @Override
             public void run() {
                 _show();
             }
         }).start();
     }
 
-    @Override
-    void hide() {
+    public void hide() {
         _hide();
     }
 
@@ -176,7 +169,6 @@ final class WFileDialogPeer extends WWindowPeer implements FileDialogPeer {
         fileDialogAccessor.setFiles(fileDialog, jFiles);
 
         WToolkit.executeOnEventHandlerThread(fileDialog, new Runnable() {
-             @Override
              public void run() {
                  fileDialog.setVisible(false);
              }
@@ -193,7 +185,6 @@ final class WFileDialogPeer extends WWindowPeer implements FileDialogPeer {
         AWTAccessor.getFileDialogAccessor().setDirectory(fileDialog, null);
 
         WToolkit.executeOnEventHandlerThread(fileDialog, new Runnable() {
-             @Override
              public void run() {
                  fileDialog.setVisible(false);
              }
@@ -204,7 +195,6 @@ final class WFileDialogPeer extends WWindowPeer implements FileDialogPeer {
     static {
         String filterString = AccessController.doPrivileged(
             new PrivilegedAction<String>() {
-                @Override
                 public String run() {
                     try {
                         ResourceBundle rb = ResourceBundle.getBundle("sun.awt.windows.awtLocalization");
@@ -234,7 +224,6 @@ final class WFileDialogPeer extends WWindowPeer implements FileDialogPeer {
         }
     }
 
-    @Override
     public void blockWindows(java.util.List<Window> toBlock) {
         for (Window w : toBlock) {
             WWindowPeer wp = (WWindowPeer)AWTAccessor.getComponentAccessor().getPeer(w);
@@ -244,47 +233,31 @@ final class WFileDialogPeer extends WWindowPeer implements FileDialogPeer {
         }
     }
 
-    @Override
     public native void toFront();
-    @Override
     public native void toBack();
 
     // unused methods.  Overridden to disable this functionality as
     // it requires HWND which is not available for FileDialog
-    @Override
     public void updateAlwaysOnTopState() {}
-    @Override
     public void setDirectory(String dir) {}
-    @Override
     public void setFile(String file) {}
-    @Override
     public void setTitle(String title) {}
 
-    @Override
     public void setResizable(boolean resizable) {}
-    @Override
-    void enable() {}
-    @Override
-    void disable() {}
-    @Override
+    public void enable() {}
+    public void disable() {}
     public void reshape(int x, int y, int width, int height) {}
     public boolean handleEvent(Event e) { return false; }
-    @Override
     public void setForeground(Color c) {}
-    @Override
     public void setBackground(Color c) {}
-    @Override
     public void setFont(Font f) {}
-    @Override
     public void updateMinimumSize() {}
-    @Override
     public void updateIconImages() {}
     public boolean requestFocus(boolean temporary,
                                 boolean focusedWindowChangeAllowed) {
         return false;
     }
 
-    @Override
     public boolean requestFocus
          (Component lightweightChild, boolean temporary,
           boolean focusedWindowChangeAllowed, long time, CausedFocusEvent.Cause cause)
@@ -292,20 +265,13 @@ final class WFileDialogPeer extends WWindowPeer implements FileDialogPeer {
         return false;
     }
 
-    @Override
     void start() {}
-    @Override
     public void beginValidate() {}
-    @Override
     public void endValidate() {}
     void invalidate(int x, int y, int width, int height) {}
-    @Override
     public void addDropTarget(DropTarget dt) {}
-    @Override
     public void removeDropTarget(DropTarget dt) {}
-    @Override
     public void updateFocusableWindowState() {}
-    @Override
     public void setZOrder(ComponentPeer above) {}
 
     /**
@@ -314,11 +280,8 @@ final class WFileDialogPeer extends WWindowPeer implements FileDialogPeer {
     private static native void initIDs();
 
     // The effects are not supported for system dialogs.
-    @Override
     public void applyShape(sun.java2d.pipe.Region shape) {}
-    @Override
     public void setOpacity(float opacity) {}
-    @Override
     public void setOpaque(boolean isOpaque) {}
     public void updateWindow(java.awt.image.BufferedImage backBuffer) {}
 

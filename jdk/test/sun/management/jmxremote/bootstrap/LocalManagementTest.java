@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2013, 2014, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2013, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -32,7 +32,6 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
-import jdk.testlibrary.ProcessTools;
 
 /**
  * @test
@@ -42,9 +41,12 @@ import jdk.testlibrary.ProcessTools;
  *          without connection or username/password details.
  *          TestManager will attempt a connection to the address obtained from
  *          both agent properties and jvmstat buffer.
- * @build jdk.testlibrary.* TestManager TestApplication
- * @run main/othervm/timeout=300 -XX:+UsePerfData LocalManagementTest
+ * @build jdk.testlibrary.ProcessTools
+ * @build TestManager TestApplication
+ * @run main/othervm/timeout=300 LocalManagementTest
  */
+
+import jdk.testlibrary.ProcessTools;
 
 public class LocalManagementTest {
     private static final  String TEST_CLASSPATH = System.getProperty("test.class.path");
@@ -79,6 +81,16 @@ public class LocalManagementTest {
         return doTest("1", "-Dcom.sun.management.jmxremote");
     }
 
+    private static boolean test2() throws Exception {
+        Path agentPath = findAgent();
+        if (agentPath != null) {
+            String agent = agentPath.toString();
+            return doTest("2", "-javaagent:" + agent);
+        } else {
+            return false;
+        }
+    }
+
     /**
      * no args (blank) - manager should attach and start agent
      */
@@ -87,10 +99,66 @@ public class LocalManagementTest {
     }
 
     /**
+     * sanity check arguments to management-agent.jar
+     */
+    private static boolean test4() throws Exception {
+        Path agentPath = findAgent();
+        if (agentPath != null) {
+            ProcessBuilder builder = ProcessTools.createJavaProcessBuilder(
+                "-javaagent:" + agentPath.toString() +
+                "=com.sun.management.jmxremote.port=7775," +
+                "com.sun.management.jmxremote.authenticate=false," +
+                "com.sun.management.jmxremote.ssl=false",
+                "-cp",
+                TEST_CLASSPATH,
+                "TestApplication",
+                "-exit"
+            );
+
+            Process prc = null;
+            try {
+                prc = ProcessTools.startProcess(
+                    "TestApplication",
+                    builder
+                );
+                int exitCode = prc.waitFor();
+                return exitCode == 0;
+            } finally {
+                if (prc != null) {
+                    prc.destroy();
+                    prc.waitFor();
+                }
+            }
+        }
+        return false;
+    }
+
+    /**
      * use DNS-only name service
      */
     private static boolean test5() throws Exception {
         return doTest("5", "-Dsun.net.spi.namservice.provider.1=\"dns,sun\"");
+    }
+
+    private static Path findAgent() {
+        FileSystem FS = FileSystems.getDefault();
+        Path agentPath = FS.getPath(
+            TEST_JDK, "jre", "lib", "management-agent.jar"
+        );
+        if (!isFileOk(agentPath)) {
+            agentPath = FS.getPath(
+                TEST_JDK, "lib", "management-agent.jar"
+            );
+        }
+        if (!isFileOk(agentPath)) {
+            System.err.println("Can not locate management-agent.jar");
+            return null;
+        }
+        return agentPath;
+    }
+
+    private static boolean isFileOk(Path path) {
+        return Files.isRegularFile(path) && Files.isReadable(path);
     }
 
     private static boolean doTest(String testId, String arg) throws Exception {

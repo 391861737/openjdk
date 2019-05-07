@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2002, 2015, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2002, 2012, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -37,7 +37,7 @@
 package com.sun.crypto.provider;
 
 import java.security.InvalidKeyException;
-import java.security.MessageDigest;
+import java.util.Arrays;
 
 /**
  * Rijndael --pronounced Reindaal-- is a symmetric cipher with a 128-bit
@@ -52,7 +52,7 @@ final class AESCrypt extends SymmetricCipher implements AESConstants
     private boolean ROUNDS_14 = false;
 
     /** Session and Sub keys */
-    private int[][] sessionK = null;
+    private Object[] sessionK = null;
     private int[] K = null;
 
     /** Cipher encryption/decryption key */
@@ -88,14 +88,14 @@ final class AESCrypt extends SymmetricCipher implements AESConstants
                 key.length + " bytes");
         }
 
-        if (!MessageDigest.isEqual(key, lastKey)) {
+        if (!Arrays.equals(key, lastKey)) {
             // re-generate session key 'sessionK' when cipher key changes
             makeSessionKey(key);
             lastKey = key.clone();  // save cipher key
         }
 
         // set sub key to the corresponding session Key
-        this.K = sessionK[(decrypting? 1:0)];
+        this.K = (int[]) sessionK[(decrypting? 1:0)];
     }
 
     /**
@@ -660,7 +660,7 @@ final class AESCrypt extends SymmetricCipher implements AESConstants
         limit = ROUNDS*4;
 
         // store the expanded sub keys into 'sessionK'
-        sessionK = new int[][] { expandedKe, expandedKd };
+        sessionK = new Object[] { expandedKe, expandedKd };
     }
 
 

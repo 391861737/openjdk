@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 1997, 2014, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 1997, 2013, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -33,17 +33,13 @@
 #include "runtime/atomic.hpp"
 #include "runtime/compilationPolicy.hpp"
 #include "runtime/mutexLocker.hpp"
-#include "runtime/orderAccess.inline.hpp"
 #include "runtime/os.hpp"
 #include "runtime/sweeper.hpp"
-#include "runtime/thread.inline.hpp"
 #include "runtime/vm_operations.hpp"
 #include "trace/tracing.hpp"
 #include "utilities/events.hpp"
 #include "utilities/ticks.inline.hpp"
 #include "utilities/xmlstream.hpp"
-
-PRAGMA_FORMAT_MUTE_WARNINGS_FOR_GCC
 
 #ifdef ASSERT
 
@@ -133,7 +129,6 @@ void NMethodSweeper::record_sweep(nmethod* nm, int line) {
 
 nmethod* NMethodSweeper::_current                      = NULL; // Current nmethod
 long     NMethodSweeper::_traversals                   = 0;    // Stack scan count, also sweep ID.
-long     NMethodSweeper::_total_nof_code_cache_sweeps  = 0;    // Total number of full sweeps of the code cache
 long     NMethodSweeper::_time_counter                 = 0;    // Virtual time used to periodically invoke sweeper
 long     NMethodSweeper::_last_sweep                   = 0;    // Value of _time_counter when the last sweep happened
 int      NMethodSweeper::_seen                         = 0;    // Nof. nmethod we have currently processed in current pass of CodeCache
@@ -148,16 +143,13 @@ volatile int  NMethodSweeper::_bytes_changed           = 0;    // Counts the tot
                                                                //   1) alive       -> not_entrant
                                                                //   2) not_entrant -> zombie
                                                                //   3) zombie      -> marked_for_reclamation
-int    NMethodSweeper::_hotness_counter_reset_val       = 0;
 
-long   NMethodSweeper::_total_nof_methods_reclaimed     = 0;    // Accumulated nof methods flushed
-long   NMethodSweeper::_total_nof_c2_methods_reclaimed  = 0;    // Accumulated nof methods flushed
-size_t NMethodSweeper::_total_flushed_size              = 0;    // Total number of bytes flushed from the code cache
-Tickspan  NMethodSweeper::_total_time_sweeping;                 // Accumulated time sweeping
-Tickspan  NMethodSweeper::_total_time_this_sweep;               // Total time this sweep
-Tickspan  NMethodSweeper::_peak_sweep_time;                     // Peak time for a full sweep
-Tickspan  NMethodSweeper::_peak_sweep_fraction_time;            // Peak time sweeping one fraction
-
+int   NMethodSweeper::_total_nof_methods_reclaimed     = 0;    // Accumulated nof methods flushed
+Tickspan NMethodSweeper::_total_time_sweeping;                 // Accumulated time sweeping
+Tickspan NMethodSweeper::_total_time_this_sweep;               // Total time this sweep
+Tickspan NMethodSweeper::_peak_sweep_time;                     // Peak time for a full sweep
+Tickspan NMethodSweeper::_peak_sweep_fraction_time;            // Peak time sweeping one fraction
+int   NMethodSweeper::_hotness_counter_reset_val       = 0;
 
 
 class MarkActivationClosure: public CodeBlobClosure {
@@ -265,14 +257,9 @@ void NMethodSweeper::possibly_sweep() {
   // Large ReservedCodeCacheSize:   (e.g., 256M + code Cache is 90% full). The formula
   //                                              computes: (256 / 16) - 10 = 6.
   if (!_should_sweep) {
-    const int time_since_last_sweep = _time_counter - _last_sweep;
-    // ReservedCodeCacheSize has an 'unsigned' type. We need a 'signed' type for max_wait_time,
-    // since 'time_since_last_sweep' can be larger than 'max_wait_time'. If that happens using
-    // an unsigned type would cause an underflow (wait_until_next_sweep becomes a large positive
-    // value) that disables the intended periodic sweeps.
-    const int max_wait_time = ReservedCodeCacheSize / (16 * M);
-    double wait_until_next_sweep = max_wait_time - time_since_last_sweep - CodeCache::reverse_free_ratio();
-    assert(wait_until_next_sweep <= (double)max_wait_time, "Calculation of code cache sweeper interval is incorrect");
+    int time_since_last_sweep = _time_counter - _last_sweep;
+    double wait_until_next_sweep = (ReservedCodeCacheSize / (16 * M)) - time_since_last_sweep -
+                                CodeCache::reverse_free_ratio();
 
     if ((wait_until_next_sweep <= 0.0) || !CompileBroker::should_compile_new_jobs()) {
       _should_sweep = true;
@@ -300,7 +287,6 @@ void NMethodSweeper::possibly_sweep() {
 
     // We are done with sweeping the code cache once.
     if (_sweep_fractions_left == 0) {
-      _total_nof_code_cache_sweeps++;
       _last_sweep = _time_counter;
       // Reset flag; temporarily disables sweeper
       _should_sweep = false;
@@ -313,13 +299,11 @@ void NMethodSweeper::possibly_sweep() {
         _bytes_changed = 0;
       }
     }
-    // Release work, because another compiler thread could continue.
-    OrderAccess::release_store((int*)&_sweep_started, 0);
+    _sweep_started = 0;
   }
 }
 
 void NMethodSweeper::sweep_code_cache() {
-  ResourceMark rm;
   Ticks sweep_start_counter = Ticks::now();
 
   _flushed_count                = 0;
@@ -389,7 +373,6 @@ void NMethodSweeper::sweep_code_cache() {
   _total_time_sweeping  += sweep_time;
   _total_time_this_sweep += sweep_time;
   _peak_sweep_fraction_time = MAX2(sweep_time, _peak_sweep_fraction_time);
-  _total_flushed_size += freed_memory;
   _total_nof_methods_reclaimed += _flushed_count;
 
   EventSweepCodeCache event(UNTIMED);
@@ -521,9 +504,6 @@ int NMethodSweeper::process_nmethod(nmethod *nm) {
         tty->print_cr("### Nmethod %3d/" PTR_FORMAT " (marked for reclamation) being flushed", nm->compile_id(), nm);
       }
       freed_memory = nm->total_size();
-      if (nm->is_compiled_by_c2()) {
-        _total_nof_c2_methods_reclaimed++;
-      }
       release_nmethod(nm);
       _flushed_count++;
     } else {
@@ -539,14 +519,10 @@ int NMethodSweeper::process_nmethod(nmethod *nm) {
   } else if (nm->is_not_entrant()) {
     // If there are no current activations of this method on the
     // stack we can safely convert it to a zombie method
-    if (nm->can_convert_to_zombie()) {
+    if (nm->can_not_entrant_be_converted()) {
       if (PrintMethodFlushing && Verbose) {
         tty->print_cr("### Nmethod %3d/" PTR_FORMAT " (not entrant) being made zombie", nm->compile_id(), nm);
       }
-      // Clear ICStubs to prevent back patching stubs of zombie or unloaded
-      // nmethods during the next safepoint (see ICStub::finalize).
-      MutexLocker cl(CompiledIC_lock);
-      nm->clear_ic_stubs();
       // Code cache state change is tracked in make_zombie()
       nm->make_zombie();
       _zombified_count++;
@@ -566,18 +542,9 @@ int NMethodSweeper::process_nmethod(nmethod *nm) {
       SWEEP(nm);
       // No inline caches will ever point to osr methods, so we can just remove it
       freed_memory = nm->total_size();
-      if (nm->is_compiled_by_c2()) {
-        _total_nof_c2_methods_reclaimed++;
-      }
       release_nmethod(nm);
       _flushed_count++;
     } else {
-      {
-        // Clean ICs of unloaded nmethods as well because they may reference other
-        // unloaded nmethods that may be flushed earlier in the sweeper cycle.
-        MutexLocker cl(CompiledIC_lock);
-        nm->cleanup_inline_caches();
-      }
       // Code cache state change is tracked in make_zombie()
       nm->make_zombie();
       _zombified_count++;
@@ -627,7 +594,6 @@ int NMethodSweeper::process_nmethod(nmethod *nm) {
 // state of the code cache if it's requested.
 void NMethodSweeper::log_sweep(const char* msg, const char* format, ...) {
   if (PrintMethodFlushing) {
-    ResourceMark rm;
     stringStream s;
     // Dump code cache state into a buffer before locking the tty,
     // because log_state() will use locks causing lock conflicts.
@@ -641,11 +607,10 @@ void NMethodSweeper::log_sweep(const char* msg, const char* format, ...) {
       tty->vprint(format, ap);
       va_end(ap);
     }
-    tty->print_cr("%s", s.as_string());
+    tty->print_cr(s.as_string());
   }
 
   if (LogCompilation && (xtty != NULL)) {
-    ResourceMark rm;
     stringStream s;
     // Dump code cache state into a buffer before locking the tty,
     // because log_state() will use locks causing lock conflicts.
@@ -659,18 +624,8 @@ void NMethodSweeper::log_sweep(const char* msg, const char* format, ...) {
       xtty->vprint(format, ap);
       va_end(ap);
     }
-    xtty->print("%s", s.as_string());
+    xtty->print(s.as_string());
     xtty->stamp();
     xtty->end_elem();
   }
-}
-
-void NMethodSweeper::print() {
-  ttyLocker ttyl;
-  tty->print_cr("Code cache sweeper statistics:");
-  tty->print_cr("  Total sweep time:                %1.0lfms", (double)_total_time_sweeping.value()/1000000);
-  tty->print_cr("  Total number of full sweeps:     %ld", _total_nof_code_cache_sweeps);
-  tty->print_cr("  Total number of flushed methods: %ld(%ld C2 methods)", _total_nof_methods_reclaimed,
-                                                    _total_nof_c2_methods_reclaimed);
-  tty->print_cr("  Total size of flushed methods:   " SIZE_FORMAT "kB", _total_flushed_size/K);
 }

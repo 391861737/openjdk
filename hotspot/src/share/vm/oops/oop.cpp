@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 1997, 2014, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 1997, 2013, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -30,8 +30,6 @@
 #include "runtime/thread.inline.hpp"
 #include "utilities/copy.hpp"
 
-PRAGMA_FORMAT_MUTE_WARNINGS_FOR_GCC
-
 bool always_do_update_barrier = false;
 
 BarrierSet* oopDesc::_bs = NULL;
@@ -46,7 +44,7 @@ void oopDesc::print_on(outputStream* st) const {
 
 void oopDesc::print_address_on(outputStream* st) const {
   if (PrintOopAddress) {
-    st->print("{"INTPTR_FORMAT"}", this);
+    st->print("{" INTPTR_FORMAT"}", this);
   }
 }
 
@@ -104,7 +102,7 @@ intptr_t oopDesc::slow_identity_hash() {
 }
 
 // When String table needs to rehash
-unsigned int oopDesc::new_hash(juint seed) {
+unsigned int oopDesc::new_hash(jint seed) {
   EXCEPTION_MARK;
   ResourceMark rm;
   int length;

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2003, 2015, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2003, 2013, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -47,7 +47,7 @@ import sun.java2d.pipe.RenderQueue;
 import static sun.java2d.pipe.BufferedOpCodes.*;
 import java.lang.annotation.Native;
 
-final class OGLBlitLoops {
+class OGLBlitLoops {
 
     static void register() {
         Blit blitIntArgbPreToSurface =
@@ -55,12 +55,6 @@ final class OGLBlitLoops {
                                    OGLSurfaceData.PF_INT_ARGB_PRE);
         Blit blitIntArgbPreToTexture =
             new OGLSwToTextureBlit(SurfaceType.IntArgbPre,
-                                   OGLSurfaceData.PF_INT_ARGB_PRE);
-        TransformBlit transformBlitIntArgbPreToSurface =
-            new OGLSwToSurfaceTransform(SurfaceType.IntArgbPre,
-                                        OGLSurfaceData.PF_INT_ARGB_PRE);
-        OGLSurfaceToSwBlit blitSurfaceToIntArgbPre =
-            new OGLSurfaceToSwBlit(SurfaceType.IntArgbPre,
                                    OGLSurfaceData.PF_INT_ARGB_PRE);
 
         GraphicsPrimitive[] primitives = {
@@ -77,7 +71,6 @@ final class OGLBlitLoops {
             // surface->sw ops
             new OGLSurfaceToSwBlit(SurfaceType.IntArgb,
                                    OGLSurfaceData.PF_INT_ARGB),
-            blitSurfaceToIntArgbPre,
 
             // sw->surface ops
             blitIntArgbPreToSurface,
@@ -105,14 +98,7 @@ final class OGLBlitLoops {
                                CompositeType.AnyAlpha,
                                blitIntArgbPreToSurface),
 
-            new OGLAnyCompositeBlit(OGLSurfaceData.OpenGLSurface,
-                                    blitSurfaceToIntArgbPre,
-                                    blitSurfaceToIntArgbPre,
-                                    blitIntArgbPreToSurface),
-            new OGLAnyCompositeBlit(SurfaceType.Any,
-                                    null,
-                                    blitSurfaceToIntArgbPre,
-                                    blitIntArgbPreToSurface),
+            new OGLAnyCompositeBlit(OGLSurfaceData.OpenGLSurface),
 
             new OGLSwToSurfaceScale(SurfaceType.IntRgb,
                                     OGLSurfaceData.PF_INT_RGB),
@@ -157,9 +143,8 @@ final class OGLBlitLoops {
                                         OGLSurfaceData.PF_BYTE_GRAY),
             new OGLSwToSurfaceTransform(SurfaceType.UshortGray,
                                         OGLSurfaceData.PF_USHORT_GRAY),
-            transformBlitIntArgbPreToSurface,
-
-            new OGLGeneralTransformedBlit(transformBlitIntArgbPreToSurface),
+            new OGLSwToSurfaceTransform(SurfaceType.IntArgbPre,
+                                        OGLSurfaceData.PF_INT_ARGB_PRE),
 
             // texture->surface ops
             new OGLTextureToSurfaceBlit(),
@@ -191,6 +176,9 @@ final class OGLBlitLoops {
             new OGLGeneralBlit(OGLSurfaceData.OpenGLTexture,
                                CompositeType.SrcNoEa,
                                blitIntArgbPreToTexture),
+
+            new OGLAnyCompositeBlit(OGLSurfaceData.OpenGLTexture),
+
         };
         GraphicsPrimitiveMgr.register(primitives);
     }
@@ -517,52 +505,16 @@ class OGLRTTSurfaceToSurfaceTransform extends TransformBlit {
     }
 }
 
-final class OGLSurfaceToSwBlit extends Blit {
+class OGLSurfaceToSwBlit extends Blit {
 
-    private final int typeval;
-    private WeakReference<SurfaceData> srcTmp;
+    private int typeval;
 
-    // destination will actually be ArgbPre or Argb
-    OGLSurfaceToSwBlit(final SurfaceType dstType,final int typeval) {
+    // REMIND: destination will actually be opaque/premultiplied...
+    OGLSurfaceToSwBlit(SurfaceType dstType, int typeval) {
         super(OGLSurfaceData.OpenGLSurface,
               CompositeType.SrcNoEa,
               dstType);
         this.typeval = typeval;
-    }
-
-    private synchronized void complexClipBlit(SurfaceData src, SurfaceData dst,
-                                              Composite comp, Region clip,
-                                              int sx, int sy, int dx, int dy,
-                                              int w, int h) {
-        SurfaceData cachedSrc = null;
-        if (srcTmp != null) {
-            // use cached intermediate surface, if available
-            cachedSrc = srcTmp.get();
-        }
-
-        // We can convert argb_pre data from OpenGL surface in two places:
-        // - During OpenGL surface -> SW blit
-        // - During SW -> SW blit
-        // The first one is faster when we use opaque OGL surface, because in
-        // this case we simply skip conversion and use color components as is.
-        // Because of this we align intermediate buffer type with type of
-        // destination not source.
-        final int type = typeval == OGLSurfaceData.PF_INT_ARGB_PRE ?
-                         BufferedImage.TYPE_INT_ARGB_PRE :
-                         BufferedImage.TYPE_INT_ARGB;
-
-        src = convertFrom(this, src, sx, sy, w, h, cachedSrc, type);
-
-        // copy intermediate SW to destination SW using complex clip
-        final Blit performop = Blit.getFromCache(src.getSurfaceType(),
-                                                 CompositeType.SrcNoEa,
-                                                 dst.getSurfaceType());
-        performop.Blit(src, dst, comp, clip, 0, 0, dx, dy, w, h);
-
-        if (src != cachedSrc) {
-            // cache the intermediate surface
-            srcTmp = new WeakReference<>(src);
-        }
     }
 
     public void Blit(SurfaceData src, SurfaceData dst,
@@ -570,26 +522,6 @@ final class OGLSurfaceToSwBlit extends Blit {
                      int sx, int sy, int dx, int dy,
                      int w, int h)
     {
-        if (clip != null) {
-            clip = clip.getIntersectionXYWH(dx, dy, w, h);
-            // At the end this method will flush the RenderQueue, we should exit
-            // from it as soon as possible.
-            if (clip.isEmpty()) {
-                return;
-            }
-            sx += clip.getLoX() - dx;
-            sy += clip.getLoY() - dy;
-            dx = clip.getLoX();
-            dy = clip.getLoY();
-            w = clip.getWidth();
-            h = clip.getHeight();
-
-            if (!clip.isRectangular()) {
-                complexClipBlit(src, dst, comp, clip, sx, sy, dx, dy, w, h);
-                return;
-            }
-        }
-
         OGLRenderQueue rq = OGLRenderQueue.getInstance();
         rq.lock();
         try {
@@ -791,11 +723,11 @@ class OGLTextureToSurfaceTransform extends TransformBlit {
  * This general Blit implementation converts any source surface to an
  * intermediate IntArgbPre surface, and then uses the more specific
  * IntArgbPre->OpenGLSurface/Texture loop to get the intermediate
- * (premultiplied) surface down to OpenGL using simple blit.
+ * (premultiplied) surface down to OpenGL.
  */
 class OGLGeneralBlit extends Blit {
 
-    private final Blit performop;
+    private Blit performop;
     private WeakReference srcTmp;
 
     OGLGeneralBlit(SurfaceType dstType,
@@ -836,90 +768,20 @@ class OGLGeneralBlit extends Blit {
     }
 }
 
-/**
- * This general TransformedBlit implementation converts any source surface to an
- * intermediate IntArgbPre surface, and then uses the more specific
- * IntArgbPre->OpenGLSurface/Texture loop to get the intermediate
- * (premultiplied) surface down to OpenGL using simple transformBlit.
- */
-final class OGLGeneralTransformedBlit extends TransformBlit {
-
-    private final TransformBlit performop;
-    private WeakReference<SurfaceData> srcTmp;
-
-    OGLGeneralTransformedBlit(final TransformBlit performop) {
-        super(SurfaceType.Any, CompositeType.AnyAlpha,
-              OGLSurfaceData.OpenGLSurface);
-        this.performop = performop;
-    }
-
-    @Override
-    public synchronized void Transform(SurfaceData src, SurfaceData dst,
-                                       Composite comp, Region clip,
-                                       AffineTransform at, int hint, int srcx,
-                                       int srcy, int dstx, int dsty, int width,
-                                       int height){
-        Blit convertsrc = Blit.getFromCache(src.getSurfaceType(),
-                                            CompositeType.SrcNoEa,
-                                            SurfaceType.IntArgbPre);
-        // use cached intermediate surface, if available
-        final SurfaceData cachedSrc = srcTmp != null ? srcTmp.get() : null;
-        // convert source to IntArgbPre
-        src = convertFrom(convertsrc, src, srcx, srcy, width, height, cachedSrc,
-                          BufferedImage.TYPE_INT_ARGB_PRE);
-
-        // transform IntArgbPre intermediate surface to OpenGL surface
-        performop.Transform(src, dst, comp, clip, at, hint, 0, 0, dstx, dsty,
-                            width, height);
-
-        if (src != cachedSrc) {
-            // cache the intermediate surface
-            srcTmp = new WeakReference<>(src);
-        }
-    }
-}
-
-/**
- * This general OGLAnyCompositeBlit implementation can convert any source/target
- * surface to an intermediate surface using convertsrc/convertdst loops, applies
- * necessary composite operation, and then uses convertresult loop to get the
- * intermediate surface down to OpenGL.
- */
-final class OGLAnyCompositeBlit extends Blit {
-
+class OGLAnyCompositeBlit extends Blit {
     private WeakReference<SurfaceData> dstTmp;
-    private WeakReference<SurfaceData> srcTmp;
-    private final Blit convertsrc;
-    private final Blit convertdst;
-    private final Blit convertresult;
 
-    OGLAnyCompositeBlit(SurfaceType srctype, Blit convertsrc, Blit convertdst,
-                        Blit convertresult) {
-        super(srctype, CompositeType.Any, OGLSurfaceData.OpenGLSurface);
-        this.convertsrc = convertsrc;
-        this.convertdst = convertdst;
-        this.convertresult = convertresult;
+    public OGLAnyCompositeBlit(SurfaceType dstType) {
+        super(SurfaceType.Any, CompositeType.Any, dstType);
     }
-
     public synchronized void Blit(SurfaceData src, SurfaceData dst,
                                   Composite comp, Region clip,
                                   int sx, int sy, int dx, int dy,
                                   int w, int h)
     {
-        if (convertsrc != null) {
-            SurfaceData cachedSrc = null;
-            if (srcTmp != null) {
-                // use cached intermediate surface, if available
-                cachedSrc = srcTmp.get();
-            }
-            // convert source to IntArgbPre
-            src = convertFrom(convertsrc, src, sx, sy, w, h, cachedSrc,
-                              BufferedImage.TYPE_INT_ARGB_PRE);
-            if (src != cachedSrc) {
-                // cache the intermediate surface
-                srcTmp = new WeakReference<>(src);
-            }
-        }
+        Blit convertdst = Blit.getFromCache(dst.getSurfaceType(),
+                                            CompositeType.SrcNoEa,
+                                            SurfaceType.IntArgbPre);
 
         SurfaceData cachedDst = null;
 
@@ -928,22 +790,26 @@ final class OGLAnyCompositeBlit extends Blit {
             cachedDst = dstTmp.get();
         }
 
-        // convert destination to IntArgbPre
+        // convert source to IntArgbPre
         SurfaceData dstBuffer = convertFrom(convertdst, dst, dx, dy, w, h,
                           cachedDst, BufferedImage.TYPE_INT_ARGB_PRE);
-        Region bufferClip =
-                clip == null ? null : clip.getTranslatedRegion(-dx, -dy);
 
         Blit performop = Blit.getFromCache(src.getSurfaceType(),
                 CompositeType.Any, dstBuffer.getSurfaceType());
-        performop.Blit(src, dstBuffer, comp, bufferClip, sx, sy, 0, 0, w, h);
+
+        performop.Blit(src, dstBuffer, comp, clip,
+                       sx, sy, 0, 0, w, h);
 
         if (dstBuffer != cachedDst) {
             // cache the intermediate surface
             dstTmp = new WeakReference(dstBuffer);
         }
+
         // now blit the buffer back to the destination
-        convertresult.Blit(dstBuffer, dst, AlphaComposite.Src, clip, 0, 0, dx,
-                           dy, w, h);
+        convertdst = Blit.getFromCache(dstBuffer.getSurfaceType(),
+                                            CompositeType.SrcNoEa,
+                                            dst.getSurfaceType());
+        convertdst.Blit(dstBuffer, dst, AlphaComposite.Src,
+                 clip, 0, 0, dx, dy, w, h);
     }
 }

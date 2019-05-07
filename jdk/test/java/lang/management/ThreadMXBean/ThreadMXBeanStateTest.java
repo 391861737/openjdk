@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2003, 2014, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2003, 2013, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -31,8 +31,6 @@
  * @author  Mandy Chung
  *
  * @library ../../Thread
- * @library /lib/testlibrary
- * @build jdk.testlibrary.*
  * @build ThreadMXBeanStateTest ThreadStateController
  * @run main ThreadMXBeanStateTest
  */
@@ -46,17 +44,15 @@ public class ThreadMXBeanStateTest {
     private static final ThreadMXBean tm = ManagementFactory.getThreadMXBean();
 
     static class Lock {
-        private final String name;
+        private String name;
         Lock(String name) {
             this.name = name;
         }
-        @Override
         public String toString() {
             return name;
         }
     }
-
-    private static final Lock globalLock = new Lock("my lock");
+    private static Lock globalLock = new Lock("my lock");
 
     public static void main(String[] argv) throws Exception {
         // Force thread state initialization now before the test
@@ -113,7 +109,7 @@ public class ThreadMXBeanStateTest {
         thread.checkThreadState(TERMINATED);
 
         try {
-            System.out.println(thread.getLog());
+            thread.join();
         } catch (InterruptedException e) {
             e.printStackTrace();
             System.out.println("TEST FAILED: Unexpected exception.");

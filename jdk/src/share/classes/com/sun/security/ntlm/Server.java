@@ -1,4 +1,3 @@
-
 /*
  * Copyright (c) 2010, 2012, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
@@ -93,9 +92,7 @@ public abstract class Server extends NTLM {
         debug("NTLM Server: Type 1 received\n");
         if (type1 != null) debug(type1);
         Writer p = new Writer(2, 32);
-        // Negotiate NTLM2 Key, Target Type Domain,
-        // Negotiate NTLM, Request Target, Negotiate unicode
-        int flags = 0x90205;
+        int flags = 0x80205;
         p.writeSecurityBuffer(12, domain, true);
         p.writeInt(20, flags);
         p.writeBytes(24, nonce);
@@ -130,9 +127,8 @@ public abstract class Server extends NTLM {
                     "Wrong domain: " + incomingDomain +
                     " vs " + domain); // Needed?
         }*/
-
         boolean verified = false;
-        char[] password = getPassword(incomingDomain, username);
+        char[] password = getPassword(domain, username);
         if (password == null) {
             throw new NTLMException(NTLMException.USER_UNKNOWN,
                     "Unknown user");
@@ -183,8 +179,6 @@ public abstract class Server extends NTLM {
                 }
             }
             if (incomingNTLM.length > 0) {
-                // We didn't sent alist in type2(), so there
-                // is nothing to check here.
                 byte[] clientBlob = Arrays.copyOfRange(
                         incomingNTLM, 16, incomingNTLM.length);
                 byte[] ntlmresponse = calcV2(nthash,

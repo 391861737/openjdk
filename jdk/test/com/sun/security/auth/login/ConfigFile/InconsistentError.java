@@ -26,7 +26,6 @@
  * @bug 4406033
  * @summary     ConfigFile throws an inconsistent error message
  *              when the configuration file is not found
- * @run main/othervm -Duser.language=en InconsistentError
  */
 
 import com.sun.security.auth.login.*;

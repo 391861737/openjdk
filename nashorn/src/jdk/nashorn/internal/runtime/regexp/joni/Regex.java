@@ -24,7 +24,6 @@ import jdk.nashorn.internal.runtime.regexp.joni.constants.RegexState;
 import jdk.nashorn.internal.runtime.regexp.joni.exception.ErrorMessages;
 import jdk.nashorn.internal.runtime.regexp.joni.exception.ValueException;
 
-@SuppressWarnings("javadoc")
 public final class Regex implements RegexState {
 
     int[] code;             /* compiled pattern */
@@ -73,43 +72,42 @@ public final class Regex implements RegexState {
     char[][] templates;
     int templateNum;
 
-    public Regex(final CharSequence cs) {
+    public Regex(CharSequence cs) {
         this(cs.toString());
     }
 
-    public Regex(final String str) {
+    public Regex(String str) {
         this(str.toCharArray(), 0, str.length(), 0);
     }
 
-    public Regex(final char[] chars) {
+    public Regex(char[] chars) {
         this(chars, 0, chars.length, 0);
     }
 
-    public Regex(final char[] chars, final int p, final int end) {
+    public Regex(char[] chars, int p, int end) {
         this(chars, p, end, 0);
     }
 
-    public Regex(final char[] chars, final int p, final int end, final int option) {
+    public Regex(char[] chars, int p, int end, int option) {
         this(chars, p, end, option, Syntax.RUBY, WarnCallback.DEFAULT);
     }
 
     // onig_new
-    public Regex(final char[] chars, final int p, final int end, final int option, final Syntax syntax) {
+    public Regex(char[] chars, int p, int end, int option, Syntax syntax) {
         this(chars, p, end, option, Config.ENC_CASE_FOLD_DEFAULT, syntax, WarnCallback.DEFAULT);
     }
 
-    public Regex(final char[]chars, final int p, final int end, final int option, final WarnCallback warnings) {
+    public Regex(char[]chars, int p, int end, int option, WarnCallback warnings) {
         this(chars, p, end, option, Syntax.RUBY, warnings);
     }
 
     // onig_new
-    public Regex(final char[] chars, final int p, final int end, final int option, final Syntax syntax, final WarnCallback warnings) {
+    public Regex(char[] chars, int p, int end, int option, Syntax syntax, WarnCallback warnings) {
         this(chars, p, end, option, Config.ENC_CASE_FOLD_DEFAULT, syntax, warnings);
     }
 
     // onig_alloc_init
-    public Regex(final char[] chars, final int p, final int end, final int optionp, final int caseFoldFlag, final Syntax syntax, final WarnCallback warnings) {
-        int option = optionp;
+    public Regex(char[] chars, int p, int end, int option, int caseFoldFlag, Syntax syntax, WarnCallback warnings) {
 
         if ((option & (Option.DONT_CAPTURE_GROUP | Option.CAPTURE_GROUP)) ==
             (Option.DONT_CAPTURE_GROUP | Option.CAPTURE_GROUP)) {
@@ -133,25 +131,21 @@ public final class Regex implements RegexState {
         this.warnings = null;
     }
 
-    public synchronized MatcherFactory compile() {
+    public void compile() {
         if (factory == null && analyser != null) {
-            new ArrayCompiler(analyser).compile();
+            Compiler compiler = new ArrayCompiler(analyser);
             analyser = null; // only do this once
+            compiler.compile();
         }
-        assert factory != null;
-        return factory;
     }
 
-    public Matcher matcher(final char[] chars) {
+    public Matcher matcher(char[] chars) {
         return matcher(chars, 0, chars.length);
     }
 
-    public Matcher matcher(final char[] chars, final int p, final int end) {
-        MatcherFactory matcherFactory = factory;
-        if (matcherFactory == null) {
-            matcherFactory = compile();
-        }
-        return matcherFactory.create(this, chars, p, end);
+    public Matcher matcher(char[] chars, int p, int end) {
+        compile();
+        return factory.create(this, chars, p, end);
     }
 
     public WarnCallback getWarnings() {
@@ -164,40 +158,26 @@ public final class Regex implements RegexState {
 
     /* set skip map for Boyer-Moor search */
     void setupBMSkipMap() {
-        final char[] chars = exact;
-        final int p = exactP;
-        final int end = exactEnd;
-        final int len = end - p;
+        char[] chars = exact;
+        int p = exactP;
+        int end = exactEnd;
+        int len = end - p;
 
         if (len < Config.CHAR_TABLE_SIZE) {
             // map/skip
-            if (map == null) {
-                map = new byte[Config.CHAR_TABLE_SIZE];
-            }
+            if (map == null) map = new byte[Config.CHAR_TABLE_SIZE];
 
-            for (int i=0; i<Config.CHAR_TABLE_SIZE; i++) {
-                map[i] = (byte)len;
-            }
-            for (int i=0; i<len-1; i++)
-             {
-                map[chars[p + i] & 0xff] = (byte)(len - 1 -i); // oxff ??
-            }
+            for (int i=0; i<Config.CHAR_TABLE_SIZE; i++) map[i] = (byte)len;
+            for (int i=0; i<len-1; i++) map[chars[p + i] & 0xff] = (byte)(len - 1 -i); // oxff ??
         } else {
-            if (intMap == null) {
-                intMap = new int[Config.CHAR_TABLE_SIZE];
-            }
+            if (intMap == null) intMap = new int[Config.CHAR_TABLE_SIZE];
 
-            for (int i=0; i<len-1; i++)
-             {
-                intMap[chars[p + i] & 0xff] = len - 1 - i; // oxff ??
-            }
+            for (int i=0; i<len-1; i++) intMap[chars[p + i] & 0xff] = len - 1 - i; // oxff ??
         }
     }
 
-    void setExactInfo(final OptExactInfo e) {
-        if (e.length == 0) {
-            return;
-        }
+    void setExactInfo(OptExactInfo e) {
+        if (e.length == 0) return;
 
         // shall we copy that ?
         exact = e.chars;
@@ -223,7 +203,7 @@ public final class Regex implements RegexState {
         }
     }
 
-    void setOptimizeMapInfo(final OptMapInfo m) {
+    void setOptimizeMapInfo(OptMapInfo m) {
         map = m.map;
 
         searchAlgorithm = SearchAlgorithm.MAP;
@@ -235,7 +215,7 @@ public final class Regex implements RegexState {
         }
     }
 
-    void setSubAnchor(final OptAnchorInfo anc) {
+    void setSubAnchor(OptAnchorInfo anc) {
         subAnchor |= anc.leftAnchor & AnchorType.BEGIN_LINE;
         subAnchor |= anc.rightAnchor & AnchorType.END_LINE;
     }
@@ -252,7 +232,7 @@ public final class Regex implements RegexState {
     }
 
     public String optimizeInfoToString() {
-        final StringBuilder s = new StringBuilder();
+        StringBuilder s = new StringBuilder();
         s.append("optimize: ").append(searchAlgorithm.getName()).append("\n");
         s.append("  anchor:     ").append(OptAnchorInfo.anchorToString(anchor));
 
@@ -273,11 +253,7 @@ public final class Regex implements RegexState {
             s.append("exact: [").append(exact, exactP, exactEnd - exactP).append("]: length: ").append(exactEnd - exactP).append("\n");
         } else if (searchAlgorithm == SearchAlgorithm.MAP) {
             int n=0;
-            for (int i=0; i<Config.CHAR_TABLE_SIZE; i++) {
-                if (map[i] != 0) {
-                    n++;
-                }
-            }
+            for (int i=0; i<Config.CHAR_TABLE_SIZE; i++) if (map[i] != 0) n++;
 
             s.append("map: n = ").append(n).append("\n");
             if (n > 0) {

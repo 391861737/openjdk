@@ -25,8 +25,6 @@
 
 package sun.awt;
 
-import sun.awt.datatransfer.DataTransferer;
-
 import java.awt.*;
 import java.awt.dnd.*;
 import java.awt.dnd.peer.DragSourceContextPeer;
@@ -94,7 +92,5 @@ public interface ComponentFactory {
 
     RobotPeer createRobot(Robot target, GraphicsDevice screen)
         throws AWTException, HeadlessException;
-
-    DataTransferer getDataTransferer();
 
 }

@@ -102,13 +102,17 @@ class GarbageCollectorImpl extends MemoryManagerImpl
         GarbageCollectionNotificationInfo.GARBAGE_COLLECTION_NOTIFICATION
     };
 
-    @Override
+    private MBeanNotificationInfo[] notifInfo = null;
     public MBeanNotificationInfo[] getNotificationInfo() {
-        return new MBeanNotificationInfo[]{
-            new MBeanNotificationInfo(gcNotifTypes,
-            notifName,
-            "GC Notification")
-        };
+        synchronized (this) {
+            if (notifInfo == null) {
+                 notifInfo = new MBeanNotificationInfo[1];
+                 notifInfo[0] = new MBeanNotificationInfo(gcNotifTypes,
+                                                          notifName,
+                                                          "GC Notification");
+            }
+        }
+        return notifInfo;
     }
 
     private static long seqNumber = 0;

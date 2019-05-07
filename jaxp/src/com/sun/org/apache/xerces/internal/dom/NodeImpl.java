@@ -1,13 +1,13 @@
 /*
- * Copyright (c) 2015, Oracle and/or its affiliates. All rights reserved.
+ * reserved comment block
+ * DO NOT REMOVE OR ALTER!
  */
  /*
- * Licensed to the Apache Software Foundation (ASF) under one or more
- * contributor license agreements.  See the NOTICE file distributed with
- * this work for additional information regarding copyright ownership.
- * The ASF licenses this file to You under the Apache License, Version 2.0
- * (the "License"); you may not use this file except in compliance with
- * the License.  You may obtain a copy of the License at
+ * Copyright 1999-2002,2004 The Apache Software Foundation.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
  *
  *      http://www.apache.org/licenses/LICENSE-2.0
  *
@@ -23,14 +23,15 @@ package com.sun.org.apache.xerces.internal.dom;
 import java.io.IOException;
 import java.io.ObjectOutputStream;
 import java.io.Serializable;
-import java.util.Map;
+import java.util.Hashtable;
+
+import org.w3c.dom.UserDataHandler;
 import org.w3c.dom.DOMException;
 import org.w3c.dom.Document;
 import org.w3c.dom.DocumentType;
 import org.w3c.dom.NamedNodeMap;
 import org.w3c.dom.Node;
 import org.w3c.dom.NodeList;
-import org.w3c.dom.UserDataHandler;
 import org.w3c.dom.events.Event;
 import org.w3c.dom.events.EventListener;
 import org.w3c.dom.events.EventTarget;
@@ -1792,7 +1793,7 @@ public abstract class NodeImpl
         return ownerDocument().getUserData(this, key);
     }
 
-    protected Map<String, ParentNode.UserDataRecord> getUserDataRecord(){
+        protected Hashtable getUserDataRecord(){
         return ownerDocument().getUserDataRecord(this);
         }
 
@@ -1844,7 +1845,7 @@ public abstract class NodeImpl
      * NON-DOM: As an alternative to subclassing the DOM, this implementation
      * has been extended with the ability to attach an object to each node.
      * (If you need multiple objects, you can attach a collection such as a
-     * List or Map, then attach your application information to that.)
+     * vector or hashtable, then attach your application information to that.)
      * <p><b>Important Note:</b> You are responsible for removing references
      * to your data on nodes that are no longer used. Failure to do so will
      * prevent the nodes, your data is attached to, to be garbage collected

@@ -29,6 +29,7 @@ import java.io.Reader;
 
 import javax.xml.XMLConstants;
 import javax.xml.parsers.ParserConfigurationException;
+import javax.xml.parsers.SAXParser;
 import javax.xml.parsers.SAXParserFactory;
 
 import javax.xml.stream.XMLEventReader;
@@ -38,6 +39,7 @@ import javax.xml.transform.Source;
 import javax.xml.transform.TransformerConfigurationException;
 import javax.xml.transform.dom.DOMSource;
 import javax.xml.transform.sax.SAXSource;
+import javax.xml.transform.stax.StAXResult;
 import javax.xml.transform.stax.StAXSource;
 import javax.xml.transform.stream.StreamSource;
 
@@ -109,8 +111,8 @@ public final class Util {
                                 reader.setFeature(XMLConstants.FEATURE_SECURE_PROCESSING,
                                             xsltc.isSecureProcessing());
                            } catch (SAXNotRecognizedException e) {
-                                XMLSecurityManager.printWarning(reader.getClass().getName(),
-                                        XMLConstants.FEATURE_SECURE_PROCESSING, e);
+                                System.err.println("Warning:  " + reader.getClass().getName() + ": "
+                                        + e.getMessage());
                            }
                        } catch (Exception e ) {
                            try {
@@ -147,27 +149,25 @@ public final class Util {
                         reader.setProperty(XMLConstants.ACCESS_EXTERNAL_DTD,
                                    xsltc.getProperty(XMLConstants.ACCESS_EXTERNAL_DTD));
                     } catch (SAXNotRecognizedException e) {
-                        XMLSecurityManager.printWarning(reader.getClass().getName(),
-                                XMLConstants.ACCESS_EXTERNAL_DTD, e);
+                        System.err.println("Warning:  " + reader.getClass().getName() + ": "
+                                + e.getMessage());
                     }
 
-                    String lastProperty = "";
                     try {
                         XMLSecurityManager securityManager =
                                 (XMLSecurityManager)xsltc.getProperty(XalanConstants.SECURITY_MANAGER);
                         if (securityManager != null) {
                             for (XMLSecurityManager.Limit limit : XMLSecurityManager.Limit.values()) {
-                                lastProperty = limit.apiProperty();
-                                reader.setProperty(lastProperty,
+                                reader.setProperty(limit.apiProperty(),
                                         securityManager.getLimitValueAsString(limit));
                             }
                             if (securityManager.printEntityCountInfo()) {
-                                lastProperty = XalanConstants.JDK_ENTITY_COUNT_INFO;
                                 reader.setProperty(XalanConstants.JDK_ENTITY_COUNT_INFO, XalanConstants.JDK_YES);
                             }
                         }
                     } catch (SAXException se) {
-                        XMLSecurityManager.printWarning(reader.getClass().getName(), lastProperty, se);
+                        System.err.println("Warning:  " + reader.getClass().getName() + ": "
+                                    + se.getMessage());
                     }
                     xsltc.setXMLReader(reader);
                 }catch (SAXNotRecognizedException snre ) {

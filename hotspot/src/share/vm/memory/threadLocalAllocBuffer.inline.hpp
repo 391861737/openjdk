@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 1999, 2014, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 1999, 2010, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -94,11 +94,11 @@ void ThreadLocalAllocBuffer::record_slow_allocation(size_t obj_size) {
 
   if (PrintTLAB && Verbose) {
     Thread* thrd = myThread();
-    gclog_or_tty->print("TLAB: %s thread: "INTPTR_FORMAT" [id: %2d]"
-                        " obj: "SIZE_FORMAT
-                        " free: "SIZE_FORMAT
-                        " waste: "SIZE_FORMAT"\n",
-                        "slow", p2i(thrd), thrd->osthread()->thread_id(),
+    gclog_or_tty->print("TLAB: %s thread: " INTPTR_FORMAT " [id: %2d]"
+                        " obj: " SIZE_FORMAT
+                        " free: " SIZE_FORMAT
+                        " waste: " SIZE_FORMAT "\n",
+                        "slow", thrd, thrd->osthread()->thread_id(),
                         obj_size, free(), refill_waste_limit());
   }
 }

@@ -57,10 +57,8 @@ public abstract class LocaleObjectCache<K, V> {
             value = entry.get();
         }
         if (value == null) {
-            V newVal = createObject(key);
-            // make sure key is normalized *after* the object creation
-            // so that newVal is assured to be created from a valid key.
             key = normalizeKey(key);
+            V newVal = createObject(key);
             if (key == null || newVal == null) {
                 // subclass must return non-null key/value object
                 return null;

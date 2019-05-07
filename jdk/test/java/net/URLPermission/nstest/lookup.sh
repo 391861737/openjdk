@@ -24,7 +24,6 @@
 
 # @test
 # @library /lib/testlibrary
-# @build jdk.testlibrary.*
 # @compile -XDignore.symbol.file=true SimpleNameService.java
 #            LookupTest.java SimpleNameServiceDescriptor.java
 # @run shell/timeout=50 lookup.sh
@@ -42,7 +41,8 @@ Windows_* | CYGWIN*)
     ;;
 esac
 
-port=`${TESTJAVA}/bin/java -cp ${TESTCLASSPATH} LookupTest -getport`
+
+port=`${TESTJAVA}/bin/java -cp ${TESTCLASSES} LookupTest -getport`
 
 cat << POLICY > policy
 grant {
@@ -56,7 +56,4 @@ grant {
 };
 POLICY
 
-${TESTJAVA}/bin/java ${TESTVMOPTS} \
-    -Djava.security.policy=file:./policy \
-    -Dsun.net.spi.nameservice.provider.1=simple,sun \
-    -cp ${TESTCLASSPATH}${PS}${TESTSRC} LookupTest -runtest ${port}
+${TESTJAVA}/bin/java -Djava.security.policy=file:./policy -Dsun.net.spi.nameservice.provider.1=simple,sun -cp ${TESTCLASSES}${PS}${TESTSRC} LookupTest -runtest ${port}

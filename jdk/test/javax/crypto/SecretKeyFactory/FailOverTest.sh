@@ -56,7 +56,7 @@ echo "TESTCLASSES=${TESTCLASSES}"
 # set platform-dependent variables
 OS=`uname -s`
 case "$OS" in
-  SunOS | Linux | Darwin | AIX )
+  SunOS | Linux | Darwin )
     NULL=/dev/null
     PS=":"
     FS="/"
@@ -88,7 +88,6 @@ fi
 
 ${TESTJAVA}${FS}bin${FS}java \
     ${TESTVMOPTS} \
-    -Djava.security.properties=${TESTSRC}${FS}security.properties \
     -classpath "${TESTSRC}${FS}P1.jar${PS}${TESTSRC}${FS}P2.jar${PS}." \
     FailOverTest
 result=$?

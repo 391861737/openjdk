@@ -25,9 +25,6 @@
 
 package jdk.nashorn.internal.ir;
 
-import static jdk.nashorn.internal.runtime.UnwarrantedOptimismException.INVALID_PROGRAM_POINT;
-
-import java.io.Serializable;
 import java.util.Collections;
 import java.util.List;
 import jdk.nashorn.internal.codegen.types.Type;
@@ -39,8 +36,7 @@ import jdk.nashorn.internal.ir.visitor.NodeVisitor;
  * IR representation for a function call.
  */
 @Immutable
-public final class CallNode extends LexicalContextExpression implements Optimistic {
-    private static final long serialVersionUID = 1L;
+public final class CallNode extends LexicalContextExpression {
 
     /** Function identifier or function body. */
     private final Expression function;
@@ -49,53 +45,71 @@ public final class CallNode extends LexicalContextExpression implements Optimist
     private final List<Expression> args;
 
     /** Is this a "new" operation */
-    private static final int IS_NEW = 1 << 0;
-
-    /** Can this be a Function.call? */
-    private static final int IS_APPLY_TO_CALL = 1 << 1;
+    public static final int IS_NEW        = 0x1;
 
     private final int flags;
 
     private final int lineNumber;
 
-    private final int programPoint;
-
-    private final Type optimisticType;
-
     /**
      * Arguments to be passed to builtin {@code eval} function
      */
-    public static class EvalArgs implements Serializable {
-        private static final long serialVersionUID = 1L;
-        private final List<Expression> args;
+    public static class EvalArgs {
+        /** evaluated code */
+        private final Expression code;
+
+        /** 'this' passed to evaluated code */
+        private final IdentNode evalThis;
 
         /** location string for the eval call */
         private final String location;
 
+        /** is this call from a strict context? */
+        private final boolean strictMode;
+
         /**
          * Constructor
          *
-         * @param args     arguments to eval
-         * @param location location for the eval call
+         * @param code       code to evaluate
+         * @param evalThis   this node
+         * @param location   location for the eval call
+         * @param strictMode is this a call from a strict context?
          */
-        public EvalArgs(final List<Expression> args, final String location) {
-            this.args = args;
+        public EvalArgs(final Expression code, final IdentNode evalThis, final String location, final boolean strictMode) {
+            this.code = code;
+            this.evalThis = evalThis;
             this.location = location;
+            this.strictMode = strictMode;
         }
 
         /**
          * Return the code that is to be eval:ed by this eval function
          * @return code as an AST node
          */
-        public List<Expression> getArgs() {
-            return Collections.unmodifiableList(args);
+        public Expression getCode() {
+            return code;
         }
 
-        private EvalArgs setArgs(final List<Expression> args) {
-            if (this.args == args) {
+        private EvalArgs setCode(final Expression code) {
+            if (this.code == code) {
                 return this;
             }
-            return new EvalArgs(args, location);
+            return new EvalArgs(code, evalThis, location, strictMode);
+        }
+
+        /**
+         * Get the {@code this} symbol used to invoke this eval call
+         * @return the {@code this} symbol
+         */
+        public IdentNode getThis() {
+            return this.evalThis;
+        }
+
+        private EvalArgs setThis(final IdentNode evalThis) {
+            if (this.evalThis == evalThis) {
+                return this;
+            }
+            return new EvalArgs(code, evalThis, location, strictMode);
         }
 
         /**
@@ -104,6 +118,14 @@ public final class CallNode extends LexicalContextExpression implements Optimist
          */
         public String getLocation() {
             return this.location;
+        }
+
+        /**
+         * Check whether this eval call is executed in strict mode
+         * @return true if executed in strict mode, false otherwise
+         */
+        public boolean getStrictMode() {
+            return this.strictMode;
         }
     }
 
@@ -119,29 +141,24 @@ public final class CallNode extends LexicalContextExpression implements Optimist
      * @param finish     finish
      * @param function   the function to call
      * @param args       args to the call
-     * @param isNew      true if this is a constructor call with the "new" keyword
      */
-    public CallNode(final int lineNumber, final long token, final int finish, final Expression function, final List<Expression> args, final boolean isNew) {
+    public CallNode(final int lineNumber, final long token, final int finish, final Expression function, final List<Expression> args) {
         super(token, finish);
 
-        this.function       = function;
-        this.args           = args;
-        this.flags          = isNew ? IS_NEW : 0;
-        this.evalArgs       = null;
-        this.lineNumber     = lineNumber;
-        this.programPoint   = INVALID_PROGRAM_POINT;
-        this.optimisticType = null;
+        this.function   = function;
+        this.args       = args;
+        this.flags      = 0;
+        this.evalArgs   = null;
+        this.lineNumber = lineNumber;
     }
 
-    private CallNode(final CallNode callNode, final Expression function, final List<Expression> args, final int flags, final Type optimisticType, final EvalArgs evalArgs, final int programPoint) {
+    private CallNode(final CallNode callNode, final Expression function, final List<Expression> args, final int flags, final EvalArgs evalArgs) {
         super(callNode);
         this.lineNumber = callNode.lineNumber;
         this.function = function;
         this.args = args;
         this.flags = flags;
         this.evalArgs = evalArgs;
-        this.programPoint = programPoint;
-        this.optimisticType = optimisticType;
     }
 
     /**
@@ -154,15 +171,7 @@ public final class CallNode extends LexicalContextExpression implements Optimist
 
     @Override
     public Type getType() {
-        return optimisticType == null ? Type.OBJECT : optimisticType;
-    }
-
-    @Override
-    public Optimistic setType(final Type optimisticType) {
-        if (this.optimisticType == optimisticType) {
-            return this;
-        }
-        return new CallNode(this, function, args, flags, optimisticType, evalArgs, programPoint);
+        return function instanceof FunctionNode ? ((FunctionNode)function).getReturnType() : Type.OBJECT;
     }
 
     /**
@@ -177,13 +186,15 @@ public final class CallNode extends LexicalContextExpression implements Optimist
         if (visitor.enterCallNode(this)) {
             final CallNode newCallNode = (CallNode)visitor.leaveCallNode(
                     setFunction((Expression)function.accept(visitor)).
-                    setArgs(Node.accept(visitor, args)).
+                    setArgs(Node.accept(visitor, Expression.class, args)).
+                    setFlags(flags).
                     setEvalArgs(evalArgs == null ?
                             null :
-                            evalArgs.setArgs(Node.accept(visitor, evalArgs.getArgs()))));
+                            evalArgs.setCode((Expression)evalArgs.getCode().accept(visitor)).
+                                setThis((IdentNode)evalArgs.getThis().accept(visitor))));
             // Theoretically, we'd need to instead pass lc to every setter and do a replacement on each. In practice,
             // setType from TypeOverride can't accept a lc, and we don't necessarily want to go there now.
-            if (this != newCallNode) {
+            if(this != newCallNode) {
                 return Node.replaceInLexicalContext(lc, this, newCallNode);
             }
         }
@@ -192,19 +203,8 @@ public final class CallNode extends LexicalContextExpression implements Optimist
     }
 
     @Override
-    public void toString(final StringBuilder sb, final boolean printType) {
-        if (printType) {
-            optimisticTypeToString(sb);
-        }
-
-        final StringBuilder fsb = new StringBuilder();
-        function.toString(fsb, printType);
-
-        if (isApplyToCall()) {
-            sb.append(fsb.toString().replace("apply", "[apply => call]"));
-        } else {
-            sb.append(fsb);
-        }
+    public void toString(final StringBuilder sb) {
+        function.toString(sb);
 
         sb.append('(');
 
@@ -217,7 +217,7 @@ public final class CallNode extends LexicalContextExpression implements Optimist
                 first = false;
             }
 
-            arg.toString(sb, printType);
+            arg.toString(sb);
         }
 
         sb.append(')');
@@ -234,13 +234,12 @@ public final class CallNode extends LexicalContextExpression implements Optimist
     /**
      * Reset the arguments for the call
      * @param args new arguments list
-     * @return new callnode, or same if unchanged
      */
-    public CallNode setArgs(final List<Expression> args) {
+    private CallNode setArgs(final List<Expression> args) {
         if (this.args == args) {
             return this;
         }
-        return new CallNode(this, function, args, flags, optimisticType, evalArgs, programPoint);
+        return new CallNode(this, function, args, flags, evalArgs);
     }
 
     /**
@@ -262,7 +261,7 @@ public final class CallNode extends LexicalContextExpression implements Optimist
         if (this.evalArgs == evalArgs) {
             return this;
         }
-        return new CallNode(this, function, args, flags, optimisticType, evalArgs, programPoint);
+        return new CallNode(this, function, args, flags, evalArgs);
     }
 
     /**
@@ -271,23 +270,6 @@ public final class CallNode extends LexicalContextExpression implements Optimist
      */
     public boolean isEval() {
         return evalArgs != null;
-    }
-
-    /**
-     * Is this an apply call that we optimistically should try to turn into
-     * a call instead
-     * @return true if apply to call
-     */
-    public boolean isApplyToCall() {
-        return (flags & IS_APPLY_TO_CALL) != 0;
-    }
-
-    /**
-     * Flag this call node as one that tries to call call instead of apply
-     * @return new call node with changed flags, if not already flagged as apply to call, then the same node
-     */
-    public CallNode setIsApplyToCall() {
-        return setFlags(flags | IS_APPLY_TO_CALL);
     }
 
     /**
@@ -307,7 +289,7 @@ public final class CallNode extends LexicalContextExpression implements Optimist
         if (this.function == function) {
             return this;
         }
-        return new CallNode(this, function, args, flags, optimisticType, evalArgs, programPoint);
+        return new CallNode(this, function, args, flags, evalArgs);
     }
 
     /**
@@ -315,41 +297,21 @@ public final class CallNode extends LexicalContextExpression implements Optimist
      * @return true if this a new operation
      */
     public boolean isNew() {
-        return (flags & IS_NEW) != 0;
+        return (flags & IS_NEW) == IS_NEW;
+    }
+
+    /**
+     * Flag this call as a new operation
+     * @return same node or new one on state change
+     */
+    public CallNode setIsNew() {
+        return setFlags(IS_NEW);
     }
 
     private CallNode setFlags(final int flags) {
         if (this.flags == flags) {
             return this;
         }
-        return new CallNode(this, function, args, flags, optimisticType, evalArgs, programPoint);
-    }
-
-    @Override
-    public int getProgramPoint() {
-        return programPoint;
-    }
-
-    @Override
-    public CallNode setProgramPoint(final int programPoint) {
-        if (this.programPoint == programPoint) {
-            return this;
-        }
-        return new CallNode(this, function, args, flags, optimisticType, evalArgs, programPoint);
-    }
-
-    @Override
-    public Type getMostOptimisticType() {
-        return Type.INT;
-    }
-
-    @Override
-    public Type getMostPessimisticType() {
-        return Type.OBJECT;
-    }
-
-    @Override
-    public boolean canBeOptimistic() {
-        return true;
+        return new CallNode(this, function, args, flags, evalArgs);
     }
 }

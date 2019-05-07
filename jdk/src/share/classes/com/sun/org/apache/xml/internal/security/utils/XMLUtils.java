@@ -80,44 +80,32 @@ public class XMLUtils {
     /**
      * Set the prefix for the digital signature namespace
      * @param prefix the new prefix for the digital signature namespace
-     * @throws SecurityException if a security manager is installed and the
-     *    caller does not have permission to set the prefix
      */
     public static void setDsPrefix(String prefix) {
-        JavaUtils.checkRegisterPermission();
         dsPrefix = prefix;
     }
 
     /**
      * Set the prefix for the digital signature 1.1 namespace
      * @param prefix the new prefix for the digital signature 1.1 namespace
-     * @throws SecurityException if a security manager is installed and the
-     *    caller does not have permission to set the prefix
      */
     public static void setDs11Prefix(String prefix) {
-        JavaUtils.checkRegisterPermission();
         ds11Prefix = prefix;
     }
 
     /**
      * Set the prefix for the encryption namespace
      * @param prefix the new prefix for the encryption namespace
-     * @throws SecurityException if a security manager is installed and the
-     *    caller does not have permission to set the prefix
      */
     public static void setXencPrefix(String prefix) {
-        JavaUtils.checkRegisterPermission();
         xencPrefix = prefix;
     }
 
     /**
      * Set the prefix for the encryption namespace 1.1
      * @param prefix the new prefix for the encryption namespace 1.1
-     * @throws SecurityException if a security manager is installed and the
-     *    caller does not have permission to set the prefix
      */
     public static void setXenc11Prefix(String prefix) {
-        JavaUtils.checkRegisterPermission();
         xenc11Prefix = prefix;
     }
 
@@ -934,7 +922,7 @@ public class XMLUtils {
         Element foundElement = null;
 
         String id = value.trim();
-        if (!id.isEmpty() && id.charAt(0) == '#') {
+        if (id.charAt(0) == '#') {
             id = id.substring(1);
         }
 
@@ -994,7 +982,7 @@ public class XMLUtils {
         Node processedNode = null;
 
         String id = value.trim();
-        if (!id.isEmpty() && id.charAt(0) == '#') {
+        if (id.charAt(0) == '#') {
             id = id.substring(1);
         }
 

@@ -21,17 +21,16 @@ package jdk.nashorn.internal.runtime.regexp.joni.ast;
 
 import jdk.nashorn.internal.runtime.regexp.joni.constants.NodeStatus;
 
-@SuppressWarnings("javadoc")
 public abstract class StateNode extends Node implements NodeStatus {
     protected int state;
 
     @Override
-    public String toString(final int level) {
+    public String toString(int level) {
         return "\n  state: " + stateToString();
     }
 
     public String stateToString() {
-        final StringBuilder states = new StringBuilder();
+        StringBuilder states = new StringBuilder();
         if (isMinFixed()) states.append("MIN_FIXED ");
         if (isMaxFixed()) states.append("MAX_FIXED ");
         if (isMark1()) states.append("MARK1 ");

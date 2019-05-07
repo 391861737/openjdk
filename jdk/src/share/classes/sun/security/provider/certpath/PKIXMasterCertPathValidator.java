@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2000, 2015, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2000, 2012, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -30,7 +30,6 @@ import sun.security.util.Debug;
 import java.util.Collections;
 import java.util.List;
 import java.util.Set;
-import java.util.StringJoiner;
 import java.security.cert.CertPath;
 import java.security.cert.CertPathValidatorException;
 import java.security.cert.PKIXCertPathChecker;
@@ -89,25 +88,20 @@ class PKIXMasterCertPathValidator {
              * current certificate of this loop to be the previous certificate
              * of the next loop. The state is initialized during first loop.
              */
+            if (debug != null)
+                debug.println("Checking cert" + (i+1) + " ...");
+
             X509Certificate currCert = reversedCertList.get(i);
-
-            if (debug != null) {
-                debug.println("Checking cert" + (i+1) + " - Subject: " +
-                    currCert.getSubjectX500Principal());
-            }
-
             Set<String> unresCritExts = currCert.getCriticalExtensionOIDs();
             if (unresCritExts == null) {
                 unresCritExts = Collections.<String>emptySet();
             }
 
             if (debug != null && !unresCritExts.isEmpty()) {
-                StringJoiner joiner = new StringJoiner(", ", "{", "}");
+                debug.println("Set of critical extensions:");
                 for (String oid : unresCritExts) {
-                  joiner.add(oid);
+                    debug.println(oid);
                 }
-                debug.println("Set of critical extensions: " +
-                        joiner.toString());
             }
 
             for (int j = 0; j < certPathCheckers.size(); j++) {
@@ -131,8 +125,8 @@ class PKIXMasterCertPathValidator {
 
                 } catch (CertPathValidatorException cpve) {
                     throw new CertPathValidatorException(cpve.getMessage(),
-                        (cpve.getCause() != null) ? cpve.getCause() : cpve,
-                            cpOriginal, cpSize - (i + 1), cpve.getReason());
+                        cpve.getCause(), cpOriginal, cpSize - (i + 1),
+                        cpve.getReason());
                 }
             }
 

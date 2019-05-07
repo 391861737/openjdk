@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2001, 2016, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2001, 2012, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -25,7 +25,6 @@
 
 #include <stdio.h>
 #include <stdlib.h>
-#include <sys/param.h>
 #include <signal.h>
 #include <pthread.h>
 #include <sys/types.h>
@@ -36,6 +35,7 @@
 #include <sys/uio.h>
 #include <unistd.h>
 #include <errno.h>
+
 #include <sys/poll.h>
 
 /*
@@ -292,10 +292,6 @@ int NET_Read(int s, void* buf, size_t len) {
     BLOCKING_IO_RETURN_INT( s, recv(s, buf, len, 0) );
 }
 
-int NET_NonBlockingRead(int s, void* buf, size_t len) {
-    BLOCKING_IO_RETURN_INT( s, recv(s, buf, len, MSG_DONTWAIT));
-}
-
 int NET_ReadV(int s, const struct iovec * vector, int count) {
     BLOCKING_IO_RETURN_INT( s, readv(s, vector, count) );
 }
@@ -348,13 +344,9 @@ int NET_Select(int s, fd_set *readfds, fd_set *writefds,
  * Auto restarts with adjusted timeout if interrupted by
  * signal other than our wakeup signal.
  */
-int NET_Timeout0(int s, long timeout, long currentTime) {
-    long prevtime = currentTime, newtime;
+int NET_Timeout(int s, long timeout) {
+    long prevtime = 0, newtime;
     struct timeval t, *tp = &t;
-    fd_set fds;
-    fd_set* fdsp = NULL;
-    int allocated = 0;
-    threadEntry_t self;
     fdEntry_t *fdEntry = getFdEntry(s);
 
     /*
@@ -370,6 +362,9 @@ int NET_Timeout0(int s, long timeout, long currentTime) {
      */
     if (timeout > 0) {
         /* Timed */
+        struct timeval now;
+        gettimeofday(&now, NULL);
+        prevtime = now.tv_sec * 1000  +  now.tv_usec / 1000;
         t.tv_sec = timeout / 1000;
         t.tv_usec = (timeout % 1000) * 1000;
     } else if (timeout < 0) {
@@ -381,29 +376,20 @@ int NET_Timeout0(int s, long timeout, long currentTime) {
         t.tv_usec = 0;
     }
 
-    if (s < FD_SETSIZE) {
-        fdsp = &fds;
-        FD_ZERO(fdsp);
-    } else {
-        int length = (howmany(s+1, NFDBITS)) * sizeof(int);
-        fdsp = (fd_set *) calloc(1, length);
-        if (fdsp == NULL) {
-            return -1;   // errno will be set to ENOMEM
-        }
-        allocated = 1;
-    }
-    FD_SET(s, fdsp);
-
     for(;;) {
+        fd_set rfds;
         int rv;
+        threadEntry_t self;
 
         /*
          * call select on the fd. If interrupted by our wakeup signal
          * errno will be set to EBADF.
          */
+        FD_ZERO(&rfds);
+        FD_SET(s, &rfds);
 
         startOp(fdEntry, &self);
-        rv = select(s+1, fdsp, 0, 0, tp);
+        rv = select(s+1, &rfds, 0, 0, tp);
         endOp(fdEntry, &self);
 
         /*
@@ -417,8 +403,6 @@ int NET_Timeout0(int s, long timeout, long currentTime) {
                 newtime = now.tv_sec * 1000  +  now.tv_usec / 1000;
                 timeout -= newtime - prevtime;
                 if (timeout <= 0) {
-                    if (allocated != 0)
-                        free(fdsp);
                     return 0;
                 }
                 prevtime = newtime;
@@ -426,8 +410,6 @@ int NET_Timeout0(int s, long timeout, long currentTime) {
                 t.tv_usec = (timeout % 1000) * 1000;
             }
         } else {
-            if (allocated != 0)
-                free(fdsp);
             return rv;
         }
 

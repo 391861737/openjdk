@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2003, 2014, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2003, 2013, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -233,7 +233,7 @@ JNIEXPORT jboolean JNICALL Java_sun_awt_windows_ThemeReader_isThemed
         Themed = InitThemes();
         TryLoadingThemeLib = TRUE;
     }
-    return JNI_IS_TRUE(Themed);
+    return Themed;
 }
 
 
@@ -271,10 +271,6 @@ JNIEXPORT jlong JNICALL Java_sun_awt_windows_ThemeReader_openTheme
 (JNIEnv *env, jclass klass, jstring widget) {
 
     LPCTSTR str = (LPCTSTR) JNU_GetStringPlatformChars(env, widget, NULL);
-    if (str == NULL) {
-        JNU_ThrowOutOfMemoryError(env, 0);
-        return 0;
-    }
     // We need to open the Theme on a Window that will stick around.
     // The best one for that purpose is the Toolkit window.
     HTHEME htheme = OpenThemeData(AwtToolkit::GetInstance().GetHWnd(), str);
@@ -489,7 +485,6 @@ jobject newInsets(JNIEnv *env, jint top, jint left, jint bottom, jint right) {
 
     if (insetsClassID == NULL) {
         jclass insetsClassIDLocal = env->FindClass("java/awt/Insets");
-        CHECK_NULL_RETURN(insetsClassIDLocal, NULL);
         insetsClassID = (jclass)env->NewGlobalRef(insetsClassIDLocal);
         env->DeleteLocalRef(insetsClassIDLocal);
     }
@@ -538,7 +533,7 @@ JNIEXPORT jobject JNICALL Java_sun_awt_windows_ThemeReader_getThemeMargins
 JNIEXPORT jboolean JNICALL Java_sun_awt_windows_ThemeReader_isThemePartDefined
 (JNIEnv *env, jclass klass, jlong theme, jint part, jint state) {
     HTHEME hTheme = (HTHEME) theme;
-    return JNI_IS_TRUE(IsThemePartDefined(hTheme, part, state));
+    return IsThemePartDefined(hTheme, part, state);
 }
 
 /*
@@ -567,14 +562,12 @@ JNIEXPORT jobject JNICALL Java_sun_awt_windows_ThemeReader_getColor
 
         if (colorClassID == NULL) {
             jclass colorClassIDLocal = env->FindClass("java/awt/Color");
-            CHECK_NULL_RETURN(colorClassIDLocal, NULL);
             colorClassID = (jclass)env->NewGlobalRef(colorClassIDLocal);
             env->DeleteLocalRef(colorClassIDLocal);
         }
 
         if (colorMID == NULL) {
             colorMID = env->GetMethodID(colorClassID, "<init>", "(III)V");
-            CHECK_NULL_RETURN(colorMID, NULL);
         }
         jobject colorObj = env->NewObject(colorClassID,
                 colorMID, GetRValue(color), GetGValue(color),GetBValue(color));
@@ -635,7 +628,7 @@ JNIEXPORT jboolean JNICALL Java_sun_awt_windows_ThemeReader_getBoolean
         HRESULT hres = GetThemeBool(hTheme, part, state, prop, &retVal);
         assert_result(hres, env);
     }
-    return JNI_IS_TRUE(retVal);
+    return retVal;
 }
 
 /*
@@ -647,10 +640,14 @@ JNIEXPORT jboolean JNICALL Java_sun_awt_windows_ThemeReader_getSysBoolean
 (JNIEnv *env, jclass klass, jlong  theme, jint prop) {
     HTHEME hTheme = (HTHEME)theme;
     if (hTheme != NULL) {
-        return JNI_IS_TRUE(GetThemeSysBool(hTheme, prop));
+        return GetThemeSysBool(hTheme, prop);
     }
-    return JNI_FALSE;
+    return FALSE;
 }
+
+
+
+
 
 /*
  * Class:     sun_awt_windows_ThemeReader
@@ -676,14 +673,12 @@ JNIEXPORT jobject JNICALL Java_sun_awt_windows_ThemeReader_getPoint
 
         if (pointClassID == NULL) {
             jclass pointClassIDLocal = env->FindClass("java/awt/Point");
-            CHECK_NULL_RETURN(pointClassIDLocal, NULL);
             pointClassID = (jclass)env->NewGlobalRef(pointClassIDLocal);
             env->DeleteLocalRef(pointClassIDLocal);
         }
 
         if (pointMID == NULL) {
             pointMID = env->GetMethodID(pointClassID, "<init>", "(II)V");
-            CHECK_NULL_RETURN(pointMID, NULL);
         }
         jobject pointObj = env->NewObject(pointClassID, pointMID, point.x, point.y);
 
@@ -725,13 +720,11 @@ JNIEXPORT jobject JNICALL Java_sun_awt_windows_ThemeReader_getPosition
         static jclass dimClassID = NULL;
         if (dimClassID == NULL) {
             jclass dimClassIDLocal = env->FindClass("java/awt/Dimension");
-            CHECK_NULL_RETURN(dimClassIDLocal, NULL);
             dimClassID = (jclass)env->NewGlobalRef(dimClassIDLocal);
             env->DeleteLocalRef(dimClassIDLocal);
         }
         if (dimMID == NULL) {
             dimMID = env->GetMethodID(dimClassID, "<init>", "(II)V");
-            CHECK_NULL_RETURN(dimMID, NULL);
         }
         jobject dimObj = env->NewObject(dimClassID, dimMID, point.x, point.y);
 
@@ -762,13 +755,11 @@ JNIEXPORT jobject JNICALL Java_sun_awt_windows_ThemeReader_getPartSize
             static jclass dimClassID = NULL;
             if (dimClassID == NULL) {
                 jclass dimClassIDLocal = env->FindClass("java/awt/Dimension");
-                CHECK_NULL_RETURN(dimClassIDLocal, NULL);
                 dimClassID = (jclass)env->NewGlobalRef(dimClassIDLocal);
                 env->DeleteLocalRef(dimClassIDLocal);
             }
             if (dimMID == NULL) {
                 dimMID = env->GetMethodID(dimClassID, "<init>", "(II)V");
-                CHECK_NULL_RETURN(dimMID, NULL);
             }
             jobject dimObj = env->NewObject(dimClassID, dimMID, size.cx, size.cy);
             if (safe_ExceptionOccurred(env)) {

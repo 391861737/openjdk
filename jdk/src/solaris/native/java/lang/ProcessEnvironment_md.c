@@ -53,7 +53,6 @@ Java_java_lang_ProcessEnvironment_environ(JNIEnv *env, jclass ign)
     jsize i, j;
     jobjectArray result;
     jclass byteArrCls = (*env)->FindClass(env, "[B");
-    CHECK_NULL_RETURN(byteArrCls, NULL);
 
     for (i = 0; environ[i]; i++) {
         /* Ignore corrupted environment variables */
@@ -62,7 +61,7 @@ Java_java_lang_ProcessEnvironment_environ(JNIEnv *env, jclass ign)
     }
 
     result = (*env)->NewObjectArray(env, 2*count, byteArrCls, 0);
-    CHECK_NULL_RETURN(result, NULL);
+    if (result == NULL) return NULL;
 
     for (i = 0, j = 0; environ[i]; i++) {
         const char * varEnd = strchr(environ[i], '=');
@@ -73,9 +72,9 @@ Java_java_lang_ProcessEnvironment_environ(JNIEnv *env, jclass ign)
             jsize varLength = varEnd - environ[i];
             jsize valLength = strlen(valBeg);
             var = (*env)->NewByteArray(env, varLength);
-            CHECK_NULL_RETURN(var, NULL);
+            if (var == NULL) return NULL;
             val = (*env)->NewByteArray(env, valLength);
-            CHECK_NULL_RETURN(val, NULL);
+            if (val == NULL) return NULL;
             (*env)->SetByteArrayRegion(env, var, 0, varLength,
                                        (jbyte*) environ[i]);
             (*env)->SetByteArrayRegion(env, val, 0, valLength,

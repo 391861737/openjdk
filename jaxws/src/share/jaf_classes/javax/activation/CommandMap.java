@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 1997, 2013, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 1997, 2005, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -25,9 +25,6 @@
 
 package javax.activation;
 
-import java.util.Map;
-import java.util.WeakHashMap;
-
 
 /**
  * The CommandMap class provides an interface to a registry of
@@ -41,8 +38,6 @@ import java.util.WeakHashMap;
  */
 public abstract class CommandMap {
     private static CommandMap defaultCommandMap = null;
-    private static Map<ClassLoader,CommandMap> map =
-                                new WeakHashMap<ClassLoader,CommandMap>();
 
     /**
      * Get the default CommandMap.
@@ -61,18 +56,11 @@ public abstract class CommandMap {
      *
      * @return the CommandMap
      */
-    public static synchronized CommandMap getDefaultCommandMap() {
-        if (defaultCommandMap != null)
-            return defaultCommandMap;
+    public static CommandMap getDefaultCommandMap() {
+        if (defaultCommandMap == null)
+            defaultCommandMap = new MailcapCommandMap();
 
-        // fetch per-thread-context-class-loader default
-        ClassLoader tccl = SecuritySupport.getContextClassLoader();
-        CommandMap def = map.get(tccl);
-        if (def == null) {
-            def = new MailcapCommandMap();
-            map.put(tccl, def);
-        }
-        return def;
+        return defaultCommandMap;
     }
 
     /**
@@ -83,7 +71,7 @@ public abstract class CommandMap {
      * @exception SecurityException if the caller doesn't have permission
      *                                  to change the default
      */
-    public static synchronized void setDefaultCommandMap(CommandMap commandMap) {
+    public static void setDefaultCommandMap(CommandMap commandMap) {
         SecurityManager security = System.getSecurityManager();
         if (security != null) {
             try {
@@ -91,16 +79,13 @@ public abstract class CommandMap {
                 security.checkSetFactory();
             } catch (SecurityException ex) {
                 // otherwise, we also allow it if this code and the
-                // factory come from the same (non-system) class loader (e.g.,
+                // factory come from the same class loader (e.g.,
                 // the JAF classes were loaded with the applet classes).
-                if (CommandMap.class.getClassLoader() == null ||
-                    CommandMap.class.getClassLoader() !=
+                if (CommandMap.class.getClassLoader() !=
                             commandMap.getClass().getClassLoader())
                     throw ex;
             }
         }
-        // remove any per-thread-context-class-loader CommandMap
-        map.remove(SecuritySupport.getContextClassLoader());
         defaultCommandMap = commandMap;
     }
 

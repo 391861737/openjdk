@@ -25,6 +25,8 @@
 
 package jdk.nashorn.internal.runtime.regexp;
 
+import jdk.nashorn.internal.runtime.ParserException;
+
 import static java.util.regex.Pattern.CASE_INSENSITIVE;
 import static java.util.regex.Pattern.MULTILINE;
 import static java.util.regex.Pattern.UNICODE_CASE;
@@ -32,7 +34,6 @@ import static java.util.regex.Pattern.UNICODE_CASE;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.regex.PatternSyntaxException;
-import jdk.nashorn.internal.runtime.ParserException;
 
 /**
  * Default regular expression implementation based on java.util.regex package.
@@ -44,6 +45,9 @@ public class JdkRegExp extends RegExp {
 
     /** Java regexp pattern to use for match. We compile to one of these */
     private Pattern pattern;
+
+    /** The matcher */
+    private RegExpMatcher matcher;
 
     /**
      * Construct a Regular expression from the given {@code source} and {@code flags} strings.
@@ -91,7 +95,14 @@ public class JdkRegExp extends RegExp {
             return null; // never matches or similar, e.g. a[]
         }
 
-        return new DefaultMatcher(str);
+        RegExpMatcher currentMatcher = this.matcher;
+
+        if (currentMatcher == null || matcher.getInput() != str) {
+            currentMatcher = new DefaultMatcher(str);
+            this.matcher  = currentMatcher;
+        }
+
+        return currentMatcher;
     }
 
     class DefaultMatcher implements RegExpMatcher {

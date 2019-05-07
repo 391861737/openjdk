@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008, 2016, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2008, 2013, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -29,8 +29,8 @@
 #include "interpreter/oopMapCache.hpp"
 #include "memory/allocation.inline.hpp"
 #include "memory/oopFactory.hpp"
-#include "prims/methodHandles.hpp"
 #include "prims/jvmtiRedefineClassesTrace.hpp"
+#include "prims/methodHandles.hpp"
 #include "runtime/compilationPolicy.hpp"
 #include "runtime/javaCalls.hpp"
 #include "runtime/reflection.hpp"
@@ -173,7 +173,7 @@ oop MethodHandles::init_MemberName(Handle mname, Handle target) {
   return NULL;
 }
 
-oop MethodHandles::init_method_MemberName(Handle mname, CallInfo& info, bool intern) {
+oop MethodHandles::init_method_MemberName(Handle mname, CallInfo& info) {
   assert(info.resolved_appendix().is_null(), "only normal methods here");
   methodHandle m = info.resolved_method();
   KlassHandle m_klass = m->method_holder();
@@ -188,7 +188,7 @@ oop MethodHandles::init_method_MemberName(Handle mname, CallInfo& info, bool int
     flags |= IS_METHOD | (JVM_REF_invokeInterface << REFERENCE_KIND_SHIFT);
     if (TraceInvokeDynamic) {
       ResourceMark rm;
-      tty->print_cr("memberName: invokeinterface method_holder::method: %s, itableindex: %d, access_flags:",
+      tty->print_cr(" MEMberName: invokeinterface method_holder::method: %s, itableindex: %d, access_flags:",
             Method::name_and_sig_as_C_string(m->method_holder(), m->name(), m->signature()),
             vmindex);
        m->access_flags().print_on(tty);
@@ -228,7 +228,7 @@ oop MethodHandles::init_method_MemberName(Handle mname, CallInfo& info, bool int
     }
     if (TraceInvokeDynamic) {
       ResourceMark rm;
-      tty->print_cr("memberName: invokevirtual method_holder::method: %s, receiver: %s, vtableindex: %d, access_flags:",
+      tty->print_cr(" MEMberName: invokevirtual method_holder::method: %s, receiver: %s, vtableindex: %d, access_flags:",
             Method::name_and_sig_as_C_string(m->method_holder(), m->name(), m->signature()),
             m_klass->internal_name(), vmindex);
        m->access_flags().print_on(tty);
@@ -270,7 +270,10 @@ oop MethodHandles::init_method_MemberName(Handle mname, CallInfo& info, bool int
   // If relevant, the vtable or itable value is stored as vmindex.
   // This is done eagerly, since it is readily available without
   // constructing any new objects.
-  return m->method_holder()->add_member_name(mname, intern);
+  // TO DO: maybe intern mname_oop
+  m->method_holder()->add_member_name(m->method_idnum(), mname);
+
+  return mname();
 }
 
 oop MethodHandles::init_field_MemberName(Handle mname, fieldDescriptor& fd, bool is_setter) {
@@ -533,7 +536,7 @@ void MethodHandles::print_as_basic_type_signature_on(outputStream* st,
           // unknown letter, or we don't want to know its name
           st->put(ch);
         } else {
-          st->print("%s", n);
+          st->print(n);
           prev_type = true;
         }
         break;
@@ -673,7 +676,7 @@ Handle MethodHandles::resolve_MemberName(Handle mname, KlassHandle caller, TRAPS
                         defc, name, type, caller, THREAD);
         } else if (ref_kind == JVM_REF_invokeSpecial) {
           LinkResolver::resolve_special_call(result,
-                        Handle(), defc, name, type, caller, caller.not_null(), THREAD);
+                        defc, name, type, caller, caller.not_null(), THREAD);
         } else if (ref_kind == JVM_REF_invokeVirtual) {
           LinkResolver::resolve_virtual_call(result, Handle(), defc,
                         defc, name, type, caller, caller.not_null(), false, THREAD);
@@ -700,7 +703,7 @@ Handle MethodHandles::resolve_MemberName(Handle mname, KlassHandle caller, TRAPS
         assert(!HAS_PENDING_EXCEPTION, "");
         if (name == vmSymbols::object_initializer_name()) {
           LinkResolver::resolve_special_call(result,
-                        Handle(), defc, name, type, caller, caller.not_null(), THREAD);
+                        defc, name, type, caller, caller.not_null(), THREAD);
         } else {
           break;                // will throw after end of switch
         }
@@ -911,9 +914,7 @@ int MethodHandles::find_MemberNames(KlassHandle k,
         if (!java_lang_invoke_MemberName::is_instance(result()))
           return -99;  // caller bug!
         CallInfo info(m);
-        // Since this is going through the methods to create MemberNames, don't search
-        // for matching methods already in the table
-        oop saved = MethodHandles::init_method_MemberName(result, info, /*intern*/false);
+        oop saved = MethodHandles::init_method_MemberName(result, info);
         if (saved != result())
           results->obj_at_put(rfill-1, saved);  // show saved instance to user
       } else if (++overflow >= overflow_limit) {
@@ -945,73 +946,64 @@ MemberNameTable::~MemberNameTable() {
   }
 }
 
-oop MemberNameTable::add_member_name(jweak mem_name_wref) {
+void MemberNameTable::add_member_name(int index, jweak mem_name_wref) {
   assert_locked_or_safepoint(MemberNameTable_lock);
-  this->push(mem_name_wref);
-  return JNIHandles::resolve(mem_name_wref);
+  this->at_put_grow(index, mem_name_wref);
 }
 
-oop MemberNameTable::find_or_add_member_name(jweak mem_name_wref) {
+// Return a member name oop or NULL.
+oop MemberNameTable::get_member_name(int index) {
   assert_locked_or_safepoint(MemberNameTable_lock);
-  oop new_mem_name = JNIHandles::resolve(mem_name_wref);
 
-  // Find matching member name in the list.
-  // This is linear because these are short lists.
-  int len = this->length();
-  int new_index = len;
-  for (int idx = 0; idx < len; idx++) {
-    oop mname = JNIHandles::resolve(this->at(idx));
-    if (mname == NULL) {
-      new_index = idx;
-      continue;
-    }
-    if (java_lang_invoke_MemberName::equals(new_mem_name, mname)) {
-      JNIHandles::destroy_weak_global(mem_name_wref);
-      return mname;
-    }
-  }
-  // Not found, push the new one, or reuse empty slot
-  this->at_put_grow(new_index, mem_name_wref);
-  return new_mem_name;
+  jweak ref = this->at(index);
+  oop mem_name = JNIHandles::resolve(ref);
+  return mem_name;
 }
 
 #if INCLUDE_JVMTI
-// It is called at safepoint only for RedefineClasses
-void MemberNameTable::adjust_method_entries(InstanceKlass* holder, bool * trace_name_printed) {
-  assert(SafepointSynchronize::is_at_safepoint(), "only called at safepoint");
-  // For each redefined method
-  for (int idx = 0; idx < length(); idx++) {
+oop MemberNameTable::find_member_name_by_method(Method* old_method) {
+  assert_locked_or_safepoint(MemberNameTable_lock);
+  oop found = NULL;
+  int len = this->length();
+
+  for (int idx = 0; idx < len; idx++) {
     oop mem_name = JNIHandles::resolve(this->at(idx));
     if (mem_name == NULL) {
       continue;
     }
-    Method* old_method = (Method*)java_lang_invoke_MemberName::vmtarget(mem_name);
-
-    if (old_method == NULL || !old_method->is_old()) {
-      continue; // skip uninteresting entries
+    Method* method = (Method*)java_lang_invoke_MemberName::vmtarget(mem_name);
+    if (method == old_method) {
+      found = mem_name;
+      break;
     }
-    if (old_method->is_deleted()) {
-      // skip entries with deleted methods
-      continue;
-    }
-    Method* new_method = holder->method_with_idnum(old_method->orig_method_idnum());
+  }
+  return found;
+}
 
-    assert(new_method != NULL, "method_with_idnum() should not be NULL");
-    assert(old_method != new_method, "sanity check");
+// It is called at safepoint only
+void MemberNameTable::adjust_method_entries(Method** old_methods, Method** new_methods,
+                                            int methods_length, bool *trace_name_printed) {
+  assert(SafepointSynchronize::is_at_safepoint(), "only called at safepoint");
+  // search the MemberNameTable for uses of either obsolete or EMCP methods
+  for (int j = 0; j < methods_length; j++) {
+    Method* old_method = old_methods[j];
+    Method* new_method = new_methods[j];
+    oop mem_name = find_member_name_by_method(old_method);
+    if (mem_name != NULL) {
+      java_lang_invoke_MemberName::adjust_vmtarget(mem_name, new_method);
 
-    java_lang_invoke_MemberName::set_vmtarget(mem_name, new_method);
-
-    if (RC_TRACE_IN_RANGE(0x00100000, 0x00400000)) {
-      if (!(*trace_name_printed)) {
-        // RC_TRACE_MESG macro has an embedded ResourceMark
-        RC_TRACE_MESG(("adjust: name=%s",
-                       old_method->method_holder()->external_name()));
-        *trace_name_printed = true;
+      if (RC_TRACE_IN_RANGE(0x00100000, 0x00400000)) {
+        if (!(*trace_name_printed)) {
+          // RC_TRACE_MESG macro has an embedded ResourceMark
+          RC_TRACE_MESG(("adjust: name=%s",
+                         old_method->method_holder()->external_name()));
+          *trace_name_printed = true;
+        }
+        // RC_TRACE macro has an embedded ResourceMark
+        RC_TRACE(0x00400000, (" MEMberName method update: %s(%s)",
+                              new_method->name()->as_C_string(),
+                              new_method->signature()->as_C_string()));
       }
-      // RC_TRACE macro has an embedded ResourceMark
-      RC_TRACE(0x00400000, ("MemberName method update: %s(%s)",
-                            new_method->name()->as_C_string(),
-                            new_method->signature()->as_C_string()));
     }
   }
 }
@@ -1329,40 +1321,40 @@ JVM_END
 #define LANG "Ljava/lang/"
 #define JLINV "Ljava/lang/invoke/"
 
-#define OBJ   LANG"Object;"
+#define OBJ   LANG" OBJect;"
 #define CLS   LANG"Class;"
 #define STRG  LANG"String;"
 #define CS    JLINV"CallSite;"
 #define MT    JLINV"MethodType;"
 #define MH    JLINV"MethodHandle;"
-#define MEM   JLINV"MemberName;"
+#define MEM   JLINV" MEMberName;"
 
 #define CC (char*)  /*cast a literal from (const char*)*/
 #define FN_PTR(f) CAST_FROM_FN_PTR(void*, &f)
 
 // These are the native methods on java.lang.invoke.MethodHandleNatives.
 static JNINativeMethod MHN_methods[] = {
-  {CC"init",                      CC"("MEM""OBJ")V",                     FN_PTR(MHN_init_Mem)},
-  {CC"expand",                    CC"("MEM")V",                          FN_PTR(MHN_expand_Mem)},
-  {CC"resolve",                   CC"("MEM""CLS")"MEM,                   FN_PTR(MHN_resolve_Mem)},
+  {CC"init",                      CC"(" MEM"" OBJ")V",                     FN_PTR(MHN_init_Mem)},
+  {CC"expand",                    CC"(" MEM")V",                          FN_PTR(MHN_expand_Mem)},
+  {CC"resolve",                   CC"(" MEM"" CLS")" MEM,                   FN_PTR(MHN_resolve_Mem)},
   {CC"getConstant",               CC"(I)I",                              FN_PTR(MHN_getConstant)},
   //  static native int getNamedCon(int which, Object[] name)
-  {CC"getNamedCon",               CC"(I["OBJ")I",                        FN_PTR(MHN_getNamedCon)},
+  {CC"getNamedCon",               CC"(I[" OBJ")I",                        FN_PTR(MHN_getNamedCon)},
   //  static native int getMembers(Class<?> defc, String matchName, String matchSig,
   //          int matchFlags, Class<?> caller, int skip, MemberName[] results);
-  {CC"getMembers",                CC"("CLS""STRG""STRG"I"CLS"I["MEM")I", FN_PTR(MHN_getMembers)},
-  {CC"objectFieldOffset",         CC"("MEM")J",                          FN_PTR(MHN_objectFieldOffset)},
-  {CC"setCallSiteTargetNormal",   CC"("CS""MH")V",                       FN_PTR(MHN_setCallSiteTargetNormal)},
-  {CC"setCallSiteTargetVolatile", CC"("CS""MH")V",                       FN_PTR(MHN_setCallSiteTargetVolatile)},
-  {CC"staticFieldOffset",         CC"("MEM")J",                          FN_PTR(MHN_staticFieldOffset)},
-  {CC"staticFieldBase",           CC"("MEM")"OBJ,                        FN_PTR(MHN_staticFieldBase)},
-  {CC"getMemberVMInfo",           CC"("MEM")"OBJ,                        FN_PTR(MHN_getMemberVMInfo)}
+  {CC"getMembers",                CC"(" CLS"" STRG"" STRG"I" CLS"I[" MEM")I", FN_PTR(MHN_getMembers)},
+  {CC" OBJectFieldOffset",         CC"(" MEM")J",                          FN_PTR(MHN_objectFieldOffset)},
+  {CC"setCallSiteTargetNormal",   CC"(" CS"" MH")V",                       FN_PTR(MHN_setCallSiteTargetNormal)},
+  {CC"setCallSiteTargetVolatile", CC"(" CS"" MH")V",                       FN_PTR(MHN_setCallSiteTargetVolatile)},
+  {CC"staticFieldOffset",         CC"(" MEM")J",                          FN_PTR(MHN_staticFieldOffset)},
+  {CC"staticFieldBase",           CC"(" MEM")" OBJ,                        FN_PTR(MHN_staticFieldBase)},
+  {CC"getMemberVMInfo",           CC"(" MEM")" OBJ,                        FN_PTR(MHN_getMemberVMInfo)}
 };
 
 static JNINativeMethod MH_methods[] = {
   // UnsupportedOperationException throwers
-  {CC"invoke",                    CC"(["OBJ")"OBJ,                       FN_PTR(MH_invoke_UOE)},
-  {CC"invokeExact",               CC"(["OBJ")"OBJ,                       FN_PTR(MH_invokeExact_UOE)}
+  {CC"invoke",                    CC"([" OBJ")" OBJ,                       FN_PTR(MH_invoke_UOE)},
+  {CC"invokeExact",               CC"([" OBJ")" OBJ,                       FN_PTR(MH_invokeExact_UOE)}
 };
 
 /**

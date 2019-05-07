@@ -219,31 +219,38 @@ public final class CWarningWindow extends CPlatformWindow
     @Override
     public void setVisible(boolean visible) {
         synchronized (lock) {
-            execute(ptr -> {
-                // Actually show or hide the window
-                if (visible) {
-                    CWrapper.NSWindow.orderFront(ptr);
-                } else {
-                    CWrapper.NSWindow.orderOut(ptr);
+            final long nsWindowPtr = getNSWindowPtr();
+
+            // Process parent-child relationship when hiding
+            if (!visible) {
+                // Unparent myself
+                if (owner != null && owner.isVisible()) {
+                    CWrapper.NSWindow.removeChildWindow(
+                            owner.getNSWindowPtr(), nsWindowPtr);
                 }
-            });
+            }
+
+            // Actually show or hide the window
+            if (visible) {
+                CWrapper.NSWindow.orderFront(nsWindowPtr);
+            } else {
+                CWrapper.NSWindow.orderOut(nsWindowPtr);
+            }
 
             this.visible = visible;
 
             // Manage parent-child relationship when showing
             if (visible) {
-                // Order myself above my parent
+                // Add myself as a child
                 if (owner != null && owner.isVisible()) {
-                    owner.execute(ownerPtr -> {
-                        execute(ptr -> {
-                            CWrapper.NSWindow.orderWindow(ptr,
-                                                          CWrapper.NSWindow.NSWindowAbove,
-                                                          ownerPtr);
-                        });
-                    });
+                    CWrapper.NSWindow.addChildWindow(owner.getNSWindowPtr(),
+                            nsWindowPtr, CWrapper.NSWindow.NSWindowAbove);
 
                     // do not allow security warning to be obscured by other windows
-                    applyWindowLevel(ownerWindow);
+                    if (ownerWindow.isAlwaysOnTop()) {
+                        CWrapper.NSWindow.setLevel(nsWindowPtr,
+                                CWrapper.NSWindow.NSFloatingWindowLevel);
+                    }
                 }
             }
         }

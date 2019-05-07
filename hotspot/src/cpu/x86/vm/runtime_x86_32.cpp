@@ -116,7 +116,7 @@ void OptoRuntime::generate_exception_blob() {
   // No registers to map, rbp is known implicitly
   oop_maps->add_gc_map( __ pc() - start,  new OopMap( framesize, 0 ));
   __ get_thread(rcx);
-  __ reset_last_Java_frame(rcx, false);
+  __ reset_last_Java_frame(rcx, false, false);
 
   // Restore callee-saved registers
   __ movptr(rbp, Address(rsp, rbp_off * wordSize));
@@ -125,6 +125,10 @@ void OptoRuntime::generate_exception_blob() {
   __ pop(rdx); // Exception pc
 
   // rax: exception handler for given <exception oop/exception pc>
+
+  // Restore SP from BP if the exception PC is a MethodHandle call site.
+  __ cmpl(Address(rcx, JavaThread::is_method_handle_return_offset()), 0);
+  __ cmovptr(Assembler::notEqual, rsp, rbp_mh_SP_save);
 
   // We have a handler in rax, (could be deopt blob)
   // rdx - throwing pc, deopt blob will need it.

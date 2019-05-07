@@ -65,11 +65,7 @@ public class OGLSurfaceDataProxy extends SurfaceDataProxy {
                                            int w, int h)
     {
         if (cachedData == null) {
-            try {
-                cachedData = oglgc.createManagedSurface(w, h, transparency);
-            } catch (OutOfMemoryError er) {
-                return null;
-            }
+            cachedData = oglgc.createManagedSurface(w, h, transparency);
         }
         return cachedData;
     }

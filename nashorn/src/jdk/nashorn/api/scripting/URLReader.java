@@ -30,16 +30,12 @@ import java.io.IOException;
 import java.io.Reader;
 import java.net.URL;
 import java.nio.charset.Charset;
-import java.util.Objects;
 import jdk.nashorn.internal.runtime.Source;
 
 /**
  * A Reader that reads from a URL. Used to make sure that the reader
  * reads content from given URL and can be trusted to do so.
- *
- * @since 1.8u40
  */
-@jdk.Exported
 public final class URLReader extends Reader {
     // underlying URL
     private final URL url;
@@ -78,12 +74,14 @@ public final class URLReader extends Reader {
      * @throws NullPointerException if url is null
      */
     public URLReader(final URL url, final Charset cs) {
-        this.url = Objects.requireNonNull(url);
+        // null check
+        url.getClass();
+        this.url = url;
         this.cs  = cs;
     }
 
     @Override
-    public int read(final char cbuf[], final int off, final int len) throws IOException {
+    public int read(char cbuf[], int off, int len) throws IOException {
         return getReader().read(cbuf, off, len);
     }
 
@@ -103,7 +101,7 @@ public final class URLReader extends Reader {
     /**
      * Charset used by this reader
      *
-     * @return the Charset used to convert bytes to chars
+     * @return the Chartset used to convert bytes to chars
      */
     public Charset getCharset() {
         return cs;

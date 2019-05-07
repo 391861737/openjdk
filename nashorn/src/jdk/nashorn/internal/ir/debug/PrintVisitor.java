@@ -29,30 +29,24 @@ import java.util.List;
 import jdk.nashorn.internal.ir.BinaryNode;
 import jdk.nashorn.internal.ir.Block;
 import jdk.nashorn.internal.ir.BlockStatement;
-import jdk.nashorn.internal.ir.BreakNode;
 import jdk.nashorn.internal.ir.CaseNode;
 import jdk.nashorn.internal.ir.CatchNode;
-import jdk.nashorn.internal.ir.ContinueNode;
 import jdk.nashorn.internal.ir.ExpressionStatement;
 import jdk.nashorn.internal.ir.ForNode;
 import jdk.nashorn.internal.ir.FunctionNode;
-import jdk.nashorn.internal.ir.IdentNode;
 import jdk.nashorn.internal.ir.IfNode;
-import jdk.nashorn.internal.ir.JoinPredecessor;
-import jdk.nashorn.internal.ir.JoinPredecessorExpression;
 import jdk.nashorn.internal.ir.LabelNode;
-import jdk.nashorn.internal.ir.LocalVariableConversion;
+import jdk.nashorn.internal.ir.LexicalContext;
 import jdk.nashorn.internal.ir.Node;
 import jdk.nashorn.internal.ir.SplitNode;
 import jdk.nashorn.internal.ir.Statement;
 import jdk.nashorn.internal.ir.SwitchNode;
-import jdk.nashorn.internal.ir.ThrowNode;
 import jdk.nashorn.internal.ir.TryNode;
 import jdk.nashorn.internal.ir.UnaryNode;
 import jdk.nashorn.internal.ir.VarNode;
 import jdk.nashorn.internal.ir.WhileNode;
 import jdk.nashorn.internal.ir.WithNode;
-import jdk.nashorn.internal.ir.visitor.SimpleNodeVisitor;
+import jdk.nashorn.internal.ir.visitor.NodeVisitor;
 
 /**
  * Print out the AST as human readable source code.
@@ -60,7 +54,7 @@ import jdk.nashorn.internal.ir.visitor.SimpleNodeVisitor;
  *
  * see the flags --print-parse and --print-lower-parse
  */
-public final class PrintVisitor extends SimpleNodeVisitor {
+public final class PrintVisitor extends NodeVisitor<LexicalContext> {
     /** Tab width */
     private static final int TABWIDTH = 4;
 
@@ -76,29 +70,25 @@ public final class PrintVisitor extends SimpleNodeVisitor {
     /** Print line numbers */
     private final boolean printLineNumbers;
 
-    /** Print inferred and optimistic types */
-    private final boolean printTypes;
-
     private int lastLineNumber = -1;
 
     /**
      * Constructor.
      */
     public PrintVisitor() {
-        this(true, true);
+        this(true);
     }
 
     /**
      * Constructor
      *
      * @param printLineNumbers  should line number nodes be included in the output?
-     * @param printTypes        should we print optimistic and inferred types?
      */
-    public PrintVisitor(final boolean printLineNumbers, final boolean printTypes) {
+    public PrintVisitor(final boolean printLineNumbers) {
+        super(new LexicalContext());
         this.EOLN             = System.lineSeparator();
         this.sb               = new StringBuilder();
         this.printLineNumbers = printLineNumbers;
-        this.printTypes       = printTypes;
     }
 
     /**
@@ -107,7 +97,7 @@ public final class PrintVisitor extends SimpleNodeVisitor {
      * @param root  a node from which to start printing code
      */
     public PrintVisitor(final Node root) {
-        this(root, true, true);
+        this(root, true);
     }
 
     /**
@@ -115,10 +105,9 @@ public final class PrintVisitor extends SimpleNodeVisitor {
      *
      * @param root              a node from which to start printing code
      * @param printLineNumbers  should line numbers nodes be included in the output?
-     * @param printTypes        should we print optimistic and inferred types?
      */
-    public PrintVisitor(final Node root, final boolean printLineNumbers, final boolean printTypes) {
-        this(printLineNumbers, printTypes);
+    public PrintVisitor(final Node root, final boolean printLineNumbers) {
+        this(printLineNumbers);
         visit(root);
     }
 
@@ -146,28 +135,7 @@ public final class PrintVisitor extends SimpleNodeVisitor {
 
     @Override
     public boolean enterDefault(final Node node) {
-        node.toString(sb, printTypes);
-        return false;
-    }
-
-    @Override
-    public boolean enterContinueNode(final ContinueNode node) {
-        node.toString(sb, printTypes);
-        printLocalVariableConversion(node);
-        return false;
-    }
-
-    @Override
-    public boolean enterBreakNode(final BreakNode node) {
-        node.toString(sb, printTypes);
-        printLocalVariableConversion(node);
-        return false;
-    }
-
-    @Override
-    public boolean enterThrowNode(final ThrowNode node) {
-        node.toString(sb, printTypes);
-        printLocalVariableConversion(node);
+        node.toString(sb);
         return false;
     }
 
@@ -180,9 +148,9 @@ public final class PrintVisitor extends SimpleNodeVisitor {
 
         final List<Statement> statements = block.getStatements();
 
-        for (final Statement statement : statements) {
-            if (printLineNumbers) {
-                final int lineNumber = statement.getLineNumber();
+        for (final Node statement : statements) {
+            if (printLineNumbers && (statement instanceof Statement)) {
+                final int lineNumber = ((Statement)statement).getLineNumber();
                 sb.append('\n');
                 if (lineNumber != lastLineNumber) {
                     indent();
@@ -193,6 +161,10 @@ public final class PrintVisitor extends SimpleNodeVisitor {
             indent();
 
             statement.accept(this);
+
+            if (statement instanceof FunctionNode) {
+                continue;
+            }
 
             int  lastIndex = sb.length() - 1;
             char lastChar  = sb.charAt(lastIndex);
@@ -218,7 +190,6 @@ public final class PrintVisitor extends SimpleNodeVisitor {
         sb.append(EOLN);
         indent();
         sb.append('}');
-        printLocalVariableConversion(block);
 
         return false;
     }
@@ -240,31 +211,13 @@ public final class PrintVisitor extends SimpleNodeVisitor {
     }
 
     @Override
-    public boolean enterJoinPredecessorExpression(final JoinPredecessorExpression expr) {
-        expr.getExpression().accept(this);
-        printLocalVariableConversion(expr);
-        return false;
-    }
-
-    @Override
-    public boolean enterIdentNode(final IdentNode identNode) {
-        identNode.toString(sb, printTypes);
-        printLocalVariableConversion(identNode);
-        return true;
-    }
-
-    private void printLocalVariableConversion(final JoinPredecessor joinPredecessor) {
-        LocalVariableConversion.toString(joinPredecessor.getLocalVariableConversion(), sb);
-    }
-
-    @Override
     public boolean enterUnaryNode(final UnaryNode unaryNode) {
         unaryNode.toString(sb, new Runnable() {
             @Override
             public void run() {
-                unaryNode.getExpression().accept(PrintVisitor.this);
+                unaryNode.rhs().accept(PrintVisitor.this);
             }
-        }, printTypes);
+        });
         return false;
     }
 
@@ -276,21 +229,21 @@ public final class PrintVisitor extends SimpleNodeVisitor {
 
     @Override
     public boolean enterForNode(final ForNode forNode) {
-        forNode.toString(sb, printTypes);
+        forNode.toString(sb);
         forNode.getBody().accept(this);
         return false;
     }
 
     @Override
     public boolean enterFunctionNode(final FunctionNode functionNode) {
-        functionNode.toString(sb, printTypes);
+        functionNode.toString(sb);
         enterBlock(functionNode.getBody());
         return false;
     }
 
     @Override
     public boolean enterIfNode(final IfNode ifNode) {
-        ifNode.toString(sb, printTypes);
+        ifNode.toString(sb);
         ifNode.getPass().accept(this);
 
         final Block fail = ifNode.getFail();
@@ -299,12 +252,7 @@ public final class PrintVisitor extends SimpleNodeVisitor {
             sb.append(" else ");
             fail.accept(this);
         }
-        if(ifNode.getLocalVariableConversion() != null) {
-            assert fail == null;
-            sb.append(" else ");
-            printLocalVariableConversion(ifNode);
-            sb.append(";");
-        }
+
         return false;
     }
 
@@ -313,15 +261,15 @@ public final class PrintVisitor extends SimpleNodeVisitor {
         indent -= TABWIDTH;
         indent();
         indent += TABWIDTH;
-        labeledNode.toString(sb, printTypes);
+        labeledNode.toString(sb);
         labeledNode.getBody().accept(this);
-        printLocalVariableConversion(labeledNode);
+
         return false;
     }
 
     @Override
     public boolean enterSplitNode(final SplitNode splitNode) {
-        splitNode.toString(sb, printTypes);
+        splitNode.toString(sb);
         sb.append(EOLN);
         indent += TABWIDTH;
         indent();
@@ -339,7 +287,7 @@ public final class PrintVisitor extends SimpleNodeVisitor {
 
     @Override
     public boolean enterSwitchNode(final SwitchNode switchNode) {
-        switchNode.toString(sb, printTypes);
+        switchNode.toString(sb);
         sb.append(" {");
 
         final List<CaseNode> cases = switchNode.getCases();
@@ -347,20 +295,13 @@ public final class PrintVisitor extends SimpleNodeVisitor {
         for (final CaseNode caseNode : cases) {
             sb.append(EOLN);
             indent();
-            caseNode.toString(sb, printTypes);
-            printLocalVariableConversion(caseNode);
+            caseNode.toString(sb);
             indent += TABWIDTH;
             caseNode.getBody().accept(this);
             indent -= TABWIDTH;
             sb.append(EOLN);
         }
-        if(switchNode.getLocalVariableConversion() != null) {
-            sb.append(EOLN);
-            indent();
-            sb.append("default: ");
-            printLocalVariableConversion(switchNode);
-            sb.append("{}");
-        }
+
         sb.append(EOLN);
         indent();
         sb.append("}");
@@ -370,15 +311,14 @@ public final class PrintVisitor extends SimpleNodeVisitor {
 
     @Override
     public boolean enterTryNode(final TryNode tryNode) {
-        tryNode.toString(sb, printTypes);
-        printLocalVariableConversion(tryNode);
+        tryNode.toString(sb);
         tryNode.getBody().accept(this);
 
         final List<Block> catchBlocks = tryNode.getCatchBlocks();
 
         for (final Block catchBlock : catchBlocks) {
             final CatchNode catchNode = (CatchNode)catchBlock.getStatements().get(0);
-            catchNode.toString(sb, printTypes);
+            catchNode.toString(sb);
             catchNode.getBody().accept(this);
         }
 
@@ -389,17 +329,13 @@ public final class PrintVisitor extends SimpleNodeVisitor {
             finallyBody.accept(this);
         }
 
-        for (final Block inlinedFinally : tryNode.getInlinedFinallies()) {
-            inlinedFinally.accept(this);
-        }
         return false;
     }
 
     @Override
     public boolean enterVarNode(final VarNode varNode) {
-        sb.append(varNode.isConst() ? "const " : varNode.isLet() ? "let " : "var ");
-        varNode.getName().toString(sb, printTypes);
-        printLocalVariableConversion(varNode.getName());
+        sb.append("var ");
+        varNode.getName().toString(sb);
         final Node init = varNode.getInit();
         if (init != null) {
             sb.append(" = ");
@@ -411,14 +347,13 @@ public final class PrintVisitor extends SimpleNodeVisitor {
 
     @Override
     public boolean enterWhileNode(final WhileNode whileNode) {
-        printLocalVariableConversion(whileNode);
         if (whileNode.isDoWhile()) {
             sb.append("do");
             whileNode.getBody().accept(this);
             sb.append(' ');
-            whileNode.toString(sb, printTypes);
+            whileNode.toString(sb);
         } else {
-            whileNode.toString(sb, printTypes);
+            whileNode.toString(sb);
             whileNode.getBody().accept(this);
         }
 
@@ -427,7 +362,7 @@ public final class PrintVisitor extends SimpleNodeVisitor {
 
     @Override
     public boolean enterWithNode(final WithNode withNode) {
-        withNode.toString(sb, printTypes);
+        withNode.toString(sb);
         withNode.getBody().accept(this);
 
         return false;

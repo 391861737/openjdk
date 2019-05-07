@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2003, 2016, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2003, 2012, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -52,6 +52,21 @@ StackMapFrame* StackMapFrame::frame_in_exception_handler(u1 flags) {
   VerificationType* stack = NEW_RESOURCE_ARRAY_IN_THREAD(thr, VerificationType, 1);
   StackMapFrame* frame = new StackMapFrame(_offset, flags, _locals_size, 0, _max_locals, _max_stack, _locals, stack, _verifier);
   return frame;
+}
+
+bool StackMapFrame::has_new_object() const {
+  int32_t i;
+  for (i = 0; i < _max_locals; i++) {
+    if (_locals[i].is_uninitialized()) {
+      return true;
+    }
+  }
+  for (i = 0; i < _stack_size; i++) {
+    if (_stack[i].is_uninitialized()) {
+      return true;
+    }
+  }
+  return false;
 }
 
 void StackMapFrame::initialize_object(
@@ -148,15 +163,54 @@ int StackMapFrame::is_assignable_to(
     VerificationType* from, VerificationType* to, int32_t len, TRAPS) const {
   int32_t i = 0;
   for (i = 0; i < len; i++) {
-    if (!to[i].is_assignable_from(from[i], verifier(), false, THREAD)) {
+    if (!to[i].is_assignable_from(from[i], verifier(), THREAD)) {
       break;
     }
   }
   return i;
 }
 
+bool StackMapFrame::has_flag_match_exception(
+    const StackMapFrame* target) const {
+  // We allow flags of {UninitThis} to assign to {} if-and-only-if the
+  // target frame does not depend upon the current type.
+  // This is slightly too strict, as we need only enforce that the
+  // slots that were initialized by the <init> (the things that were
+  // UninitializedThis before initialize_object() converted them) are unused.
+  // However we didn't save that information so we'll enforce this upon
+  // anything that might have been initialized.  This is a rare situation
+  // and javac never generates code that would end up here, but some profilers
+  // (such as NetBeans) might, when adding exception handlers in <init>
+  // methods to cover the invokespecial instruction.  See 7020118.
+
+  assert(max_locals() == target->max_locals() &&
+         stack_size() == target->stack_size(), "StackMap sizes must match");
+
+  VerificationType top = VerificationType::top_type();
+  VerificationType this_type = verifier()->current_type();
+
+  if (!flag_this_uninit() || target->flags() != 0) {
+    return false;
+  }
+
+  for (int i = 0; i < target->locals_size(); ++i) {
+    if (locals()[i] == this_type && target->locals()[i] != top) {
+      return false;
+    }
+  }
+
+  for (int i = 0; i < target->stack_size(); ++i) {
+    if (stack()[i] == this_type && target->stack()[i] != top) {
+      return false;
+    }
+  }
+
+  return true;
+}
+
 bool StackMapFrame::is_assignable_to(
-    const StackMapFrame* target, ErrorContext* ctx, TRAPS) const {
+    const StackMapFrame* target, bool is_exception_handler,
+    ErrorContext* ctx, TRAPS) const {
   if (_max_locals != target->max_locals()) {
     *ctx = ErrorContext::locals_size_mismatch(
         _offset, (StackMapFrame*)this, (StackMapFrame*)target);
@@ -187,7 +241,8 @@ bool StackMapFrame::is_assignable_to(
     return false;
   }
 
-  if ((_flags | target->flags()) == target->flags()) {
+  bool match_flags = (_flags | target->flags()) == target->flags();
+  if (match_flags || is_exception_handler && has_flag_match_exception(target)) {
     return true;
   } else {
     *ctx = ErrorContext::bad_flags(target->offset(),
@@ -205,7 +260,7 @@ VerificationType StackMapFrame::pop_stack_ex(VerificationType type, TRAPS) {
   }
   VerificationType top = _stack[--_stack_size];
   bool subtype = type.is_assignable_from(
-    top, verifier(), false, CHECK_(VerificationType::bogus_type()));
+    top, verifier(), CHECK_(VerificationType::bogus_type()));
   if (!subtype) {
     verifier()->verify_error(
         ErrorContext::bad_type(_offset, stack_top_ctx(),
@@ -225,7 +280,7 @@ VerificationType StackMapFrame::get_local(
     return VerificationType::bogus_type();
   }
   bool subtype = type.is_assignable_from(_locals[index],
-    verifier(), false, CHECK_(VerificationType::bogus_type()));
+    verifier(), CHECK_(VerificationType::bogus_type()));
   if (!subtype) {
     verifier()->verify_error(
         ErrorContext::bad_type(_offset,
@@ -248,14 +303,14 @@ void StackMapFrame::get_local_2(
         "get long/double overflows locals");
     return;
   }
-  bool subtype = type1.is_assignable_from(_locals[index], verifier(), false, CHECK);
+  bool subtype = type1.is_assignable_from(_locals[index], verifier(), CHECK);
   if (!subtype) {
     verifier()->verify_error(
         ErrorContext::bad_type(_offset,
             TypeOrigin::local(index, this), TypeOrigin::implicit(type1)),
         "Bad local variable type");
   } else {
-    subtype = type2.is_assignable_from(_locals[index + 1], verifier(), false, CHECK);
+    subtype = type2.is_assignable_from(_locals[index + 1], verifier(), CHECK);
     if (!subtype) {
       /* Unreachable? All local store routines convert a split long or double
        * into a TOP during the store.  So we should never end up seeing an

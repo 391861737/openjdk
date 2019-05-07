@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 1997, 2014, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 1997, 2013, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -64,12 +64,7 @@ import java.util.Map;
 @XmlType(name = "EndpointReferenceType", namespace = MemberSubmissionEndpointReference.MSNS)
 public final class MemberSubmissionEndpointReference extends EndpointReference implements MemberSubmissionAddressingConstants {
 
-    private final static ContextClassloaderLocal<JAXBContext> msjc = new ContextClassloaderLocal<JAXBContext>() {
-        @Override
-        protected JAXBContext initialValue() throws Exception {
-            return MemberSubmissionEndpointReference.getMSJaxbContext();
-        }
-    };
+    private final static JAXBContext msjc = MemberSubmissionEndpointReference.getMSJaxbContext();
 
     public MemberSubmissionEndpointReference() {
     }
@@ -91,7 +86,7 @@ public final class MemberSubmissionEndpointReference extends EndpointReference i
         }
 
         try {
-            Unmarshaller unmarshaller = MemberSubmissionEndpointReference.msjc.get().createUnmarshaller();
+            Unmarshaller unmarshaller = MemberSubmissionEndpointReference.msjc.createUnmarshaller();
             MemberSubmissionEndpointReference epr = unmarshaller.unmarshal(source,MemberSubmissionEndpointReference.class).getValue();
 
             this.addr = epr.addr;
@@ -111,7 +106,7 @@ public final class MemberSubmissionEndpointReference extends EndpointReference i
     @Override
     public void writeTo(Result result) {
         try {
-            Marshaller marshaller = MemberSubmissionEndpointReference.msjc.get().createMarshaller();
+            Marshaller marshaller = MemberSubmissionEndpointReference.msjc.createMarshaller();
             //marshaller.setProperty(Marshaller.JAXB_FRAGMENT, true);
             marshaller.marshal(this, result);
         } catch (JAXBException e) {

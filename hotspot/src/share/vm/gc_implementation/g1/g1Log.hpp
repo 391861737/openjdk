@@ -28,7 +28,6 @@
 #include "memory/allocation.hpp"
 
 class G1Log : public AllStatic {
- public:
   typedef enum {
     LevelNone,
     LevelFine,
@@ -36,7 +35,6 @@ class G1Log : public AllStatic {
     LevelFinest
   } LogLevel;
 
- private:
   static LogLevel _level;
 
  public:
@@ -50,10 +48,6 @@ class G1Log : public AllStatic {
 
   inline static bool finest() {
     return _level == LevelFinest;
-  }
-
-  static LogLevel level() {
-    return _level;
   }
 
   static void init();

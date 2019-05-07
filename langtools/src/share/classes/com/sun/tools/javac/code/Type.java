@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 1999, 2014, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 1999, 2013, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -72,28 +72,13 @@ import static com.sun.tools.javac.code.TypeTag.*;
 public abstract class Type extends AnnoConstruct implements TypeMirror {
 
     /** Constant type: no type at all. */
-    public static final JCNoType noType = new JCNoType() {
-        @Override
-        public String toString() {
-            return "none";
-        }
-    };
+    public static final JCNoType noType = new JCNoType();
 
     /** Constant type: special type to be used during recovery of deferred expressions. */
-    public static final JCNoType recoveryType = new JCNoType(){
-        @Override
-        public String toString() {
-            return "recovery";
-        }
-    };
+    public static final JCNoType recoveryType = new JCNoType();
 
     /** Constant type: special type to be used for marking stuck trees. */
-    public static final JCNoType stuckType = new JCNoType() {
-        @Override
-        public String toString() {
-            return "stuck";
-        }
-    };
+    public static final JCNoType stuckType = new JCNoType();
 
     /** If this switch is turned on, the names of type variables
      *  and anonymous classes are printed with hashcodes appended.
@@ -419,14 +404,6 @@ public abstract class Type extends AnnoConstruct implements TypeMirror {
             // compiler to load classes unnecessarily.  This led
             // to regression 6180021.
             && (tsym.flags() & COMPOUND) != 0;
-    }
-
-    public boolean isIntersection() {
-        return false;
-    }
-
-    public boolean isUnion() {
-        return false;
     }
 
     public boolean isInterface() {
@@ -978,11 +955,6 @@ public abstract class Type extends AnnoConstruct implements TypeMirror {
         }
 
         @Override
-        public boolean isUnion() {
-            return true;
-        }
-
-        @Override
         public TypeKind getKind() {
             return TypeKind.UNION;
         }
@@ -1014,11 +986,6 @@ public abstract class Type extends AnnoConstruct implements TypeMirror {
 
         public List<Type> getComponents() {
             return interfaces_field.prepend(supertype_field);
-        }
-
-        @Override
-        public boolean isIntersection() {
-            return true;
         }
 
         public List<Type> getExplicitComponents() {
@@ -1478,19 +1445,12 @@ public abstract class Type extends AnnoConstruct implements TypeMirror {
          * Inference variable bound kinds
          */
         public enum InferenceBound {
-            UPPER {
-                public InferenceBound complement() { return LOWER; }
-            },
-             /** lower bounds */
-            LOWER {
-                public InferenceBound complement() { return UPPER; }
-            },
-             /** equality constraints */
-            EQ {
-                public InferenceBound complement() { return EQ; }
-            };
-
-            public abstract InferenceBound complement();
+            /** upper bounds */
+            UPPER,
+            /** lower bounds */
+            LOWER,
+            /** equality constraints */
+            EQ;
         }
 
         /** inference variable bounds */
@@ -1521,21 +1481,8 @@ public abstract class Type extends AnnoConstruct implements TypeMirror {
         }
 
         public String toString() {
-            return (inst == null) ? qtype + "?" : inst.toString();
-        }
-
-        public String debugString() {
-            String result = "inference var = " + qtype + "\n";
-            if (inst != null) {
-                result += "inst = " + inst + '\n';
-            }
-            for (InferenceBound bound: InferenceBound.values()) {
-                List<Type> aboundList = bounds.get(bound);
-                if (aboundList.size() > 0) {
-                    result += bound + " = " + aboundList + '\n';
-                }
-            }
-            return result;
+            if (inst != null) return inst.toString();
+            else return qtype + "?";
         }
 
         @Override
@@ -1545,7 +1492,8 @@ public abstract class Type extends AnnoConstruct implements TypeMirror {
 
         @Override
         public Type baseType() {
-            return (inst == null) ? this : inst.baseType();
+            if (inst != null) return inst.baseType();
+            else return this;
         }
 
         /** get all bounds of a given kind */

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2011, 2016, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2011, 2013, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -25,8 +25,6 @@
 
 #import <JavaNativeFoundation/JavaNativeFoundation.h>
 
-#import "jni_util.h"
-#import "ThreadUtilities.h"
 #import "LWCToolkit.h"
 #import "AWT_debug.h"
 
@@ -66,7 +64,7 @@ JNF_COCOA_ENTER(env);
 
     /* Get the count */
     CGDisplayCount displayCount;
-    if (CGGetOnlineDisplayList(MAX_DISPLAYS, NULL, &displayCount) != kCGErrorSuccess) {
+    if (CGGetActiveDisplayList(MAX_DISPLAYS, NULL, &displayCount) != kCGErrorSuccess) {
         [JNFException raise:env
                          as:kInternalError
                      reason:"CGGetOnlineDisplayList() failed to get display count"];
@@ -75,36 +73,23 @@ JNF_COCOA_ENTER(env);
 
     /* Allocate an array and get the size list of display Ids */
     CGDirectDisplayID displays[MAX_DISPLAYS];
-    if (CGGetOnlineDisplayList(displayCount, displays, &displayCount) != kCGErrorSuccess) {
+    if (CGGetActiveDisplayList(displayCount, displays, &displayCount) != kCGErrorSuccess) {
         [JNFException raise:env
                          as:kInternalError
                      reason:"CGGetOnlineDisplayList() failed to get display list"];
         return NULL;
     }
 
-    CGDisplayCount i;
-    CGDisplayCount displayActiveCount = 0; //Active and sleeping.
-    for (i = 0; i < displayCount; ++i) {
-        if (CGDisplayMirrorsDisplay(displays[i]) == kCGNullDirectDisplay) {
-            ++displayActiveCount;
-        } else {
-            displays[i] = kCGNullDirectDisplay;
-        }
-    }
-
     /* Allocate a java array for display identifiers */
-    ret = JNFNewIntArray(env, displayActiveCount);
+    ret = JNFNewIntArray(env, displayCount);
 
     /* Initialize and return the backing int array */
     assert(sizeof(jint) >= sizeof(CGDirectDisplayID));
     jint *elems = (*env)->GetIntArrayElements(env, ret, 0);
-    CHECK_NULL_RETURN(elems, NULL);
 
-    /* Filter out the mirrored displays */
-    for (i = 0; i < displayCount; ++i) {
-        if (displays[i] != kCGNullDirectDisplay) {
-            elems[--displayActiveCount] = displays[i];
-        }
+    CGDisplayCount i;
+    for (i = 0; i < displayCount; i++) {
+        elems[i] = displays[i];
     }
 
     (*env)->ReleaseIntArrayElements(env, ret, elems, 0);
@@ -134,21 +119,17 @@ static void displaycb_handle
 {
     if (flags == kCGDisplayBeginConfigurationFlag) return;
 
-    [ThreadUtilities performOnMainThreadWaiting:NO block:^() {
+    JNFPerformEnvBlock(JNFThreadDetachImmediately, ^(JNIEnv *env) {
+        JNFWeakJObjectWrapper *wrapper = (JNFWeakJObjectWrapper *)userInfo;
 
-        JNFPerformEnvBlock(JNFThreadDetachImmediately, ^(JNIEnv *env) {
-            JNFWeakJObjectWrapper *wrapper = (JNFWeakJObjectWrapper *)userInfo;
-
-            jobject graphicsEnv = [wrapper jObjectWithEnv:env];
-            if (graphicsEnv == NULL) return; // ref already GC'd
-            static JNF_CLASS_CACHE(jc_CGraphicsEnvironment, "sun/awt/CGraphicsEnvironment");
-            static JNF_MEMBER_CACHE(jm_displayReconfiguration,
-                    jc_CGraphicsEnvironment, "_displayReconfiguration","(IZ)V");
-            JNFCallVoidMethod(env, graphicsEnv, jm_displayReconfiguration,
-                    (jint) display, (jboolean) flags & kCGDisplayRemoveFlag);
-            (*env)->DeleteLocalRef(env, graphicsEnv);
-        });
-    }];
+        jobject graphicsEnv = [wrapper jObjectWithEnv:env];
+        if (graphicsEnv == NULL) return; // ref already GC'd
+        static JNF_CLASS_CACHE(jc_CGraphicsEnvironment, "sun/awt/CGraphicsEnvironment");
+        static JNF_MEMBER_CACHE(jm_displayReconfiguration, jc_CGraphicsEnvironment, "_displayReconfiguration", "(IZ)V");
+        JNFCallVoidMethod(env, graphicsEnv, jm_displayReconfiguration,
+                            (jint) display, 
+                            (jboolean) flags & kCGDisplayRemoveFlag);
+    });
 }
 
 /*
@@ -164,7 +145,8 @@ Java_sun_awt_CGraphicsEnvironment_registerDisplayReconfiguration
 
 JNF_COCOA_ENTER(env);
 
-    JNFWeakJObjectWrapper *wrapper = [[JNFWeakJObjectWrapper wrapperWithJObject:this withEnv:env] retain];
+    JNFWeakJObjectWrapper *wrapper = [JNFWeakJObjectWrapper wrapperWithJObject:this withEnv:env];
+    CFRetain(wrapper); // pin from ObjC-GC
 
     /* Register the callback */
     if (CGDisplayRegisterReconfigurationCallback(&displaycb_handle, wrapper) != kCGErrorSuccess) {
@@ -204,7 +186,8 @@ JNF_COCOA_ENTER(env);
     }
 
     [wrapper setJObject:NULL withEnv:env]; // more efficiant to pre-clear
-    [wrapper release];
+
+    CFRelease(wrapper);
 
 JNF_COCOA_EXIT(env);
 }

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2001, 2016, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2001, 2013, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -171,10 +171,7 @@ struct entry {
 
   const char* utf8String() {
     assert(tagMatches(CONSTANT_Utf8));
-    if (value.b.len != strlen((const char*)value.b.ptr)) {
-      unpack_abort("bad utf8 encoding");
-      // and fall through
-    }
+    assert(value.b.len == strlen((const char*)value.b.ptr));
     return (const char*)value.b.ptr;
   }
 
@@ -1318,10 +1315,10 @@ void unpacker::read_signature_values(entry* cpMap, int len) {
     CHECK;
     int nc = 0;
 
-    for (int j = 0; j < (int)form.value.b.len; j++) {
-      int c = form.value.b.ptr[j];
-      if (c == 'L') nc++;
+    for ( const char* ncp = form.utf8String() ; *ncp; ncp++) {
+      if (*ncp == 'L')  nc++;
     }
+
     ncTotal += nc;
     e.refs = U_NEW(entry*, cpMap[i].nrefs = 1 + nc);
     CHECK;
@@ -2829,7 +2826,6 @@ void unpacker::putlayout(band** body) {
         }
         assert(!b.le_bci || prevBCI == (int)to_bci(prevBII));
 
-        CHECK;
         switch (b.le_len) {
         case 0: break;
         case 1: putu1(x); break;
@@ -4023,10 +4019,6 @@ uint unpacker::to_bci(uint bii) {
   uint  len =         bcimap.length();
   uint* map = (uint*) bcimap.base();
   assert(len > 0);  // must be initialized before using to_bci
-  if (len == 0) {
-    abort("bad bcimap");
-    return 0;
-  }
   if (bii < len)
     return map[bii];
   // Else it's a fractional or out-of-range BCI.
@@ -4049,7 +4041,6 @@ void unpacker::put_stackmap_type() {
     break;
   case 8: // (8) [PH]
     putu2(to_bci(code_StackMapTable_P.getInt()));
-    CHECK;
     break;
   }
 }
@@ -4097,7 +4088,6 @@ void unpacker::write_bc_ops() {
   CHECK;
 
   for (int curIP = 0; ; curIP++) {
-    CHECK;
     int curPC = (int)(wpoffset() - codeBase);
     bcimap.add(curPC);
     ensure_put_space(10);  // covers most instrs w/o further bounds check
@@ -4339,7 +4329,6 @@ void unpacker::write_bc_ops() {
     int   curIP  = code_fixup_source.get(i);
     int   destIP = curIP + bc_label.getInt();
     int   span   = to_bci(destIP) - to_bci(curIP);
-    CHECK;
     switch (type) {
     case 2: putu2_at(bp, (ushort)span); break;
     case 4: putu4_at(bp,         span); break;
@@ -4536,13 +4525,11 @@ int unpacker::write_attrs(int attrc, julong indexBits) {
           if (tag <= 127) {
             // (64-127)  [(2)]
             if (tag >= 64)  put_stackmap_type();
-            CHECK_0;
           } else if (tag <= 251) {
             // (247)     [(1)(2)]
             // (248-251) [(1)]
             if (tag >= 247)  putu2(code_StackMapTable_offset.getInt());
             if (tag == 247)  put_stackmap_type();
-            CHECK_0;
           } else if (tag <= 254) {
             // (252)     [(1)(2)]
             // (253)     [(1)(2)(2)]
@@ -4569,7 +4556,6 @@ int unpacker::write_attrs(int attrc, julong indexBits) {
         putu2(count = code_LineNumberTable_N.getInt());
         for (j = 0; j < count; j++) {
           putu2(to_bci(code_LineNumberTable_bci_P.getInt()));
-          CHECK_0;
           putu2(code_LineNumberTable_line.getInt());
         }
         break;
@@ -4580,11 +4566,9 @@ int unpacker::write_attrs(int attrc, julong indexBits) {
         for (j = 0; j < count; j++) {
           int bii = code_LocalVariableTable_bci_P.getInt();
           int bci = to_bci(bii);
-          CHECK_0;
           putu2(bci);
           bii    += code_LocalVariableTable_span_O.getInt();
           putu2(to_bci(bii) - bci);
-          CHECK_0;
           putref(code_LocalVariableTable_name_RU.getRefN());
           CHECK_0;
           putref(code_LocalVariableTable_type_RS.getRefN());
@@ -4599,11 +4583,9 @@ int unpacker::write_attrs(int attrc, julong indexBits) {
         for (j = 0; j < count; j++) {
           int bii = code_LocalVariableTypeTable_bci_P.getInt();
           int bci = to_bci(bii);
-          CHECK_0;
           putu2(bci);
           bii    += code_LocalVariableTypeTable_span_O.getInt();
           putu2(to_bci(bii) - bci);
-          CHECK_0;
           putref(code_LocalVariableTypeTable_name_RU.getRefN());
           CHECK_0;
           putref(code_LocalVariableTypeTable_type_RS.getRefN());
@@ -5047,7 +5029,6 @@ unpacker::file* unpacker::get_next_file() {
     entry* e = file_name.getRef();
     CHECK_0;
     cur_file.name = e->utf8String();
-    CHECK_0;
     bool haveLongSize = (testBit(archive_options, AO_HAVE_FILE_SIZE_HI));
     cur_file.size = file_size_hi.getLong(file_size_lo, haveLongSize);
     if (testBit(archive_options, AO_HAVE_FILE_MODTIME))
@@ -5185,7 +5166,39 @@ void unpacker::redirect_stdio() {
   } else if (log_file[0] != '\0' && (errstrm = fopen(log_file,"a+")) != NULL) {
     return;
   } else {
-    fprintf(stderr, "Can not open log file %s\n", log_file);
+    char log_file_name[PATH_MAX+100];
+    char tmpdir[PATH_MAX];
+#ifdef WIN32
+    int n = GetTempPath(PATH_MAX,tmpdir); //API returns with trailing '\'
+    if (n < 1 || n > PATH_MAX) {
+      sprintf(tmpdir,"C:\\");
+    }
+    sprintf(log_file_name, "%sunpack.log", tmpdir);
+#else
+    sprintf(tmpdir,"/tmp");
+    sprintf(log_file_name, "/tmp/unpack.log");
+#endif
+    if ((errstrm = fopen(log_file_name, "a+")) != NULL) {
+      log_file = errstrm_name = saveStr(log_file_name);
+      return ;
+    }
+
+    char *tname = tempnam(tmpdir,"#upkg");
+    if (tname == NULL) return;
+    sprintf(log_file_name, "%s", tname);
+    ::free(tname);
+    if ((errstrm = fopen(log_file_name, "a+")) != NULL) {
+      log_file = errstrm_name = saveStr(log_file_name);
+      return ;
+    }
+#ifndef WIN32
+    sprintf(log_file_name, "/dev/null");
+    // On windows most likely it will fail.
+    if ( (errstrm = fopen(log_file_name, "a+")) != NULL) {
+      log_file = errstrm_name = saveStr(log_file_name);
+      return ;
+    }
+#endif
     // Last resort
     // (Do not use stdout, since it might be jarout->jarfp.)
     errstrm = stderr;

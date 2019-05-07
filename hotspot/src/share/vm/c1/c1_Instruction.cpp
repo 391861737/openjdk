@@ -360,8 +360,7 @@ void Invoke::state_values_do(ValueVisitor* f) {
 }
 
 ciType* Invoke::declared_type() const {
-  ciSignature* declared_signature = state()->scope()->method()->get_declared_signature_at_bci(state()->bci());
-  ciType *t = declared_signature->return_type();
+  ciType *t = _target->signature()->return_type();
   assert(t->basic_type() != T_VOID, "need return value of void method?");
   return t;
 }

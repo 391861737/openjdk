@@ -25,9 +25,9 @@
 
 package jdk.nashorn.internal.ir;
 
-import java.io.Serializable;
 import java.util.ArrayList;
 import java.util.List;
+import jdk.nashorn.internal.codegen.types.Type;
 import jdk.nashorn.internal.ir.visitor.NodeVisitor;
 import jdk.nashorn.internal.parser.Token;
 import jdk.nashorn.internal.parser.TokenType;
@@ -35,18 +35,7 @@ import jdk.nashorn.internal.parser.TokenType;
 /**
  * Nodes are used to compose Abstract Syntax Trees.
  */
-public abstract class Node implements Cloneable, Serializable {
-    private static final long serialVersionUID = 1L;
-
-    /** Constant used for synthetic AST nodes that have no line number. */
-    public static final int NO_LINE_NUMBER = -1;
-
-    /** Constant used for synthetic AST nodes that have no token. */
-    public static final long NO_TOKEN = 0L;
-
-    /** Constant used for synthetic AST nodes that have no finish. */
-    public static final int NO_FINISH = 0;
-
+public abstract class Node implements Cloneable {
     /** Start of source range. */
     protected final int start;
 
@@ -93,6 +82,15 @@ public abstract class Node implements Cloneable, Serializable {
     }
 
     /**
+     * Is this an atom node - for example a literal or an identity
+     *
+     * @return true if atom
+     */
+    public boolean isAtom() {
+        return false;
+    }
+
+    /**
      * Is this a loop node?
      *
      * @return true if atom
@@ -108,6 +106,31 @@ public abstract class Node implements Cloneable, Serializable {
      * @return true if assignment
      */
     public boolean isAssignment() {
+        return false;
+    }
+
+    /**
+     * Is this a self modifying assignment?
+     * @return true if self modifying, e.g. a++, or a*= 17
+     */
+    public boolean isSelfModifying() {
+        return false;
+    }
+
+    /**
+     * Returns widest operation type of this operation.
+     *
+     * @return the widest type for this operation
+     */
+    public Type getWidestOperationType() {
+        return Type.OBJECT;
+    }
+
+    /**
+     * Returns true if this node represents a comparison operator
+     * @return true if comparison
+     */
+    public boolean isComparison() {
         return false;
     }
 
@@ -129,17 +152,9 @@ public abstract class Node implements Cloneable, Serializable {
     public abstract Node accept(NodeVisitor<? extends LexicalContext> visitor);
 
     @Override
-    public final String toString() {
-        return toString(true);
-    }
-
-    /*
-     * Return String representation of this Node.
-     * @param includeTypeInfo include type information or not
-     */
-    public final String toString(final boolean includeTypeInfo) {
+    public String toString() {
         final StringBuilder sb = new StringBuilder();
-        toString(sb, includeTypeInfo);
+        toString(sb);
         return sb.toString();
     }
 
@@ -149,19 +164,16 @@ public abstract class Node implements Cloneable, Serializable {
      *
      * @param sb a StringBuilder
      */
-    public void toString(final StringBuilder sb) {
-        toString(sb, true);
-    }
+    public abstract void toString(StringBuilder sb);
 
     /**
-     * Print logic that decides whether to show the optimistic type
-     * or not - for example it should not be printed after just parse,
-     * when it hasn't been computed, or has been set to a trivially provable
-     * value
-     * @param sb   string builder
-     * @param printType print type?
+     * Check if this node has terminal flags, i.e. ends or breaks control flow
+     *
+     * @return true if terminal
      */
-    public abstract void toString(final StringBuilder sb, final boolean printType);
+    public boolean hasTerminalFlags() {
+        return isTerminal() || hasGoto();
+    }
 
     /**
      * Get the finish position for this node in the source string
@@ -177,6 +189,15 @@ public abstract class Node implements Cloneable, Serializable {
      */
     public void setFinish(final int finish) {
         this.finish = finish;
+    }
+
+    /**
+     * Check if this function repositions control flow with goto like
+     * semantics, for example {@link BreakNode} or a {@link ForNode} with no test
+     * @return true if node has goto semantics
+     */
+    public boolean hasGoto() {
+        return false;
     }
 
     /**
@@ -198,15 +219,12 @@ public abstract class Node implements Cloneable, Serializable {
 
     @Override
     public final boolean equals(final Object other) {
-        return this == other;
+        return super.equals(other);
     }
 
     @Override
     public final int hashCode() {
-        // NOTE: we aren't delegating to Object.hashCode as it still requires trip to the VM for initializing,
-        // it touches the object header and/or stores the identity hashcode somewhere, etc. There's several
-        // places in the compiler pipeline that store nodes in maps, so this can get hot.
-        return Long.hashCode(token);
+        return super.hashCode();
     }
 
     /**
@@ -228,63 +246,56 @@ public abstract class Node implements Cloneable, Serializable {
     }
 
     /**
-     * Returns this node's token's type. If you want to check for the node having a specific token type,
-     * consider using {@link #isTokenType(TokenType)} instead.
+     * Return token tokenType from a token descriptor.
      *
-     * @return type of token.
+     * @return Type of token.
      */
     public TokenType tokenType() {
         return Token.descType(token);
     }
 
     /**
-     * Tests if this node has the specific token type.
+     * Test token tokenType.
      *
-     * @param type a token type to check this node's token type against
+     * @param type a type to check this token against
      * @return true if token types match.
      */
     public boolean isTokenType(final TokenType type) {
-        return tokenType() == type;
+        return Token.descType(token) == type;
     }
 
     /**
-     * Get the token for this node. If you want to retrieve the token's type, consider using
-     * {@link #tokenType()} or {@link #isTokenType(TokenType)} instead.
+     * Get the token for this location
      * @return the token
      */
     public long getToken() {
         return token;
     }
 
+    /**
+     * Is this a terminal Node, i.e. does it end control flow like a throw or return
+     * expression does?
+     *
+     * @return true if this node is terminal
+     */
+    public boolean isTerminal() {
+        return false;
+    }
+
     //on change, we have to replace the entire list, that's we can't simple do ListIterator.set
-    static <T extends Node> List<T> accept(final NodeVisitor<? extends LexicalContext> visitor, final List<T> list) {
-        final int size = list.size();
-        if (size == 0) {
-            return list;
-        }
+    static <T extends Node> List<T> accept(final NodeVisitor<? extends LexicalContext> visitor, final Class<T> clazz, final List<T> list) {
+        boolean changed = false;
+        final List<T> newList = new ArrayList<>();
 
-         List<T> newList = null;
-
-        for (int i = 0; i < size; i++) {
-            final T node = list.get(i);
-            @SuppressWarnings("unchecked")
-            final T newNode = node == null ? null : (T)node.accept(visitor);
+        for (final Node node : list) {
+            final T newNode = node == null ? null : clazz.cast(node.accept(visitor));
             if (newNode != node) {
-                if (newList == null) {
-                    newList = new ArrayList<>(size);
-                    for (int j = 0; j < i; j++) {
-                        newList.add(list.get(j));
-                    }
-                }
-                newList.add(newNode);
-            } else {
-                if (newList != null) {
-                    newList.add(node);
-                }
+                changed = true;
             }
+            newList.add(newNode);
         }
 
-        return newList == null ? list : newList;
+        return changed ? newList : list;
     }
 
     static <T extends LexicalContextNode> T replaceInLexicalContext(final LexicalContext lc, final T oldNode, final T newNode) {

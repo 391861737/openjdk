@@ -27,16 +27,13 @@ package jdk.nashorn.internal.runtime;
 
 import static jdk.nashorn.internal.codegen.CompilerConstants.staticCall;
 import static jdk.nashorn.internal.codegen.CompilerConstants.staticCallNoLookup;
-import static jdk.nashorn.internal.runtime.ECMAErrors.rangeError;
 import static jdk.nashorn.internal.runtime.ECMAErrors.referenceError;
 import static jdk.nashorn.internal.runtime.ECMAErrors.syntaxError;
 import static jdk.nashorn.internal.runtime.ECMAErrors.typeError;
 import static jdk.nashorn.internal.runtime.JSType.isRepresentableAsInt;
-import static jdk.nashorn.internal.runtime.JSType.isString;
 
 import java.lang.invoke.MethodHandle;
 import java.lang.invoke.MethodHandles;
-import java.lang.invoke.SwitchPoint;
 import java.lang.reflect.Array;
 import java.util.Collections;
 import java.util.Iterator;
@@ -48,14 +45,12 @@ import java.util.Objects;
 import jdk.internal.dynalink.beans.StaticClass;
 import jdk.nashorn.api.scripting.JSObject;
 import jdk.nashorn.api.scripting.ScriptObjectMirror;
-import jdk.nashorn.internal.codegen.ApplySpecialization;
-import jdk.nashorn.internal.codegen.CompilerConstants;
 import jdk.nashorn.internal.codegen.CompilerConstants.Call;
 import jdk.nashorn.internal.ir.debug.JSONWriter;
 import jdk.nashorn.internal.objects.Global;
-import jdk.nashorn.internal.objects.NativeObject;
 import jdk.nashorn.internal.parser.Lexer;
 import jdk.nashorn.internal.runtime.linker.Bootstrap;
+
 
 /**
  * Utilities to be called by JavaScript runtime API and generated classes.
@@ -86,6 +81,9 @@ public final class ScriptRuntime {
     /** Method handle used to enter a {@code with} scope at runtime. */
     public static final Call OPEN_WITH = staticCallNoLookup(ScriptRuntime.class, "openWith", ScriptObject.class, ScriptObject.class, Object.class);
 
+    /** Method handle used to exit a {@code with} scope at runtime. */
+    public static final Call CLOSE_WITH = staticCallNoLookup(ScriptRuntime.class, "closeWith", ScriptObject.class, ScriptObject.class);
+
     /**
      * Method used to place a scope's variable into the Global scope, which has to be done for the
      * properties declared at outermost script level.
@@ -110,21 +108,6 @@ public final class ScriptRuntime {
     public static final Call APPLY = staticCall(MethodHandles.lookup(), ScriptRuntime.class, "apply", Object.class, ScriptFunction.class, Object.class, Object[].class);
 
     /**
-     * Throws a reference error for an undefined variable.
-     */
-    public static final Call THROW_REFERENCE_ERROR = staticCall(MethodHandles.lookup(), ScriptRuntime.class, "throwReferenceError", void.class, String.class);
-
-    /**
-     * Throws a reference error for an undefined variable.
-     */
-    public static final Call THROW_CONST_TYPE_ERROR = staticCall(MethodHandles.lookup(), ScriptRuntime.class, "throwConstTypeError", void.class, String.class);
-
-    /**
-     * Used to invalidate builtin names, e.g "Function" mapping to all properties in Function.prototype and Function.prototype itself.
-     */
-    public static final Call INVALIDATE_RESERVED_BUILTIN_NAME = staticCallNoLookup(ScriptRuntime.class, "invalidateReservedBuiltinName", void.class, String.class);
-
-    /**
      * Converts a switch tag value to a simple integer. deflt value if it can't.
      *
      * @param tag   Switch statement tag value.
@@ -138,6 +121,7 @@ public final class ScriptRuntime {
                 return (int)d;
             }
         }
+
         return deflt;
     }
 
@@ -185,7 +169,7 @@ public final class ScriptRuntime {
         // But we don't need to -- all we need is the right class name
         // of the corresponding primitive wrapper type.
 
-        final JSType type = JSType.ofNoFunction(self);
+        final JSType type = JSType.of(self);
 
         switch (type) {
         case BOOLEAN:
@@ -205,6 +189,7 @@ public final class ScriptRuntime {
             className = "Undefined";
             break;
         case OBJECT:
+        case FUNCTION:
             if (self instanceof ScriptObject) {
                 className = ((ScriptObject)self).getClassName();
             } else if (self instanceof JSObject) {
@@ -286,7 +271,7 @@ public final class ScriptRuntime {
         private final int length;
         private int index;
 
-        RangeIterator(final int length) {
+        RangeIterator(int length) {
             this.length = length;
         }
 
@@ -302,7 +287,7 @@ public final class ScriptRuntime {
 
         @Override
         public void remove() {
-            throw new UnsupportedOperationException("remove");
+            throw new UnsupportedOperationException();
         }
     }
 
@@ -340,7 +325,7 @@ public final class ScriptRuntime {
 
                 @Override
                 public void remove() {
-                    throw new UnsupportedOperationException("remove");
+                    throw new UnsupportedOperationException();
                 }
             };
         }
@@ -373,9 +358,9 @@ public final class ScriptRuntime {
      * @return prototype object after merge
      */
     public static ScriptObject mergeScope(final ScriptObject scope) {
-        final ScriptObject parentScope = scope.getProto();
-        parentScope.addBoundProperties(scope);
-        return parentScope;
+        final ScriptObject global = scope.getProto();
+        global.addBoundProperties(scope);
+        return global;
     }
 
     /**
@@ -396,24 +381,6 @@ public final class ScriptRuntime {
         } catch (final Throwable t) {
             throw new RuntimeException(t);
         }
-    }
-
-    /**
-     * Throws a reference error for an undefined variable.
-     *
-     * @param name the variable name
-     */
-    public static void throwReferenceError(final String name) {
-        throw referenceError("not.defined", name);
-    }
-
-    /**
-     * Throws a type error for an assignment to a const.
-     *
-     * @param name the const name
-     */
-    public static void throwConstTypeError(final String name) {
-        throw typeError("assign.constant", name);
     }
 
     /**
@@ -442,8 +409,8 @@ public final class ScriptRuntime {
      * @return true if both objects have the same value
      */
     public static boolean sameValue(final Object x, final Object y) {
-        final JSType xType = JSType.ofNoFunction(x);
-        final JSType yType = JSType.ofNoFunction(y);
+        final JSType xType = JSType.of(x);
+        final JSType yType = JSType.of(y);
 
         if (xType != yType) {
             return false;
@@ -462,7 +429,7 @@ public final class ScriptRuntime {
             }
 
             // checking for xVal == -0.0 and yVal == +0.0 or vice versa
-            if (xVal == 0.0 && Double.doubleToLongBits(xVal) != Double.doubleToLongBits(yVal)) {
+            if (xVal == 0.0 && (Double.doubleToLongBits(xVal) != Double.doubleToLongBits(yVal))) {
                 return false;
             }
 
@@ -473,7 +440,7 @@ public final class ScriptRuntime {
             return x.equals(y);
         }
 
-        return x == y;
+        return (x == y);
     }
 
     /**
@@ -486,7 +453,7 @@ public final class ScriptRuntime {
      * @return JSON string representation of AST of the supplied code
      */
     public static String parse(final String code, final String name, final boolean includeLoc) {
-        return JSONWriter.parse(Context.getContextTrusted(), code, name, includeLoc);
+        return JSONWriter.parse(Context.getContextTrusted().getEnv(), code, name, includeLoc);
     }
 
     /**
@@ -499,8 +466,7 @@ public final class ScriptRuntime {
     }
 
     /**
-     * Entering a {@code with} node requires new scope. This is the implementation. When exiting the with statement,
-     * use {@link ScriptObject#getProto()} on the scope.
+     * Entering a {@code with} node requires new scope. This is the implementation
      *
      * @param scope      existing scope
      * @param expression expression in with
@@ -508,22 +474,11 @@ public final class ScriptRuntime {
      * @return {@link WithObject} that is the new scope
      */
     public static ScriptObject openWith(final ScriptObject scope, final Object expression) {
-        final Global global = Context.getGlobal();
+        final ScriptObject global = Context.getGlobalTrusted();
         if (expression == UNDEFINED) {
             throw typeError(global, "cant.apply.with.to.undefined");
         } else if (expression == null) {
             throw typeError(global, "cant.apply.with.to.null");
-        }
-
-        if (expression instanceof ScriptObjectMirror) {
-            final Object unwrapped = ScriptObjectMirror.unwrap(expression, global);
-            if (unwrapped instanceof ScriptObject) {
-                return new WithObject(scope, (ScriptObject)unwrapped);
-            }
-            // foreign ScriptObjectMirror
-            final ScriptObject exprObj = global.newObject();
-            NativeObject.bindAllProperties(exprObj, (ScriptObjectMirror)expression);
-            return new WithObject(scope, exprObj);
         }
 
         final Object wrappedExpr = JSType.toScriptObject(global, expression);
@@ -535,7 +490,23 @@ public final class ScriptRuntime {
     }
 
     /**
+     * Exiting a {@code with} node requires restoring scope. This is the implementation
+     *
+     * @param scope existing scope
+     *
+     * @return restored scope
+     */
+    public static ScriptObject closeWith(final ScriptObject scope) {
+        if (scope instanceof WithObject) {
+            return ((WithObject)scope).getParentScope();
+        }
+        return scope;
+    }
+
+    /**
      * ECMA 11.6.1 - The addition operator (+) - generic implementation
+     * Compiler specializes using {@link jdk.nashorn.internal.codegen.RuntimeCallSite}
+     * if any type information is available for any of the operands
      *
      * @param x  first term
      * @param y  second term
@@ -554,7 +525,7 @@ public final class ScriptRuntime {
         final boolean xIsUndefined = x == UNDEFINED;
         final boolean yIsUndefined = y == UNDEFINED;
 
-        if (xIsNumber && yIsUndefined || xIsUndefined && yIsNumber || xIsUndefined && yIsUndefined) {
+        if ((xIsNumber && yIsUndefined) || (xIsUndefined && yIsNumber) || (xIsUndefined && yIsUndefined)) {
             return Double.NaN;
         }
 
@@ -562,12 +533,9 @@ public final class ScriptRuntime {
         final Object xPrim = JSType.toPrimitive(x);
         final Object yPrim = JSType.toPrimitive(y);
 
-        if (isString(xPrim) || isString(yPrim)) {
-            try {
-                return new ConsString(JSType.toCharSequence(xPrim), JSType.toCharSequence(yPrim));
-            } catch (final IllegalArgumentException iae) {
-                throw rangeError(iae, "concat.string.too.big");
-            }
+        if (xPrim instanceof String || yPrim instanceof String
+                || xPrim instanceof ConsString || yPrim instanceof ConsString) {
+            return new ConsString(JSType.toCharSequence(xPrim), JSType.toCharSequence(yPrim));
         }
 
         return JSType.toNumber(xPrim) + JSType.toNumber(yPrim);
@@ -609,13 +577,6 @@ public final class ScriptRuntime {
         if (property != null) {
             if (obj instanceof ScriptObject) {
                 obj = ((ScriptObject)obj).get(property);
-                if(Global.isLocationPropertyPlaceholder(obj)) {
-                    if(CompilerConstants.__LINE__.name().equals(property)) {
-                        obj = Integer.valueOf(0);
-                    } else {
-                        obj = "";
-                    }
-                }
             } else if (object instanceof Undefined) {
                 obj = ((Undefined)obj).get(property);
             } else if (object == null) {
@@ -685,33 +646,6 @@ public final class ScriptRuntime {
     }
 
     /**
-     * ECMA 11.4.1 - delete operator, implementation for slow scopes
-     *
-     * This implementation of 'delete' walks the scope chain to find the scope that contains the
-     * property to be deleted, then invokes delete on it.
-     *
-     * @param obj       top scope object
-     * @param property  property to delete
-     * @param strict    are we in strict mode
-     *
-     * @return true if property was successfully found and deleted
-     */
-    public static boolean SLOW_DELETE(final Object obj, final Object property, final Object strict) {
-        if (obj instanceof ScriptObject) {
-            ScriptObject sobj = (ScriptObject) obj;
-            final String key = property.toString();
-            while (sobj != null && sobj.isScope()) {
-                final FindProperty find = sobj.findProperty(key, false);
-                if (find != null) {
-                    return sobj.delete(key, Boolean.TRUE.equals(strict));
-                }
-                sobj = sobj.getProto();
-            }
-        }
-        return DELETE(obj, property, strict);
-    }
-
-    /**
      * ECMA 11.4.1 - delete operator, special case
      *
      * This is 'delete' that always fails. We have to check strict mode and throw error.
@@ -755,121 +689,70 @@ public final class ScriptRuntime {
 
     /** ECMA 11.9.3 The Abstract Equality Comparison Algorithm */
     private static boolean equals(final Object x, final Object y) {
-        if (x == y) {
-            return true;
-        }
-        if (x instanceof ScriptObject && y instanceof ScriptObject) {
-            return false; // x != y
-        }
-        if (x instanceof ScriptObjectMirror || y instanceof ScriptObjectMirror) {
-            return ScriptObjectMirror.identical(x, y);
-        }
-        return equalValues(x, y);
-    }
-
-    /**
-     * Extracted portion of {@code equals()} that compares objects by value (or by reference, if no known value
-     * comparison applies).
-     * @param x one value
-     * @param y another value
-     * @return true if they're equal according to 11.9.3
-     */
-    private static boolean equalValues(final Object x, final Object y) {
-        final JSType xType = JSType.ofNoFunction(x);
-        final JSType yType = JSType.ofNoFunction(y);
+        final JSType xType = JSType.of(x);
+        final JSType yType = JSType.of(y);
 
         if (xType == yType) {
-            return equalSameTypeValues(x, y, xType);
+
+            if (xType == JSType.UNDEFINED || xType == JSType.NULL) {
+                return true;
+            }
+
+            if (xType == JSType.NUMBER) {
+                final double xVal = ((Number)x).doubleValue();
+                final double yVal = ((Number)y).doubleValue();
+                if (Double.isNaN(xVal) || Double.isNaN(yVal)) {
+                    return false;
+                }
+
+                return xVal == yVal;
+            }
+
+            if (xType == JSType.STRING) {
+                // String may be represented by ConsString
+                return x.toString().equals(y.toString());
+            }
+
+            if (xType == JSType.BOOLEAN) {
+                // Boolean comparison
+                return x.equals(y);
+            }
+
+            return x == y;
         }
 
-        return equalDifferentTypeValues(x, y, xType, yType);
-    }
-
-    /**
-     * Extracted portion of {@link #equals(Object, Object)} and {@link #strictEquals(Object, Object)} that compares
-     * values belonging to the same JSType.
-     * @param x one value
-     * @param y another value
-     * @param type the common type for the values
-     * @return true if they're equal
-     */
-    private static boolean equalSameTypeValues(final Object x, final Object y, final JSType type) {
-        if (type == JSType.UNDEFINED || type == JSType.NULL) {
+        if ((xType == JSType.UNDEFINED && yType == JSType.NULL) ||
+            (xType == JSType.NULL && yType == JSType.UNDEFINED)) {
             return true;
         }
 
-        if (type == JSType.NUMBER) {
-            return ((Number)x).doubleValue() == ((Number)y).doubleValue();
+        if (xType == JSType.NUMBER && yType == JSType.STRING) {
+            return EQ(x, JSType.toNumber(y));
         }
 
-        if (type == JSType.STRING) {
-            // String may be represented by ConsString
-            return x.toString().equals(y.toString());
+        if (xType == JSType.STRING && yType == JSType.NUMBER) {
+            return EQ(JSType.toNumber(x), y);
         }
 
-        if (type == JSType.BOOLEAN) {
-            return ((Boolean)x).booleanValue() == ((Boolean)y).booleanValue();
+        if (xType == JSType.BOOLEAN) {
+            return EQ(JSType.toNumber(x), y);
         }
 
-        return x == y;
-    }
+        if (yType == JSType.BOOLEAN) {
+            return EQ(x, JSType.toNumber(y));
+        }
 
-    /**
-     * Extracted portion of {@link #equals(Object, Object)} that compares values belonging to different JSTypes.
-     * @param x one value
-     * @param y another value
-     * @param xType the type for the value x
-     * @param yType the type for the value y
-     * @return true if they're equal
-     */
-    private static boolean equalDifferentTypeValues(final Object x, final Object y, final JSType xType, final JSType yType) {
-        if (isUndefinedAndNull(xType, yType) || isUndefinedAndNull(yType, xType)) {
-            return true;
-        } else if (isNumberAndString(xType, yType)) {
-            return equalNumberToString(x, y);
-        } else if (isNumberAndString(yType, xType)) {
-            // Can reverse order as both are primitives
-            return equalNumberToString(y, x);
-        } else if (xType == JSType.BOOLEAN) {
-            return equalBooleanToAny(x, y);
-        } else if (yType == JSType.BOOLEAN) {
-            // Can reverse order as y is primitive
-            return equalBooleanToAny(y, x);
-        } else if (isNumberOrStringAndObject(xType, yType)) {
-            return equalNumberOrStringToObject(x, y);
-        } else if (isNumberOrStringAndObject(yType, xType)) {
-            // Can reverse order as y is primitive
-            return equalNumberOrStringToObject(y, x);
+        if ((xType == JSType.STRING || xType == JSType.NUMBER) &&
+             (y instanceof ScriptObject))  {
+            return EQ(x, JSType.toPrimitive(y));
+        }
+
+        if ((x instanceof ScriptObject) &&
+            (yType == JSType.STRING || yType == JSType.NUMBER)) {
+            return EQ(JSType.toPrimitive(x), y);
         }
 
         return false;
-    }
-
-    private static boolean isUndefinedAndNull(final JSType xType, final JSType yType) {
-        return xType == JSType.UNDEFINED && yType == JSType.NULL;
-    }
-
-    private static boolean isNumberAndString(final JSType xType, final JSType yType) {
-        return xType == JSType.NUMBER && yType == JSType.STRING;
-    }
-
-    private static boolean isNumberOrStringAndObject(final JSType xType, final JSType yType) {
-        return (xType == JSType.NUMBER || xType == JSType.STRING) && yType == JSType.OBJECT;
-    }
-
-    private static boolean equalNumberToString(final Object num, final Object str) {
-        // Specification says comparing a number to string should be done as "equals(num, JSType.toNumber(str))". We
-        // can short circuit it to this as we know that "num" is a number, so it'll end up being a number-number
-        // comparison.
-        return ((Number)num).doubleValue() == JSType.toNumber(str.toString());
-    }
-
-    private static boolean equalBooleanToAny(final Object bool, final Object any) {
-        return equals(JSType.toNumber((Boolean)bool), any);
-    }
-
-    private static boolean equalNumberOrStringToObject(final Object numOrStr, final Object any) {
-        return equals(numOrStr, JSType.toPrimitive(any));
     }
 
     /**
@@ -898,17 +781,39 @@ public final class ScriptRuntime {
 
     /** ECMA 11.9.6 The Strict Equality Comparison Algorithm */
     private static boolean strictEquals(final Object x, final Object y) {
-        // NOTE: you might be tempted to do a quick x == y comparison. Remember, though, that any Double object having
-        // NaN value is not equal to itself by value even though it is referentially.
-
-        final JSType xType = JSType.ofNoFunction(x);
-        final JSType yType = JSType.ofNoFunction(y);
+        final JSType xType = JSType.of(x);
+        final JSType yType = JSType.of(y);
 
         if (xType != yType) {
             return false;
         }
 
-        return equalSameTypeValues(x, y, xType);
+        if (xType == JSType.UNDEFINED || xType == JSType.NULL) {
+            return true;
+        }
+
+        if (xType == JSType.NUMBER) {
+            final double xVal = ((Number)x).doubleValue();
+            final double yVal = ((Number)y).doubleValue();
+
+            if (Double.isNaN(xVal) || Double.isNaN(yVal)) {
+                return false;
+            }
+
+            return xVal == yVal;
+        }
+
+        if (xType == JSType.STRING) {
+            // String may be represented by ConsString
+            return x.toString().equals(y.toString());
+        }
+
+        if (xType == JSType.BOOLEAN) {
+            return x.equals(y);
+        }
+
+        // finally, the object identity comparison
+        return x == y;
     }
 
     /**
@@ -920,9 +825,9 @@ public final class ScriptRuntime {
      * @return true if objects are equal
      */
     public static boolean IN(final Object property, final Object obj) {
-        final JSType rvalType = JSType.ofNoFunction(obj);
+        final JSType rvalType = JSType.of(obj);
 
-        if (rvalType == JSType.OBJECT) {
+        if (rvalType == JSType.OBJECT || rvalType == JSType.FUNCTION) {
             if (obj instanceof ScriptObject) {
                 return ((ScriptObject)obj).has(property);
             }
@@ -978,15 +883,8 @@ public final class ScriptRuntime {
      * @return true if x is less than y
      */
     public static boolean LT(final Object x, final Object y) {
-        final Object px = JSType.toPrimitive(x, Number.class);
-        final Object py = JSType.toPrimitive(y, Number.class);
-
-        return areBothString(px, py) ? px.toString().compareTo(py.toString()) < 0 :
-            JSType.toNumber(px) < JSType.toNumber(py);
-    }
-
-    private static boolean areBothString(final Object x, final Object y) {
-        return isString(x) && isString(y);
+        final Object value = lessThan(x, y, true);
+        return (value == UNDEFINED) ? false : (Boolean)value;
     }
 
     /**
@@ -998,11 +896,8 @@ public final class ScriptRuntime {
      * @return true if x is greater than y
      */
     public static boolean GT(final Object x, final Object y) {
-        final Object px = JSType.toPrimitive(x, Number.class);
-        final Object py = JSType.toPrimitive(y, Number.class);
-
-        return areBothString(px, py) ? px.toString().compareTo(py.toString()) > 0 :
-            JSType.toNumber(px) > JSType.toNumber(py);
+        final Object value = lessThan(y, x, false);
+        return (value == UNDEFINED) ? false : (Boolean)value;
     }
 
     /**
@@ -1014,11 +909,8 @@ public final class ScriptRuntime {
      * @return true if x is less than or equal to y
      */
     public static boolean LE(final Object x, final Object y) {
-        final Object px = JSType.toPrimitive(x, Number.class);
-        final Object py = JSType.toPrimitive(y, Number.class);
-
-        return areBothString(px, py) ? px.toString().compareTo(py.toString()) <= 0 :
-            JSType.toNumber(px) <= JSType.toNumber(py);
+        final Object value = lessThan(y, x, false);
+        return (!(Boolean.TRUE.equals(value) || value == UNDEFINED));
     }
 
     /**
@@ -1030,24 +922,48 @@ public final class ScriptRuntime {
      * @return true if x is greater than or equal to y
      */
     public static boolean GE(final Object x, final Object y) {
-        final Object px = JSType.toPrimitive(x, Number.class);
-        final Object py = JSType.toPrimitive(y, Number.class);
-
-        return areBothString(px, py) ? px.toString().compareTo(py.toString()) >= 0 :
-            JSType.toNumber(px) >= JSType.toNumber(py);
+        final Object value = lessThan(x, y, true);
+        return (!(Boolean.TRUE.equals(value) || value == UNDEFINED));
     }
 
-    /**
-     * Tag a reserved name as invalidated - used when someone writes
-     * to a property with this name - overly conservative, but link time
-     * is too late to apply e.g. apply-&gt;call specialization
-     * @param name property name
-     */
-    public static void invalidateReservedBuiltinName(final String name) {
-        final Context context = Context.getContextTrusted();
-        final SwitchPoint sp = context.getBuiltinSwitchPoint(name);
-        assert sp != null;
-        context.getLogger(ApplySpecialization.class).info("Overwrote special name '" + name +"' - invalidating switchpoint");
-        SwitchPoint.invalidateAll(new SwitchPoint[] { sp });
+    /** ECMA 11.8.5 The Abstract Relational Comparison Algorithm */
+    private static Object lessThan(final Object x, final Object y, final boolean leftFirst) {
+        Object px, py;
+
+        //support e.g. x < y should throw exception correctly if x or y are not numeric
+        if (leftFirst) {
+            px = JSType.toPrimitive(x, Number.class);
+            py = JSType.toPrimitive(y, Number.class);
+        } else {
+            py = JSType.toPrimitive(y, Number.class);
+            px = JSType.toPrimitive(x, Number.class);
+        }
+
+        if (JSType.of(px) == JSType.STRING && JSType.of(py) == JSType.STRING) {
+            // May be String or ConsString
+            return (px.toString()).compareTo(py.toString()) < 0;
+        }
+
+        final double nx = JSType.toNumber(px);
+        final double ny = JSType.toNumber(py);
+
+        if (Double.isNaN(nx) || Double.isNaN(ny)) {
+            return UNDEFINED;
+        }
+
+        if (nx == ny) {
+            return false;
+        }
+
+        if (nx > 0 && ny > 0 && Double.isInfinite(nx) && Double.isInfinite(ny)) {
+            return false;
+        }
+
+        if (nx < 0 && ny < 0 && Double.isInfinite(nx) && Double.isInfinite(ny)) {
+            return false;
+        }
+
+        return nx < ny;
     }
+
 }

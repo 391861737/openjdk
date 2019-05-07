@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2011, 2014, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2011, 2013, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -32,8 +32,6 @@
 #include "services/management.hpp"
 #include "utilities/macros.hpp"
 
-PRAGMA_FORMAT_MUTE_WARNINGS_FOR_GCC
-
 void DCmdRegistrant::register_dcmds(){
   // Registration of the diagnostic commands
   // First argument specifies which interfaces will export the command
@@ -55,7 +53,6 @@ void DCmdRegistrant::register_dcmds(){
   DCmdFactory::register_DCmdFactory(new DCmdFactoryImpl<ClassStatsDCmd>(full_export, true, false));
 #endif // INCLUDE_SERVICES
   DCmdFactory::register_DCmdFactory(new DCmdFactoryImpl<ThreadDumpDCmd>(full_export, true, false));
-  DCmdFactory::register_DCmdFactory(new DCmdFactoryImpl<RotateGCLogDCmd>(full_export, true, false));
 
   // Enhanced JMX Agent Support
   // These commands won't be exported via the DiagnosticCommandMBean until an
@@ -101,7 +98,7 @@ void HelpDCmd::execute(DCmdSource source, TRAPS) {
     if (factory != NULL) {
       output()->print_cr("%s%s", factory->name(),
                          factory->is_enabled() ? "" : " [disabled]");
-      output()->print_cr("%s", factory->description());
+      output()->print_cr(factory->description());
       output()->print_cr("\nImpact: %s", factory->impact());
       JavaPermission p = factory->permission();
       if(p._class != NULL) {
@@ -437,10 +434,6 @@ JMXStartRemoteDCmd::JMXStartRemoteDCmd(outputStream *output, bool heap_allocated
   ("config.file",
    "set com.sun.management.config.file", "STRING", false),
 
-  _jmxremote_host
-  ("jmxremote.host",
-   "set com.sun.management.jmxremote.host", "STRING", false),
-
   _jmxremote_port
   ("jmxremote.port",
    "set com.sun.management.jmxremote.port", "STRING", false),
@@ -520,7 +513,6 @@ JMXStartRemoteDCmd::JMXStartRemoteDCmd(outputStream *output, bool heap_allocated
 
   {
     _dcmdparser.add_dcmd_option(&_config_file);
-    _dcmdparser.add_dcmd_option(&_jmxremote_host);
     _dcmdparser.add_dcmd_option(&_jmxremote_port);
     _dcmdparser.add_dcmd_option(&_jmxremote_rmi_port);
     _dcmdparser.add_dcmd_option(&_jmxremote_ssl);
@@ -591,7 +583,6 @@ void JMXStartRemoteDCmd::execute(DCmdSource source, TRAPS) {
     }
 
     PUT_OPTION(_config_file);
-    PUT_OPTION(_jmxremote_host);
     PUT_OPTION(_jmxremote_port);
     PUT_OPTION(_jmxremote_rmi_port);
     PUT_OPTION(_jmxremote_ssl);
@@ -659,11 +650,3 @@ void JMXStopRemoteDCmd::execute(DCmdSource source, TRAPS) {
     JavaCalls::call_static(&result, ik, vmSymbols::stopRemoteAgent_name(), vmSymbols::void_method_signature(), CHECK);
 }
 
-void RotateGCLogDCmd::execute(DCmdSource source, TRAPS) {
-  if (UseGCLogFileRotation) {
-    VM_RotateGCLog rotateop(output());
-    VMThread::execute(&rotateop);
-  } else {
-    output()->print_cr("Target VM does not support GC log file rotation.");
-  }
-}

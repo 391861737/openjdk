@@ -32,8 +32,6 @@
 #include <stdlib.h>
 #include <stdarg.h>
 
-#include "jni_util.h"
-
 #include "defines.h"
 #include "bytes.h"
 #include "utils.h"
@@ -149,7 +147,7 @@ coding* coding::findBySpec(int spec) {
       break;
   }
   coding* ptr = NEW(coding, 1);
-  CHECK_NULL_RETURN(ptr, 0);
+  CHECK_NULL_0(ptr);
   coding* c = ptr->initFrom(spec);
   if (c == null) {
     mtrace('f', ptr, 0);

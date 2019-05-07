@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008, 2015, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2008, 2013, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -30,7 +30,6 @@ import java.lang.reflect.Method;
 import java.security.SecureRandom;
 import java.util.*;
 import java.util.concurrent.*;
-
 import sun.net.spi.nameservice.NameService;
 import sun.net.spi.nameservice.NameServiceDescriptor;
 import sun.security.krb5.*;
@@ -142,17 +141,10 @@ public class KDC {
     private BlockingQueue<Job> q = new ArrayBlockingQueue<>(100);
     // Options
     private Map<Option,Object> options = new HashMap<>();
-    // Realm-specific krb5.conf settings
-    private List<String> conf = new ArrayList<>();
 
     private Thread thread1, thread2, thread3;
-    private volatile boolean udpConsumerReady = false;
-    private volatile boolean tcpConsumerReady = false;
-    private volatile boolean dispatcherReady = false;
     DatagramSocket u1 = null;
     ServerSocket t1 = null;
-
-    public static enum KtabMode { APPEND, EXISTING };
 
     /**
      * Option names, to be expanded forever.
@@ -200,10 +192,6 @@ public class KDC {
          * Krb5.KDC_ERR_POLICY will be send for S4U2proxy request.
          */
         ALLOW_S4U2PROXY,
-        /**
-         * Sensitive accounts can never be delegated.
-         */
-        SENSITIVE_ACCOUNTS,
     };
 
     static {
@@ -255,7 +243,7 @@ public class KDC {
     /**
      * Sets an option
      * @param key the option name
-     * @param value the value
+     * @param obj the value
      */
     public void setOption(Option key, Object value) {
         if (value == null) {
@@ -385,13 +373,6 @@ public class KDC {
     }
 
     /**
-     * Add realm-specific krb5.conf setting
-     */
-    public void addConf(String s) {
-        conf.add(s);
-    }
-
-    /**
      * Writes a krb5.conf for one or more KDC that includes KDC locations for
      * each realm and the default realm name. You can also add extra strings
      * into the file. The method should be called like:
@@ -416,7 +397,6 @@ public class KDC {
      * [realms]
      *   REALM.NAME = {
      *     kdc = host:port_number
-     *     # realm-specific settings
      *   }
      * </pre>
      *
@@ -464,10 +444,10 @@ public class KDC {
             }
         }
         sb.append("\n[realms]\n");
-        sb.append(kdc.realmLine());
+        sb.append(realmLineForKDC(kdc));
         for (Object o: more) {
             if (o instanceof KDC) {
-                sb.append(((KDC)o).realmLine());
+                sb.append(realmLineForKDC((KDC)o));
             }
         }
         FileOutputStream fos = new FileOutputStream(f);
@@ -648,7 +628,7 @@ public class KDC {
         try {
             System.out.println(realm + "> " + tgsReq.reqBody.cname +
                     " sends TGS-REQ for " +
-                    service + ", " + tgsReq.reqBody.kdcOptions);
+                    service);
             KDCReqBody body = tgsReq.reqBody;
             int[] eTypes = KDCReqBodyDotEType(body);
             int e2 = eTypes[0];     // etype for outgoing session key
@@ -724,13 +704,7 @@ public class KDC {
             boolean[] bFlags = new boolean[Krb5.TKT_OPTS_MAX+1];
             if (body.kdcOptions.get(KDCOptions.FORWARDABLE)
                     && allowForwardable) {
-                List<String> sensitives = (List<String>)
-                        options.get(Option.SENSITIVE_ACCOUNTS);
-                if (sensitives != null && sensitives.contains(cname.toString())) {
-                    // Cannot make FORWARDABLE
-                } else {
-                    bFlags[Krb5.TKT_OPTS_FORWARDABLE] = true;
-                }
+                bFlags[Krb5.TKT_OPTS_FORWARDABLE] = true;
             }
             if (body.kdcOptions.get(KDCOptions.FORWARDED) ||
                     etp.flags.get(Krb5.TKT_OPTS_FORWARDED)) {
@@ -835,8 +809,7 @@ public class KDC {
                     t,
                     edata);
             System.out.println("     Return " + tgsRep.cname
-                    + " ticket for " + tgsRep.ticket.sname + ", flags "
-                    + tFlags);
+                    + " ticket for " + tgsRep.ticket.sname);
 
             DerOutputStream out = new DerOutputStream();
             out.write(DerValue.createTag(DerValue.TAG_APPLICATION,
@@ -875,14 +848,13 @@ public class KDC {
 
         PrincipalName service = asReq.reqBody.sname;
         if (options.containsKey(KDC.Option.RESP_NT)) {
-            service = new PrincipalName((int)options.get(KDC.Option.RESP_NT),
-                    service.getNameStrings(),
-                    Realm.getDefault());
+            service = new PrincipalName(service.getNameStrings(),
+                    (int)options.get(KDC.Option.RESP_NT));
         }
         try {
             System.out.println(realm + "> " + asReq.reqBody.cname +
                     " sends AS-REQ for " +
-                    service + ", " + asReq.reqBody.kdcOptions);
+                    service);
 
             KDCReqBody body = asReq.reqBody;
 
@@ -925,13 +897,7 @@ public class KDC {
             //body.from
             boolean[] bFlags = new boolean[Krb5.TKT_OPTS_MAX+1];
             if (body.kdcOptions.get(KDCOptions.FORWARDABLE)) {
-                List<String> sensitives = (List<String>)
-                        options.get(Option.SENSITIVE_ACCOUNTS);
-                if (sensitives != null && sensitives.contains(body.cname.toString())) {
-                    // Cannot make FORWARDABLE
-                } else {
-                    bFlags[Krb5.TKT_OPTS_FORWARDABLE] = true;
-                }
+                bFlags[Krb5.TKT_OPTS_FORWARDABLE] = true;
             }
             if (body.kdcOptions.get(KDCOptions.RENEWABLE)) {
                 bFlags[Krb5.TKT_OPTS_RENEWABLE] = true;
@@ -1107,8 +1073,7 @@ public class KDC {
                     edata);
 
             System.out.println("     Return " + asRep.cname
-                    + " ticket for " + asRep.ticket.sname + ", flags "
-                    + tFlags);
+                    + " ticket for " + asRep.ticket.sname);
 
             DerOutputStream out = new DerOutputStream();
             out.write(DerValue.createTag(DerValue.TAG_APPLICATION,
@@ -1168,16 +1133,14 @@ public class KDC {
 
     /**
      * Generates a line for a KDC to put inside [realms] of krb5.conf
-     * @return REALM.NAME = { kdc = host:port etc }
+     * @param kdc the KDC
+     * @return REALM.NAME = { kdc = host:port }
      */
-    private String realmLine() {
-        StringBuilder sb = new StringBuilder();
-        sb.append(realm).append(" = {\n    kdc = ")
-                .append(kdc).append(':').append(port).append('\n');
-        for (String s: conf) {
-            sb.append("    ").append(s).append('\n');
-        }
-        return sb.append("}\n").toString();
+    private static String realmLineForKDC(KDC kdc) {
+        return String.format("%s = {\n    kdc = %s:%d\n}\n",
+                kdc.realm,
+                kdc.kdc,
+                kdc.port);
     }
 
     /**
@@ -1216,7 +1179,6 @@ public class KDC {
         // The UDP consumer
         thread1 = new Thread() {
             public void run() {
-                udpConsumerReady = true;
                 while (true) {
                     try {
                         byte[] inbuf = new byte[8192];
@@ -1237,7 +1199,6 @@ public class KDC {
         // The TCP consumer
         thread2 = new Thread() {
             public void run() {
-                tcpConsumerReady = true;
                 while (true) {
                     try {
                         Socket socket = tcp.accept();
@@ -1260,7 +1221,6 @@ public class KDC {
         // The dispatcher
         thread3 = new Thread() {
             public void run() {
-                dispatcherReady = true;
                 while (true) {
                     try {
                         q.take().send();
@@ -1271,19 +1231,6 @@ public class KDC {
         };
         thread3.setDaemon(true);
         thread3.start();
-
-        // wait for the KDC is ready
-        try {
-            while (!isReady()) {
-                Thread.sleep(100);
-            }
-        } catch(InterruptedException e) {
-            throw new IOException(e);
-        }
-    }
-
-    boolean isReady() {
-        return udpConsumerReady && tcpConsumerReady && dispatcherReady;
     }
 
     public void terminate() {
@@ -1297,72 +1244,6 @@ public class KDC {
             // OK
         }
     }
-
-    public static KDC startKDC(final String host, final String krbConfFileName,
-            final String realm, final Map<String, String> principals,
-            final String ktab, final KtabMode mode) {
-
-        KDC kdc;
-        try {
-            kdc = KDC.create(realm, host, 0, true);
-            kdc.setOption(KDC.Option.PREAUTH_REQUIRED, Boolean.FALSE);
-            if (krbConfFileName != null) {
-                KDC.saveConfig(krbConfFileName, kdc);
-            }
-
-            // Add principals
-            if (principals != null) {
-                principals.forEach((name, password) -> {
-                    if (password == null || password.isEmpty()) {
-                        System.out.println(String.format(
-                                "KDC:add a principal '%s' with a random " +
-                                        "password", name));
-                        kdc.addPrincipalRandKey(name);
-                    } else {
-                        System.out.println(String.format(
-                                "KDC:add a principal '%s' with '%s' password",
-                                name, password));
-                        kdc.addPrincipal(name, password.toCharArray());
-                    }
-                });
-            }
-
-            // Create or append keys to existing keytab file
-            if (ktab != null) {
-                File ktabFile = new File(ktab);
-                switch(mode) {
-                    case APPEND:
-                        if (ktabFile.exists()) {
-                            System.out.println(String.format(
-                                    "KDC:append keys to an exising keytab "
-                                    + "file %s", ktab));
-                            kdc.appendKtab(ktab);
-                        } else {
-                            System.out.println(String.format(
-                                    "KDC:create a new keytab file %s", ktab));
-                            kdc.writeKtab(ktab);
-                        }
-                        break;
-                    case EXISTING:
-                        System.out.println(String.format(
-                                "KDC:use an existing keytab file %s", ktab));
-                        break;
-                    default:
-                        throw new RuntimeException(String.format(
-                                "KDC:unsupported keytab mode: %s", mode));
-                }
-            }
-
-            System.out.println(String.format(
-                    "KDC: started on %s:%s with '%s' realm",
-                    host, kdc.getPort(), realm));
-        } catch (Exception e) {
-            throw new RuntimeException("KDC: unexpected exception", e);
-        }
-
-        return kdc;
-    }
-
     /**
      * Helper class to encapsulate a job in a KDC.
      */
@@ -1410,20 +1291,13 @@ public class KDC {
     }
 
     public static class KDCNameService implements NameServiceDescriptor {
-
-        public static String NOT_EXISTING_HOST = "not.existing.host";
-
         @Override
         public NameService createNameService() throws Exception {
             NameService ns = new NameService() {
                 @Override
                 public InetAddress[] lookupAllHostAddr(String host)
                         throws UnknownHostException {
-                    // Everything is localhost except NOT_EXISTING_HOST
-                    if (NOT_EXISTING_HOST.equals(host)) {
-                        throw new UnknownHostException("Unknown host name: "
-                                + NOT_EXISTING_HOST);
-                    }
+                    // Everything is localhost
                     return new InetAddress[]{
                         InetAddress.getByAddress(host, new byte[]{127,0,0,1})
                     };

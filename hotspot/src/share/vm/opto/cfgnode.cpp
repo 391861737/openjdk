@@ -791,7 +791,7 @@ PhiNode* PhiNode::split_out_instance(const TypePtr* at, PhaseIterGVN *igvn) cons
   Compile *C = igvn->C;
   Arena *a = Thread::current()->resource_area();
   Node_Array node_map = new Node_Array(a);
-  Node_Stack stack(a, C->live_nodes() >> 4);
+  Node_Stack stack(a, C->unique() >> 4);
   PhiNode *nphi = slice_memory(at);
   igvn->register_new_node_with_optimizer( nphi );
   node_map.map(_idx, nphi);
@@ -951,7 +951,7 @@ const Type *PhiNode::Value( PhaseTransform *phase ) const {
         if (is_intf != ti_is_intf)
           { t = _type; break; }
       }
-      t = t->meet_speculative(ti);
+      t = t->meet(ti);
     }
   }
 
@@ -968,12 +968,12 @@ const Type *PhiNode::Value( PhaseTransform *phase ) const {
   //
   // It is not possible to see Type::BOTTOM values as phi inputs,
   // because the ciTypeFlow pre-pass produces verifier-quality types.
-  const Type* ft = t->filter_speculative(_type);  // Worst case type
+  const Type* ft = t->filter(_type);  // Worst case type
 
 #ifdef ASSERT
   // The following logic has been moved into TypeOopPtr::filter.
-  const Type* jt = t->join_speculative(_type);
-  if (jt->empty()) {           // Emptied out???
+  const Type* jt = t->join(_type);
+  if( jt->empty() ) {           // Emptied out???
 
     // Check for evil case of 't' being a class and '_type' expecting an
     // interface.  This can happen because the bytecodes do not contain
@@ -984,21 +984,14 @@ const Type *PhiNode::Value( PhaseTransform *phase ) const {
     // be 'I' or 'j/l/O'.  Thus we'll pick 'j/l/O'.  If this then flows
     // into a Phi which "knows" it's an Interface type we'll have to
     // uplift the type.
-    if (!t->empty() && ttip && ttip->is_loaded() && ttip->klass()->is_interface()) {
-      assert(ft == _type, ""); // Uplift to interface
-    } else if (!t->empty() && ttkp && ttkp->is_loaded() && ttkp->klass()->is_interface()) {
-      assert(ft == _type, ""); // Uplift to interface
-    } else {
-      // We also have to handle 'evil cases' of interface- vs. class-arrays
-      Type::get_arrays_base_elements(jt, _type, NULL, &ttip);
-      if (!t->empty() && ttip != NULL && ttip->is_loaded() && ttip->klass()->is_interface()) {
-          assert(ft == _type, "");   // Uplift to array of interface
-      } else {
-        // Otherwise it's something stupid like non-overlapping int ranges
-        // found on dying counted loops.
-        assert(ft == Type::TOP, ""); // Canonical empty value
-      }
-    }
+    if( !t->empty() && ttip && ttip->is_loaded() && ttip->klass()->is_interface() )
+      { assert(ft == _type, ""); } // Uplift to interface
+    else if( !t->empty() && ttkp && ttkp->is_loaded() && ttkp->klass()->is_interface() )
+      { assert(ft == _type, ""); } // Uplift to interface
+    // Otherwise it's something stupid like non-overlapping int ranges
+    // found on dying counted loops.
+    else
+      { assert(ft == Type::TOP, ""); } // Canonical empty value
   }
 
   else {
@@ -1025,7 +1018,7 @@ const Type *PhiNode::Value( PhaseTransform *phase ) const {
           !jtkp->klass_is_exact() && // Keep exact interface klass (6894807)
           ttkp->is_loaded() && !ttkp->klass()->is_interface() ) {
         assert(ft == ttkp->cast_to_ptr_type(jtkp->ptr()) ||
-               ft->isa_narrowklass() && ft->make_ptr() == ttkp->cast_to_ptr_type(jtkp->ptr()), "");
+               ft->isa_narrowoop() && ft->make_ptr() == ttkp->cast_to_ptr_type(jtkp->ptr()), "");
         jt = ft;
       }
     }
@@ -1764,7 +1757,7 @@ Node *PhiNode::Ideal(PhaseGVN *phase, bool can_reshape) {
           break;
         }
         // Accumulate type for resulting Phi
-        type = type->meet_speculative(in(i)->in(AddPNode::Base)->bottom_type());
+        type = type->meet(in(i)->in(AddPNode::Base)->bottom_type());
       }
       Node* base = NULL;
       if (doit) {

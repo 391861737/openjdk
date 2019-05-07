@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 1994, 2014, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 1994, 2013, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -45,6 +45,7 @@ extern jboolean VerifyFixClassname(char *utf_name);
 #define CLS "Ljava/lang/Class;"
 #define CPL "Lsun/reflect/ConstantPool;"
 #define STR "Ljava/lang/String;"
+#define JCL "Ljava/lang/ClassLoader;"
 #define FLD "Ljava/lang/reflect/Field;"
 #define MHD "Ljava/lang/reflect/Method;"
 #define CTR "Ljava/lang/reflect/Constructor;"
@@ -55,6 +56,7 @@ static JNINativeMethod methods[] = {
     {"getName0",         "()" STR,          (void *)&JVM_GetClassName},
     {"getSuperclass",    "()" CLS,          NULL},
     {"getInterfaces0",   "()[" CLS,         (void *)&JVM_GetClassInterfaces},
+    {"getClassLoader0",  "()" JCL,          (void *)&JVM_GetClassLoader},
     {"isInterface",      "()Z",             (void *)&JVM_IsInterface},
     {"getSigners",       "()[" OBJ,         (void *)&JVM_GetClassSigners},
     {"setSigners",       "([" OBJ ")V",     (void *)&JVM_SetClassSigners},
@@ -79,6 +81,7 @@ static JNINativeMethod methods[] = {
 #undef OBJ
 #undef CLS
 #undef STR
+#undef JCL
 #undef FLD
 #undef MHD
 #undef CTR
@@ -94,7 +97,7 @@ Java_java_lang_Class_registerNatives(JNIEnv *env, jclass cls)
 
 JNIEXPORT jclass JNICALL
 Java_java_lang_Class_forName0(JNIEnv *env, jclass this, jstring classname,
-                              jboolean initialize, jobject loader, jclass caller)
+                              jboolean initialize, jobject loader)
 {
     char *clname;
     jclass cls = 0;
@@ -132,7 +135,8 @@ Java_java_lang_Class_forName0(JNIEnv *env, jclass this, jstring classname,
         goto done;
     }
 
-    cls = JVM_FindClassFromCaller(env, clname, initialize, loader, caller);
+    cls = JVM_FindClassFromClassLoader(env, clname, initialize,
+                                       loader, JNI_FALSE);
 
  done:
     if (clname != buf) {

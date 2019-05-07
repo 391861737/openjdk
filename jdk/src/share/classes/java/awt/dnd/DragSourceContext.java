@@ -37,7 +37,6 @@ import java.awt.datatransfer.UnsupportedFlavorException;
 import java.awt.dnd.peer.DragSourceContextPeer;
 
 import java.io.IOException;
-import java.io.InvalidObjectException;
 import java.io.ObjectOutputStream;
 import java.io.ObjectInputStream;
 import java.io.Serializable;
@@ -563,35 +562,7 @@ public class DragSourceContext
     private void readObject(ObjectInputStream s)
         throws ClassNotFoundException, IOException
     {
-        ObjectInputStream.GetField f = s.readFields();
-
-        DragGestureEvent newTrigger = (DragGestureEvent)f.get("trigger", null);
-        if (newTrigger == null) {
-            throw new InvalidObjectException("Null trigger");
-        }
-        if (newTrigger.getDragSource() == null) {
-            throw new InvalidObjectException("Null DragSource");
-        }
-        if (newTrigger.getComponent() == null) {
-            throw new InvalidObjectException("Null trigger component");
-        }
-
-        int newSourceActions = f.get("sourceActions", 0)
-                & (DnDConstants.ACTION_COPY_OR_MOVE | DnDConstants.ACTION_LINK);
-        if (newSourceActions == DnDConstants.ACTION_NONE) {
-            throw new InvalidObjectException("Invalid source actions");
-        }
-        int triggerActions = newTrigger.getDragAction();
-        if (triggerActions != DnDConstants.ACTION_COPY &&
-                triggerActions != DnDConstants.ACTION_MOVE &&
-                triggerActions != DnDConstants.ACTION_LINK) {
-            throw new InvalidObjectException("No drag action");
-        }
-        trigger = newTrigger;
-
-        cursor = (Cursor)f.get("cursor", null);
-        useCustomCursor = f.get("useCustomCursor", false);
-        sourceActions = newSourceActions;
+        s.defaultReadObject();
 
         transferable = (Transferable)s.readObject();
         listener = (DragSourceListener)s.readObject();
@@ -659,5 +630,5 @@ public class DragSourceContext
      *
      * @serial
      */
-    private int sourceActions;
+    private final int sourceActions;
 }

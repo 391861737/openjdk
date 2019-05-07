@@ -88,7 +88,7 @@ import java.util.Collections;
 import java.util.Map;
 
 class BeanIntrospector extends FacetIntrospector {
-    BeanIntrospector(final Class<?> clazz) {
+    BeanIntrospector(Class<?> clazz) {
         super(clazz, true);
     }
 
@@ -98,7 +98,7 @@ class BeanIntrospector extends FacetIntrospector {
     }
 
     @Override
-    MethodHandle editMethodHandle(final MethodHandle mh) {
+    MethodHandle editMethodHandle(MethodHandle mh) {
         return mh;
     }
 }

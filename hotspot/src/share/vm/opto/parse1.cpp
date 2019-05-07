@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 1997, 2016, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 1997, 2013, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -27,7 +27,6 @@
 #include "interpreter/linkResolver.hpp"
 #include "oops/method.hpp"
 #include "opto/addnode.hpp"
-#include "opto/c2compiler.hpp"
 #include "opto/idealGraphPrinter.hpp"
 #include "opto/locknode.hpp"
 #include "opto/memnode.hpp"
@@ -106,25 +105,25 @@ Node *Parse::fetch_interpreter_state(int index,
 
   // Very similar to LoadNode::make, except we handle un-aligned longs and
   // doubles on Sparc.  Intel can handle them just fine directly.
-  Node *l = NULL;
-  switch (bt) {                // Signature is flattened
-  case T_INT:     l = new (C) LoadINode(ctl, mem, adr, TypeRawPtr::BOTTOM, TypeInt::INT,        MemNode::unordered); break;
-  case T_FLOAT:   l = new (C) LoadFNode(ctl, mem, adr, TypeRawPtr::BOTTOM, Type::FLOAT,         MemNode::unordered); break;
-  case T_ADDRESS: l = new (C) LoadPNode(ctl, mem, adr, TypeRawPtr::BOTTOM, TypeRawPtr::BOTTOM,  MemNode::unordered); break;
-  case T_OBJECT:  l = new (C) LoadPNode(ctl, mem, adr, TypeRawPtr::BOTTOM, TypeInstPtr::BOTTOM, MemNode::unordered); break;
+  Node *l;
+  switch( bt ) {                // Signature is flattened
+  case T_INT:     l = new (C) LoadINode( ctl, mem, adr, TypeRawPtr::BOTTOM ); break;
+  case T_FLOAT:   l = new (C) LoadFNode( ctl, mem, adr, TypeRawPtr::BOTTOM ); break;
+  case T_ADDRESS: l = new (C) LoadPNode( ctl, mem, adr, TypeRawPtr::BOTTOM, TypeRawPtr::BOTTOM  ); break;
+  case T_OBJECT:  l = new (C) LoadPNode( ctl, mem, adr, TypeRawPtr::BOTTOM, TypeInstPtr::BOTTOM ); break;
   case T_LONG:
   case T_DOUBLE: {
     // Since arguments are in reverse order, the argument address 'adr'
     // refers to the back half of the long/double.  Recompute adr.
-    adr = basic_plus_adr(local_addrs_base, local_addrs, -(index+1)*wordSize);
-    if (Matcher::misaligned_doubles_ok) {
+    adr = basic_plus_adr( local_addrs_base, local_addrs, -(index+1)*wordSize );
+    if( Matcher::misaligned_doubles_ok ) {
       l = (bt == T_DOUBLE)
-        ? (Node*)new (C) LoadDNode(ctl, mem, adr, TypeRawPtr::BOTTOM, Type::DOUBLE, MemNode::unordered)
-        : (Node*)new (C) LoadLNode(ctl, mem, adr, TypeRawPtr::BOTTOM, TypeLong::LONG, MemNode::unordered);
+        ? (Node*)new (C) LoadDNode( ctl, mem, adr, TypeRawPtr::BOTTOM )
+        : (Node*)new (C) LoadLNode( ctl, mem, adr, TypeRawPtr::BOTTOM );
     } else {
       l = (bt == T_DOUBLE)
-        ? (Node*)new (C) LoadD_unalignedNode(ctl, mem, adr, TypeRawPtr::BOTTOM, MemNode::unordered)
-        : (Node*)new (C) LoadL_unalignedNode(ctl, mem, adr, TypeRawPtr::BOTTOM, MemNode::unordered);
+        ? (Node*)new (C) LoadD_unalignedNode( ctl, mem, adr, TypeRawPtr::BOTTOM )
+        : (Node*)new (C) LoadL_unalignedNode( ctl, mem, adr, TypeRawPtr::BOTTOM );
     }
     break;
   }
@@ -230,7 +229,7 @@ void Parse::load_interpreter_state(Node* osr_buf) {
     Node *displaced_hdr = fetch_interpreter_state((index*2) + 1, T_ADDRESS, monitors_addr, osr_buf);
 
 
-    store_to_memory(control(), box, displaced_hdr, T_ADDRESS, Compile::AliasIdxRaw, MemNode::unordered);
+    store_to_memory(control(), box, displaced_hdr, T_ADDRESS, Compile::AliasIdxRaw);
 
     // Build a bogus FastLockNode (no code will be generated) and push the
     // monitor into our debug info.
@@ -382,8 +381,8 @@ void Parse::load_interpreter_state(Node* osr_buf) {
 
 //------------------------------Parse------------------------------------------
 // Main parser constructor.
-Parse::Parse(JVMState* caller, ciMethod* parse_method, float expected_uses)
-  : _exits(caller)
+Parse::Parse(JVMState* caller, ciMethod* parse_method, float expected_uses, Parse* parent)
+  : _exits(caller), _parent(parent)
 {
   // Init some variables
   _caller = caller;
@@ -391,14 +390,10 @@ Parse::Parse(JVMState* caller, ciMethod* parse_method, float expected_uses)
   _expected_uses = expected_uses;
   _depth = 1 + (caller->has_method() ? caller->depth() : 0);
   _wrote_final = false;
-  _wrote_volatile = false;
   _alloc_with_final = NULL;
   _entry_bci = InvocationEntryBci;
   _tf = NULL;
   _block = NULL;
-  _first_return = true;
-  _replaced_nodes_for_exceptions = false;
-  _new_idx = C->unique();
   debug_only(_block_count = -1);
   debug_only(_blocks = (Block*)-1);
 #ifndef PRODUCT
@@ -570,12 +565,7 @@ Parse::Parse(JVMState* caller, ciMethod* parse_method, float expected_uses)
     do_method_entry();
   }
 
-  if (depth() == 1 && !failing()) {
-    // Add check to deoptimize the nmethod if RTM state was changed
-    rtm_deopt();
-  }
-
-  // Check for bailouts during method entry or RTM state check setup.
+  // Check for bailouts during method entry.
   if (failing()) {
     if (log)  log->done("parse");
     C->set_default_node_notes(caller_nn);
@@ -612,7 +602,7 @@ Parse::Parse(JVMState* caller, ciMethod* parse_method, float expected_uses)
   set_map(entry_map);
   do_exits();
 
-  if (log)  log->done("parse nodes='%d' live='%d' memory='" SIZE_FORMAT "'",
+  if (log)  log->done("parse nodes='%d' live='%d' memory='%d'",
                       C->unique(), C->live_nodes(), C->node_arena()->used());
 }
 
@@ -718,27 +708,6 @@ void Parse::do_all_blocks() {
 #endif
 }
 
-static Node* mask_int_value(Node* v, BasicType bt, PhaseGVN* gvn) {
-  Compile* C = gvn->C;
-  switch (bt) {
-  case T_BYTE:
-    v = gvn->transform(new (C) LShiftINode(v, gvn->intcon(24)));
-    v = gvn->transform(new (C) RShiftINode(v, gvn->intcon(24)));
-    break;
-  case T_SHORT:
-    v = gvn->transform(new (C) LShiftINode(v, gvn->intcon(16)));
-    v = gvn->transform(new (C) RShiftINode(v, gvn->intcon(16)));
-    break;
-  case T_CHAR:
-    v = gvn->transform(new (C) AndINode(v, gvn->intcon(0xFFFF)));
-    break;
-  case T_BOOLEAN:
-    v = gvn->transform(new (C) AndINode(v, gvn->intcon(0x1)));
-    break;
-  }
-  return v;
-}
-
 //-------------------------------build_exits----------------------------------
 // Build normal and exceptional exit merge points.
 void Parse::build_exits() {
@@ -763,16 +732,6 @@ void Parse::build_exits() {
   // Add a return value to the exit state.  (Do not push it yet.)
   if (tf()->range()->cnt() > TypeFunc::Parms) {
     const Type* ret_type = tf()->range()->field_at(TypeFunc::Parms);
-    if (ret_type->isa_int()) {
-      BasicType ret_bt = method()->return_type()->basic_type();
-      if (ret_bt == T_BOOLEAN ||
-          ret_bt == T_CHAR ||
-          ret_bt == T_BYTE ||
-          ret_bt == T_SHORT) {
-        ret_type = TypeInt::INT;
-      }
-    }
-
     // Don't "bind" an unloaded return klass to the ret_phi. If the klass
     // becomes loaded during the subsequent parsing, the loaded and unloaded
     // types will not join when we transform and push in do_exits().
@@ -930,10 +889,6 @@ void Parse::throw_to_exit(SafePointNode* ex_map) {
   for (uint i = 0; i < TypeFunc::Parms; i++) {
     caller.map()->set_req(i, ex_map->in(i));
   }
-  if (ex_map->has_replaced_nodes()) {
-    _replaced_nodes_for_exceptions = true;
-  }
-  caller.map()->transfer_replaced_nodes_from(ex_map, _new_idx);
   // ...and the exception:
   Node*          ex_oop        = saved_ex_oop(ex_map);
   SafePointNode* caller_ex_map = caller.make_exception_state(ex_oop);
@@ -952,13 +907,7 @@ void Parse::do_exits() {
   Node* iophi = _exits.i_o();
   _exits.set_i_o(gvn().transform(iophi));
 
-  // On PPC64, also add MemBarRelease for constructors which write
-  // volatile fields. As support_IRIW_for_not_multiple_copy_atomic_cpu
-  // is set on PPC64, no sync instruction is issued after volatile
-  // stores. We want to quarantee the same behaviour as on platforms
-  // with total store order, although this is not required by the Java
-  // memory model. So as with finals, we add a barrier here.
-  if (wrote_final() PPC64_ONLY(|| (wrote_volatile() && method()->is_initializer()))) {
+  if (wrote_final()) {
     // This method (which must be a constructor by the rules of Java)
     // wrote a final.  The effects of all initializations must be
     // committed to memory before any code after the constructor
@@ -989,27 +938,7 @@ void Parse::do_exits() {
   if (tf()->range()->cnt() > TypeFunc::Parms) {
     const Type* ret_type = tf()->range()->field_at(TypeFunc::Parms);
     Node*       ret_phi  = _gvn.transform( _exits.argument(0) );
-    if (!_exits.control()->is_top() && _gvn.type(ret_phi)->empty()) {
-      // In case of concurrent class loading, the type we set for the
-      // ret_phi in build_exits() may have been too optimistic and the
-      // ret_phi may be top now.
-      // Otherwise, we've encountered an error and have to mark the method as
-      // not compilable. Just using an assertion instead would be dangerous
-      // as this could lead to an infinite compile loop in non-debug builds.
-      {
-        MutexLockerEx ml(Compile_lock, Mutex::_no_safepoint_check_flag);
-        if (C->env()->system_dictionary_modification_counter_changed()) {
-          C->record_failure(C2Compiler::retry_class_loading_during_parsing());
-        } else {
-          C->record_method_not_compilable("Can't determine return type.");
-        }
-      }
-      return;
-    }
-    if (ret_type->isa_int()) {
-      BasicType ret_bt = method()->return_type()->basic_type();
-      ret_phi = mask_int_value(ret_phi, ret_bt, &_gvn);
-    }
+    assert(_exits.control()->is_top() || !_gvn.type(ret_phi)->empty(), "return value must be well defined");
     _exits.push_node(ret_type->basic_type(), ret_phi);
   }
 
@@ -1022,7 +951,7 @@ void Parse::do_exits() {
   bool do_synch = method()->is_synchronized() && GenerateSynchronizationCode;
 
   // record exit from a method if compiled while Dtrace is turned on.
-  if (do_synch || C->env()->dtrace_method_probes() || _replaced_nodes_for_exceptions) {
+  if (do_synch || C->env()->dtrace_method_probes()) {
     // First move the exception list out of _exits:
     GraphKit kit(_exits.transfer_exceptions_into_jvms());
     SafePointNode* normal_map = kit.map();  // keep this guy safe
@@ -1047,9 +976,6 @@ void Parse::do_exits() {
       if (C->env()->dtrace_method_probes()) {
         kit.make_dtrace_method_exit(method());
       }
-      if (_replaced_nodes_for_exceptions) {
-        kit.map()->apply_replaced_nodes(_new_idx);
-      }
       // Done with exception-path processing.
       ex_map = kit.make_exception_state(ex_oop);
       assert(ex_jvms->same_calls_as(ex_map->jvms()), "sanity");
@@ -1069,7 +995,6 @@ void Parse::do_exits() {
       _exits.add_exception_state(ex_map);
     }
   }
-  _exits.map()->apply_replaced_nodes(_new_idx);
 }
 
 //-----------------------------create_entry_map-------------------------------
@@ -1083,9 +1008,6 @@ SafePointNode* Parse::create_entry_map() {
     C->record_method_not_compilable_all_tiers("too many local variables");
     return NULL;
   }
-
-  // clear current replaced nodes that are of no use from here on (map was cloned in build_exits).
-  _caller->map()->delete_replaced_nodes();
 
   // If this is an inlined method, we may have to do a receiver null check.
   if (_caller->has_method() && is_normal_parse() && !method()->is_static()) {
@@ -1110,8 +1032,6 @@ SafePointNode* Parse::create_entry_map() {
 
   SafePointNode* inmap = _caller->map();
   assert(inmap != NULL, "must have inmap");
-  // In case of null check on receiver above
-  map()->transfer_replaced_nodes_from(inmap, _new_idx);
 
   uint i;
 
@@ -1438,7 +1358,7 @@ void Parse::do_one_block() {
       tty->print((( i < ns) ? " %d" : " %d(e)"), b->successor_at(i)->rpo());
     }
     if (b->is_loop_head()) tty->print("  lphd");
-    tty->cr();
+    tty->print_cr("");
   }
 
   assert(block()->is_merged(), "must be merged before being parsed");
@@ -1729,7 +1649,7 @@ void Parse::merge_common(Parse::Block* target, int pnum) {
           assert(bt1 != Type::BOTTOM, "should not be building conflict phis");
           map()->set_req(j, _gvn.transform_no_reclaim(phi));
           debug_only(const Type* bt2 = phi->bottom_type());
-          assert(bt2->higher_equal_speculative(bt1), "must be consistent with type-flow");
+          assert(bt2->higher_equal(bt1), "must be consistent with type-flow");
           record_for_igvn(phi);
         }
       }
@@ -1740,8 +1660,6 @@ void Parse::merge_common(Parse::Block* target, int pnum) {
       assert(control() == r, "");
       set_control(r->nonnull_req());
     }
-
-    map()->merge_replaced_nodes_with(newin);
 
     // newin has been subsumed into the lazy merge, and is now dead.
     set_block(save_block);
@@ -1914,7 +1832,7 @@ PhiNode *Parse::ensure_phi(int idx, bool nocreate) {
   // Now use a Phi here for merging
   assert(!nocreate, "Cannot build a phi for a block already parsed.");
   const JVMState* jvms = map->jvms();
-  const Type* t = NULL;
+  const Type* t;
   if (jvms->is_loc(idx)) {
     t = block()->local_type_at(idx - jvms->locoff());
   } else if (jvms->is_stk(idx)) {
@@ -2010,10 +1928,10 @@ void Parse::call_register_finalizer() {
   // finalization.  In general this will fold up since the concrete
   // class is often visible so the access flags are constant.
   Node* klass_addr = basic_plus_adr( receiver, receiver, oopDesc::klass_offset_in_bytes() );
-  Node* klass = _gvn.transform(LoadKlassNode::make(_gvn, NULL, immutable_memory(), klass_addr, TypeInstPtr::KLASS));
+  Node* klass = _gvn.transform( LoadKlassNode::make(_gvn, immutable_memory(), klass_addr, TypeInstPtr::KLASS) );
 
   Node* access_flags_addr = basic_plus_adr(klass, klass, in_bytes(Klass::access_flags_offset()));
-  Node* access_flags = make_load(NULL, access_flags_addr, TypeInt::INT, T_INT, MemNode::unordered);
+  Node* access_flags = make_load(NULL, access_flags_addr, TypeInt::INT, T_INT);
 
   Node* mask  = _gvn.transform(new (C) AndINode(access_flags, intcon(JVM_ACC_HAS_FINALIZER)));
   Node* check = _gvn.transform(new (C) CmpINode(mask, intcon(0)));
@@ -2057,42 +1975,6 @@ void Parse::call_register_finalizer() {
   set_control( _gvn.transform(result_rgn) );
 }
 
-// Add check to deoptimize if RTM state is not ProfileRTM
-void Parse::rtm_deopt() {
-#if INCLUDE_RTM_OPT
-  if (C->profile_rtm()) {
-    assert(C->method() != NULL, "only for normal compilations");
-    assert(!C->method()->method_data()->is_empty(), "MDO is needed to record RTM state");
-    assert(depth() == 1, "generate check only for main compiled method");
-
-    // Set starting bci for uncommon trap.
-    set_parse_bci(is_osr_parse() ? osr_bci() : 0);
-
-    // Load the rtm_state from the MethodData.
-    const TypePtr* adr_type = TypeMetadataPtr::make(C->method()->method_data());
-    Node* mdo = makecon(adr_type);
-    int offset = MethodData::rtm_state_offset_in_bytes();
-    Node* adr_node = basic_plus_adr(mdo, mdo, offset);
-    Node* rtm_state = make_load(control(), adr_node, TypeInt::INT, T_INT, adr_type, MemNode::unordered);
-
-    // Separate Load from Cmp by Opaque.
-    // In expand_macro_nodes() it will be replaced either
-    // with this load when there are locks in the code
-    // or with ProfileRTM (cmp->in(2)) otherwise so that
-    // the check will fold.
-    Node* profile_state = makecon(TypeInt::make(ProfileRTM));
-    Node* opq   = _gvn.transform( new (C) Opaque3Node(C, rtm_state, Opaque3Node::RTM_OPT) );
-    Node* chk   = _gvn.transform( new (C) CmpINode(opq, profile_state) );
-    Node* tst   = _gvn.transform( new (C) BoolNode(chk, BoolTest::eq) );
-    // Branch to failure if state was changed
-    { BuildCutout unless(this, tst, PROB_ALWAYS);
-      uncommon_trap(Deoptimization::Reason_rtm_state_change,
-                    Deoptimization::Action_make_not_entrant);
-    }
-  }
-#endif
-}
-
 //------------------------------return_current---------------------------------
 // Append current _map to _exit_return
 void Parse::return_current(Node* value) {
@@ -2133,34 +2015,18 @@ void Parse::return_current(Node* value) {
     // here.
     Node* phi = _exits.argument(0);
     const TypeInstPtr *tr = phi->bottom_type()->isa_instptr();
-    if (tr && tr->klass()->is_loaded() &&
-        tr->klass()->is_interface()) {
+    if( tr && tr->klass()->is_loaded() &&
+        tr->klass()->is_interface() ) {
       const TypeInstPtr *tp = value->bottom_type()->isa_instptr();
       if (tp && tp->klass()->is_loaded() &&
           !tp->klass()->is_interface()) {
         // sharpen the type eagerly; this eases certain assert checking
         if (tp->higher_equal(TypeInstPtr::NOTNULL))
-          tr = tr->join_speculative(TypeInstPtr::NOTNULL)->is_instptr();
-        value = _gvn.transform(new (C) CheckCastPPNode(0, value, tr));
-      }
-    } else {
-      // Also handle returns of oop-arrays to an arrays-of-interface return
-      const TypeInstPtr* phi_tip;
-      const TypeInstPtr* val_tip;
-      Type::get_arrays_base_elements(phi->bottom_type(), value->bottom_type(), &phi_tip, &val_tip);
-      if (phi_tip != NULL && phi_tip->is_loaded() && phi_tip->klass()->is_interface() &&
-          val_tip != NULL && val_tip->is_loaded() && !val_tip->klass()->is_interface()) {
-         value = _gvn.transform(new (C) CheckCastPPNode(0, value, phi->bottom_type()));
+          tr = tr->join(TypeInstPtr::NOTNULL)->is_instptr();
+        value = _gvn.transform(new (C) CheckCastPPNode(0,value,tr));
       }
     }
     phi->add_req(value);
-  }
-
-  if (_first_return) {
-    _exits.map()->transfer_replaced_nodes_from(map(), _new_idx);
-    _first_return = false;
-  } else {
-    _exits.map()->merge_replaced_nodes_with(map());
   }
 
   stop_and_kill_map();          // This CFG path dies here

@@ -63,8 +63,6 @@ void SegmentArrayProcessor::process(LEGlyphStorage &glyphStorage, LEErrorCode &s
     le_int32 glyphCount = glyphStorage.getGlyphCount();
     le_int32 glyph;
 
-    if (LE_FAILURE(success)) return;
-
     for (glyph = 0; glyph < glyphCount; glyph += 1) {
         LEGlyphID thisGlyph = glyphStorage[glyph];
         const LookupSegment *lookupSegment = segmentArrayLookupTable->lookupSegment(segmentArrayLookupTable, segments, thisGlyph, success);
@@ -75,7 +73,6 @@ void SegmentArrayProcessor::process(LEGlyphStorage &glyphStorage, LEErrorCode &s
 
             if (offset != 0) {
               LEReferenceToArrayOf<TTGlyphID> glyphArray(subtableHeader, success, offset, LE_UNBOUNDED_ARRAY);
-              if (LE_FAILURE(success)) { continue; }
               TTGlyphID   newGlyph   = SWAPW(glyphArray(LE_GET_GLYPH(thisGlyph) - firstGlyph, success));
               glyphStorage[glyph] = LE_SET_GLYPH(thisGlyph, newGlyph);
             }

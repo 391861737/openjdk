@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2012, 2015, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2012, 2013, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -535,17 +535,11 @@ public final class IsoFields {
                 if (isSupportedBy(temporal) == false) {
                     throw new UnsupportedTemporalTypeException("Unsupported field: WeekBasedYear");
                 }
-                int newWby = range().checkValidIntValue(newValue, WEEK_BASED_YEAR);  // strict check
+                int newVal = range().checkValidIntValue(newValue, WEEK_BASED_YEAR);  // strict check
                 LocalDate date = LocalDate.from(temporal);
-                int dow = date.get(DAY_OF_WEEK);
                 int week = getWeek(date);
-                if (week == 53 && getWeekRange(newWby) == 52) {
-                    week = 52;
-                }
-                LocalDate resolved = LocalDate.of(newWby, 1, 4);  // 4th is guaranteed to be in week one
-                int days = (dow - resolved.get(DAY_OF_WEEK)) + ((week - 1) * 7);
-                resolved = resolved.plusDays(days);
-                return (R) temporal.with(resolved);
+                date = date.withDayOfYear(180).withYear(newVal).with(WEEK_OF_WEEK_BASED_YEAR, week);
+                return (R) date.with(date);
             }
             @Override
             public String toString() {
@@ -583,16 +577,12 @@ public final class IsoFields {
 
         private static ValueRange getWeekRange(LocalDate date) {
             int wby = getWeekBasedYear(date);
-            return ValueRange.of(1, getWeekRange(wby));
-        }
-
-        private static int getWeekRange(int wby) {
-            LocalDate date = LocalDate.of(wby, 1, 1);
+            date = date.withDayOfYear(1).withYear(wby);
             // 53 weeks if standard year starts on Thursday, or Wed in a leap year
             if (date.getDayOfWeek() == THURSDAY || (date.getDayOfWeek() == WEDNESDAY && date.isLeapYear())) {
-                return 53;
+                return ValueRange.of(1, 53);
             }
-            return 52;
+            return ValueRange.of(1, 52);
         }
 
         private static int getWeek(LocalDate date) {
@@ -638,7 +628,7 @@ public final class IsoFields {
 
     //-----------------------------------------------------------------------
     /**
-     * Implementation of the unit.
+     * Implementation of the period unit.
      */
     private static enum Unit implements TemporalUnit {
 

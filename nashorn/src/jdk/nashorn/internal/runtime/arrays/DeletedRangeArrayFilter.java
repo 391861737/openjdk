@@ -36,16 +36,9 @@ final class DeletedRangeArrayFilter extends ArrayFilter {
     private long lo, hi;
 
     DeletedRangeArrayFilter(final ArrayData underlying, final long lo, final long hi) {
-        super(maybeSparse(underlying, hi));
+        super(underlying);
         this.lo = lo;
         this.hi = hi;
-    }
-
-    private static ArrayData maybeSparse(final ArrayData underlying, final long hi) {
-        if (hi < SparseArrayData.MAX_DENSE_LENGTH || underlying instanceof SparseArrayData) {
-            return underlying;
-        }
-        return new SparseArrayData(underlying, underlying.length());
     }
 
     private boolean isEmpty() {
@@ -53,8 +46,7 @@ final class DeletedRangeArrayFilter extends ArrayFilter {
     }
 
     private boolean isDeleted(final int index) {
-        final long longIndex = ArrayIndex.toLongIndex(index);
-        return lo <= longIndex && longIndex <= hi;
+        return lo <= index && index <= hi;
     }
 
     @Override
@@ -66,9 +58,9 @@ final class DeletedRangeArrayFilter extends ArrayFilter {
     public Object[] asObjectArray() {
         final Object[] value = super.asObjectArray();
 
-        if (lo < Integer.MAX_VALUE) {
-            final int end = (int)Math.min(hi + 1, Integer.MAX_VALUE);
-            for (int i = (int)lo; i < end; i++) {
+        if (lo <= Integer.MAX_VALUE) {
+            final int intHi = (int)Math.min(hi, Integer.MAX_VALUE);
+            for (int i = (int)lo; i <= intHi; i++) {
                 value[i] = ScriptRuntime.UNDEFINED;
             }
         }
@@ -81,9 +73,9 @@ final class DeletedRangeArrayFilter extends ArrayFilter {
         final Object value = super.asArrayOfType(componentType);
         final Object undefValue = convertUndefinedValue(componentType);
 
-        if (lo < Integer.MAX_VALUE) {
-            final int end = (int)Math.min(hi + 1, Integer.MAX_VALUE);
-            for (int i = (int)lo; i < end; i++) {
+        if (lo <= Integer.MAX_VALUE) {
+            final int intHi = (int)Math.min(hi, Integer.MAX_VALUE);
+            for (int i = (int)lo; i <= intHi; i++) {
                 Array.set(value, i, undefValue);
             }
         }
@@ -101,20 +93,17 @@ final class DeletedRangeArrayFilter extends ArrayFilter {
     }
 
     @Override
-    public ArrayData shiftLeft(final int by) {
+    public void shiftLeft(final int by) {
         super.shiftLeft(by);
         lo = Math.max(0, lo - by);
         hi = Math.max(-1, hi - by);
-
-        return isEmpty() ? getUnderlying() : this;
     }
 
     @Override
     public ArrayData shiftRight(final int by) {
         super.shiftRight(by);
-        final long len = length();
-        lo = Math.min(len, lo + by);
-        hi = Math.min(len - 1, hi + by);
+        lo = Math.min(length(), lo + by);
+        hi = Math.min(length() - 1, hi + by);
 
         return isEmpty() ? getUnderlying() : this;
     }
@@ -148,6 +137,24 @@ final class DeletedRangeArrayFilter extends ArrayFilter {
 
     @Override
     public ArrayData set(final int index, final int value, final boolean strict) {
+        final long longIndex = ArrayIndex.toLongIndex(index);
+        if (longIndex < lo || longIndex > hi) {
+            return super.set(index, value, strict);
+        } else if (longIndex > lo && longIndex < hi) {
+            return getDeletedArrayFilter().set(index, value, strict);
+        }
+        if (longIndex == lo) {
+            lo++;
+        } else {
+            assert longIndex == hi;
+            hi--;
+        }
+
+        return isEmpty() ? getUnderlying().set(index, value, strict) : super.set(index, value, strict);
+    }
+
+    @Override
+    public ArrayData set(final int index, final long value, final boolean strict) {
         final long longIndex = ArrayIndex.toLongIndex(index);
         if (longIndex < lo || longIndex > hi) {
             return super.set(index, value, strict);
@@ -222,7 +229,7 @@ final class DeletedRangeArrayFilter extends ArrayFilter {
 
     @Override
     public Object pop() {
-        final int index = (int)length() - 1;
+        final int index = (int)(length() - 1);
         if (super.has(index)) {
             final boolean isDeleted = isDeleted(index);
             final Object value      = super.pop();

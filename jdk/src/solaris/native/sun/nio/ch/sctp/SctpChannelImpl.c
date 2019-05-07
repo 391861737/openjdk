@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2009, 2015, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2009, 2012, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -38,7 +38,8 @@
 #include "sun_nio_ch_sctp_ResultContainer.h"
 #include "sun_nio_ch_sctp_PeerAddrChange.h"
 
-static int SCTP_NOTIFICATION_SIZE = sizeof(union sctp_notification);
+/* sizeof(union sctp_notification */
+#define NOTIFICATION_BUFFER_SIZE 280
 
 #define MESSAGE_IMPL_CLASS              "sun/nio/ch/sctp/MessageInfoImpl"
 #define RESULT_CONTAINER_CLASS          "sun/nio/ch/sctp/ResultContainer"
@@ -213,7 +214,6 @@ void handleSendFailed
 
     /* retrieved address from sockaddr */
     isaObj = SockAddrToInetSocketAddress(env, sap);
-    CHECK_NULL(isaObj);
 
     /* data retrieved from sff_data */
     if (dataLength > 0) {
@@ -338,7 +338,6 @@ void handlePeerAddrChange
     }
 
     addressObj = SockAddrToInetSocketAddress(env, (struct sockaddr*)&spc->spc_aaddr);
-    CHECK_NULL(addressObj);
 
     /* create PeerAddressChanged */
     resultObj = (*env)->NewObject(env, spc_class, spc_ctrID, spc->spc_assoc_id,
@@ -395,7 +394,6 @@ void handleMessage
     }
 
     isa = SockAddrToInetSocketAddress(env, sap);
-    CHECK_NULL(isa);
     getControlData(msg, cdata);
 
     /* create MessageInfoImpl */
@@ -462,42 +460,20 @@ JNIEXPORT jint JNICALL Java_sun_nio_ch_sctp_SctpChannelImpl_receive0
         if (msg->msg_flags & MSG_NOTIFICATION) {
             char *bufp = (char*)addr;
             union sctp_notification *snp;
-            jboolean allocated = JNI_FALSE;
 
-            if (!(msg->msg_flags & MSG_EOR) && length < SCTP_NOTIFICATION_SIZE) {
-                char* newBuf;
+            if (!(msg->msg_flags & MSG_EOR) && length < NOTIFICATION_BUFFER_SIZE) {
+                char buf[NOTIFICATION_BUFFER_SIZE];
                 int rvSAVE = rv;
-
-                if ((newBuf = malloc(SCTP_NOTIFICATION_SIZE)) == NULL) {
-                    JNU_ThrowOutOfMemoryError(env, "Out of native heap space.");
-                    return -1;
-                }
-                allocated = JNI_TRUE;
-
-                memcpy(newBuf, addr, rv);
-                iov->iov_base = newBuf + rv;
-                iov->iov_len = SCTP_NOTIFICATION_SIZE - rv;
+                memcpy(buf, addr, rv);
+                iov->iov_base = buf + rv;
+                iov->iov_len = NOTIFICATION_BUFFER_SIZE - rv;
                 if ((rv = recvmsg(fd, msg, flags)) < 0) {
                     handleSocketError(env, errno);
                     return 0;
                 }
-                bufp = newBuf;
+                bufp = buf;
                 rv += rvSAVE;
             }
-#ifdef __sparc
-              else if ((intptr_t)addr & 0x3) {
-                /* the given buffer is not 4 byte aligned */
-                char* newBuf;
-                if ((newBuf = malloc(SCTP_NOTIFICATION_SIZE)) == NULL) {
-                    JNU_ThrowOutOfMemoryError(env, "Out of native heap space.");
-                    return -1;
-                }
-                allocated = JNI_TRUE;
-
-                memcpy(newBuf, addr, rv);
-                bufp = newBuf;
-            }
-#endif
             snp = (union sctp_notification *) bufp;
             if (handleNotification(env, fd, resultContainerObj, snp, rv,
                                    (msg->msg_flags & MSG_EOR),
@@ -505,14 +481,7 @@ JNIEXPORT jint JNICALL Java_sun_nio_ch_sctp_SctpChannelImpl_receive0
                 /* We have received a notification that is of interest to
                    to the Java API. The appropriate notification will be
                    set in the result container. */
-                if (allocated == JNI_TRUE) {
-                    free(bufp);
-                }
                 return 0;
-            }
-
-            if (allocated == JNI_TRUE) {
-                free(bufp);
             }
 
             // set iov back to addr, and reset msg_controllen
@@ -611,3 +580,4 @@ JNIEXPORT jint JNICALL Java_sun_nio_ch_sctp_SctpChannelImpl_checkConnect
     return Java_sun_nio_ch_SocketChannelImpl_checkConnect(env, this,
                                                           fdo, block, ready);
 }
+

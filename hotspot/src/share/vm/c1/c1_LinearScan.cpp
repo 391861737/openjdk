@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2005, 2015, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2005, 2013, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -1628,22 +1628,25 @@ void LinearScan::allocate_registers() {
   Interval* precolored_cpu_intervals, *not_precolored_cpu_intervals;
   Interval* precolored_fpu_intervals, *not_precolored_fpu_intervals;
 
+  create_unhandled_lists(&precolored_cpu_intervals, &not_precolored_cpu_intervals, is_precolored_cpu_interval, is_virtual_cpu_interval);
+  if (has_fpu_registers()) {
+    create_unhandled_lists(&precolored_fpu_intervals, &not_precolored_fpu_intervals, is_precolored_fpu_interval, is_virtual_fpu_interval);
+#ifdef ASSERT
+  } else {
+    // fpu register allocation is omitted because no virtual fpu registers are present
+    // just check this again...
+    create_unhandled_lists(&precolored_fpu_intervals, &not_precolored_fpu_intervals, is_precolored_fpu_interval, is_virtual_fpu_interval);
+    assert(not_precolored_fpu_intervals == Interval::end(), "missed an uncolored fpu interval");
+#endif
+  }
+
   // allocate cpu registers
-  create_unhandled_lists(&precolored_cpu_intervals, &not_precolored_cpu_intervals,
-                         is_precolored_cpu_interval, is_virtual_cpu_interval);
-
-  // allocate fpu registers
-  create_unhandled_lists(&precolored_fpu_intervals, &not_precolored_fpu_intervals,
-                         is_precolored_fpu_interval, is_virtual_fpu_interval);
-
-  // the fpu interval allocation cannot be moved down below with the fpu section as
-  // the cpu_lsw.walk() changes interval positions.
-
   LinearScanWalker cpu_lsw(this, precolored_cpu_intervals, not_precolored_cpu_intervals);
   cpu_lsw.walk();
   cpu_lsw.finish_allocation();
 
   if (has_fpu_registers()) {
+    // allocate fpu registers
     LinearScanWalker fpu_lsw(this, precolored_fpu_intervals, not_precolored_fpu_intervals);
     fpu_lsw.walk();
     fpu_lsw.finish_allocation();
@@ -2138,7 +2141,7 @@ LIR_Opr LinearScan::calc_operand_for_interval(const Interval* interval) {
         assert(interval->assigned_regHi() >= pd_first_fpu_reg && interval->assigned_regHi() <= pd_last_fpu_reg, "no fpu register");
         assert(assigned_reg % 2 == 0 && assigned_reg + 1 == interval->assigned_regHi(), "must be sequential and even");
         LIR_Opr result = LIR_OprFact::double_fpu(interval->assigned_regHi() - pd_first_fpu_reg, assigned_reg - pd_first_fpu_reg);
-#elif defined(ARM32)
+#elif defined(ARM)
         assert(assigned_reg >= pd_first_fpu_reg && assigned_reg <= pd_last_fpu_reg, "no fpu register");
         assert(interval->assigned_regHi() >= pd_first_fpu_reg && interval->assigned_regHi() <= pd_last_fpu_reg, "no fpu register");
         assert(assigned_reg % 2 == 0 && assigned_reg + 1 == interval->assigned_regHi(), "must be sequential and even");
@@ -2379,6 +2382,16 @@ OopMap* LinearScan::compute_oop_map(IntervalWalker* iw, LIR_Op* op, CodeEmitInfo
   int arg_count = frame_map()->oop_map_arg_count();
   OopMap* map = new OopMap(frame_size, arg_count);
 
+  // Check if this is a patch site.
+  bool is_patch_info = false;
+  if (op->code() == lir_move) {
+    assert(!is_call_site, "move must not be a call site");
+    assert(op->as_Op1() != NULL, "move must be LIR_Op1");
+    LIR_Op1* move = (LIR_Op1*)op;
+
+    is_patch_info = move->patch_code() != lir_patch_none;
+  }
+
   // Iterate through active intervals
   for (Interval* interval = iw->active_first(fixedKind); interval != Interval::end(); interval = interval->next()) {
     int assigned_reg = interval->assigned_reg();
@@ -2393,7 +2406,7 @@ OopMap* LinearScan::compute_oop_map(IntervalWalker* iw, LIR_Op* op, CodeEmitInfo
     // moves, any intervals which end at this instruction are included
     // in the oop map since we may safepoint while doing the patch
     // before we've consumed the inputs.
-    if (op->is_patching() || op->id() < interval->current_to()) {
+    if (is_patch_info || op->id() < interval->current_to()) {
 
       // caller-save registers must not be included into oop-maps at calls
       assert(!is_call_site || assigned_reg >= nof_regs || !is_caller_save(assigned_reg), "interval is in a caller-save register at a call -> register will be overwritten");
@@ -2437,9 +2450,6 @@ void LinearScan::compute_oop_map(IntervalWalker* iw, const LIR_OpVisitState &vis
   for (int i = 0; i < visitor.info_count(); i++) {
     CodeEmitInfo* info = visitor.info_at(i);
     OopMap* oop_map = first_oop_map;
-
-    // compute worst case interpreter size in case of a deoptimization
-    _compilation->update_interpreter_frame_size(info->interpreter_frame_size());
 
     if (info->stack()->locks_size() != first_info->stack()->locks_size()) {
       // this info has a different number of locks then the precomputed oop map
@@ -2727,7 +2737,7 @@ int LinearScan::append_scope_value_for_operand(LIR_Opr opr, GrowableArray<ScopeV
 #ifdef SPARC
       assert(opr->fpu_regnrLo() == opr->fpu_regnrHi() + 1, "assumed in calculation (only fpu_regnrHi is used)");
 #endif
-#ifdef ARM32
+#ifdef ARM
       assert(opr->fpu_regnrHi() == opr->fpu_regnrLo() + 1, "assumed in calculation (only fpu_regnrLo is used)");
 #endif
 #ifdef PPC

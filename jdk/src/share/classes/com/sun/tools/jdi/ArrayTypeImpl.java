@@ -31,7 +31,6 @@ import java.util.List;
 import java.util.ArrayList;
 import java.util.Iterator;
 import java.util.Map;
-import java.util.Set;
 
 public class ArrayTypeImpl extends ReferenceTypeImpl
     implements ArrayType
@@ -62,8 +61,7 @@ public class ArrayTypeImpl extends ReferenceTypeImpl
         return findType(componentSignature());
     }
 
-    @Override
-    void addVisibleMethods(Map<String, Method> map, Set<InterfaceType> seenInterfaces) {
+    void addVisibleMethods(Map<String, Method> map) {
         // arrays don't have methods
     }
 
@@ -200,9 +198,4 @@ public class ArrayTypeImpl extends ReferenceTypeImpl
      * Defined always to be true for arrays
      */
     public boolean isFinal() { return true; }
-
-    /*
-     * Defined always to be false for arrays
-     */
-    public boolean isStatic() { return false; }
 }

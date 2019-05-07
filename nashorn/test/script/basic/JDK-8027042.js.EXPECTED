@@ -1,10 +1,8 @@
-start
 get b
 get a
 conv c
 conv b
 111
-done with first
 get b
 get b
 conv c

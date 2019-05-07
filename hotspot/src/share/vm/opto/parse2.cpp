@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 1998, 2016, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 1998, 2013, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -50,23 +50,19 @@ void Parse::array_load(BasicType elem_type) {
   if (stopped())  return;     // guaranteed null or range check
   dec_sp(2);                  // Pop array and index
   const TypeAryPtr* adr_type = TypeAryPtr::get_array_body_type(elem_type);
-  Node* ld = make_load(control(), adr, elem, elem_type, adr_type, MemNode::unordered);
+  Node* ld = make_load(control(), adr, elem, elem_type, adr_type);
   push(ld);
 }
 
 
 //--------------------------------array_store----------------------------------
 void Parse::array_store(BasicType elem_type) {
-  const Type* elem = Type::TOP;
-  Node* adr = array_addressing(elem_type, 1, &elem);
+  Node* adr = array_addressing(elem_type, 1);
   if (stopped())  return;     // guaranteed null or range check
   Node* val = pop();
   dec_sp(2);                  // Pop array and index
   const TypeAryPtr* adr_type = TypeAryPtr::get_array_body_type(elem_type);
-  if (elem == TypeInt::BOOL) {
-    elem_type = T_BOOLEAN;
-  }
-  store_to_memory(control(), adr, val, elem_type, adr_type, StoreNode::release_if_reference(elem_type));
+  store_to_memory(control(), adr, val, elem_type, adr_type);
 }
 
 
@@ -92,7 +88,7 @@ Node* Parse::array_addressing(BasicType type, int vals, const Type* *result2) {
       if (toop->klass()->as_instance_klass()->unique_concrete_subklass()) {
         // If we load from "AbstractClass[]" we must see "ConcreteSubClass".
         const Type* subklass = Type::get_const_type(toop->klass());
-        elemtype = subklass->join_speculative(el);
+        elemtype = subklass->join(el);
       }
     }
   }
@@ -158,9 +154,7 @@ Node* Parse::array_addressing(BasicType type, int vals, const Type* *result2) {
   // Check for always knowing you are throwing a range-check exception
   if (stopped())  return top();
 
-  // Make array address computation control dependent to prevent it
-  // from floating above the range check during loop optimizations.
-  Node* ptr = array_element_address(ary, idx, type, sizetype, control());
+  Node* ptr = array_element_address(ary, idx, type, sizetype);
 
   if (result2 != NULL)  *result2 = elemtype;
 
@@ -463,12 +457,9 @@ bool Parse::create_jump_tables(Node* key_val, SwitchRange* lo, SwitchRange* hi) 
 #ifdef _LP64
   // Clean the 32-bit int into a real 64-bit offset.
   // Otherwise, the jint value 0 might turn into an offset of 0x0800000000.
-  const TypeInt* ikeytype = TypeInt::make(0, num_cases-1, Type::WidenMin);
-  // Make I2L conversion control dependent to prevent it from
-  // floating above the range check during loop optimizations.
-  key_val = C->constrained_convI2L(&_gvn, key_val, ikeytype, control());
+  const TypeLong* lkeytype = TypeLong::make(CONST64(0), num_cases-1, Type::WidenMin);
+  key_val       = _gvn.transform( new (C) ConvI2LNode(key_val, lkeytype) );
 #endif
-
   // Shift the value by wordsize so we have an index into the table, rather
   // than a switch value
   Node *shiftWord = _gvn.MakeConX(wordSize);
@@ -635,7 +626,7 @@ void Parse::jump_switch_ranges(Node* key_val, SwitchRange *lo, SwitchRange *hi, 
     _method->print_short_name();
     tty->print_cr(" switch decision tree");
     tty->print_cr("    %d ranges (%d singletons), max_depth=%d, est_depth=%d",
-                  (int) (hi-lo+1), nsing, _max_switch_depth, _est_switch_depth);
+                  hi-lo+1, nsing, _max_switch_depth, _est_switch_depth);
     if (_max_switch_depth > _est_switch_depth) {
       tty->print_cr("******** BAD SWITCH DEPTH ********");
     }
@@ -643,7 +634,7 @@ void Parse::jump_switch_ranges(Node* key_val, SwitchRange *lo, SwitchRange *hi, 
     for( r = lo; r <= hi; r++ ) {
       r->print();
     }
-    tty->cr();
+    tty->print_cr("");
   }
 #endif
 }
@@ -770,67 +761,35 @@ void Parse::do_ret() {
   merge_common(target, pnum);
 }
 
-static bool has_injected_profile(BoolTest::mask btest, Node* test, int& taken, int& not_taken) {
-  if (btest != BoolTest::eq && btest != BoolTest::ne) {
-    // Only ::eq and ::ne are supported for profile injection.
-    return false;
-  }
-  if (test->is_Cmp() &&
-      test->in(1)->Opcode() == Op_ProfileBoolean) {
-    ProfileBooleanNode* profile = (ProfileBooleanNode*)test->in(1);
-    int false_cnt = profile->false_count();
-    int  true_cnt = profile->true_count();
-
-    // Counts matching depends on the actual test operation (::eq or ::ne).
-    // No need to scale the counts because profile injection was designed
-    // to feed exact counts into VM.
-    taken     = (btest == BoolTest::eq) ? false_cnt :  true_cnt;
-    not_taken = (btest == BoolTest::eq) ?  true_cnt : false_cnt;
-
-    profile->consume();
-    return true;
-  }
-  return false;
-}
 //--------------------------dynamic_branch_prediction--------------------------
 // Try to gather dynamic branch prediction behavior.  Return a probability
 // of the branch being taken and set the "cnt" field.  Returns a -1.0
 // if we need to use static prediction for some reason.
-float Parse::dynamic_branch_prediction(float &cnt, BoolTest::mask btest, Node* test) {
+float Parse::dynamic_branch_prediction(float &cnt) {
   ResourceMark rm;
 
   cnt  = COUNT_UNKNOWN;
 
-  int     taken = 0;
+  // Use MethodData information if it is available
+  // FIXME: free the ProfileData structure
+  ciMethodData* methodData = method()->method_data();
+  if (!methodData->is_mature())  return PROB_UNKNOWN;
+  ciProfileData* data = methodData->bci_to_data(bci());
+  if (!data->is_JumpData())  return PROB_UNKNOWN;
+
+  // get taken and not taken values
+  int     taken = data->as_JumpData()->taken();
   int not_taken = 0;
-
-  bool use_mdo = !has_injected_profile(btest, test, taken, not_taken);
-
-  if (use_mdo) {
-    // Use MethodData information if it is available
-    // FIXME: free the ProfileData structure
-    ciMethodData* methodData = method()->method_data();
-    if (!methodData->is_mature())  return PROB_UNKNOWN;
-    ciProfileData* data = methodData->bci_to_data(bci());
-    if (data == NULL) {
-      return PROB_UNKNOWN;
-    }
-    if (!data->is_JumpData())  return PROB_UNKNOWN;
-
-    // get taken and not taken values
-    taken = data->as_JumpData()->taken();
-    not_taken = 0;
-    if (data->is_BranchData()) {
-      not_taken = data->as_BranchData()->not_taken();
-    }
-
-    // scale the counts to be commensurate with invocation counts:
-    taken = method()->scale_count(taken);
-    not_taken = method()->scale_count(not_taken);
+  if (data->is_BranchData()) {
+    not_taken = data->as_BranchData()->not_taken();
   }
 
+  // scale the counts to be commensurate with invocation counts:
+  taken = method()->scale_count(taken);
+  not_taken = method()->scale_count(not_taken);
+
   // Give up if too few (or too many, in which case the sum will overflow) counts to be meaningful.
-  // We also check that individual counters are positive first, otherwise the sum can become positive.
+  // We also check that individual counters are positive first, overwise the sum can become positive.
   if (taken < 0 || not_taken < 0 || taken + not_taken < 40) {
     if (C->log() != NULL) {
       C->log()->elem("branch target_bci='%d' taken='%d' not_taken='%d'", iter().get_dest(), taken, not_taken);
@@ -880,9 +839,8 @@ float Parse::dynamic_branch_prediction(float &cnt, BoolTest::mask btest, Node* t
 //-----------------------------branch_prediction-------------------------------
 float Parse::branch_prediction(float& cnt,
                                BoolTest::mask btest,
-                               int target_bci,
-                               Node* test) {
-  float prob = dynamic_branch_prediction(cnt, btest, test);
+                               int target_bci) {
+  float prob = dynamic_branch_prediction(cnt);
   // If prob is unknown, switch to static prediction
   if (prob != PROB_UNKNOWN)  return prob;
 
@@ -906,8 +864,8 @@ float Parse::branch_prediction(float& cnt,
         // of the OSR-ed method, and we want to deopt to gather more stats.
         // If you have ANY counts, then this loop is simply 'cold' relative
         // to the OSR loop.
-        if (data == NULL ||
-            (data->as_BranchData()->taken() +  data->as_BranchData()->not_taken() == 0)) {
+        if (data->as_BranchData()->taken() +
+            data->as_BranchData()->not_taken() == 0 ) {
           // This is the only way to return PROB_UNKNOWN:
           return PROB_UNKNOWN;
         }
@@ -926,7 +884,7 @@ float Parse::branch_prediction(float& cnt,
 // some branches (e.g., _213_javac.Assembler.eliminate) validly produce
 // very small but nonzero probabilities, which if confused with zero
 // counts would keep the program recompiling indefinitely.
-bool Parse::seems_never_taken(float prob) const {
+bool Parse::seems_never_taken(float prob) {
   return prob < PROB_MIN;
 }
 
@@ -937,12 +895,53 @@ bool Parse::seems_never_taken(float prob) const {
 // if a path is never taken, its controlling comparison is
 // already acting in a stable fashion.  If the comparison
 // seems stable, we will put an expensive uncommon trap
-// on the untaken path.
-bool Parse::seems_stable_comparison() const {
-  if (C->too_many_traps(method(), bci(), Deoptimization::Reason_unstable_if)) {
-    return false;
+// on the untaken path.  To be conservative, and to allow
+// partially executed counted loops to be compiled fully,
+// we will plant uncommon traps only after pointer comparisons.
+bool Parse::seems_stable_comparison(BoolTest::mask btest, Node* cmp) {
+  for (int depth = 4; depth > 0; depth--) {
+    // The following switch can find CmpP here over half the time for
+    // dynamic language code rich with type tests.
+    // Code using counted loops or array manipulations (typical
+    // of benchmarks) will have many (>80%) CmpI instructions.
+    switch (cmp->Opcode()) {
+    case Op_CmpP:
+      // A never-taken null check looks like CmpP/BoolTest::eq.
+      // These certainly should be closed off as uncommon traps.
+      if (btest == BoolTest::eq)
+        return true;
+      // A never-failed type check looks like CmpP/BoolTest::ne.
+      // Let's put traps on those, too, so that we don't have to compile
+      // unused paths with indeterminate dynamic type information.
+      if (ProfileDynamicTypes)
+        return true;
+      return false;
+
+    case Op_CmpI:
+      // A small minority (< 10%) of CmpP are masked as CmpI,
+      // as if by boolean conversion ((p == q? 1: 0) != 0).
+      // Detect that here, even if it hasn't optimized away yet.
+      // Specifically, this covers the 'instanceof' operator.
+      if (btest == BoolTest::ne || btest == BoolTest::eq) {
+        if (_gvn.type(cmp->in(2))->singleton() &&
+            cmp->in(1)->is_Phi()) {
+          PhiNode* phi = cmp->in(1)->as_Phi();
+          int true_path = phi->is_diamond_phi();
+          if (true_path > 0 &&
+              _gvn.type(phi->in(1))->singleton() &&
+              _gvn.type(phi->in(2))->singleton()) {
+            // phi->region->if_proj->ifnode->bool->cmp
+            BoolNode* bol = phi->in(0)->in(1)->in(0)->in(1)->as_Bool();
+            btest = bol->_test._test;
+            cmp = bol->in(1);
+            continue;
+          }
+        }
+      }
+      return false;
+    }
   }
-  return true;
+  return false;
 }
 
 //-------------------------------repush_if_args--------------------------------
@@ -972,7 +971,7 @@ void Parse::do_ifnull(BoolTest::mask btest, Node *c) {
   Block* next_block   = successor_for_bci(iter().next_bci());
 
   float cnt;
-  float prob = branch_prediction(cnt, btest, target_bci, c);
+  float prob = branch_prediction(cnt, btest, target_bci);
   if (prob == PROB_UNKNOWN) {
     // (An earlier version of do_ifnull omitted this trap for OSR methods.)
 #ifndef PRODUCT
@@ -1053,7 +1052,7 @@ void Parse::do_if(BoolTest::mask btest, Node* c) {
   Block* next_block   = successor_for_bci(iter().next_bci());
 
   float cnt;
-  float prob = branch_prediction(cnt, btest, target_bci, c);
+  float prob = branch_prediction(cnt, btest, target_bci);
   float untaken_prob = 1.0 - prob;
 
   if (prob == PROB_UNKNOWN) {
@@ -1167,14 +1166,6 @@ void Parse::do_if(BoolTest::mask btest, Node* c) {
   }
 }
 
-bool Parse::path_is_suitable_for_uncommon_trap(float prob) const {
-  // Don't want to speculate on uncommon traps when running with -Xcomp
-  if (!UseInterpreter) {
-    return false;
-  }
-  return (seems_never_taken(prob) && seems_stable_comparison());
-}
-
 //----------------------------adjust_map_after_if------------------------------
 // Adjust the JVM state to reflect the result of taking this path.
 // Basically, it means inspecting the CmpNode controlling this
@@ -1188,9 +1179,33 @@ void Parse::adjust_map_after_if(BoolTest::mask btest, Node* c, float prob,
 
   bool is_fallthrough = (path == successor_for_bci(iter().next_bci()));
 
-  if (path_is_suitable_for_uncommon_trap(prob)) {
+  if (seems_never_taken(prob) && seems_stable_comparison(btest, c)) {
+    // If this might possibly turn into an implicit null check,
+    // and the null has never yet been seen, we need to generate
+    // an uncommon trap, so as to recompile instead of suffering
+    // with very slow branches.  (We'll get the slow branches if
+    // the program ever changes phase and starts seeing nulls here.)
+    //
+    // We do not inspect for a null constant, since a node may
+    // optimize to 'null' later on.
+    //
+    // Null checks, and other tests which expect inequality,
+    // show btest == BoolTest::eq along the non-taken branch.
+    // On the other hand, type tests, must-be-null tests,
+    // and other tests which expect pointer equality,
+    // show btest == BoolTest::ne along the non-taken branch.
+    // We prune both types of branches if they look unused.
     repush_if_args();
-    uncommon_trap(Deoptimization::Reason_unstable_if,
+    // We need to mark this branch as taken so that if we recompile we will
+    // see that it is possible. In the tiered system the interpreter doesn't
+    // do profiling and by the time we get to the lower tier from the interpreter
+    // the path may be cold again. Make sure it doesn't look untaken
+    if (is_fallthrough) {
+      profile_not_taken_branch(!ProfileInterpreter);
+    } else {
+      profile_taken_branch(iter().get_dest(), !ProfileInterpreter);
+    }
+    uncommon_trap(Deoptimization::Reason_unreached,
                   Deoptimization::Action_reinterpret,
                   NULL,
                   (is_fallthrough ? "taken always" : "taken never"));
@@ -1263,7 +1278,7 @@ void Parse::sharpen_type_after_if(BoolTest::mask btest,
        //   Bool(CmpP(LoadKlass(obj._klass), ConP(Foo.klass)), [eq])
        // or the narrowOop equivalent.
        const Type* obj_type = _gvn.type(obj);
-       const TypeOopPtr* tboth = obj_type->join_speculative(con_type)->isa_oopptr();
+       const TypeOopPtr* tboth = obj_type->join(con_type)->isa_oopptr();
        if (tboth != NULL && tboth->klass_is_exact() && tboth != obj_type &&
            tboth->higher_equal(obj_type)) {
           // obj has to be of the exact type Foo if the CmpP succeeds.
@@ -1273,7 +1288,7 @@ void Parse::sharpen_type_after_if(BoolTest::mask btest,
               (jvms->is_loc(obj_in_map) || jvms->is_stk(obj_in_map))) {
             TypeNode* ccast = new (C) CheckCastPPNode(control(), obj, tboth);
             const Type* tcc = ccast->as_Type()->type();
-            assert(tcc != obj_type && tcc->higher_equal_speculative(obj_type), "must improve");
+            assert(tcc != obj_type && tcc->higher_equal(obj_type), "must improve");
             // Delay transform() call to allow recovery of pre-cast value
             // at the control merge.
             _gvn.set_type_bottom(ccast);
@@ -1303,7 +1318,7 @@ void Parse::sharpen_type_after_if(BoolTest::mask btest,
   switch (btest) {
   case BoolTest::eq:                    // Constant test?
     {
-      const Type* tboth = tcon->join_speculative(tval);
+      const Type* tboth = tcon->join(tval);
       if (tboth == tval)  break;        // Nothing to gain.
       if (tcon->isa_int()) {
         ccast = new (C) CastIINode(val, tboth);
@@ -1337,7 +1352,7 @@ void Parse::sharpen_type_after_if(BoolTest::mask btest,
 
   if (ccast != NULL) {
     const Type* tcc = ccast->as_Type()->type();
-    assert(tcc != tval && tcc->higher_equal_speculative(tval), "must improve");
+    assert(tcc != tval && tcc->higher_equal(tval), "must improve");
     // Delay transform() call to allow recovery of pre-cast value
     // at the control merge.
     ccast->set_req(0, control());
@@ -1705,14 +1720,14 @@ void Parse::do_one_bytecode() {
     a = array_addressing(T_LONG, 0);
     if (stopped())  return;     // guaranteed null or range check
     dec_sp(2);                  // Pop array and index
-    push_pair(make_load(control(), a, TypeLong::LONG, T_LONG, TypeAryPtr::LONGS, MemNode::unordered));
+    push_pair(make_load(control(), a, TypeLong::LONG, T_LONG, TypeAryPtr::LONGS));
     break;
   }
   case Bytecodes::_daload: {
     a = array_addressing(T_DOUBLE, 0);
     if (stopped())  return;     // guaranteed null or range check
     dec_sp(2);                  // Pop array and index
-    push_pair(make_load(control(), a, Type::DOUBLE, T_DOUBLE, TypeAryPtr::DOUBLES, MemNode::unordered));
+    push_pair(make_load(control(), a, Type::DOUBLE, T_DOUBLE, TypeAryPtr::DOUBLES));
     break;
   }
   case Bytecodes::_bastore: array_store(T_BYTE);  break;
@@ -1729,7 +1744,7 @@ void Parse::do_one_bytecode() {
     a = pop();                  // the array itself
     const TypeOopPtr* elemtype  = _gvn.type(a)->is_aryptr()->elem()->make_oopptr();
     const TypeAryPtr* adr_type = TypeAryPtr::OOPS;
-    Node* store = store_oop_to_array(control(), a, d, adr_type, c, elemtype, T_OBJECT, MemNode::release);
+    Node* store = store_oop_to_array(control(), a, d, adr_type, c, elemtype, T_OBJECT);
     break;
   }
   case Bytecodes::_lastore: {
@@ -1737,7 +1752,7 @@ void Parse::do_one_bytecode() {
     if (stopped())  return;     // guaranteed null or range check
     c = pop_pair();
     dec_sp(2);                  // Pop array and index
-    store_to_memory(control(), a, c, T_LONG, TypeAryPtr::LONGS, MemNode::unordered);
+    store_to_memory(control(), a, c, T_LONG, TypeAryPtr::LONGS);
     break;
   }
   case Bytecodes::_dastore: {
@@ -1746,7 +1761,7 @@ void Parse::do_one_bytecode() {
     c = pop_pair();
     dec_sp(2);                  // Pop array and index
     c = dstore_rounding(c);
-    store_to_memory(control(), a, c, T_DOUBLE, TypeAryPtr::DOUBLES, MemNode::unordered);
+    store_to_memory(control(), a, c, T_DOUBLE, TypeAryPtr::DOUBLES);
     break;
   }
   case Bytecodes::_getfield:

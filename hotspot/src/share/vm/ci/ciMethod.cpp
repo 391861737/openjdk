@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 1999, 2016, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 1999, 2013, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -68,10 +68,7 @@
 // ciMethod::ciMethod
 //
 // Loaded method.
-ciMethod::ciMethod(methodHandle h_m, ciInstanceKlass* holder) :
-  ciMetadata(h_m()),
-  _holder(holder)
-{
+ciMethod::ciMethod(methodHandle h_m) : ciMetadata(h_m()) {
   assert(h_m() != NULL, "no null method");
 
   // These fields are always filled in in loaded methods.
@@ -83,7 +80,6 @@ ciMethod::ciMethod(methodHandle h_m, ciInstanceKlass* holder) :
   _code_size          = h_m()->code_size();
   _intrinsic_id       = h_m()->intrinsic_id();
   _handler_count      = h_m()->exception_table_length();
-  _size_of_parameters = h_m()->size_of_parameters();
   _uses_monitors      = h_m()->access_flags().has_monitor_bytecodes();
   _balanced_monitors  = !_uses_monitors || h_m()->access_flags().is_monitor_matching();
   _is_c1_compilable   = !h_m()->is_not_c1_compilable();
@@ -127,6 +123,7 @@ ciMethod::ciMethod(methodHandle h_m, ciInstanceKlass* holder) :
   // generating _signature may allow GC and therefore move m.
   // These fields are always filled in.
   _name = env->get_symbol(h_m()->name());
+  _holder = env->get_instance_klass(h_m()->method_holder());
   ciSymbol* sig_symbol = env->get_symbol(h_m()->signature());
   constantPoolHandle cpool = h_m()->constants();
   _signature = new (env->arena()) ciSignature(_holder, cpool, sig_symbol);
@@ -689,8 +686,7 @@ ciKlass* ciMethod::parameter_profiled_type(int i) {
 // via assert_unique_concrete_method or assert_leaf_type.
 ciMethod* ciMethod::find_monomorphic_target(ciInstanceKlass* caller,
                                             ciInstanceKlass* callee_holder,
-                                            ciInstanceKlass* actual_recv,
-                                            bool check_access) {
+                                            ciInstanceKlass* actual_recv) {
   check_is_loaded();
 
   if (actual_recv->is_interface()) {
@@ -698,7 +694,7 @@ ciMethod* ciMethod::find_monomorphic_target(ciInstanceKlass* caller,
     return NULL;
   }
 
-  ciMethod* root_m = resolve_invoke(caller, actual_recv, check_access);
+  ciMethod* root_m = resolve_invoke(caller, actual_recv);
   if (root_m == NULL) {
     // Something went wrong looking up the actual receiver method.
     return NULL;
@@ -777,7 +773,7 @@ ciMethod* ciMethod::find_monomorphic_target(ciInstanceKlass* caller,
 //
 // Given a known receiver klass, find the target for the call.
 // Return NULL if the call has no target or the target is abstract.
-ciMethod* ciMethod::resolve_invoke(ciKlass* caller, ciKlass* exact_receiver, bool check_access) {
+ciMethod* ciMethod::resolve_invoke(ciKlass* caller, ciKlass* exact_receiver) {
    check_is_loaded();
    VM_ENTRY_MARK;
 
@@ -794,9 +790,9 @@ ciMethod* ciMethod::resolve_invoke(ciKlass* caller, ciKlass* exact_receiver, boo
         ||
        InstanceKlass::cast(h_recv())->is_linked() && !exact_receiver->is_interface()) {
      if (holder()->is_interface()) {
-       m = LinkResolver::resolve_interface_call_or_null(h_recv, h_resolved, h_name, h_signature, caller_klass, check_access);
+       m = LinkResolver::resolve_interface_call_or_null(h_recv, h_resolved, h_name, h_signature, caller_klass);
      } else {
-       m = LinkResolver::resolve_virtual_call_or_null(h_recv, h_resolved, h_name, h_signature, caller_klass, check_access);
+       m = LinkResolver::resolve_virtual_call_or_null(h_recv, h_resolved, h_name, h_signature, caller_klass);
      }
    }
 
@@ -945,13 +941,6 @@ bool ciMethod::is_method_handle_intrinsic() const {
 bool ciMethod::is_compiled_lambda_form() const {
   vmIntrinsics::ID iid = _intrinsic_id;  // do not check if loaded
   return iid == vmIntrinsics::_compiledLambdaForm;
-}
-
-// ------------------------------------------------------------------
-// ciMethod::is_object_initializer
-//
-bool ciMethod::is_object_initializer() const {
-   return name() == ciSymbol::object_initializer_name();
 }
 
 // ------------------------------------------------------------------
@@ -1114,22 +1103,6 @@ bool ciMethod::has_option(const char* option) {
   methodHandle mh(THREAD, get_Method());
   return CompilerOracle::has_option_string(mh, option);
 }
-
-// ------------------------------------------------------------------
-// ciMethod::has_option_value
-//
-template<typename T>
-bool ciMethod::has_option_value(const char* option, T& value) {
-  check_is_loaded();
-  VM_ENTRY_MARK;
-  methodHandle mh(THREAD, get_Method());
-  return CompilerOracle::has_option_value(mh, option, value);
-}
-// Explicit instantiation for all OptionTypes supported.
-template bool ciMethod::has_option_value<intx>(const char* option, intx& value);
-template bool ciMethod::has_option_value<uintx>(const char* option, uintx& value);
-template bool ciMethod::has_option_value<bool>(const char* option, bool& value);
-template bool ciMethod::has_option_value<ccstr>(const char* option, ccstr& value);
 
 // ------------------------------------------------------------------
 // ciMethod::can_be_compiled
@@ -1389,21 +1362,15 @@ ciMethodBlocks  *ciMethod::get_method_blocks() {
 
 #undef FETCH_FLAG_FROM_VM
 
-void ciMethod::dump_name_as_ascii(outputStream* st) {
-  Method* method = get_Method();
-  st->print("%s %s %s",
-            method->klass_name()->as_quoted_ascii(),
-            method->name()->as_quoted_ascii(),
-            method->signature()->as_quoted_ascii());
-}
-
 void ciMethod::dump_replay_data(outputStream* st) {
   ResourceMark rm;
   Method* method = get_Method();
   MethodCounters* mcs = method->method_counters();
-  st->print("ciMethod ");
-  dump_name_as_ascii(st);
-  st->print_cr(" %d %d %d %d %d",
+  Klass*  holder = method->method_holder();
+  st->print_cr("ciMethod %s %s %s %d %d %d %d %d",
+               holder->name()->as_quoted_ascii(),
+               method->name()->as_quoted_ascii(),
+               method->signature()->as_quoted_ascii(),
                mcs == NULL ? 0 : mcs->invocation_counter()->raw_counter(),
                mcs == NULL ? 0 : mcs->backedge_counter()->raw_counter(),
                interpreter_invocation_count(),

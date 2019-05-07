@@ -138,17 +138,11 @@ public class ReferenceQueue<T> {
         synchronized (lock) {
             Reference<? extends T> r = reallyPoll();
             if (r != null) return r;
-            long start = (timeout == 0) ? 0 : System.nanoTime();
             for (;;) {
                 lock.wait(timeout);
                 r = reallyPoll();
                 if (r != null) return r;
-                if (timeout != 0) {
-                    long end = System.nanoTime();
-                    timeout -= (end - start) / 1000_000;
-                    if (timeout <= 0) return null;
-                    start = end;
-                }
+                if (timeout != 0) return null;
             }
         }
     }

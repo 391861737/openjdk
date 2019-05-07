@@ -1,15 +1,18 @@
 /*
- * Copyright (c) 2005, 2015, Oracle and/or its affiliates. All rights reserved.
+ * reserved comment block
+ * DO NOT REMOVE OR ALTER!
  */
+// CatalogEntry.java - Represents Catalog entries
+
 /*
- * Licensed to the Apache Software Foundation (ASF) under one or more
- * contributor license agreements.  See the NOTICE file distributed with
- * this work for additional information regarding copyright ownership.
- * The ASF licenses this file to You under the Apache License, Version 2.0
- * (the "License"); you may not use this file except in compliance with
- * the License.  You may obtain a copy of the License at
+ * Copyright 2001-2004 The Apache Software Foundation or its licensors,
+ * as applicable.
  *
- *     http://www.apache.org/licenses/LICENSE-2.0
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
@@ -17,13 +20,11 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-// CatalogEntry.java - Represents Catalog entries
+
 package com.sun.org.apache.xml.internal.resolver;
 
-import java.util.Map;
+import java.util.Hashtable;
 import java.util.Vector;
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.atomic.AtomicInteger;
 
 /**
  * Represents a Catalog entry.
@@ -52,14 +53,14 @@ import java.util.concurrent.atomic.AtomicInteger;
  */
 public class CatalogEntry {
   /** The nextEntry is the ordinal number of the next entry type. */
-  protected static AtomicInteger nextEntry = new AtomicInteger(0);
+  protected static int nextEntry = 0;
 
   /**
    * The entryTypes vector maps catalog entry names
    * (e.g., 'BASE' or 'SYSTEM') to their type (1, 2, etc.).
    * Names are case sensitive.
    */
-  protected static final Map<String, Integer> entryTypes = new ConcurrentHashMap<>();
+  protected static Hashtable entryTypes = new Hashtable();
 
   /** The entryTypes vector maps catalog entry types to the
       number of arguments they're required to have. */
@@ -76,12 +77,12 @@ public class CatalogEntry {
    * of arguments.
    * @return The type for the new entry.
    */
-  static int addEntryType(String name, int numArgs) {
-    final int index = nextEntry.getAndIncrement();
-    entryTypes.put(name, index);
-    entryArgs.add(index, numArgs);
+  public static int addEntryType(String name, int numArgs) {
+    entryTypes.put(name, new Integer(nextEntry));
+    entryArgs.add(nextEntry, new Integer(numArgs));
+    nextEntry++;
 
-    return index;
+    return nextEntry-1;
   }
 
   /**
@@ -98,13 +99,13 @@ public class CatalogEntry {
       throw new CatalogException(CatalogException.INVALID_ENTRY_TYPE);
     }
 
-    Integer iType = entryTypes.get(name);
+    Integer iType = (Integer) entryTypes.get(name);
 
     if (iType == null) {
       throw new CatalogException(CatalogException.INVALID_ENTRY_TYPE);
     }
 
-    return iType;
+    return iType.intValue();
   }
 
   /**
@@ -160,13 +161,13 @@ public class CatalogEntry {
    */
   public CatalogEntry(String name, Vector args)
     throws CatalogException {
-    Integer iType = entryTypes.get(name);
+    Integer iType = (Integer) entryTypes.get(name);
 
     if (iType == null) {
       throw new CatalogException(CatalogException.INVALID_ENTRY_TYPE);
     }
 
-    int type = iType;
+    int type = iType.intValue();
 
     try {
       Integer iArgs = (Integer) entryArgs.get(type);

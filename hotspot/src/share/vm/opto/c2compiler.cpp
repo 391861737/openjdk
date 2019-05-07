@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 1999, 2015, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 1999, 2013, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -25,18 +25,23 @@
 #include "precompiled.hpp"
 #include "opto/c2compiler.hpp"
 #include "opto/runtime.hpp"
-#if defined AD_MD_HPP
-# include AD_MD_HPP
-#elif defined TARGET_ARCH_MODEL_x86_32
+#ifdef TARGET_ARCH_MODEL_x86_32
 # include "adfiles/ad_x86_32.hpp"
-#elif defined TARGET_ARCH_MODEL_x86_64
+#endif
+#ifdef TARGET_ARCH_MODEL_x86_64
 # include "adfiles/ad_x86_64.hpp"
-#elif defined TARGET_ARCH_MODEL_sparc
+#endif
+#ifdef TARGET_ARCH_MODEL_sparc
 # include "adfiles/ad_sparc.hpp"
-#elif defined TARGET_ARCH_MODEL_zero
+#endif
+#ifdef TARGET_ARCH_MODEL_zero
 # include "adfiles/ad_zero.hpp"
-#elif defined TARGET_ARCH_MODEL_ppc_64
-# include "adfiles/ad_ppc_64.hpp"
+#endif
+#ifdef TARGET_ARCH_MODEL_arm
+# include "adfiles/ad_arm.hpp"
+#endif
+#ifdef TARGET_ARCH_MODEL_ppc
+# include "adfiles/ad_ppc.hpp"
 #endif
 
 // register information defined by ADLC
@@ -48,9 +53,6 @@ const char* C2Compiler::retry_no_subsuming_loads() {
 }
 const char* C2Compiler::retry_no_escape_analysis() {
   return "retry without escape analysis";
-}
-const char* C2Compiler::retry_class_loading_during_parsing() {
-  return "retry class loading during parsing";
 }
 bool C2Compiler::init_c2_runtime() {
 
@@ -118,10 +120,6 @@ void C2Compiler::compile_method(ciEnv* env, ciMethod* target, int entry_bci) {
 
     // Check result and retry if appropriate.
     if (C.failure_reason() != NULL) {
-      if (C.failure_reason_is(retry_class_loading_during_parsing())) {
-        env->record_failure(C.failure_reason());
-        continue;  // retry
-      }
       if (C.failure_reason_is(retry_no_subsuming_loads())) {
         assert(subsume_loads, "must make progress");
         subsume_loads = false;

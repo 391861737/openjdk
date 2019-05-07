@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 1997, 2014, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 1997, 2013, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -323,23 +323,6 @@ void NodeHash::remove_useless_nodes(VectorSet &useful) {
   }
 }
 
-
-void NodeHash::check_no_speculative_types() {
-#ifdef ASSERT
-  uint max = size();
-  Node *sentinel_node = sentinel();
-  for (uint i = 0; i < max; ++i) {
-    Node *n = at(i);
-    if(n != NULL && n != sentinel_node && n->is_Type()) {
-      TypeNode* tn = n->as_Type();
-      const Type* t = tn->type();
-      const Type* t_no_spec = t->remove_speculative();
-      assert(t == t_no_spec, "dead node in hash table or missed node during speculative cleanup");
-    }
-  }
-#endif
-}
-
 #ifndef PRODUCT
 //------------------------------dump-------------------------------------------
 // Dump statistics for the hash table
@@ -398,7 +381,7 @@ void NodeHash::operator=(const NodeHash& nh) {
 //=============================================================================
 //------------------------------PhaseRemoveUseless-----------------------------
 // 1) Use a breadthfirst walk to collect useful nodes reachable from root.
-PhaseRemoveUseless::PhaseRemoveUseless(PhaseGVN *gvn, Unique_Node_List *worklist, PhaseNumber phase_num) : Phase(phase_num),
+PhaseRemoveUseless::PhaseRemoveUseless( PhaseGVN *gvn, Unique_Node_List *worklist ) : Phase(Remove_Useless),
   _useful(Thread::current()->resource_area()) {
 
   // Implementation requires 'UseLoopSafepoints == true' and an edge from root
@@ -433,84 +416,6 @@ PhaseRemoveUseless::PhaseRemoveUseless(PhaseGVN *gvn, Unique_Node_List *worklist
       }
     }
   }
-}
-
-//=============================================================================
-//------------------------------PhaseRenumberLive------------------------------
-// First, remove useless nodes (equivalent to identifying live nodes).
-// Then, renumber live nodes.
-//
-// The set of live nodes is returned by PhaseRemoveUseless in the _useful structure.
-// If the number of live nodes is 'x' (where 'x' == _useful.size()), then the
-// PhaseRenumberLive updates the node ID of each node (the _idx field) with a unique
-// value in the range [0, x).
-//
-// At the end of the PhaseRenumberLive phase, the compiler's count of unique nodes is
-// updated to 'x' and the list of dead nodes is reset (as there are no dead nodes).
-//
-// The PhaseRenumberLive phase updates two data structures with the new node IDs.
-// (1) The worklist is used by the PhaseIterGVN phase to identify nodes that must be
-// processed. A new worklist (with the updated node IDs) is returned in 'new_worklist'.
-// (2) Type information (the field PhaseGVN::_types) maps type information to each
-// node ID. The mapping is updated to use the new node IDs as well. Updated type
-// information is returned in PhaseGVN::_types.
-//
-// The PhaseRenumberLive phase does not preserve the order of elements in the worklist.
-//
-// Other data structures used by the compiler are not updated. The hash table for value
-// numbering (the field PhaseGVN::_table) is not updated because computing the hash
-// values is not based on node IDs. The field PhaseGVN::_nodes is not updated either
-// because it is empty wherever PhaseRenumberLive is used.
-PhaseRenumberLive::PhaseRenumberLive(PhaseGVN* gvn,
-                                     Unique_Node_List* worklist, Unique_Node_List* new_worklist,
-                                     PhaseNumber phase_num) :
-  PhaseRemoveUseless(gvn, worklist, Remove_Useless_And_Renumber_Live) {
-
-  assert(RenumberLiveNodes, "RenumberLiveNodes must be set to true for node renumbering to take place");
-  assert(C->live_nodes() == _useful.size(), "the number of live nodes must match the number of useful nodes");
-  assert(gvn->nodes_size() == 0, "GVN must not contain any nodes at this point");
-
-  uint old_unique_count = C->unique();
-  uint live_node_count = C->live_nodes();
-  uint worklist_size = worklist->size();
-
-  // Storage for the updated type information.
-  Type_Array new_type_array(C->comp_arena());
-
-  // Iterate over the set of live nodes.
-  uint current_idx = 0; // The current new node ID. Incremented after every assignment.
-  for (uint i = 0; i < _useful.size(); i++) {
-    Node* n = _useful.at(i);
-    // Sanity check that fails if we ever decide to execute this phase after EA
-    assert(!n->is_Phi() || n->as_Phi()->inst_mem_id() == -1, "should not be linked to data Phi");
-    const Type* type = gvn->type_or_null(n);
-    new_type_array.map(current_idx, type);
-
-    bool in_worklist = false;
-    if (worklist->member(n)) {
-      in_worklist = true;
-    }
-
-    n->set_idx(current_idx); // Update node ID.
-
-    if (in_worklist) {
-      new_worklist->push(n);
-    }
-
-    current_idx++;
-  }
-
-  assert(worklist_size == new_worklist->size(), "the new worklist must have the same size as the original worklist");
-  assert(live_node_count == current_idx, "all live nodes must be processed");
-
-  // Replace the compiler's type information with the updated type information.
-  gvn->replace_types(new_type_array);
-
-  // Update the unique node count of the compilation to the number of currently live nodes.
-  C->set_unique(live_node_count);
-
-  // Set the dead node count to 0 and reset dead node list.
-  C->reset_dead_node_list();
 }
 
 
@@ -861,7 +766,7 @@ void PhaseGVN::dead_loop_check( Node *n ) {
 //------------------------------PhaseIterGVN-----------------------------------
 // Initialize hash table to fresh and clean for +VerifyOpto
 PhaseIterGVN::PhaseIterGVN( PhaseIterGVN *igvn, const char *dummy ) : PhaseGVN(igvn,dummy), _worklist( ),
-                                                                      _stack(C->live_nodes() >> 1),
+                                                                      _stack(C->unique() >> 1),
                                                                       _delay_transform(false) {
 }
 
@@ -878,11 +783,7 @@ PhaseIterGVN::PhaseIterGVN( PhaseIterGVN *igvn ) : PhaseGVN(igvn),
 // Initialize with previous PhaseGVN info from Parser
 PhaseIterGVN::PhaseIterGVN( PhaseGVN *gvn ) : PhaseGVN(gvn),
                                               _worklist(*C->for_igvn()),
-// TODO: Before incremental inlining it was allocated only once and it was fine. Now that
-//       the constructor is used in incremental inlining, this consumes too much memory:
-//                                            _stack(C->live_nodes() >> 1),
-//       So, as a band-aid, we replace this by:
-                                              _stack(C->comp_arena(), 32),
+                                              _stack(C->unique() >> 1),
                                               _delay_transform(false)
 {
   uint max;
@@ -1084,10 +985,10 @@ void PhaseIterGVN::optimize() {
   if ( VerifyIterativeGVN && PrintOpto ) {
     if ( _verify_counter == _verify_full_passes )
       tty->print_cr("VerifyIterativeGVN: %d transforms and verify passes",
-                    (int) _verify_full_passes);
+                    _verify_full_passes);
     else
       tty->print_cr("VerifyIterativeGVN: %d transforms, %d full verify passes",
-                  (int) _verify_counter, (int) _verify_full_passes);
+                  _verify_counter, _verify_full_passes);
   }
 #endif
 }
@@ -1341,10 +1242,6 @@ void PhaseIterGVN::remove_globally_dead_node( Node *dead ) {
       if (dead->is_expensive()) {
         C->remove_expensive_node(dead);
       }
-      CastIINode* cast = dead->isa_CastII();
-      if (cast != NULL && cast->has_range_check()) {
-        C->remove_range_check_cast(cast);
-      }
     }
   } // while (_stack.is_nonempty())
 }
@@ -1378,18 +1275,6 @@ void PhaseIterGVN::subsume_node( Node *old, Node *nn ) {
       hash_find_insert(use);
     }
     i -= num_edges;    // we deleted 1 or more copies of this edge
-  }
-
-  // Search for instance field data PhiNodes in the same region pointing to the old
-  // memory PhiNode and update their instance memory ids to point to the new node.
-  if (old->is_Phi() && old->as_Phi()->type()->has_memory() && old->in(0) != NULL) {
-    Node* region = old->in(0);
-    for (DUIterator_Fast imax, i = region->fast_outs(imax); i < imax; i++) {
-      PhiNode* phi = region->fast_out(i)->isa_Phi();
-      if (phi != NULL && phi->inst_mem_id() == (int)old->_idx) {
-        phi->set_inst_mem_id((int)nn->_idx);
-      }
-    }
   }
 
   // Smash all inputs to 'old', isolating him completely
@@ -1438,27 +1323,15 @@ void PhaseIterGVN::add_users_to_worklist( Node *n ) {
       }
     }
 
-    uint use_op = use->Opcode();
-    if(use->is_Cmp()) {       // Enable CMP/BOOL optimization
+    if( use->is_Cmp() ) {       // Enable CMP/BOOL optimization
       add_users_to_worklist(use); // Put Bool on worklist
+      // Look for the 'is_x2logic' pattern: "x ? : 0 : 1" and put the
+      // phi merging either 0 or 1 onto the worklist
       if (use->outcnt() > 0) {
         Node* bol = use->raw_out(0);
         if (bol->outcnt() > 0) {
           Node* iff = bol->raw_out(0);
-          if (use_op == Op_CmpI &&
-              iff->is_CountedLoopEnd()) {
-            CountedLoopEndNode* cle = iff->as_CountedLoopEnd();
-            if (cle->limit() == n && cle->phi() != NULL) {
-              // If an opaque node feeds into the limit condition of a
-              // CountedLoop, we need to process the Phi node for the
-              // induction variable when the opaque node is removed:
-              // the range of values taken by the Phi is now known and
-              // so its type is also known.
-              _worklist.push(cle->phi());
-            }
-          } else if (iff->outcnt() == 2) {
-            // Look for the 'is_x2logic' pattern: "x ? : 0 : 1" and put the
-            // phi merging either 0 or 1 onto the worklist
+          if (iff->outcnt() == 2) {
             Node* ifproj0 = iff->raw_out(0);
             Node* ifproj1 = iff->raw_out(1);
             if (ifproj0->outcnt() > 0 && ifproj1->outcnt() > 0) {
@@ -1470,26 +1343,9 @@ void PhaseIterGVN::add_users_to_worklist( Node *n ) {
           }
         }
       }
-      if (use_op == Op_CmpI) {
-        Node* in1 = use->in(1);
-        for (uint i = 0; i < in1->outcnt(); i++) {
-          if (in1->raw_out(i)->Opcode() == Op_CastII) {
-            Node* castii = in1->raw_out(i);
-            if (castii->in(0) != NULL && castii->in(0)->in(0) != NULL && castii->in(0)->in(0)->is_If()) {
-              Node* ifnode = castii->in(0)->in(0);
-              if (ifnode->in(1) != NULL && ifnode->in(1)->is_Bool() && ifnode->in(1)->in(1) == use) {
-                // Reprocess a CastII node that may depend on an
-                // opaque node value when the opaque node is
-                // removed. In case it carries a dependency we can do
-                // a better job of computing its type.
-                _worklist.push(castii);
-              }
-            }
-          }
-        }
-      }
     }
 
+    uint use_op = use->Opcode();
     // If changed Cast input, check Phi users for simple cycles
     if( use->is_ConstraintCast() || use->is_CheckCastPP() ) {
       for (DUIterator_Fast i2max, i2 = use->fast_outs(i2max); i2 < i2max; i2++) {
@@ -1504,15 +1360,6 @@ void PhaseIterGVN::add_users_to_worklist( Node *n ) {
         Node* u = use->fast_out(i2);
         if (u->Opcode() == Op_RShiftI)
           _worklist.push(u);
-      }
-    }
-    // If changed AddI/SubI inputs, check CmpU for range check optimization.
-    if (use_op == Op_AddI || use_op == Op_SubI) {
-      for (DUIterator_Fast i2max, i2 = use->fast_outs(i2max); i2 < i2max; i2++) {
-        Node* u = use->fast_out(i2);
-        if (u->is_Cmp() && (u->Opcode() == Op_CmpU)) {
-          _worklist.push(u);
-        }
       }
     }
     // If changed AddP inputs, check Stores for loop invariant
@@ -1545,11 +1392,11 @@ void PhaseIterGVN::remove_speculative_types()  {
   assert(UseTypeSpeculation, "speculation is off");
   for (uint i = 0; i < _types.Size(); i++)  {
     const Type* t = _types.fast_lookup(i);
-    if (t != NULL) {
-      _types.map(i, t->remove_speculative());
+    if (t != NULL && t->isa_oopptr()) {
+      const TypeOopPtr* to = t->is_oopptr();
+      _types.map(i, to->remove_speculative());
     }
   }
-  _table.check_no_speculative_types();
 }
 
 //=============================================================================
@@ -1619,12 +1466,11 @@ void PhaseCCP::analyze() {
       set_type(n, t);
       for (DUIterator_Fast imax, i = n->fast_outs(imax); i < imax; i++) {
         Node* m = n->fast_out(i);   // Get user
-        if (m->is_Region()) {  // New path to Region?  Must recheck Phis too
+        if( m->is_Region() ) {  // New path to Region?  Must recheck Phis too
           for (DUIterator_Fast i2max, i2 = m->fast_outs(i2max); i2 < i2max; i2++) {
             Node* p = m->fast_out(i2); // Propagate changes to uses
-            if (p->bottom_type() != type(p)) { // If not already bottomed out
+            if( p->bottom_type() != type(p) ) // If not already bottomed out
               worklist.push(p); // Propagate change to user
-            }
           }
         }
         // If we changed the receiver type to a call, we need to revisit
@@ -1634,31 +1480,12 @@ void PhaseCCP::analyze() {
         if (m->is_Call()) {
           for (DUIterator_Fast i2max, i2 = m->fast_outs(i2max); i2 < i2max; i2++) {
             Node* p = m->fast_out(i2);  // Propagate changes to uses
-            if (p->is_Proj() && p->as_Proj()->_con == TypeFunc::Control && p->outcnt() == 1) {
+            if (p->is_Proj() && p->as_Proj()->_con == TypeFunc::Control && p->outcnt() == 1)
               worklist.push(p->unique_out());
-            }
           }
         }
-        if (m->bottom_type() != type(m)) { // If not already bottomed out
+        if( m->bottom_type() != type(m) ) // If not already bottomed out
           worklist.push(m);     // Propagate change to user
-        }
-
-        // CmpU nodes can get their type information from two nodes up in the
-        // graph (instead of from the nodes immediately above). Make sure they
-        // are added to the worklist if nodes they depend on are updated, since
-        // they could be missed and get wrong types otherwise.
-        uint m_op = m->Opcode();
-        if (m_op == Op_AddI || m_op == Op_SubI) {
-          for (DUIterator_Fast i2max, i2 = m->fast_outs(i2max); i2 < i2max; i2++) {
-            Node* p = m->fast_out(i2); // Propagate changes to uses
-            if (p->Opcode() == Op_CmpU) {
-              // Got a CmpU which might need the new type information from node n.
-              if(p->bottom_type() != type(p)) { // If not already bottomed out
-                worklist.push(p); // Propagate change to user
-              }
-            }
-          }
-        }
       }
     }
   }
@@ -1684,7 +1511,7 @@ Node *PhaseCCP::transform( Node *n ) {
   _nodes.map( n->_idx, new_node );  // Flag as having been cloned
 
   // Allocate stack of size _nodes.Size()/2 to avoid frequent realloc
-  GrowableArray <Node *> trstack(C->live_nodes() >> 1);
+  GrowableArray <Node *> trstack(C->unique() >> 1);
 
   trstack.push(new_node);           // Process children of cloned node
   while ( trstack.is_nonempty() ) {

@@ -1,13 +1,13 @@
 /*
- * Copyright (c) 2015, Oracle and/or its affiliates. All rights reserved.
+ * reserved comment block
+ * DO NOT REMOVE OR ALTER!
  */
 /*
- * Licensed to the Apache Software Foundation (ASF) under one or more
- * contributor license agreements.  See the NOTICE file distributed with
- * this work for additional information regarding copyright ownership.
- * The ASF licenses this file to You under the Apache License, Version 2.0
- * (the "License"); you may not use this file except in compliance with
- * the License.  You may obtain a copy of the License at
+ * Copyright 2001-2004 The Apache Software Foundation.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
  *
  *     http://www.apache.org/licenses/LICENSE-2.0
  *
@@ -22,6 +22,9 @@
  */
 
 package com.sun.org.apache.xalan.internal.xsltc.compiler;
+
+import java.util.Enumeration;
+import java.util.Vector;
 
 import com.sun.org.apache.bcel.internal.generic.BranchHandle;
 import com.sun.org.apache.bcel.internal.generic.ConstantPoolGen;
@@ -39,8 +42,6 @@ import com.sun.org.apache.xalan.internal.xsltc.compiler.util.ResultTreeType;
 import com.sun.org.apache.xalan.internal.xsltc.compiler.util.Type;
 import com.sun.org.apache.xalan.internal.xsltc.compiler.util.TypeCheckError;
 import com.sun.org.apache.xalan.internal.xsltc.compiler.util.Util;
-import java.util.Iterator;
-import java.util.Vector;
 
 /**
  * @author Jacek Ambroziak
@@ -96,9 +97,9 @@ final class ForEach extends Instruction {
 
         // Collect sort objects associated with this instruction
         final Vector sortObjects = new Vector();
-        Iterator<SyntaxTreeNode> children = elements();
-        while (children.hasNext()) {
-            final SyntaxTreeNode child = children.next();
+        Enumeration children = elements();
+        while (children.hasMoreElements()) {
+            final Object child = children.nextElement();
             if (child instanceof Sort) {
                 sortObjects.addElement(child);
             }
@@ -186,7 +187,7 @@ final class ForEach extends Instruction {
                                    MethodGenerator methodGen) {
         final int n = elementCount();
         for (int i = 0; i < n; i++) {
-            final SyntaxTreeNode child = getContents().get(i);
+            final Object child = getContents().elementAt(i);
             if (child instanceof Variable) {
                 Variable var = (Variable)child;
                 var.initialize(classGen, methodGen);

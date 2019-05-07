@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 1997, 2017, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 1997, 2012, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -36,7 +36,6 @@
 EventLog* Events::_logs = NULL;
 StringEventLog* Events::_messages = NULL;
 StringEventLog* Events::_exceptions = NULL;
-StringEventLog* Events::_redefinitions = NULL;
 StringEventLog* Events::_deopt_messages = NULL;
 
 EventLog::EventLog() {
@@ -66,7 +65,6 @@ void Events::init() {
   if (LogEvents) {
     _messages = new StringEventLog("Events");
     _exceptions = new StringEventLog("Internal exceptions");
-    _redefinitions = new StringEventLog("Classes redefined");
     _deopt_messages = new StringEventLog("Deoptimization events");
   }
 }
@@ -84,7 +82,7 @@ EventMark::EventMark(const char* format, ...) {
     va_start(ap, format);
     // Save a copy of begin message and log it.
     _buffer.printv(format, ap);
-    Events::log(NULL, "%s", _buffer.buffer());
+    Events::log(NULL, _buffer);
     va_end(ap);
   }
 }
@@ -93,6 +91,6 @@ EventMark::~EventMark() {
   if (LogEvents) {
     // Append " done" to the begin message and log it
     _buffer.append(" done");
-    Events::log(NULL, "%s", _buffer.buffer());
+    Events::log(NULL, _buffer);
   }
 }

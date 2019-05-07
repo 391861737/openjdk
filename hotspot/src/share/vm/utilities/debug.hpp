@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 1997, 2014, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 1997, 2013, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -25,8 +25,8 @@
 #ifndef SHARE_VM_UTILITIES_DEBUG_HPP
 #define SHARE_VM_UTILITIES_DEBUG_HPP
 
-#include "utilities/globalDefinitions.hpp"
 #include "prims/jvm.h"
+#include "utilities/globalDefinitions.hpp"
 
 #include <stdarg.h>
 
@@ -43,17 +43,17 @@ class FormatBufferBase {
 #define RES_BUFSZ 256
 class FormatBufferResource : public FormatBufferBase {
  public:
-  FormatBufferResource(const char * format, ...) ATTRIBUTE_PRINTF(2, 3);
+  FormatBufferResource(const char * format, ...);
 };
 
 // Use stack for buffer
 template <size_t bufsz = 256>
 class FormatBuffer : public FormatBufferBase {
  public:
-  inline FormatBuffer(const char * format, ...) ATTRIBUTE_PRINTF(2, 3);
-  inline void append(const char* format, ...)  ATTRIBUTE_PRINTF(2, 3);
-  inline void print(const char* format, ...)  ATTRIBUTE_PRINTF(2, 3);
-  inline void printv(const char* format, va_list ap) ATTRIBUTE_PRINTF(2, 0);
+  inline FormatBuffer(const char * format, ...);
+  inline void append(const char* format, ...);
+  inline void print(const char* format, ...);
+  inline void printv(const char* format, va_list ap);
 
   char* buffer() { return _buf; }
   int size() { return bufsz; }
@@ -94,7 +94,7 @@ void FormatBuffer<bufsz>::printv(const char * format, va_list argp) {
 
 template <size_t bufsz>
 void FormatBuffer<bufsz>::append(const char* format, ...) {
-  // Given that the constructor does a vsnprintf we can assume that
+  // Given that the constructor does a jvsnprintf we can assume that
   // _buf is already initialized.
   size_t len = strlen(_buf);
   char* buf_end = _buf + len;
@@ -223,7 +223,7 @@ void report_should_not_reach_here(const char* file, int line);
 void report_unimplemented(const char* file, int line);
 void report_untested(const char* file, int line, const char* message);
 
-void warning(const char* format, ...) ATTRIBUTE_PRINTF(1, 2);
+void warning(const char* format, ...);
 
 #ifdef ASSERT
 // Compile-time asserts.
@@ -246,8 +246,7 @@ enum SharedSpaceType {
   SharedPermGen,
   SharedReadOnly,
   SharedReadWrite,
-  SharedMiscData,
-  SharedMiscCode
+  SharedMiscData
 };
 
 void report_out_of_shared_space(SharedSpaceType space_type);
@@ -264,8 +263,5 @@ NOT_PRODUCT(void test_error_handler();)
 
 void pd_ps(frame f);
 void pd_obfuscate_location(char *buf, size_t buflen);
-
-class outputStream;
-void print_native_stack(outputStream* st, frame fr, Thread* t, char* buf, int buf_size);
 
 #endif // SHARE_VM_UTILITIES_DEBUG_HPP

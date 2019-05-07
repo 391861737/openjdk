@@ -17,6 +17,9 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+/*
+ * $Id: ErrorMessages_sv.java /st_wptg_1.8.0.0.0jdk/2 2013/09/16 06:50:58 gmolloy Exp $
+ */
 
 package com.sun.org.apache.xalan.internal.xsltc.runtime;
 
@@ -91,14 +94,14 @@ public class ErrorMessages_sv extends ListResourceBundle {
          * is a class name.  Used for internal errors in the processor.
          */
         {BasisLibrary.RUN_TIME_INTERNAL_ERR,
-        "Internt exekveringsfel i ''{0}''"},
+        "Internt k\u00F6rningsfel i ''{0}''"},
 
         /*
          * Note to translators:  <xsl:copy> is a keyword that should not be
          * translated.
          */
         {BasisLibrary.RUN_TIME_COPY_ERR,
-        "Exekveringsexekveringsfel av <xsl:copy>."},
+        "K\u00F6rningsfel vid k\u00F6rning av <xsl:copy>."},
 
         /*
          * Note to translators:  The substitution text refers to data types.

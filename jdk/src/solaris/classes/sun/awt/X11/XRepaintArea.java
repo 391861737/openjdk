@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2003, 2014, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2003, 2011, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -28,8 +28,8 @@ package sun.awt.X11;
 
 import java.awt.Component;
 import java.awt.Graphics;
-
 import sun.awt.RepaintArea;
+import java.awt.peer.ComponentPeer;
 
 /**
  * The <code>RepaintArea</code> is a geometric construct created for the
@@ -39,15 +39,24 @@ import sun.awt.RepaintArea;
  *
  * @author      Eric Hawkes
  */
-final class XRepaintArea extends RepaintArea {
+class XRepaintArea extends RepaintArea {
+
+    /**
+     * Constructs a new <code>XRepaintArea</code>
+     * @since   1.3
+     */
+    public XRepaintArea() {
+    }
 
     /**
      * Calls <code>Component.update(Graphics)</code> with given Graphics.
      */
     protected void updateComponent(Component comp, Graphics g) {
         if (comp != null) {
-            // We don't call peer.paintPeer() here, because we shouldn't paint
-            // native component when processing UPDATE events.
+            final XComponentPeer peer = (XComponentPeer) comp.getPeer();
+            if (peer != null) {
+                peer.paintPeer(g);
+            }
             super.updateComponent(comp, g);
         }
     }

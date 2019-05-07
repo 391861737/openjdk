@@ -81,28 +81,23 @@ public class ScriptEngineManager  {
         nameAssociations = new HashMap<String, ScriptEngineFactory>();
         extensionAssociations = new HashMap<String, ScriptEngineFactory>();
         mimeTypeAssociations = new HashMap<String, ScriptEngineFactory>();
-        initEngines(loader);
-    }
-
-    private ServiceLoader<ScriptEngineFactory> getServiceLoader(final ClassLoader loader) {
-        if (loader != null) {
-            return ServiceLoader.load(ScriptEngineFactory.class, loader);
-        } else {
-            return ServiceLoader.loadInstalled(ScriptEngineFactory.class);
-        }
+        AccessController.doPrivileged(new PrivilegedAction<Object>() {
+            public Object run() {
+                initEngines(loader);
+                return null;
+            }
+        });
     }
 
     private void initEngines(final ClassLoader loader) {
         Iterator<ScriptEngineFactory> itr = null;
         try {
-            ServiceLoader<ScriptEngineFactory> sl = AccessController.doPrivileged(
-                new PrivilegedAction<ServiceLoader<ScriptEngineFactory>>() {
-                    @Override
-                    public ServiceLoader<ScriptEngineFactory> run() {
-                        return getServiceLoader(loader);
-                    }
-                });
-
+            ServiceLoader<ScriptEngineFactory> sl;
+            if (loader != null) {
+                sl = ServiceLoader.load(ScriptEngineFactory.class, loader);
+            } else {
+                sl = ServiceLoader.loadInstalled(ScriptEngineFactory.class);
+            }
             itr = sl.iterator();
         } catch (ServiceConfigurationError err) {
             System.err.println("Can't find ScriptEngineFactory providers: " +

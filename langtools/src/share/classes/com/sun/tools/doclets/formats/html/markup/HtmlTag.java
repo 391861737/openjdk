@@ -25,7 +25,7 @@
 
 package com.sun.tools.doclets.formats.html.markup;
 
-import com.sun.tools.javac.util.StringUtils;
+import java.util.Locale;
 
 /**
  * Enum representing HTML tags.
@@ -117,7 +117,7 @@ public enum HtmlTag {
     HtmlTag(BlockType blockType, EndTag endTag ) {
         this.blockType = blockType;
         this.endTag = endTag;
-        this.value = StringUtils.toLowerCase(name());
+        this.value = name().toLowerCase(Locale.US);
     }
 
     /**

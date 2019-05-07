@@ -802,7 +802,7 @@ public class CheckMethodAdapter extends MethodVisitor {
         if (labels.get(label) != null) {
             throw new IllegalArgumentException("Already visited label");
         }
-        labels.put(label, insnCount);
+        labels.put(label, new Integer(insnCount));
         super.visitLabel(label);
     }
 

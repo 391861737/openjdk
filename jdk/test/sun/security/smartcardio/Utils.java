@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2005, 2016, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2005, 2006, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -24,17 +24,10 @@
 
 // common utility functions for the PC/SC tests
 
-import java.io.StringReader;
-import java.io.ByteArrayOutputStream;
-import java.io.IOException;
-import java.security.NoSuchAlgorithmException;
-import java.util.Arrays;
-import java.util.List;
-import javax.smartcardio.CardTerminal;
-import javax.smartcardio.CardChannel;
-import javax.smartcardio.ResponseAPDU;
-import javax.smartcardio.CommandAPDU;
-import javax.smartcardio.TerminalFactory;
+import javax.smartcardio.*;
+
+import java.io.*;
+import java.util.*;
 
 public class Utils {
 
@@ -44,59 +37,26 @@ public class Utils {
         }
     }
 
-    static TerminalFactory getTerminalFactory(String provName) throws Exception {
-        try {
-            TerminalFactory factory = (provName == null)
-                    ? TerminalFactory.getInstance("PC/SC", null)
-                    : TerminalFactory.getInstance("PC/SC", null, provName);
-            System.out.println(factory);
-            return factory;
-        } catch (NoSuchAlgorithmException e) {
-            Throwable cause = e.getCause();
-            if (cause != null && cause.getMessage().startsWith("PC/SC not available")) {
-                return null;
-            }
-            throw e;
-        }
-    }
-
     static CardTerminal getTerminal(String[] args) throws Exception {
-        return getTerminal(args, null);
-    }
-
-    static CardTerminal getTerminal(String[] args, String provider) throws Exception {
         setLibrary(args);
 
-        try {
-            TerminalFactory factory = (provider == null)
-                    ? TerminalFactory.getInstance("PC/SC", null)
-                    : TerminalFactory.getInstance("PC/SC", null, provider);
-            System.out.println(factory);
+        TerminalFactory factory = TerminalFactory.getInstance("PC/SC", null);
+        System.out.println(factory);
 
-            List<CardTerminal> terminals = factory.terminals().list();
-            System.out.println("Terminals: " + terminals);
-            if (terminals.isEmpty()) {
-                return null;
-            }
-            CardTerminal terminal = terminals.get(0);
-
-            if (terminal.isCardPresent() == false) {
-                System.out.println("*** Insert card");
-                if (terminal.waitForCardPresent(20 * 1000) == false) {
-                    throw new Exception("no card available");
-                }
-            }
-            System.out.println("card present: " + terminal.isCardPresent());
-
-            return terminal;
-
-        } catch (NoSuchAlgorithmException e) {
-            Throwable cause = e.getCause();
-            if (cause != null && cause.getMessage().startsWith("PC/SC not available")) {
-                return null;
-            }
-            throw e;
+        List<CardTerminal> terminals = factory.terminals().list();
+        System.out.println("Terminals: " + terminals);
+        if (terminals.isEmpty()) {
+            throw new Exception("No card terminals available");
         }
+        CardTerminal terminal = terminals.get(0);
+
+        if (terminal.isCardPresent() == false) {
+            System.out.println("*** Insert card");
+            if (terminal.waitForCardPresent(20 * 1000) == false) {
+                throw new Exception("no card available");
+            }
+        }
+        return terminal;
     }
 
     static final byte[] C1 = parse("00 A4 04 00 07 A0 00 00 00 62 81 01 00");

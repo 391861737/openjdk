@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 1997, 2015, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 1997, 2013, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -54,8 +54,7 @@ enum {
   JVM_ACC_IS_OLD                  = 0x00010000,     // RedefineClasses() has replaced this method
   JVM_ACC_IS_OBSOLETE             = 0x00020000,     // RedefineClasses() has made method obsolete
   JVM_ACC_IS_PREFIXED_NATIVE      = 0x00040000,     // JVMTI has prefixed this native method
-  JVM_ACC_ON_STACK                = 0x00080000,     // RedefineClasses() was used on the stack
-  JVM_ACC_IS_DELETED              = 0x00008000,     // RedefineClasses() has deleted this method
+  JVM_ACC_ON_STACK                = 0x00080000,     // RedefinedClasses() is used on the stack
 
   // Klass* flags
   JVM_ACC_HAS_MIRANDA_METHODS     = 0x10000000,     // True if this class has miranda methods in it's vtable
@@ -76,12 +75,11 @@ enum {
   // These bits must not conflict with any other field-related access flags
   // (e.g., ACC_ENUM).
   // Note that the class-related ACC_ANNOTATION bit conflicts with these flags.
-  JVM_ACC_FIELD_ACCESS_WATCHED            = 0x00002000, // field access is watched by JVMTI
-  JVM_ACC_FIELD_MODIFICATION_WATCHED      = 0x00008000, // field modification is watched by JVMTI
-  JVM_ACC_FIELD_INTERNAL                  = 0x00000400, // internal field, same as JVM_ACC_ABSTRACT
-  JVM_ACC_FIELD_STABLE                    = 0x00000020, // @Stable field, same as JVM_ACC_SYNCHRONIZED and JVM_ACC_SUPER
-  JVM_ACC_FIELD_INITIALIZED_FINAL_UPDATE  = 0x00000100, // (static) final field updated outside (class) initializer, same as JVM_ACC_NATIVE
-  JVM_ACC_FIELD_HAS_GENERIC_SIGNATURE     = 0x00000800, // field has generic signature
+  JVM_ACC_FIELD_ACCESS_WATCHED       = 0x00002000,  // field access is watched by JVMTI
+  JVM_ACC_FIELD_MODIFICATION_WATCHED = 0x00008000,  // field modification is watched by JVMTI
+  JVM_ACC_FIELD_INTERNAL             = 0x00000400,  // internal field, same as JVM_ACC_ABSTRACT
+  JVM_ACC_FIELD_STABLE               = 0x00000020,  // @Stable field, same as JVM_ACC_SYNCHRONIZED
+  JVM_ACC_FIELD_HAS_GENERIC_SIGNATURE = 0x00000800, // field has generic signature
 
   JVM_ACC_FIELD_INTERNAL_FLAGS       = JVM_ACC_FIELD_ACCESS_WATCHED |
                                        JVM_ACC_FIELD_MODIFICATION_WATCHED |
@@ -133,7 +131,6 @@ class AccessFlags VALUE_OBJ_CLASS_SPEC {
   bool has_jsrs                () const { return (_flags & JVM_ACC_HAS_JSRS               ) != 0; }
   bool is_old                  () const { return (_flags & JVM_ACC_IS_OLD                 ) != 0; }
   bool is_obsolete             () const { return (_flags & JVM_ACC_IS_OBSOLETE            ) != 0; }
-  bool is_deleted              () const { return (_flags & JVM_ACC_IS_DELETED             ) != 0; }
   bool is_prefixed_native      () const { return (_flags & JVM_ACC_IS_PREFIXED_NATIVE     ) != 0; }
 
   // Klass* flags
@@ -151,8 +148,6 @@ class AccessFlags VALUE_OBJ_CLASS_SPEC {
   bool is_field_access_watched() const  { return (_flags & JVM_ACC_FIELD_ACCESS_WATCHED) != 0; }
   bool is_field_modification_watched() const
                                         { return (_flags & JVM_ACC_FIELD_MODIFICATION_WATCHED) != 0; }
-  bool has_field_initialized_final_update() const
-                                        { return (_flags & JVM_ACC_FIELD_INITIALIZED_FINAL_UPDATE) != 0; }
   bool on_stack() const                 { return (_flags & JVM_ACC_ON_STACK) != 0; }
   bool is_internal() const              { return (_flags & JVM_ACC_FIELD_INTERNAL) != 0; }
   bool is_stable() const                { return (_flags & JVM_ACC_FIELD_STABLE) != 0; }
@@ -175,7 +170,6 @@ class AccessFlags VALUE_OBJ_CLASS_SPEC {
 
   // Atomic update of flags
   void atomic_set_bits(jint bits);
-  bool atomic_set_one_bit(jint bit);
   void atomic_clear_bits(jint bits);
 
  private:
@@ -201,7 +195,6 @@ class AccessFlags VALUE_OBJ_CLASS_SPEC {
   void set_has_jsrs()                  { atomic_set_bits(JVM_ACC_HAS_JSRS);                }
   void set_is_old()                    { atomic_set_bits(JVM_ACC_IS_OLD);                  }
   void set_is_obsolete()               { atomic_set_bits(JVM_ACC_IS_OBSOLETE);             }
-  void set_is_deleted()                { atomic_set_bits(JVM_ACC_IS_DELETED);              }
   void set_is_prefixed_native()        { atomic_set_bits(JVM_ACC_IS_PREFIXED_NATIVE);      }
 
   void clear_not_c1_compilable()       { atomic_clear_bits(JVM_ACC_NOT_C1_COMPILABLE);       }
@@ -232,27 +225,17 @@ class AccessFlags VALUE_OBJ_CLASS_SPEC {
                                            atomic_clear_bits(JVM_ACC_FIELD_MODIFICATION_WATCHED);
                                          }
                                        }
-
-  void set_has_field_initialized_final_update(const bool value) {
-    if (value) {
-      atomic_set_bits(JVM_ACC_FIELD_INITIALIZED_FINAL_UPDATE);
-    } else {
-      atomic_clear_bits(JVM_ACC_FIELD_INITIALIZED_FINAL_UPDATE);
-    }
-  }
-
   void set_field_has_generic_signature()
                                        {
                                          atomic_set_bits(JVM_ACC_FIELD_HAS_GENERIC_SIGNATURE);
                                        }
 
-  bool set_on_stack(const bool value)
+  void set_on_stack(const bool value)
                                        {
                                          if (value) {
-                                           return atomic_set_one_bit(JVM_ACC_ON_STACK);
+                                           atomic_set_bits(JVM_ACC_ON_STACK);
                                          } else {
                                            atomic_clear_bits(JVM_ACC_ON_STACK);
-                                           return true; // Ignored
                                          }
                                        }
   // Conversion

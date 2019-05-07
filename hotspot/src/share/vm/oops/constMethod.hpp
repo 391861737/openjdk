@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2003, 2016, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2003, 2013, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -211,7 +211,6 @@ private:
 
   int               _constMethod_size;
   u2                _flags;
-  u1                _result_type;                 // BasicType of result
 
   // Size of Java bytecodes allocated immediately after Method*.
   u2                _code_size;
@@ -223,7 +222,6 @@ private:
   u2                _max_stack;                  // Maximum number of entries on the expression stack
   u2                _max_locals;                 // Number of local variables used by this method
   u2                _size_of_parameters;         // size of the parameter block (receiver + arguments) in words
-  u2                _orig_method_idnum;          // Original unique identification number for the method
 
   // Constructor
   ConstMethod(int byte_code_size,
@@ -470,17 +468,12 @@ public:
   static ByteSize size_of_parameters_offset()
                             { return byte_offset_of(ConstMethod, _size_of_parameters); }
 
-  static ByteSize result_type_offset()
-                            { return byte_offset_of(ConstMethod, _result_type); }
 
   // Unique id for the method
   static const u2 MAX_IDNUM;
   static const u2 UNSET_IDNUM;
   u2 method_idnum() const                        { return _method_idnum; }
   void set_method_idnum(u2 idnum)                { _method_idnum = idnum; }
-
-  u2 orig_method_idnum() const                   { return _orig_method_idnum; }
-  void set_orig_method_idnum(u2 idnum)           { _orig_method_idnum = idnum; }
 
   // max stack
   int  max_stack() const                         { return _max_stack; }
@@ -494,8 +487,6 @@ public:
   int  size_of_parameters() const                { return _size_of_parameters; }
   void set_size_of_parameters(int size)          { _size_of_parameters = size; }
 
-  void set_result_type(BasicType rt)             { assert(rt < 16, "result type too large");
-                                                   _result_type = (u1)rt; }
   // Deallocation for RedefineClasses
   void deallocate_contents(ClassLoaderData* loader_data);
   bool is_klass() const { return false; }

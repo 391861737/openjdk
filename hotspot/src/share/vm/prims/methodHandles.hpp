@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008, 2017, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2008, 2013, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -60,7 +60,7 @@ class MethodHandles: AllStatic {
   static Handle new_MemberName(TRAPS);  // must be followed by init_MemberName
   static oop init_MemberName(Handle mname_h, Handle target_h); // compute vmtarget/vmindex from target
   static oop init_field_MemberName(Handle mname_h, fieldDescriptor& fd, bool is_setter = false);
-  static oop init_method_MemberName(Handle mname_h, CallInfo& info, bool intern = true);
+  static oop init_method_MemberName(Handle mname_h, CallInfo& info);
   static int method_ref_kind(Method* m, bool do_dispatch_if_possible = true);
   static int find_MemberNames(KlassHandle k, Symbol* name, Symbol* sig,
                               int mflags, KlassHandle caller,
@@ -236,13 +236,18 @@ class MemberNameTable : public GrowableArray<jweak> {
  public:
   MemberNameTable(int methods_cnt);
   ~MemberNameTable();
-  oop add_member_name(jweak mem_name_ref);
-  oop find_or_add_member_name(jweak mem_name_ref);
+  void add_member_name(int index, jweak mem_name_ref);
+  oop  get_member_name(int index);
 
 #if INCLUDE_JVMTI
+ public:
   // RedefineClasses() API support:
-  // If a MemberName refers to old_method then update it to refer to new_method.
-  void adjust_method_entries(InstanceKlass* holder, bool * trace_name_printed);
+  // If a MemberName refers to old_method then update it
+  // to refer to new_method.
+  void adjust_method_entries(Method** old_methods, Method** new_methods,
+                             int methods_length, bool *trace_name_printed);
+ private:
+  oop find_member_name_by_method(Method* old_method);
 #endif // INCLUDE_JVMTI
 };
 

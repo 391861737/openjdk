@@ -35,6 +35,7 @@ import java.security.Permission;
 import java.security.PermissionCollection;
 import java.security.Permissions;
 import java.security.SecureClassLoader;
+import jdk.nashorn.tools.Shell;
 
 /**
  * Superclass for Nashorn class loader classes.
@@ -91,7 +92,7 @@ abstract class NashornLoader extends SecureClassLoader {
     }
 
     @Override
-    protected PermissionCollection getPermissions(final CodeSource codesource) {
+    protected PermissionCollection getPermissions(CodeSource codesource) {
         final Permissions permCollection = new Permissions();
         for (final Permission perm : SCRIPT_PERMISSIONS) {
             permCollection.add(perm);
@@ -102,10 +103,10 @@ abstract class NashornLoader extends SecureClassLoader {
     /**
      * Create a secure URL class loader for the given classpath
      * @param classPath classpath for the loader to search from
-     * @param parent the parent class loader for the new class loader
      * @return the class loader
      */
-    static ClassLoader createClassLoader(final String classPath, final ClassLoader parent) {
+    static ClassLoader createClassLoader(final String classPath) {
+        final ClassLoader parent = Shell.class.getClassLoader();
         final URL[] urls = pathToURLs(classPath);
         return URLClassLoader.newInstance(urls, parent);
     }

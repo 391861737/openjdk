@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2013, 2015, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2013, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -31,9 +31,7 @@ import java.lang.management.RuntimeMXBean;
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.Collections;
-import java.util.concurrent.CountDownLatch;
 import java.util.Map;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Future;
@@ -41,8 +39,6 @@ import java.util.concurrent.Phaser;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import java.util.function.Predicate;
-import java.util.function.Consumer;
-import java.util.stream.Collectors;
 
 import sun.management.VMManagement;
 
@@ -74,37 +70,9 @@ public final class ProcessTools {
     public static Process startProcess(String name,
                                        ProcessBuilder processBuilder)
     throws IOException {
-        return startProcess(name, processBuilder, null);
-    }
-
-    /**
-     * <p>Starts a process from its builder.</p>
-     * <span>The default redirects of STDOUT and STDERR are started</span>
-     * <p>It is possible to monitor the in-streams via the provided {@code consumer}
-     * @param name The process name
-     * @param consumer {@linkplain Consumer} instance to process the in-streams
-     * @param processBuilder The process builder
-     * @return Returns the initialized process
-     * @throws IOException
-     */
-    public static Process startProcess(String name,
-                                       ProcessBuilder processBuilder,
-                                       Consumer<String> consumer)
-    throws IOException {
         Process p = null;
         try {
-            p = startProcess(
-                name,
-                processBuilder,
-                line -> {
-                    if (consumer != null) {
-                        consumer.accept(line);
-                    }
-                    return false;
-                },
-                -1,
-                TimeUnit.NANOSECONDS
-            );
+            p = startProcess(name, processBuilder, null, -1, TimeUnit.NANOSECONDS);
         } catch (InterruptedException | TimeoutException e) {
             // can't ever happen
         }
@@ -143,28 +111,25 @@ public final class ProcessTools {
 
         stdout.addPump(new LineForwarder(name, System.out));
         stderr.addPump(new LineForwarder(name, System.err));
-        CountDownLatch latch = new CountDownLatch(1);
+        final Phaser phs = new Phaser(1);
         if (linePredicate != null) {
-            StreamPumper.LinePump pump = new StreamPumper.LinePump() {
+            stdout.addPump(new StreamPumper.LinePump() {
                 @Override
                 protected void processLine(String line) {
-                    if (latch.getCount() > 0 && linePredicate.test(line)) {
-                        latch.countDown();
+                    if (linePredicate.test(line)) {
+                        if (phs.getRegisteredParties() > 0) {
+                            phs.arriveAndDeregister();
+                        }
                     }
                 }
-            };
-            stdout.addPump(pump);
-            stderr.addPump(pump);
+            });
         }
         Future<Void> stdoutTask = stdout.process();
         Future<Void> stderrTask = stderr.process();
 
         try {
             if (timeout > -1) {
-                long realTimeout = Math.round(timeout * Utils.TIMEOUT_FACTOR);
-                if (!latch.await(realTimeout, unit)) {
-                    throw new TimeoutException();
-                }
+                phs.awaitAdvanceInterruptibly(0, timeout, unit);
             }
         } catch (TimeoutException | InterruptedException e) {
             System.err.println("Failed to start a process (thread dump follows)");
@@ -269,46 +234,16 @@ public final class ProcessTools {
     }
 
     /**
-     * Create ProcessBuilder using the java launcher from the jdk to be tested,
-     * and with any platform specific arguments prepended.
-     *
-     * @param command Arguments to pass to the java command.
-     * @return The ProcessBuilder instance representing the java command.
+     * Create ProcessBuilder using the java launcher from the jdk to be tested
+     * and with any platform specific arguments prepended
      */
     public static ProcessBuilder createJavaProcessBuilder(String... command)
             throws Exception {
-        return createJavaProcessBuilder(false, command);
-    }
-
-    /**
-     * Create ProcessBuilder using the java launcher from the jdk to be tested,
-     * and with any platform specific arguments prepended.
-     *
-     * @param addTestVmAndJavaOptions If true, adds test.vm.opts and test.java.opts
-     *        to the java arguments.
-     * @param command Arguments to pass to the java command.
-     * @return The ProcessBuilder instance representing the java command.
-     */
-    public static ProcessBuilder createJavaProcessBuilder(boolean addTestVmAndJavaOptions, String... command) throws Exception {
         String javapath = JDKToolFinder.getJDKTool("java");
 
         ArrayList<String> args = new ArrayList<>();
         args.add(javapath);
         Collections.addAll(args, getPlatformSpecificVMArgs());
-
-        if (addTestVmAndJavaOptions) {
-            // -cp is needed to make sure the same classpath is used whether the test is
-            // run in AgentVM mode or OtherVM mode. It was added to the hotspot version
-            // of this API as part of 8077608. However, for the jdk version it is only
-            // added when addTestVmAndJavaOptions is true in order to minimize
-            // disruption to existing JDK tests, which have yet to be tested with -cp
-            // being added. At some point -cp should always be added to be consistent
-            // with what the hotspot version does.
-            args.add("-cp");
-            args.add(System.getProperty("java.class.path"));
-            Collections.addAll(args, Utils.getTestJavaOpts());
-        }
-
         Collections.addAll(args, command);
 
         // Reporting
@@ -405,41 +340,5 @@ public final class ProcessTools {
             cmd.append(s).append(" ");
         }
         return cmd.toString().trim();
-    }
-
-    /**
-     * Executes a process, waits for it to finish, prints the process output
-     * to stdout, and returns the process output.
-     *
-     * The process will have exited before this method returns.
-     *
-     * @param cmds The command line to execute.
-     * @return The {@linkplain OutputAnalyzer} instance wrapping the process.
-     */
-    public static OutputAnalyzer executeCommand(String... cmds)
-            throws Throwable {
-        String cmdLine = Arrays.stream(cmds).collect(Collectors.joining(" "));
-        System.out.println("Command line: [" + cmdLine + "]");
-        OutputAnalyzer analyzer = ProcessTools.executeProcess(cmds);
-        System.out.println(analyzer.getOutput());
-        return analyzer;
-    }
-
-    /**
-     * Executes a process, waits for it to finish, prints the process output
-     * to stdout and returns the process output.
-     *
-     * The process will have exited before this method returns.
-     *
-     * @param pb The ProcessBuilder to execute.
-     * @return The {@linkplain OutputAnalyzer} instance wrapping the process.
-     */
-    public static OutputAnalyzer executeCommand(ProcessBuilder pb)
-            throws Throwable {
-        String cmdLine = pb.command().stream().collect(Collectors.joining(" "));
-        System.out.println("Command line: [" + cmdLine + "]");
-        OutputAnalyzer analyzer = ProcessTools.executeProcess(pb);
-        System.out.println(analyzer.getOutput());
-        return analyzer;
     }
 }

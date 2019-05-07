@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 1996, 2016, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 1996, 2013, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -39,9 +39,6 @@ import java.util.concurrent.locks.ReentrantLock;
 
 import javax.crypto.BadPaddingException;
 import javax.net.ssl.*;
-
-import sun.misc.JavaNetAccess;
-import sun.misc.SharedSecrets;
 
 /**
  * Implementation of an SSL socket.  This is a normal connection type
@@ -175,12 +172,6 @@ final public class SSLSocketImpl extends BaseSSLSocketImpl {
     private volatile int        connectionState;
 
     /*
-     * Flag indicating that the engine's handshaker has done the necessary
-     * steps so the engine may process a ChangeCipherSpec message.
-     */
-    private boolean             receivedCCS;
-
-    /*
      * Flag indicating if the next record we receive MUST be a Finished
      * message. Temporarily set during the handshake to ensure that
      * a change cipher spec message is followed by a finished message.
@@ -220,11 +211,6 @@ final public class SSLSocketImpl extends BaseSSLSocketImpl {
                                     Collections.<SNIServerName>emptyList();
     Collection<SNIMatcher>      sniMatchers =
                                     Collections.<SNIMatcher>emptyList();
-    // Is the serverNames set to empty with SSLParameters.setServerNames()?
-    private boolean             noSniExtension = false;
-
-    // Is the sniMatchers set to empty with SSLParameters.setSNIMatchers()?
-    private boolean             noSniMatcher = false;
 
     /*
      * READ ME * READ ME * READ ME * READ ME * READ ME * READ ME *
@@ -396,15 +382,6 @@ final public class SSLSocketImpl extends BaseSSLSocketImpl {
      * honored during handshaking?
      */
     private boolean preferLocalCipherSuites = false;
-
-    /*
-     * Is the local name service trustworthy?
-     *
-     * If the local name service is not trustworthy, reverse host name
-     * resolution should not be performed for endpoint identification.
-     */
-    static final boolean trustNameService =
-            Debug.getBooleanProperty("jdk.tls.trustNameService", false);
 
     //
     // CONSTRUCTORS AND INITIALIZATION CODE
@@ -610,7 +587,6 @@ final public class SSLSocketImpl extends BaseSSLSocketImpl {
          */
         roleIsServer = isServer;
         connectionState = cs_START;
-        receivedCCS = false;
 
         /*
          * default read and write side cipher and MAC support
@@ -671,11 +647,6 @@ final public class SSLSocketImpl extends BaseSSLSocketImpl {
         }
 
         super.connect(endpoint, timeout);
-
-        if (host == null || host.length() == 0) {
-            useImplicitHost(false);
-        }
-
         doneConnect();
     }
 
@@ -1074,7 +1045,6 @@ final public class SSLSocketImpl extends BaseSSLSocketImpl {
 
                     if (handshaker.invalidated) {
                         handshaker = null;
-                        receivedCCS = false;
                         // if state is cs_RENEGOTIATE, revert it to cs_DATA
                         if (connectionState == cs_RENEGOTIATE) {
                             connectionState = cs_DATA;
@@ -1090,7 +1060,6 @@ final public class SSLSocketImpl extends BaseSSLSocketImpl {
                         handshakeSession = null;
                         handshaker = null;
                         connectionState = cs_DATA;
-                        receivedCCS = false;
 
                         //
                         // Tell folk about handshake completion, but do
@@ -1138,23 +1107,12 @@ final public class SSLSocketImpl extends BaseSSLSocketImpl {
                 case Record.ct_change_cipher_spec:
                     if ((connectionState != cs_HANDSHAKE
                                 && connectionState != cs_RENEGOTIATE)
-                            || !handshaker.sessionKeysCalculated()
-                            || receivedCCS) {
-                        // For the CCS message arriving in the wrong state
+                            || r.available() != 1
+                            || r.read() != 1) {
                         fatal(Alerts.alert_unexpected_message,
-                                "illegal change cipher spec msg, conn state = "
-                                + connectionState + ", handshake state = "
-                                + handshaker.state);
-                    } else if (r.available() != 1 || r.read() != 1) {
-                        // For structural/content issues with the CCS
-                        fatal(Alerts.alert_unexpected_message,
-                                "Malformed change cipher spec msg");
+                            "illegal change cipher spec msg, state = "
+                            + connectionState);
                     }
-
-                    // Once we've received CCS, update the flag.
-                    // If the remote endpoint sends it again in this handshake
-                    // we won't process it.
-                    receivedCCS = true;
 
                     //
                     // The first message after a change_cipher_spec
@@ -2168,63 +2126,13 @@ final public class SSLSocketImpl extends BaseSSLSocketImpl {
         output.r.setVersion(protocolVersion);
     }
 
-    //
-    // ONLY used by ClientHandshaker for the server hostname during handshaking
-    //
     synchronized String getHost() {
         // Note that the host may be null or empty for localhost.
         if (host == null || host.length() == 0) {
-            useImplicitHost(true);
-        }
-
-        return host;
-    }
-
-    /*
-     * Try to set and use the implicit specified hostname
-     */
-    private synchronized void useImplicitHost(boolean noSniUpdate) {
-
-        // Note: If the local name service is not trustworthy, reverse
-        // host name resolution should not be performed for endpoint
-        // identification.  Use the application original specified
-        // hostname or IP address instead.
-
-        // Get the original hostname via jdk.internal.misc.SharedSecrets
-        InetAddress inetAddress = getInetAddress();
-        if (inetAddress == null) {      // not connected
-            return;
-        }
-
-        JavaNetAccess jna = SharedSecrets.getJavaNetAccess();
-        String originalHostname = jna.getOriginalHostName(inetAddress);
-        if ((originalHostname != null) &&
-                (originalHostname.length() != 0)) {
-
-            host = originalHostname;
-            if (!noSniUpdate && serverNames.isEmpty() && !noSniExtension) {
-                serverNames =
-                        Utilities.addToSNIServerNameList(serverNames, host);
-
-                if (!roleIsServer &&
-                        (handshaker != null) && !handshaker.started()) {
-                    handshaker.setSNIServerNames(serverNames);
-                }
-            }
-
-            return;
-        }
-
-        // No explicitly specified hostname, no server name indication.
-        if (!trustNameService) {
-            // The local name service is not trustworthy, use IP address.
-            host = inetAddress.getHostAddress();
-        } else {
-            // Use the underlying reverse host name resolution service.
             host = getInetAddress().getHostName();
         }
+        return host;
     }
-
 
     // ONLY used by HttpsClient to setup the URI specified hostname
     //
@@ -2235,10 +2143,6 @@ final public class SSLSocketImpl extends BaseSSLSocketImpl {
         this.host = host;
         this.serverNames =
             Utilities.addToSNIServerNameList(this.serverNames, this.host);
-
-        if (!roleIsServer && (handshaker != null) && !handshaker.started()) {
-            handshaker.setSNIServerNames(serverNames);
-        }
     }
 
     /**
@@ -2605,21 +2509,8 @@ final public class SSLSocketImpl extends BaseSSLSocketImpl {
         // the super implementation does not handle the following parameters
         params.setEndpointIdentificationAlgorithm(identificationProtocol);
         params.setAlgorithmConstraints(algorithmConstraints);
-
-        if (sniMatchers.isEmpty() && !noSniMatcher) {
-            // 'null' indicates none has been set
-            params.setSNIMatchers(null);
-        } else {
-            params.setSNIMatchers(sniMatchers);
-        }
-
-        if (serverNames.isEmpty() && !noSniExtension) {
-            // 'null' indicates none has been set
-            params.setServerNames(null);
-        } else {
-            params.setServerNames(serverNames);
-        }
-
+        params.setSNIMatchers(sniMatchers);
+        params.setServerNames(serverNames);
         params.setUseCipherSuitesOrder(preferLocalCipherSuites);
 
         return params;
@@ -2639,13 +2530,11 @@ final public class SSLSocketImpl extends BaseSSLSocketImpl {
 
         List<SNIServerName> sniNames = params.getServerNames();
         if (sniNames != null) {
-            noSniExtension = sniNames.isEmpty();
             serverNames = sniNames;
         }
 
         Collection<SNIMatcher> matchers = params.getSNIMatchers();
         if (matchers != null) {
-            noSniMatcher = matchers.isEmpty();
             sniMatchers = matchers;
         }
 
@@ -2659,14 +2548,6 @@ final public class SSLSocketImpl extends BaseSSLSocketImpl {
                 handshaker.setSNIServerNames(serverNames);
             }
         }
-    }
-
-    /*
-     * Returns a boolean indicating whether the ChangeCipherSpec message
-     * has been received for this handshake.
-     */
-    boolean receivedChangeCipherSpec() {
-        return receivedCCS;
     }
 
     //

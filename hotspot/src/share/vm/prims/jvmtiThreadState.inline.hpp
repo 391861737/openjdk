@@ -27,7 +27,6 @@
 
 #include "prims/jvmtiEnvThreadState.hpp"
 #include "prims/jvmtiThreadState.hpp"
-#include "runtime/thread.inline.hpp"
 
 // JvmtiEnvThreadStateIterator implementation
 

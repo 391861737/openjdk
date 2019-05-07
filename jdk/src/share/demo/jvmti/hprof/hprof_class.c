@@ -529,11 +529,6 @@ class_get_methodID(JNIEnv *env, ClassIndex index, MethodIndex mnum)
     info = get_info(index);
     if (mnum >= info->method_count) {
         jclass newExcCls = (*env)->FindClass(env, "java/lang/IllegalArgumentException");
-        if ((*env)->ExceptionCheck(env)) {
-            (*env)->ExceptionClear(env);
-            HPROF_ERROR(JNI_TRUE,
-                        "Could not find the java/lang/IllegalArgumentException class");
-        }
         (*env)->ThrowNew(env, newExcCls, "Illegal mnum");
 
         return NULL;
@@ -547,11 +542,6 @@ class_get_methodID(JNIEnv *env, ClassIndex index, MethodIndex mnum)
         name  = (char *)string_get(info->method[mnum].name_index);
         if (name==NULL) {
             jclass newExcCls = (*env)->FindClass(env, "java/lang/IllegalArgumentException");
-            if ((*env)->ExceptionCheck(env)) {
-                (*env)->ExceptionClear(env);
-                HPROF_ERROR(JNI_TRUE,
-                            "Could not find the java/lang/IllegalArgumentException class");
-            }
             (*env)->ThrowNew(env, newExcCls, "Name not found");
 
             return NULL;

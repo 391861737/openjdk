@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2005, 2015, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2005, 2013, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -401,7 +401,7 @@ Node *PhaseMacroExpand::value_from_mem_phi(Node *mem, BasicType ft, const Type *
   for (DUIterator_Fast kmax, k = region->fast_outs(kmax); k < kmax; k++) {
     Node* phi = region->fast_out(k);
     if (phi->is_Phi() && phi != mem &&
-        phi->as_Phi()->is_same_inst_field(phi_type, (int)mem->_idx, instance_id, alias_idx, offset)) {
+        phi->as_Phi()->is_same_inst_field(phi_type, instance_id, alias_idx, offset)) {
       return phi;
     }
   }
@@ -420,7 +420,7 @@ Node *PhaseMacroExpand::value_from_mem_phi(Node *mem, BasicType ft, const Type *
   GrowableArray <Node *> values(length, length, NULL, false);
 
   // create a new Phi for the value
-  PhiNode *phi = new (C) PhiNode(mem->in(0), phi_type, NULL, mem->_idx, instance_id, alias_idx, offset);
+  PhiNode *phi = new (C) PhiNode(mem->in(0), phi_type, NULL, instance_id, alias_idx, offset);
   transform_later(phi);
   value_phis->push(phi, mem->_idx);
 
@@ -693,13 +693,12 @@ bool PhaseMacroExpand::scalar_replacement(AllocateNode *alloc, GrowableArray <Sa
   ciKlass* klass = NULL;
   ciInstanceKlass* iklass = NULL;
   int nfields = 0;
-  int array_base = 0;
-  int element_size = 0;
-  BasicType basic_elem_type = T_ILLEGAL;
-  ciType* elem_type = NULL;
+  int array_base;
+  int element_size;
+  BasicType basic_elem_type;
+  ciType* elem_type;
 
   Node* res = alloc->result_cast();
-  assert(res == NULL || res->is_CheckCastPP(), "unexpected AllocateNode result");
   const TypeOopPtr* res_type = NULL;
   if (res != NULL) { // Could be NULL when there are no users
     res_type = _igvn.type(res)->isa_oopptr();
@@ -964,11 +963,7 @@ void PhaseMacroExpand::process_users_of_allocation(CallNode *alloc) {
 }
 
 bool PhaseMacroExpand::eliminate_allocate_node(AllocateNode *alloc) {
-  // Don't do scalar replacement if the frame can be popped by JVMTI:
-  // if reallocation fails during deoptimization we'll pop all
-  // interpreter frames for this compiled frame and that won't play
-  // nice with JVMTI popframe.
-  if (!EliminateAllocations || JvmtiExport::can_pop_frame() || !alloc->_is_non_escaping) {
+  if (!EliminateAllocations || !alloc->_is_non_escaping) {
     return false;
   }
   Node* klass = alloc->in(AllocateNode::KlassNode);
@@ -1036,8 +1031,6 @@ bool PhaseMacroExpand::eliminate_boxing_node(CallStaticJavaNode *boxing) {
     return false;
   }
 
-  assert(boxing->result_cast() == NULL, "unexpected boxing node result");
-
   extract_call_projections(boxing);
 
   const TypeTuple* r = boxing->tf()->range();
@@ -1091,7 +1084,7 @@ void PhaseMacroExpand::set_eden_pointers(Node* &eden_top_adr, Node* &eden_end_ad
 Node* PhaseMacroExpand::make_load(Node* ctl, Node* mem, Node* base, int offset, const Type* value_type, BasicType bt) {
   Node* adr = basic_plus_adr(base, offset);
   const TypePtr* adr_type = adr->bottom_type()->is_ptr();
-  Node* value = LoadNode::make(_igvn, ctl, mem, adr, adr_type, value_type, bt, MemNode::unordered);
+  Node* value = LoadNode::make(_igvn, ctl, mem, adr, adr_type, value_type, bt);
   transform_later(value);
   return value;
 }
@@ -1099,7 +1092,7 @@ Node* PhaseMacroExpand::make_load(Node* ctl, Node* mem, Node* base, int offset, 
 
 Node* PhaseMacroExpand::make_store(Node* ctl, Node* mem, Node* base, int offset, Node* value, BasicType bt) {
   Node* adr = basic_plus_adr(base, offset);
-  mem = StoreNode::make(_igvn, ctl, mem, adr, NULL, value, bt, MemNode::unordered);
+  mem = StoreNode::make(_igvn, ctl, mem, adr, NULL, value, bt);
   transform_later(mem);
   return mem;
 }
@@ -1177,10 +1170,10 @@ void PhaseMacroExpand::expand_allocate_common(
   // We need a Region and corresponding Phi's to merge the slow-path and fast-path results.
   // they will not be used if "always_slow" is set
   enum { slow_result_path = 1, fast_result_path = 2 };
-  Node *result_region = NULL;
-  Node *result_phi_rawmem = NULL;
-  Node *result_phi_rawoop = NULL;
-  Node *result_phi_i_o = NULL;
+  Node *result_region;
+  Node *result_phi_rawmem;
+  Node *result_phi_rawoop;
+  Node *result_phi_i_o;
 
   // The initial slow comparison is a size check, the comparison
   // we want to do is a BoolTest::gt
@@ -1279,8 +1272,8 @@ void PhaseMacroExpand::expand_allocate_common(
     // Load(-locked) the heap top.
     // See note above concerning the control input when using a TLAB
     Node *old_eden_top = UseTLAB
-      ? new (C) LoadPNode      (ctrl, contended_phi_rawmem, eden_top_adr, TypeRawPtr::BOTTOM, TypeRawPtr::BOTTOM, MemNode::unordered)
-      : new (C) LoadPLockedNode(contended_region, contended_phi_rawmem, eden_top_adr, MemNode::acquire);
+      ? new (C) LoadPNode      (ctrl, contended_phi_rawmem, eden_top_adr, TypeRawPtr::BOTTOM, TypeRawPtr::BOTTOM)
+      : new (C) LoadPLockedNode(contended_region, contended_phi_rawmem, eden_top_adr);
 
     transform_later(old_eden_top);
     // Add to heap top to get a new heap top
@@ -1327,7 +1320,7 @@ void PhaseMacroExpand::expand_allocate_common(
     if (UseTLAB) {
       Node* store_eden_top =
         new (C) StorePNode(needgc_false, contended_phi_rawmem, eden_top_adr,
-                              TypeRawPtr::BOTTOM, new_eden_top, MemNode::unordered);
+                              TypeRawPtr::BOTTOM, new_eden_top);
       transform_later(store_eden_top);
       fast_oop_ctrl = needgc_false; // No contention, so this is the fast path
       fast_oop_rawmem = store_eden_top;
@@ -1707,10 +1700,9 @@ Node* PhaseMacroExpand::prefetch_allocation(Node* i_o, Node*& needgc_false,
                    _igvn.MakeConX(in_bytes(JavaThread::tlab_pf_top_offset())) );
       transform_later(eden_pf_adr);
 
-      Node *old_pf_wm = new (C) LoadPNode(needgc_false,
+      Node *old_pf_wm = new (C) LoadPNode( needgc_false,
                                    contended_phi_rawmem, eden_pf_adr,
-                                   TypeRawPtr::BOTTOM, TypeRawPtr::BOTTOM,
-                                   MemNode::unordered);
+                                   TypeRawPtr::BOTTOM, TypeRawPtr::BOTTOM );
       transform_later(old_pf_wm);
 
       // check against new_eden_top
@@ -1734,10 +1726,9 @@ Node* PhaseMacroExpand::prefetch_allocation(Node* i_o, Node*& needgc_false,
       transform_later(new_pf_wmt );
       new_pf_wmt->set_req(0, need_pf_true);
 
-      Node *store_new_wmt = new (C) StorePNode(need_pf_true,
+      Node *store_new_wmt = new (C) StorePNode( need_pf_true,
                                        contended_phi_rawmem, eden_pf_adr,
-                                       TypeRawPtr::BOTTOM, new_pf_wmt,
-                                       MemNode::unordered);
+                                       TypeRawPtr::BOTTOM, new_pf_wmt );
       transform_later(store_new_wmt);
 
       // adding prefetches
@@ -1890,7 +1881,7 @@ void PhaseMacroExpand::mark_eliminated_box(Node* oldbox, Node* obj) {
     // Box is used only in one lock region. Mark this box as eliminated.
     _igvn.hash_delete(oldbox);
     oldbox->as_BoxLock()->set_eliminated(); // This changes box's hash value
-     _igvn.hash_insert(oldbox);
+    _igvn.hash_insert(oldbox);
 
     for (uint i = 0; i < oldbox->outcnt(); i++) {
       Node* u = oldbox->raw_out(i);
@@ -1899,9 +1890,6 @@ void PhaseMacroExpand::mark_eliminated_box(Node* oldbox, Node* obj) {
         // Check lock's box since box could be referenced by Lock's debug info.
         if (alock->box_node() == oldbox) {
           // Mark eliminated all related locks and unlocks.
-#ifdef ASSERT
-          alock->log_lock_optimization(C, "eliminate_lock_set_non_esc4");
-#endif
           alock->set_non_esc_obj();
         }
       }
@@ -1928,9 +1916,6 @@ void PhaseMacroExpand::mark_eliminated_box(Node* oldbox, Node* obj) {
       AbstractLockNode* alock = u->as_AbstractLock();
       if (alock->box_node() == oldbox && alock->obj_node()->eqv_uncast(obj)) {
         // Replace Box and mark eliminated all related locks and unlocks.
-#ifdef ASSERT
-        alock->log_lock_optimization(C, "eliminate_lock_set_non_esc5");
-#endif
         alock->set_non_esc_obj();
         _igvn.rehash_node_delayed(alock);
         alock->set_box_node(newbox);
@@ -1977,38 +1962,26 @@ void PhaseMacroExpand::mark_eliminated_locking_nodes(AbstractLockNode *alock) {
        return;
     } else if (!alock->is_non_esc_obj()) { // Not eliminated or coarsened
       // Only Lock node has JVMState needed here.
-      // Not that preceding claim is documented anywhere else.
-      if (alock->jvms() != NULL) {
-        if (alock->as_Lock()->is_nested_lock_region()) {
-          // Mark eliminated related nested locks and unlocks.
-          Node* obj = alock->obj_node();
-          BoxLockNode* box_node = alock->box_node()->as_BoxLock();
-          assert(!box_node->is_eliminated(), "should not be marked yet");
-          // Note: BoxLock node is marked eliminated only here
-          // and it is used to indicate that all associated lock
-          // and unlock nodes are marked for elimination.
-          box_node->set_eliminated(); // Box's hash is always NO_HASH here
-          for (uint i = 0; i < box_node->outcnt(); i++) {
-            Node* u = box_node->raw_out(i);
-            if (u->is_AbstractLock()) {
-              alock = u->as_AbstractLock();
-              if (alock->box_node() == box_node) {
-                // Verify that this Box is referenced only by related locks.
-                assert(alock->obj_node()->eqv_uncast(obj), "");
-                // Mark all related locks and unlocks.
-#ifdef ASSERT
-                alock->log_lock_optimization(C, "eliminate_lock_set_nested");
-#endif
-                alock->set_nested();
-              }
+      if (alock->jvms() != NULL && alock->as_Lock()->is_nested_lock_region()) {
+        // Mark eliminated related nested locks and unlocks.
+        Node* obj = alock->obj_node();
+        BoxLockNode* box_node = alock->box_node()->as_BoxLock();
+        assert(!box_node->is_eliminated(), "should not be marked yet");
+        // Note: BoxLock node is marked eliminated only here
+        // and it is used to indicate that all associated lock
+        // and unlock nodes are marked for elimination.
+        box_node->set_eliminated(); // Box's hash is always NO_HASH here
+        for (uint i = 0; i < box_node->outcnt(); i++) {
+          Node* u = box_node->raw_out(i);
+          if (u->is_AbstractLock()) {
+            alock = u->as_AbstractLock();
+            if (alock->box_node() == box_node) {
+              // Verify that this Box is referenced only by related locks.
+              assert(alock->obj_node()->eqv_uncast(obj), "");
+              // Mark all related locks and unlocks.
+              alock->set_nested();
             }
           }
-        } else {
-#ifdef ASSERT
-          alock->log_lock_optimization(C, "eliminate_lock_NOT_nested_lock_region");
-          if (C->log() != NULL)
-            alock->as_Lock()->is_nested_lock_region(C); // rerun for debugging output
-#endif
         }
       }
       return;
@@ -2053,10 +2026,19 @@ bool PhaseMacroExpand::eliminate_locking_node(AbstractLockNode *alock) {
     assert(oldbox->is_eliminated(), "should be done already");
   }
 #endif
+  CompileLog* log = C->log();
+  if (log != NULL) {
+    log->head("eliminate_lock lock='%d'",
+              alock->is_Lock());
+    JVMState* p = alock->jvms();
+    while (p != NULL) {
+      log->elem("jvms bci='%d' method='%d'", p->bci(), log->identify(p->method()));
+      p = p->caller();
+    }
+    log->tail("eliminate_lock");
+  }
 
-  alock->log_lock_optimization(C, "eliminate_lock");
-
-#ifndef PRODUCT
+  #ifndef PRODUCT
   if (PrintEliminateLocks) {
     if (alock->is_Lock()) {
       tty->print_cr("++++ Eliminated: %d Lock", alock->_idx);
@@ -2064,7 +2046,7 @@ bool PhaseMacroExpand::eliminate_locking_node(AbstractLockNode *alock) {
       tty->print_cr("++++ Eliminated: %d Unlock", alock->_idx);
     }
   }
-#endif
+  #endif
 
   Node* mem  = alock->in(TypeFunc::Memory);
   Node* ctrl = alock->in(TypeFunc::Control);
@@ -2207,7 +2189,7 @@ void PhaseMacroExpand::expand_lock_node(LockNode *lock) {
     Node* klass_node = AllocateNode::Ideal_klass(obj, &_igvn);
     if (klass_node == NULL) {
       Node* k_adr = basic_plus_adr(obj, oopDesc::klass_offset_in_bytes());
-      klass_node = transform_later(LoadKlassNode::make(_igvn, NULL, mem, k_adr, _igvn.type(k_adr)->is_ptr()));
+      klass_node = transform_later( LoadKlassNode::make(_igvn, mem, k_adr, _igvn.type(k_adr)->is_ptr()) );
 #ifdef _LP64
       if (UseCompressedClassPointers && klass_node->is_DecodeNKlass()) {
         assert(klass_node->in(1)->Opcode() == Op_LoadNKlass, "sanity");
@@ -2455,7 +2437,6 @@ void PhaseMacroExpand::eliminate_macro_nodes() {
     }
   }
   // Next, attempt to eliminate allocations
-  _has_locks = false;
   progress = true;
   while (progress) {
     progress = false;
@@ -2474,13 +2455,11 @@ void PhaseMacroExpand::eliminate_macro_nodes() {
       case Node::Class_Lock:
       case Node::Class_Unlock:
         assert(!n->as_AbstractLock()->is_eliminated(), "sanity");
-        _has_locks = true;
         break;
       default:
         assert(n->Opcode() == Op_LoopLimit ||
                n->Opcode() == Op_Opaque1   ||
-               n->Opcode() == Op_Opaque2   ||
-               n->Opcode() == Op_Opaque3, "unknown node type in macro list");
+               n->Opcode() == Op_Opaque2, "unknown node type in macro list");
       }
       assert(success == (C->macro_count() < old_macro_count), "elimination reduces macro count");
       progress = progress || success;
@@ -2521,30 +2500,6 @@ bool PhaseMacroExpand::expand_macro_nodes() {
       } else if (n->Opcode() == Op_Opaque1 || n->Opcode() == Op_Opaque2) {
         _igvn.replace_node(n, n->in(1));
         success = true;
-#if INCLUDE_RTM_OPT
-      } else if ((n->Opcode() == Op_Opaque3) && ((Opaque3Node*)n)->rtm_opt()) {
-        assert(C->profile_rtm(), "should be used only in rtm deoptimization code");
-        assert((n->outcnt() == 1) && n->unique_out()->is_Cmp(), "");
-        Node* cmp = n->unique_out();
-#ifdef ASSERT
-        // Validate graph.
-        assert((cmp->outcnt() == 1) && cmp->unique_out()->is_Bool(), "");
-        BoolNode* bol = cmp->unique_out()->as_Bool();
-        assert((bol->outcnt() == 1) && bol->unique_out()->is_If() &&
-               (bol->_test._test == BoolTest::ne), "");
-        IfNode* ifn = bol->unique_out()->as_If();
-        assert((ifn->outcnt() == 2) &&
-               ifn->proj_out(1)->is_uncommon_trap_proj(Deoptimization::Reason_rtm_state_change), "");
-#endif
-        Node* repl = n->in(1);
-        if (!_has_locks) {
-          // Remove RTM state check if there are no locks in the code.
-          // Replace input to compare the same value.
-          repl = (cmp->in(1) == n) ? cmp->in(2) : cmp->in(1);
-        }
-        _igvn.replace_node(n, repl);
-        success = true;
-#endif
       }
       assert(success == (C->macro_count() < old_macro_count), "elimination reduces macro count");
       progress = progress || success;

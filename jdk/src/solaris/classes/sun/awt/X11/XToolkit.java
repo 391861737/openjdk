@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2002, 2014, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2002, 2013, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -47,10 +47,9 @@ import java.util.*;
 import javax.swing.LookAndFeel;
 import javax.swing.UIDefaults;
 import sun.awt.*;
-import sun.awt.datatransfer.DataTransferer;
 import sun.font.FontConfigManager;
 import sun.java2d.SunGraphicsEnvironment;
-import sun.misc.*;
+import sun.misc.PerformanceLogger;
 import sun.print.PrintJob2D;
 import sun.security.action.GetPropertyAction;
 import sun.security.action.GetBooleanAction;
@@ -102,11 +101,11 @@ public final class XToolkit extends UNIXToolkit implements Runnable {
     static TreeMap winMap = new TreeMap();
     static HashMap specialPeerMap = new HashMap();
     static HashMap winToDispatcher = new HashMap();
+    private static long _display;
     static UIDefaults uidefaults;
-    static final X11GraphicsEnvironment localEnv;
-    private static final X11GraphicsDevice device;
-    private static final X11GraphicsConfig config;
-    private static final long display;
+    static X11GraphicsEnvironment localEnv;
+    static X11GraphicsDevice device;
+    static final X11GraphicsConfig config;
     static int awt_multiclick_time;
     static boolean securityWarningEnabled;
 
@@ -117,16 +116,15 @@ public final class XToolkit extends UNIXToolkit implements Runnable {
     static {
         initSecurityWarning();
         if (GraphicsEnvironment.isHeadless()) {
-            localEnv = null;
-            device = null;
             config = null;
-            display = 0;
         } else {
             localEnv = (X11GraphicsEnvironment) GraphicsEnvironment
                 .getLocalGraphicsEnvironment();
             device = (X11GraphicsDevice) localEnv.getDefaultScreenDevice();
-            config = (X11GraphicsConfig) device.getDefaultConfiguration();
-            display = device.getDisplay();
+            config = (X11GraphicsConfig) (device.getDefaultConfiguration());
+            if (device != null) {
+                _display = device.getDisplay();
+            }
             setupModifierMap();
             initIDs();
             setBackingStoreType();
@@ -165,7 +163,7 @@ public final class XToolkit extends UNIXToolkit implements Runnable {
     }
 
 
-    private native void nativeLoadSystemColors(int[] systemColors);
+    public native void nativeLoadSystemColors(int[] systemColors);
 
     static UIDefaults getUIDefaults() {
         if (uidefaults == null) {
@@ -197,18 +195,10 @@ public final class XToolkit extends UNIXToolkit implements Runnable {
         }
     }
 
-    /**
-     * Returns the X11 Display of the default screen device.
-     *
-     * @return X11 Display
-     * @throws AWTError thrown if local GraphicsEnvironment is null, which
-     *         means we are in the headless environment
-     */
+    static Object displayLock = new Object();
+
     public static long getDisplay() {
-        if (localEnv == null) {
-            throw new AWTError("Local GraphicsEnvironment must not be null");
-        }
-        return display;
+        return _display;
     }
 
     public static long getDefaultRootWindow() {
@@ -264,25 +254,33 @@ public final class XToolkit extends UNIXToolkit implements Runnable {
         } finally {
             awtUnlock();
         }
-        PrivilegedAction<Void> a = () -> {
-            Thread shutdownThread = new Thread(sun.misc.ThreadGroupUtils.getRootThreadGroup(), "XToolkt-Shutdown-Thread") {
-                    public void run() {
-                        XSystemTrayPeer peer = XSystemTrayPeer.getPeerInstance();
-                        if (peer != null) {
-                            peer.dispose();
+        PrivilegedAction<Void> a = new PrivilegedAction<Void>() {
+            public Void run() {
+                ThreadGroup mainTG = Thread.currentThread().getThreadGroup();
+                ThreadGroup parentTG = mainTG.getParent();
+                while (parentTG != null) {
+                    mainTG = parentTG;
+                    parentTG = mainTG.getParent();
+                }
+                Thread shutdownThread = new Thread(mainTG, "XToolkt-Shutdown-Thread") {
+                        public void run() {
+                            XSystemTrayPeer peer = XSystemTrayPeer.getPeerInstance();
+                            if (peer != null) {
+                                peer.dispose();
+                            }
+                            if (xs != null) {
+                                ((XAWTXSettings)xs).dispose();
+                            }
+                            freeXKB();
+                            if (log.isLoggable(PlatformLogger.Level.FINE)) {
+                                dumpPeers();
+                            }
                         }
-                        if (xs != null) {
-                            ((XAWTXSettings)xs).dispose();
-                        }
-                        freeXKB();
-                        if (log.isLoggable(PlatformLogger.Level.FINE)) {
-                            dumpPeers();
-                        }
-                    }
-                };
-            shutdownThread.setContextClassLoader(null);
-            Runtime.getRuntime().addShutdownHook(shutdownThread);
-            return null;
+                    };
+                shutdownThread.setContextClassLoader(null);
+                Runtime.getRuntime().addShutdownHook(shutdownThread);
+                return null;
+            }
         };
         AccessController.doPrivileged(a);
     }
@@ -301,6 +299,8 @@ public final class XToolkit extends UNIXToolkit implements Runnable {
     static String getAWTAppClassName() {
         return awtAppClassName;
     }
+
+    static final String DATA_TRANSFERER_CLASS_NAME = "sun.awt.X11.XDataTransferer";
 
     public XToolkit() {
         super();
@@ -323,13 +323,23 @@ public final class XToolkit extends UNIXToolkit implements Runnable {
 
             init();
             XWM.init();
-            toolkitThread = AccessController.doPrivileged((PrivilegedAction<Thread>) () -> {
-                Thread thread = new Thread(sun.misc.ThreadGroupUtils.getRootThreadGroup(), XToolkit.this, "AWT-XAWT");
-                thread.setContextClassLoader(null);
-                thread.setPriority(Thread.NORM_PRIORITY + 1);
-                thread.setDaemon(true);
-                return thread;
-            });
+            SunToolkit.setDataTransfererClassName(DATA_TRANSFERER_CLASS_NAME);
+
+            PrivilegedAction<Thread> action = new PrivilegedAction() {
+                public Thread run() {
+                    ThreadGroup currentTG = Thread.currentThread().getThreadGroup();
+                    ThreadGroup parentTG = currentTG.getParent();
+                    while (parentTG != null) {
+                        currentTG = parentTG;
+                        parentTG = currentTG.getParent();
+                    }
+                    Thread thread = new Thread(currentTG, XToolkit.this, "AWT-XAWT");
+                    thread.setPriority(Thread.NORM_PRIORITY + 1);
+                    thread.setDaemon(true);
+                    return thread;
+                }
+            };
+            toolkitThread = AccessController.doPrivileged(action);
             toolkitThread.start();
         }
     }
@@ -598,19 +608,14 @@ public final class XToolkit extends UNIXToolkit implements Runnable {
                         }
                     }
                 }
-                if (keyEventLog.isLoggable(PlatformLogger.Level.FINE) && (
-                        ev.get_type() == XConstants.KeyPress
-                                || ev.get_type() == XConstants.KeyRelease)) {
-                    keyEventLog.fine("before XFilterEvent:" + ev);
+                if( keyEventLog.isLoggable(PlatformLogger.Level.FINE) && (ev.get_type() == XConstants.KeyPress || ev.get_type() == XConstants.KeyRelease) ) {
+                    keyEventLog.fine("before XFilterEvent:"+ev);
                 }
                 if (XlibWrapper.XFilterEvent(ev.getPData(), w)) {
                     continue;
                 }
-                if (keyEventLog.isLoggable(PlatformLogger.Level.FINE) && (
-                        ev.get_type() == XConstants.KeyPress
-                                || ev.get_type() == XConstants.KeyRelease)) {
-                    keyEventLog.fine(
-                            "after XFilterEvent:" + ev); // IS THIS CORRECT?
+                if( keyEventLog.isLoggable(PlatformLogger.Level.FINE) && (ev.get_type() == XConstants.KeyPress || ev.get_type() == XConstants.KeyRelease) ) {
+                    keyEventLog.fine("after XFilterEvent:"+ev); // IS THIS CORRECT?
                 }
 
                 dispatchEvent(ev);
@@ -626,28 +631,21 @@ public final class XToolkit extends UNIXToolkit implements Runnable {
         }
     }
 
-    /**
-     * Listener installed to detect display changes.
-     */
-    private static final DisplayChangedListener displayChangedHandler =
-            new DisplayChangedListener() {
-                @Override
-                public void displayChanged() {
-                    // 7045370: Reset the cached values
-                    XToolkit.screenWidth = -1;
-                    XToolkit.screenHeight = -1;
-                }
-
-                @Override
-                public void paletteChanged() {
-                }
-            };
-
     static {
         GraphicsEnvironment ge = GraphicsEnvironment.getLocalGraphicsEnvironment();
         if (ge instanceof SunGraphicsEnvironment) {
-            ((SunGraphicsEnvironment) ge).addDisplayChangedListener(
-                    displayChangedHandler);
+            ((SunGraphicsEnvironment)ge).addDisplayChangedListener(
+                new DisplayChangedListener() {
+                    @Override
+                    public void displayChanged() {
+                        // 7045370: Reset the cached values
+                        XToolkit.screenWidth = -1;
+                        XToolkit.screenHeight = -1;
+                    }
+
+                    @Override
+                    public void paletteChanged() {}
+            });
         }
     }
 
@@ -657,9 +655,7 @@ public final class XToolkit extends UNIXToolkit implements Runnable {
             try {
                 XWindowAttributes pattr = new XWindowAttributes();
                 try {
-                    XlibWrapper.XGetWindowAttributes(XToolkit.getDisplay(),
-                                                     XToolkit.getDefaultRootWindow(),
-                                                     pattr.pData);
+                    XlibWrapper.XGetWindowAttributes(XToolkit.getDisplay(), XToolkit.getDefaultRootWindow(), pattr.pData);
                     screenWidth  = (int) pattr.get_width();
                     screenHeight = (int) pattr.get_height();
                 } finally {
@@ -828,32 +824,10 @@ public final class XToolkit extends UNIXToolkit implements Runnable {
                     // managers don't set this hint correctly, so we just get intersection with windowBounds
                     if (windowBounds != null && windowBounds.intersects(screenBounds))
                     {
-                        int left = (int)Native.getLong(native_ptr, 0);
-                        int right = (int)Native.getLong(native_ptr, 1);
-                        int top = (int)Native.getLong(native_ptr, 2);
-                        int bottom = (int)Native.getLong(native_ptr, 3);
-
-                        /*
-                         * struts could be relative to root window bounds, so
-                         * make them relative to the screen bounds in this case
-                         */
-                        left = rootBounds.x + left > screenBounds.x ?
-                                rootBounds.x + left - screenBounds.x : 0;
-                        right = rootBounds.x + rootBounds.width - right <
-                                screenBounds.x + screenBounds.width ?
-                                screenBounds.x + screenBounds.width -
-                                (rootBounds.x + rootBounds.width - right) : 0;
-                        top = rootBounds.y + top > screenBounds.y ?
-                                rootBounds.y + top - screenBounds.y : 0;
-                        bottom = rootBounds.y + rootBounds.height - bottom <
-                                screenBounds.y + screenBounds.height ?
-                                screenBounds.y + screenBounds.height -
-                                (rootBounds.y + rootBounds.height - bottom) : 0;
-
-                        insets.left = Math.max(left, insets.left);
-                        insets.right = Math.max(right, insets.right);
-                        insets.top = Math.max(top, insets.top);
-                        insets.bottom = Math.max(bottom, insets.bottom);
+                        insets.left = Math.max((int)Native.getLong(native_ptr, 0), insets.left);
+                        insets.right = Math.max((int)Native.getLong(native_ptr, 1), insets.right);
+                        insets.top = Math.max((int)Native.getLong(native_ptr, 2), insets.top);
+                        insets.bottom = Math.max((int)Native.getLong(native_ptr, 3), insets.bottom);
                     }
                 }
             }
@@ -948,11 +922,6 @@ public final class XToolkit extends UNIXToolkit implements Runnable {
     }
 
     public DragSourceContextPeer createDragSourceContextPeer(DragGestureEvent dge) throws InvalidDnDOperationException {
-        final LightweightFrame f = SunToolkit.getLightweightFrame(dge.getComponent());
-        if (f != null) {
-            return f.createDragSourceContextPeer(dge);
-        }
-
         return XDragSourceContextPeer.createDragSourceContextPeer(dge);
     }
 
@@ -963,11 +932,6 @@ public final class XToolkit extends UNIXToolkit implements Runnable {
                     int srcActions,
                     DragGestureListener dgl)
     {
-        final LightweightFrame f = SunToolkit.getLightweightFrame(c);
-        if (f != null) {
-            return f.createDragGestureRecognizer(recognizerClass, ds, c, srcActions, dgl);
-        }
-
         if (MouseDragGestureRecognizer.class.equals(recognizerClass))
             return (T)new XMouseDragGestureRecognizer(ds, c, srcActions, dgl);
         else
@@ -1159,11 +1123,6 @@ public final class XToolkit extends UNIXToolkit implements Runnable {
             return peer.isAvailable();
         }
         return false;
-    }
-
-    @Override
-    public DataTransferer getDataTransferer() {
-        return XDataTransferer.getInstanceImpl();
     }
 
     /**
@@ -2399,7 +2358,9 @@ public final class XToolkit extends UNIXToolkit implements Runnable {
 
     private static XEventDispatcher oops_waiter;
     private static boolean oops_updated;
-    private static int oops_position = 0;
+    private static boolean oops_failed;
+    private XAtom oops;
+    private static final long WORKAROUND_SLEEP = 100;
 
     /**
      * @inheritDoc
@@ -2410,13 +2371,28 @@ public final class XToolkit extends UNIXToolkit implements Runnable {
         if (oops_waiter == null) {
             oops_waiter = new XEventDispatcher() {
                     public void dispatchEvent(XEvent e) {
-                        if (e.get_type() == XConstants.ConfigureNotify) {
-                            // OOPS ConfigureNotify event catched
-                            oops_updated = true;
-                            awtLockNotifyAll();
+                        if (e.get_type() == XConstants.SelectionNotify) {
+                            XSelectionEvent pe = e.get_xselection();
+                            if (pe.get_property() == oops.getAtom()) {
+                                oops_updated = true;
+                                awtLockNotifyAll();
+                            } else if (pe.get_selection() == XAtom.get("WM_S0").getAtom() &&
+                                       pe.get_target() == XAtom.get("VERSION").getAtom() &&
+                                       pe.get_property() == 0 &&
+                                       XlibWrapper.XGetSelectionOwner(getDisplay(), XAtom.get("WM_S0").getAtom()) == 0)
+                            {
+                                // WM forgot to acquire selection  or there is no WM
+                                oops_failed = true;
+                                awtLockNotifyAll();
+                            }
+
                         }
                     }
                 };
+        }
+
+        if (oops == null) {
+            oops = XAtom.get("OOPS");
         }
 
         awtLock();
@@ -2424,22 +2400,23 @@ public final class XToolkit extends UNIXToolkit implements Runnable {
             addEventDispatcher(win.getWindow(), oops_waiter);
 
             oops_updated = false;
+            oops_failed = false;
+            // Wait for selection notify for oops on win
             long event_number = getEventNumber();
-            // Generate OOPS ConfigureNotify event
-            XlibWrapper.XMoveWindow(getDisplay(), win.getWindow(), ++oops_position, 0);
-            // Change win position each time to avoid system optimization
-            if (oops_position > 50) {
-                oops_position = 0;
+            XAtom atom = XAtom.get("WM_S0");
+            if (eventLog.isLoggable(PlatformLogger.Level.FINER)) {
+                eventLog.finer("WM_S0 selection owner {0}", XlibWrapper.XGetSelectionOwner(getDisplay(), atom.getAtom()));
             }
-
+            XlibWrapper.XConvertSelection(getDisplay(), atom.getAtom(),
+                                          XAtom.get("VERSION").getAtom(), oops.getAtom(),
+                                          win.getWindow(), XConstants.CurrentTime);
             XSync();
 
-            eventLog.finer("Generated OOPS ConfigureNotify event");
+            eventLog.finer("Requested OOPS");
 
             long start = System.currentTimeMillis();
-            while (!oops_updated) {
+            while (!oops_updated && !oops_failed) {
                 try {
-                    // Wait for OOPS ConfigureNotify event
                     awtLockWait(timeout);
                 } catch (InterruptedException e) {
                     throw new RuntimeException(e);
@@ -2450,8 +2427,20 @@ public final class XToolkit extends UNIXToolkit implements Runnable {
                     throw new OperationTimedOut(Long.toString(System.currentTimeMillis() - start));
                 }
             }
-            // Don't take into account OOPS ConfigureNotify event
-            return getEventNumber() - event_number > 1;
+            if (oops_failed && getEventNumber() - event_number == 1) {
+                // If selection update failed we can simply wait some time
+                // hoping some events will arrive
+                awtUnlock();
+                eventLog.finest("Emergency sleep");
+                try {
+                    Thread.sleep(WORKAROUND_SLEEP);
+                } catch (InterruptedException ie) {
+                    throw new RuntimeException(ie);
+                } finally {
+                    awtLock();
+                }
+            }
+            return getEventNumber() - event_number > 2;
         } finally {
             removeEventDispatcher(win.getWindow(), oops_waiter);
             eventLog.finer("Exiting syncNativeQueue");

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2009, 2014, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2009, 2011, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -23,8 +23,8 @@
 
 /**
  * @test
- * @bug     7091528 8029145 8037484
- * @summary ensures javadoc parses unique source files and ignores all class files
+ * @bug     7091528
+ * @summary javadoc attempts to parse .class files
  * @compile p/C1.java p/q/C2.java
  * @run main T7091528
  */
@@ -37,32 +37,17 @@ public class T7091528 {
     public static void main(String... args) {
         new T7091528().run();
     }
+
     void run() {
         File testSrc = new File(System.getProperty("test.src"));
         File testClasses = new File(System.getProperty("test.classes"));
-        // 7091528, tests if class files are being ignored
-        runTest("-d", ".",
+        String[] args = {
+            "-d", ".",
             "-sourcepath", testClasses + File.pathSeparator + testSrc,
             "-subpackages",
-            "p");
-        // 8029145, tests if unique source files are parsed
-        runTest("-d", ".",
-            "-sourcepath", testSrc.getAbsolutePath(),
-            "-subpackages",
-            "p:p.q");
-        File testPkgDir = new File(testSrc, "p");
-        File testFile = new File(testPkgDir, "C3.java");
-        runTest("-d", ".",
-            "-sourcepath", testSrc.getAbsolutePath(),
-            testFile.getAbsolutePath(),
-            "p");
-        runTest("-d", ".",
-            "-classpath", testSrc.getAbsolutePath(),
-            testFile.getAbsolutePath(),
-            "p");
+            "p"
+        };
 
-    }
-    void runTest(String... args) {
         StringWriter sw = new StringWriter();
         PrintWriter pw = new PrintWriter(sw);
         String doclet = com.sun.tools.doclets.standard.Standard.class.getName();
@@ -75,7 +60,7 @@ public class T7091528 {
         }
 
         if (rc != 0)
-            throw new Error("javadoc failed: exit code = " + rc);
+            System.err.println("javadoc failed: exit code = " + rc);
 
         if (out.matches("(?s).*p/[^ ]+\\.class.*"))
             throw new Error("reading .class files");

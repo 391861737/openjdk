@@ -97,28 +97,24 @@ import jdk.internal.dynalink.beans.BeansLinker;
 import jdk.internal.dynalink.linker.GuardingDynamicLinker;
 import jdk.internal.dynalink.linker.GuardingTypeConverterFactory;
 import jdk.internal.dynalink.linker.LinkRequest;
-import jdk.internal.dynalink.linker.LinkerServices;
-import jdk.internal.dynalink.linker.MethodHandleTransformer;
-import jdk.internal.dynalink.linker.MethodTypeConversionStrategy;
 import jdk.internal.dynalink.support.AutoDiscovery;
 import jdk.internal.dynalink.support.BottomGuardingDynamicLinker;
 import jdk.internal.dynalink.support.ClassLoaderGetterContextProvider;
 import jdk.internal.dynalink.support.CompositeGuardingDynamicLinker;
 import jdk.internal.dynalink.support.CompositeTypeBasedGuardingDynamicLinker;
-import jdk.internal.dynalink.support.DefaultPrelinkFilter;
 import jdk.internal.dynalink.support.LinkerServicesImpl;
 import jdk.internal.dynalink.support.TypeConverterFactory;
-import jdk.internal.dynalink.support.TypeUtilities;
 
 /**
  * A factory class for creating {@link DynamicLinker}s. The most usual dynamic linker is a linker that is a composition
  * of all {@link GuardingDynamicLinker}s known and pre-created by the caller as well as any
- * {@link AutoDiscovery automatically discovered} guarding linkers and the standard fallback {@link BeansLinker} and a
- * {@link DefaultPrelinkFilter}. See {@link DynamicLinker} documentation for tips on how to use this class.
+ * {@link AutoDiscovery automatically discovered} guarding linkers and the standard fallback {@link BeansLinker}. See
+ * {@link DynamicLinker} documentation for tips on how to use this class.
  *
  * @author Attila Szegedi
  */
 public class DynamicLinkerFactory {
+
     /**
      * Default value for {@link #setUnstableRelinkThreshold(int) unstable relink threshold}.
      */
@@ -132,9 +128,6 @@ public class DynamicLinkerFactory {
     private int runtimeContextArgCount = 0;
     private boolean syncOnRelink = false;
     private int unstableRelinkThreshold = DEFAULT_UNSTABLE_RELINK_THRESHOLD;
-    private GuardedInvocationFilter prelinkFilter;
-    private MethodTypeConversionStrategy autoConversionStrategy;
-    private MethodHandleTransformer internalObjectsFilter;
 
     /**
      * Sets the class loader for automatic discovery of available linkers. If not set explicitly, then the thread
@@ -142,7 +135,7 @@ public class DynamicLinkerFactory {
      *
      * @param classLoader the class loader used for the autodiscovery of available linkers.
      */
-    public void setClassLoader(final ClassLoader classLoader) {
+    public void setClassLoader(ClassLoader classLoader) {
         this.classLoader = classLoader;
         classLoaderExplicitlySet = true;
     }
@@ -156,7 +149,7 @@ public class DynamicLinkerFactory {
      * @param prioritizedLinkers the list of prioritized linkers. Null can be passed to indicate no prioritized linkers
      * (this is also the default value).
      */
-    public void setPrioritizedLinkers(final List<? extends GuardingDynamicLinker> prioritizedLinkers) {
+    public void setPrioritizedLinkers(List<? extends GuardingDynamicLinker> prioritizedLinkers) {
         this.prioritizedLinkers =
                 prioritizedLinkers == null ? null : new ArrayList<>(prioritizedLinkers);
     }
@@ -169,7 +162,7 @@ public class DynamicLinkerFactory {
      *
      * @param prioritizedLinkers a list of prioritized linkers.
      */
-    public void setPrioritizedLinkers(final GuardingDynamicLinker... prioritizedLinkers) {
+    public void setPrioritizedLinkers(GuardingDynamicLinker... prioritizedLinkers) {
         setPrioritizedLinkers(Arrays.asList(prioritizedLinkers));
     }
 
@@ -180,7 +173,7 @@ public class DynamicLinkerFactory {
      * @param prioritizedLinker the single prioritized linker. Must not be null.
      * @throws IllegalArgumentException if null is passed.
      */
-    public void setPrioritizedLinker(final GuardingDynamicLinker prioritizedLinker) {
+    public void setPrioritizedLinker(GuardingDynamicLinker prioritizedLinker) {
         if(prioritizedLinker == null) {
             throw new IllegalArgumentException("prioritizedLinker == null");
         }
@@ -195,7 +188,7 @@ public class DynamicLinkerFactory {
      * @param fallbackLinkers the list of fallback linkers. Can be empty to indicate the caller wishes to set no
      * fallback linkers.
      */
-    public void setFallbackLinkers(final List<? extends GuardingDynamicLinker> fallbackLinkers) {
+    public void setFallbackLinkers(List<? extends GuardingDynamicLinker> fallbackLinkers) {
         this.fallbackLinkers = fallbackLinkers == null ? null : new ArrayList<>(fallbackLinkers);
     }
 
@@ -207,7 +200,7 @@ public class DynamicLinkerFactory {
      * @param fallbackLinkers the list of fallback linkers. Can be empty to indicate the caller wishes to set no
      * fallback linkers. If it is left as null, the standard fallback {@link BeansLinker} will be used.
      */
-    public void setFallbackLinkers(final GuardingDynamicLinker... fallbackLinkers) {
+    public void setFallbackLinkers(GuardingDynamicLinker... fallbackLinkers) {
         setFallbackLinkers(Arrays.asList(fallbackLinkers));
     }
 
@@ -221,7 +214,7 @@ public class DynamicLinkerFactory {
      *
      * @param runtimeContextArgCount the number of language runtime context arguments in call sites.
      */
-    public void setRuntimeContextArgCount(final int runtimeContextArgCount) {
+    public void setRuntimeContextArgCount(int runtimeContextArgCount) {
         if(runtimeContextArgCount < 0) {
             throw new IllegalArgumentException("runtimeContextArgCount < 0");
         }
@@ -234,7 +227,7 @@ public class DynamicLinkerFactory {
      * multithreaded execution of dynamically linked code.
      * @param syncOnRelink true for invoking sync on relink, false otherwise.
      */
-    public void setSyncOnRelink(final boolean syncOnRelink) {
+    public void setSyncOnRelink(boolean syncOnRelink) {
         this.syncOnRelink = syncOnRelink;
     }
 
@@ -245,7 +238,7 @@ public class DynamicLinkerFactory {
      * call sites will never be considered unstable.
      * @see LinkRequest#isCallSiteUnstable()
      */
-    public void setUnstableRelinkThreshold(final int unstableRelinkThreshold) {
+    public void setUnstableRelinkThreshold(int unstableRelinkThreshold) {
         if(unstableRelinkThreshold < 0) {
             throw new IllegalArgumentException("unstableRelinkThreshold < 0");
         }
@@ -253,51 +246,7 @@ public class DynamicLinkerFactory {
     }
 
     /**
-     * Set the pre-link filter. This is a {@link GuardedInvocationFilter} that will get the final chance to modify the
-     * guarded invocation after it has been created by a component linker and before the dynamic linker links it into
-     * the call site. It is normally used to adapt the return value type of the invocation to the type of the call site.
-     * When not set explicitly, {@link DefaultPrelinkFilter} will be used.
-     * @param prelinkFilter the pre-link filter for the dynamic linker.
-     */
-    public void setPrelinkFilter(final GuardedInvocationFilter prelinkFilter) {
-        this.prelinkFilter = prelinkFilter;
-    }
-
-    /**
-     * Sets an object representing the conversion strategy for automatic type conversions. After
-     * {@link TypeConverterFactory#asType(java.lang.invoke.MethodHandle, java.lang.invoke.MethodType)} has
-     * applied all custom conversions to a method handle, it still needs to effect
-     * {@link TypeUtilities#isMethodInvocationConvertible(Class, Class) method invocation conversions} that
-     * can usually be automatically applied as per
-     * {@link java.lang.invoke.MethodHandle#asType(java.lang.invoke.MethodType)}.
-     * However, sometimes language runtimes will want to customize even those conversions for their own call
-     * sites. A typical example is allowing unboxing of null return values, which is by default prohibited by
-     * ordinary {@code MethodHandles.asType}. In this case, a language runtime can install its own custom
-     * automatic conversion strategy, that can deal with null values. Note that when the strategy's
-     * {@link MethodTypeConversionStrategy#asType(java.lang.invoke.MethodHandle, java.lang.invoke.MethodType)}
-     * is invoked, the custom language conversions will already have been applied to the method handle, so by
-     * design the difference between the handle's current method type and the desired final type will always
-     * only be ones that can be subjected to method invocation conversions. The strategy also doesn't need to
-     * invoke a final {@code MethodHandle.asType()} as the converter factory will do that as the final step.
-     * @param autoConversionStrategy the strategy for applying method invocation conversions for the linker
-     * created by this factory.
-     */
-    public void setAutoConversionStrategy(final MethodTypeConversionStrategy autoConversionStrategy) {
-        this.autoConversionStrategy = autoConversionStrategy;
-    }
-
-    /**
-     * Sets a method handle transformer that is supposed to act as the implementation of this linker factory's linkers'
-     * services {@link LinkerServices#filterInternalObjects(java.lang.invoke.MethodHandle)} method.
-     * @param internalObjectsFilter a method handle transformer filtering out internal objects, or null.
-     */
-    public void setInternalObjectsFilter(final MethodHandleTransformer internalObjectsFilter) {
-        this.internalObjectsFilter = internalObjectsFilter;
-    }
-
-    /**
-     * Creates a new dynamic linker consisting of all the prioritized, autodiscovered, and fallback linkers as well as
-     * the pre-link filter.
+     * Creates a new dynamic linker consisting of all the prioritized, autodiscovered, and fallback linkers.
      *
      * @return the new dynamic Linker
      */
@@ -326,7 +275,7 @@ public class DynamicLinkerFactory {
         // ... prioritized linkers, ...
         linkers.addAll(prioritizedLinkers);
         // ... filtered discovered linkers, ...
-        for(final GuardingDynamicLinker linker: discovered) {
+        for(GuardingDynamicLinker linker: discovered) {
             if(!knownLinkerClasses.contains(linker.getClass())) {
                 linkers.add(linker);
             }
@@ -351,19 +300,14 @@ public class DynamicLinkerFactory {
         }
 
         final List<GuardingTypeConverterFactory> typeConverters = new LinkedList<>();
-        for(final GuardingDynamicLinker linker: linkers) {
+        for(GuardingDynamicLinker linker: linkers) {
             if(linker instanceof GuardingTypeConverterFactory) {
                 typeConverters.add((GuardingTypeConverterFactory)linker);
             }
         }
 
-        if(prelinkFilter == null) {
-            prelinkFilter = new DefaultPrelinkFilter();
-        }
-
-        return new DynamicLinker(new LinkerServicesImpl(new TypeConverterFactory(typeConverters,
-                autoConversionStrategy), composite, internalObjectsFilter), prelinkFilter, runtimeContextArgCount,
-                syncOnRelink, unstableRelinkThreshold);
+        return new DynamicLinker(new LinkerServicesImpl(new TypeConverterFactory(typeConverters), composite),
+                runtimeContextArgCount, syncOnRelink, unstableRelinkThreshold);
     }
 
     private static ClassLoader getThreadContextClassLoader() {
@@ -375,9 +319,9 @@ public class DynamicLinkerFactory {
         }, ClassLoaderGetterContextProvider.GET_CLASS_LOADER_CONTEXT);
     }
 
-    private static void addClasses(final Set<Class<? extends GuardingDynamicLinker>> knownLinkerClasses,
-            final List<? extends GuardingDynamicLinker> linkers) {
-        for(final GuardingDynamicLinker linker: linkers) {
+    private static void addClasses(Set<Class<? extends GuardingDynamicLinker>> knownLinkerClasses,
+            List<? extends GuardingDynamicLinker> linkers) {
+        for(GuardingDynamicLinker linker: linkers) {
             knownLinkerClasses.add(linker.getClass());
         }
     }

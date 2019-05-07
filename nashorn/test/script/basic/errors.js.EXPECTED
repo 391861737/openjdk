@@ -21,7 +21,7 @@ ReferenceError
 "foo" is not defined
 true
 TypeError
-Object.foo_method is not a function
+Cannot call undefined
 Error
 EvalError
 RangeError

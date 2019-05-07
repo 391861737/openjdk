@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 1998, 2016, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 1998, 2013, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -180,8 +180,6 @@ public class BasicComboPopup extends JPopupMenu implements ComboPopup {
      */
     protected ItemListener             itemListener;
 
-    private MouseWheelListener         scrollerMouseWheelListener;
-
     /**
      * This protected field is implementation specific. Do not access directly
      * or override.
@@ -288,7 +286,6 @@ public class BasicComboPopup extends JPopupMenu implements ComboPopup {
         uninstallComboBoxModelListeners(comboBox.getModel());
         uninstallKeyboardActions();
         uninstallListListeners();
-        uninstallScrollerListeners();
         // We do this, otherwise the listener the ui installs on
         // the model (the combobox model in this case) will keep a
         // reference to the list, causing the list (and us) to never get gced.
@@ -345,26 +342,17 @@ public class BasicComboPopup extends JPopupMenu implements ComboPopup {
     // PopupMenuListeners.
 
     protected void firePopupMenuWillBecomeVisible() {
-        if (scrollerMouseWheelListener != null) {
-            comboBox.addMouseWheelListener(scrollerMouseWheelListener);
-        }
         super.firePopupMenuWillBecomeVisible();
         // comboBox.firePopupMenuWillBecomeVisible() is called from BasicComboPopup.show() method
         // to let the user change the popup menu from the PopupMenuListener.popupMenuWillBecomeVisible()
     }
 
     protected void firePopupMenuWillBecomeInvisible() {
-        if (scrollerMouseWheelListener != null) {
-            comboBox.removeMouseWheelListener(scrollerMouseWheelListener);
-        }
         super.firePopupMenuWillBecomeInvisible();
         comboBox.firePopupMenuWillBecomeInvisible();
     }
 
     protected void firePopupMenuCanceled() {
-        if (scrollerMouseWheelListener != null) {
-            comboBox.removeMouseWheelListener(scrollerMouseWheelListener);
-        }
         super.firePopupMenuCanceled();
         comboBox.firePopupMenuCanceled();
     }
@@ -584,7 +572,6 @@ public class BasicComboPopup extends JPopupMenu implements ComboPopup {
         scroller.setFocusable( false );
         scroller.getVerticalScrollBar().setFocusable( false );
         scroller.setBorder( null );
-        installScrollerListeners();
     }
 
     /**
@@ -599,20 +586,6 @@ public class BasicComboPopup extends JPopupMenu implements ComboPopup {
         add( scroller );
         setDoubleBuffered( true );
         setFocusable( false );
-    }
-
-    private void installScrollerListeners() {
-        scrollerMouseWheelListener = getHandler();
-        if (scrollerMouseWheelListener != null) {
-            scroller.addMouseWheelListener(scrollerMouseWheelListener);
-        }
-    }
-
-    private void uninstallScrollerListeners() {
-        if (scrollerMouseWheelListener != null) {
-            scroller.removeMouseWheelListener(scrollerMouseWheelListener);
-            scrollerMouseWheelListener = null;
-        }
     }
 
     /**
@@ -823,8 +796,8 @@ public class BasicComboPopup extends JPopupMenu implements ComboPopup {
 
 
     private class Handler implements ItemListener, MouseListener,
-                          MouseMotionListener, MouseWheelListener,
-                          PropertyChangeListener, Serializable {
+                          MouseMotionListener, PropertyChangeListener,
+                          Serializable {
         //
         // MouseListener
         // NOTE: this is added to both the JList and JComboBox
@@ -1006,16 +979,7 @@ public class BasicComboPopup extends JPopupMenu implements ComboPopup {
             if (e.getStateChange() == ItemEvent.SELECTED) {
                 JComboBox comboBox = (JComboBox)e.getSource();
                 setListSelection(comboBox.getSelectedIndex());
-            } else {
-                setListSelection(-1);
             }
-        }
-
-        //
-        // MouseWheelListener
-        //
-        public void mouseWheelMoved(MouseWheelEvent e) {
-            e.consume();
         }
     }
 

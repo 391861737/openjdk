@@ -33,8 +33,6 @@ import jdk.nashorn.internal.ir.visitor.NodeVisitor;
  */
 @Immutable
 public final class VarNode extends Statement implements Assignment<IdentNode> {
-    private static final long serialVersionUID = 1L;
-
     /** Var name. */
     private final IdentNode name;
 
@@ -44,16 +42,13 @@ public final class VarNode extends Statement implements Assignment<IdentNode> {
     /** Is this a var statement (as opposed to a "var" in a for loop statement) */
     private final int flags;
 
-    /** Flag for ES6 LET declaration */
-    public static final int IS_LET                       = 1 << 0;
-
-    /** Flag for ES6 CONST declaration */
-    public static final int IS_CONST                     = 1 << 1;
+    /** Flag that determines if this function node is a statement */
+    public static final int IS_STATEMENT = 1 << 0;
 
     /** Flag that determines if this is the last function declaration in a function
      *  This is used to micro optimize the placement of return value assignments for
      *  a program node */
-    public static final int IS_LAST_FUNCTION_DECLARATION = 1 << 2;
+    public static final int IS_LAST_FUNCTION_DECLARATION = 1 << 1;
 
     /**
      * Constructor
@@ -65,7 +60,7 @@ public final class VarNode extends Statement implements Assignment<IdentNode> {
      * @param init       init node or null if just a declaration
      */
     public VarNode(final int lineNumber, final long token, final int finish, final IdentNode name, final Expression init) {
-        this(lineNumber, token, finish, name, init, 0);
+        this(lineNumber, token, finish, name, init, IS_STATEMENT);
     }
 
     private VarNode(final VarNode varNode, final IdentNode name, final Expression init, final int flags) {
@@ -104,50 +99,13 @@ public final class VarNode extends Statement implements Assignment<IdentNode> {
     }
 
     @Override
-    public VarNode setAssignmentDest(final IdentNode n) {
+    public VarNode setAssignmentDest(IdentNode n) {
         return setName(n);
     }
 
     @Override
     public Expression getAssignmentSource() {
         return isAssignment() ? getInit() : null;
-    }
-
-    /**
-     * Is this a VAR node block scoped? This returns true for ECMAScript 6 LET and CONST nodes.
-     * @return true if an ES6 LET or CONST node
-     */
-    public boolean isBlockScoped() {
-        return getFlag(IS_LET) || getFlag(IS_CONST);
-    }
-
-    /**
-     * Is this an ECMAScript 6 LET node?
-     * @return true if LET node
-     */
-    public boolean isLet() {
-        return getFlag(IS_LET);
-    }
-
-    /**
-     * Is this an ECMAScript 6 CONST node?
-     * @return true if CONST node
-     */
-    public boolean isConst() {
-        return getFlag(IS_CONST);
-    }
-
-    /**
-     * Return the flags to use for symbols for this declaration.
-     * @return the symbol flags
-     */
-    public int getSymbolFlags() {
-        if (isLet()) {
-            return Symbol.IS_VAR | Symbol.IS_LET;
-        } else if (isConst()) {
-            return Symbol.IS_VAR | Symbol.IS_CONST;
-        }
-        return Symbol.IS_VAR;
     }
 
     /**
@@ -165,9 +123,8 @@ public final class VarNode extends Statement implements Assignment<IdentNode> {
     @Override
     public Node accept(final NodeVisitor<? extends LexicalContext> visitor) {
         if (visitor.enterVarNode(this)) {
-            // var is right associative, so visit init before name
-            final Expression newInit = init == null ? null : (Expression)init.accept(visitor);
             final IdentNode  newName = (IdentNode)name.accept(visitor);
+            final Expression newInit = init == null ? null : (Expression)init.accept(visitor);
             final VarNode    newThis;
             if (name != newName || init != newInit) {
                 newThis = new VarNode(this, newName, newInit, flags);
@@ -180,13 +137,13 @@ public final class VarNode extends Statement implements Assignment<IdentNode> {
     }
 
     @Override
-    public void toString(final StringBuilder sb, final boolean printType) {
-        sb.append(tokenType().getName()).append(' ');
-        name.toString(sb, printType);
+    public void toString(final StringBuilder sb) {
+        sb.append("var ");
+        name.toString(sb);
 
         if (init != null) {
             sb.append(" = ");
-            init.toString(sb, printType);
+            init.toString(sb);
         }
     }
 
@@ -253,6 +210,14 @@ public final class VarNode extends Statement implements Assignment<IdentNode> {
      */
     public VarNode setFlag(final int flag) {
         return setFlags(flags | flag);
+    }
+
+    /**
+     * Returns true if this is a var statement (as opposed to a var initializer in a for loop).
+     * @return true if this is a var statement (as opposed to a var initializer in a for loop).
+     */
+    public boolean isStatement() {
+        return (flags & IS_STATEMENT) != 0;
     }
 
     /**

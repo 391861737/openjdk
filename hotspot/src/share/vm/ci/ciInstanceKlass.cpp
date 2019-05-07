@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 1999, 2016, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 1999, 2013, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -58,7 +58,6 @@ ciInstanceKlass::ciInstanceKlass(KlassHandle h_k) :
   _nonstatic_field_size = ik->nonstatic_field_size();
   _has_nonstatic_fields = ik->has_nonstatic_fields();
   _has_default_methods = ik->has_default_methods();
-  _is_anonymous = ik->is_anonymous();
   _nonstatic_fields = NULL; // initialized lazily by compute_nonstatic_fields:
 
   _implementor = NULL; // we will fill these lazily
@@ -101,7 +100,6 @@ ciInstanceKlass::ciInstanceKlass(ciSymbol* name,
   _nonstatic_field_size = -1;
   _has_nonstatic_fields = false;
   _nonstatic_fields = NULL;
-  _is_anonymous = false;
   _loader = loader;
   _protection_domain = protection_domain;
   _is_shared = false;
@@ -294,7 +292,7 @@ bool ciInstanceKlass::is_in_package_impl(const char* packagename, int len) {
 // Implementation of the print method.
 void ciInstanceKlass::print_impl(outputStream* st) {
   ciKlass::print_impl(st);
-  GUARDED_VM_ENTRY(st->print(" loader=" INTPTR_FORMAT, p2i((address)loader()));)
+  GUARDED_VM_ENTRY(st->print(" loader=0x%x", (address)loader());)
   if (is_loaded()) {
     st->print(" loaded=true initialized=%s finalized=%s subklass=%s size=%d flags=",
               bool_to_str(is_initialized()),
@@ -593,16 +591,6 @@ ciInstanceKlass* ciInstanceKlass::implementor() {
   return impl;
 }
 
-ciInstanceKlass* ciInstanceKlass::host_klass() {
-  assert(is_loaded(), "must be loaded");
-  if (is_anonymous()) {
-    VM_ENTRY_MARK
-    Klass* host_klass = get_instanceKlass()->host_klass();
-    return CURRENT_ENV->get_instance_klass(host_klass);
-  }
-  return NULL;
-}
-
 // Utility class for printing of the contents of the static fields for
 // use by compilation replay.  It only prints out the information that
 // could be consumed by the compiler, so for primitive types it prints
@@ -630,7 +618,7 @@ class StaticFinalFieldPrinter : public FieldClosure {
         case T_SHORT:   _out->print_cr("%d", mirror->short_field(fd->offset()));  break;
         case T_CHAR:    _out->print_cr("%d", mirror->char_field(fd->offset()));   break;
         case T_INT:     _out->print_cr("%d", mirror->int_field(fd->offset()));    break;
-        case T_LONG:    _out->print_cr(INT64_FORMAT, (int64_t)(mirror->long_field(fd->offset())));   break;
+        case T_LONG:    _out->print_cr(INT64_FORMAT, mirror->long_field(fd->offset()));   break;
         case T_FLOAT: {
           float f = mirror->float_field(fd->offset());
           _out->print_cr("%d", *(int*)&f);
@@ -638,7 +626,7 @@ class StaticFinalFieldPrinter : public FieldClosure {
         }
         case T_DOUBLE: {
           double d = mirror->double_field(fd->offset());
-          _out->print_cr(INT64_FORMAT, *(int64_t*)&d);
+          _out->print_cr(INT64_FORMAT, *(jlong*)&d);
           break;
         }
         case T_ARRAY: {
@@ -668,7 +656,7 @@ class StaticFinalFieldPrinter : public FieldClosure {
               _out->print_cr("\"");
             } else {
               const char* klass_name  = value->klass()->name()->as_quoted_ascii();
-              _out->print_cr("%s", klass_name);
+              _out->print_cr(klass_name);
             }
           } else {
             ShouldNotReachHere();

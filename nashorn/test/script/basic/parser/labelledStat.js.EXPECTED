@@ -3,7 +3,10 @@
     "body": [
         {
             "type": "LabeledStatement",
-            "label": "begin",
+            "label": {
+                "type": "Identifier",
+                "name": "begin"
+            },
             "body": {
                 "type": "BlockStatement",
                 "body": [
@@ -17,7 +20,10 @@
                             "body": [
                                 {
                                     "type": "BreakStatement",
-                                    "label": "begin"
+                                    "label": {
+                                        "type": "Identifier",
+                                        "name": "begin"
+                                    }
                                 }
                             ]
                         }
@@ -32,7 +38,10 @@
     "body": [
         {
             "type": "LabeledStatement",
-            "label": "begin",
+            "label": {
+                "type": "Identifier",
+                "name": "begin"
+            },
             "body": {
                 "type": "BlockStatement",
                 "body": [
@@ -47,7 +56,10 @@
                             "body": [
                                 {
                                     "type": "BreakStatement",
-                                    "label": "begin"
+                                    "label": {
+                                        "type": "Identifier",
+                                        "name": "begin"
+                                    }
                                 }
                             ]
                         }

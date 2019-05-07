@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2004, 2015, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2004, 2006, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -53,7 +53,9 @@ import java.util.*;
  */
 public abstract class CachedPainter {
     // CacheMap maps from class to ImageCache.
-    private static final Map<Object,ImageCache> cacheMap = new HashMap<>();
+    private static final Map<Object,ImageCache> cacheMap =
+                   new HashMap<Object,ImageCache>();
+
 
     private static ImageCache getCache(Object key) {
         synchronized(CachedPainter.class) {
@@ -94,8 +96,20 @@ public abstract class CachedPainter {
         if (w <= 0 || h <= 0) {
             return;
         }
-        synchronized (CachedPainter.class) {
-            paint0(c, g, x, y, w, h, args);
+        if (c != null) {
+            synchronized(c.getTreeLock()) {
+                synchronized(CachedPainter.class) {
+                    // If c is non-null, synchronize on the tree lock.
+                    // This is necessary because asking for the
+                    // GraphicsConfiguration will grab a tree lock.
+                    paint0(c, g, x, y, w, h, args);
+                }
+            }
+        }
+        else {
+            synchronized(CachedPainter.class) {
+                paint0(c, g, x, y, w, h, args);
+            }
         }
     }
 

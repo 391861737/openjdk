@@ -170,7 +170,9 @@ public class SynthMenuUI extends BasicMenuUI
     }
 
     SynthContext getContext(JComponent c, int state) {
-        return SynthContext.getContext(c, style, state);
+        Region region = SynthLookAndFeel.getRegion(c);
+        return SynthContext.getContext(SynthContext.class, c, region,
+                                       style, state);
     }
 
     SynthContext getContext(JComponent c, Region region) {
@@ -178,7 +180,8 @@ public class SynthMenuUI extends BasicMenuUI
     }
 
     private SynthContext getContext(JComponent c, Region region, int state) {
-        return SynthContext.getContext(c, region, accStyle, state);
+        return SynthContext.getContext(SynthContext.class, c,
+                                       region, accStyle, state);
     }
 
     private int getComponentState(JComponent c) {

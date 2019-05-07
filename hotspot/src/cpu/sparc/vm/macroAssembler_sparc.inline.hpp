@@ -233,7 +233,6 @@ inline void MacroAssembler::br( Condition c, bool a, Predict p, address d, reloc
 }
 
 inline void MacroAssembler::br( Condition c, bool a, Predict p, Label& L ) {
-  insert_nop_after_cbcond();
   br(c, a, p, target(L));
 }
 
@@ -249,7 +248,6 @@ inline void MacroAssembler::brx( Condition c, bool a, Predict p, address d, relo
 }
 
 inline void MacroAssembler::brx( Condition c, bool a, Predict p, Label& L ) {
-  insert_nop_after_cbcond();
   brx(c, a, p, target(L));
 }
 
@@ -271,7 +269,6 @@ inline void MacroAssembler::fb( Condition c, bool a, Predict p, address d, reloc
 }
 
 inline void MacroAssembler::fb( Condition c, bool a, Predict p, Label& L ) {
-  insert_nop_after_cbcond();
   fb(c, a, p, target(L));
 }
 
@@ -321,7 +318,6 @@ inline void MacroAssembler::call( address d, relocInfo::relocType rt ) {
 }
 
 inline void MacroAssembler::call( Label& L,   relocInfo::relocType rt ) {
-  insert_nop_after_cbcond();
   MacroAssembler::call( target(L), rt);
 }
 
@@ -630,12 +626,7 @@ inline void MacroAssembler::ldf(FloatRegisterImpl::Width w, Register s1, Registe
 
 inline void MacroAssembler::ldf(FloatRegisterImpl::Width w, const Address& a, FloatRegister d, int offset) {
   relocate(a.rspec(offset));
-  if (a.has_index()) {
-    assert(offset == 0, "");
-    ldf(w, a.base(), a.index(), d);
-  } else {
-    ldf(w, a.base(), a.disp() + offset, d);
-  }
+  ldf(w, a.base(), a.disp() + offset, d);
 }
 
 // returns if membar generates anything, obviously this code should mirror

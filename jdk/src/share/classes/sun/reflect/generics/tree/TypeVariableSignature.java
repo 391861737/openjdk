@@ -28,7 +28,7 @@ package sun.reflect.generics.tree;
 import sun.reflect.generics.visitor.TypeTreeVisitor;
 
 public class TypeVariableSignature implements FieldTypeSignature {
-    private final String identifier;
+    private String identifier;
 
     private TypeVariableSignature(String id) {identifier = id;}
 

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2012, 2015, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2012, 2013, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -180,7 +180,7 @@ public interface TemporalAccessor {
     /**
      * Gets the value of the specified field as an {@code int}.
      * <p>
-     * This queries the date-time for the value of the specified field.
+     * This queries the date-time for the value for the specified field.
      * The returned value will always be within the valid range of values for the field.
      * If the date-time cannot return the value, because the field is unsupported or for
      * some other reason, an exception will be thrown.
@@ -217,7 +217,7 @@ public interface TemporalAccessor {
     default int get(TemporalField field) {
         ValueRange range = range(field);
         if (range.isIntValue() == false) {
-            throw new UnsupportedTemporalTypeException("Invalid field " + field + " for get() method, use getLong() instead");
+            throw new UnsupportedTemporalTypeException("Invalid field " + field + " + for get() method, use getLong() instead");
         }
         long value = getLong(field);
         if (range.isValidValue(value) == false) {
@@ -229,7 +229,7 @@ public interface TemporalAccessor {
     /**
      * Gets the value of the specified field as a {@code long}.
      * <p>
-     * This queries the date-time for the value of the specified field.
+     * This queries the date-time for the value for the specified field.
      * The returned value may be outside the valid range of values for the field.
      * If the date-time cannot return the value, because the field is unsupported or for
      * some other reason, an exception will be thrown.

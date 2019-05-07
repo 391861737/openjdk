@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 1999, 2014, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 1999, 2013, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -439,14 +439,9 @@ public final class Connection implements Runnable {
     BerDecoder readReply(LdapRequest ldr)
             throws IOException, NamingException {
         BerDecoder rber;
+        boolean waited = false;
 
-        // Track down elapsed time to workaround spurious wakeups
-        long elapsedMilli = 0;
-        long elapsedNano = 0;
-
-        while (((rber = ldr.getReplyBer()) == null) &&
-                (readTimeout <= 0 || elapsedMilli < readTimeout))
-        {
+        while (((rber = ldr.getReplyBer()) == null) && !waited) {
             try {
                 // If socket closed, don't even try
                 synchronized (this) {
@@ -460,20 +455,13 @@ public final class Connection implements Runnable {
                     rber = ldr.getReplyBer();
                     if (rber == null) {
                         if (readTimeout > 0) {  // Socket read timeout is specified
-                            long beginNano = System.nanoTime();
 
-                            // will be woken up before readTimeout if reply is
+                            // will be woken up before readTimeout only if reply is
                             // available
-                            ldr.wait(readTimeout - elapsedMilli);
-                            elapsedNano += (System.nanoTime() - beginNano);
-                            elapsedMilli += elapsedNano / 1000_000;
-                            elapsedNano %= 1000_000;
-
+                            ldr.wait(readTimeout);
+                            waited = true;
                         } else {
-                            // no timeout is set so we wait infinitely until
-                            // a response is received
-                            // https://docs.oracle.com/javase/8/docs/technotes/guides/jndi/jndi-ldap.html#PROP
-                            ldr.wait();
+                            ldr.wait(15 * 1000); // 15 second timeout
                         }
                     } else {
                         break;
@@ -485,8 +473,8 @@ public final class Connection implements Runnable {
             }
         }
 
-        if ((rber == null) && (elapsedMilli >= readTimeout)) {
-            abandonRequest(ldr, null);
+        if ((rber == null) && waited) {
+            removeRequest(ldr);
             throw new NamingException("LDAP response read timed out, timeout used:"
                             + readTimeout + "ms." );
 

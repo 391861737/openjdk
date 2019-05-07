@@ -31,14 +31,16 @@ import java.awt.event.*;
 import javax.accessibility.AccessibleContext;
 import javax.swing.*;
 import javax.swing.plaf.*;
+import javax.swing.border.*;
 import javax.swing.event.InternalFrameEvent;
+import java.util.EventListener;
 import java.beans.PropertyChangeListener;
 import java.beans.PropertyChangeEvent;
+import java.beans.VetoableChangeListener;
 import java.beans.PropertyVetoException;
 
 import sun.swing.DefaultLookup;
-
-import static sun.swing.SwingUtilities2.AA_TEXT_PROPERTY_KEY;
+import sun.swing.UIAction;
 
 /**
  * The class that manages a basic title bar
@@ -123,12 +125,6 @@ public class BasicInternalFrameTitlePane extends JComponent
         createButtons();
         addSubComponents();
 
-        updateProperties();
-    }
-
-    private void updateProperties() {
-        final Object aaTextInfo = frame.getClientProperty(AA_TEXT_PROPERTY_KEY);
-        putClientProperty(AA_TEXT_PROPERTY_KEY, aaTextInfo);
     }
 
     protected void addSubComponents() {
@@ -383,11 +379,15 @@ public class BasicInternalFrameTitlePane extends JComponent
         InternalFrameEvent e = new InternalFrameEvent(
             frame, InternalFrameEvent.INTERNAL_FRAME_CLOSING);
         // Try posting event, unless there's a SecurityManager.
-        try {
-            Toolkit.getDefaultToolkit().getSystemEventQueue().postEvent(e);
-        } catch (SecurityException se) {
-            frame.dispatchEvent(e);
+        if (JInternalFrame.class.getClassLoader() == null) {
+            try {
+                Toolkit.getDefaultToolkit().getSystemEventQueue().postEvent(e);
+                return;
+            } catch (SecurityException se) {
+                // Use dispatchEvent instead.
+            }
         }
+        frame.dispatchEvent(e);
     }
 
 

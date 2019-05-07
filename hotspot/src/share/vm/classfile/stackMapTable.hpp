@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2003, 2016, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2003, 2012, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -89,6 +89,10 @@ class StackMapTable : public StackObj {
 
   // Returns the frame array index where the frame with offset is stored.
   int get_index_from_offset(int32_t offset) const;
+
+  // Make sure that there's no uninitialized object exist on backward branch.
+  void check_new_object(
+    const StackMapFrame* frame, int32_t target, TRAPS) const;
 
   void print_on(outputStream* str) const;
 };

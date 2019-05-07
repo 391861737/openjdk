@@ -25,10 +25,9 @@
 
 package jdk.nashorn.internal.runtime;
 
+import static jdk.nashorn.internal.lookup.Lookup.MH;
+
 import java.lang.invoke.MethodHandle;
-import java.lang.invoke.MethodType;
-import java.util.Collection;
-import java.util.List;
 
 /**
  * This is a subclass that represents a script function that may not be regenerated.
@@ -36,123 +35,59 @@ import java.util.List;
  */
 final class FinalScriptFunctionData extends ScriptFunctionData {
 
-    private static final long serialVersionUID = -930632846167768864L;
-
     /**
      * Constructor - used for bind
      *
-     * @param name      name
-     * @param arity     arity
-     * @param functions precompiled code
-     * @param flags     {@link ScriptFunctionData} flags
+     * @param name          name
+     * @param arity         arity
+     * @param functions     precompiled code
+     * @param isStrict      strict
+     * @param isBuiltin     builtin
+     * @param isConstructor constructor
      */
-    FinalScriptFunctionData(final String name, final int arity, final List<CompiledFunction> functions, final int flags) {
-        super(name, arity, flags);
+    FinalScriptFunctionData(final String name, int arity, CompiledFunctions functions, final boolean isStrict, final boolean isBuiltin, final boolean isConstructor) {
+        super(name, arity, isStrict, isBuiltin, isConstructor);
         code.addAll(functions);
-        assert !needsCallee();
     }
 
     /**
-     * Constructor - used from ScriptFunction. This assumes that we have code already for the
+     * Constructor - used from ScriptFunction. This assumes that we have code alraedy for the
      * method (typically a native method) and possibly specializations.
      *
-     * @param name  name
-     * @param mh    method handle for generic version of method
-     * @param specs specializations
-     * @param flags {@link ScriptFunctionData} flags
+     * @param name           name
+     * @param mh             method handle for generic version of method
+     * @param specs          specializations
+     * @param isStrict       strict
+     * @param isBuiltin      builtin
+     * @param isConstructor  constructor
      */
-    FinalScriptFunctionData(final String name, final MethodHandle mh, final Specialization[] specs, final int flags) {
-        super(name, methodHandleArity(mh), flags);
+    FinalScriptFunctionData(final String name, final MethodHandle mh, final MethodHandle[] specs, final boolean isStrict, final boolean isBuiltin, final boolean isConstructor) {
+        super(name, arity(mh), isStrict, isBuiltin, isConstructor);
 
         addInvoker(mh);
         if (specs != null) {
-            for (final Specialization spec : specs) {
-                addInvoker(spec.getMethodHandle(), spec);
+            for (final MethodHandle spec : specs) {
+                addInvoker(spec);
             }
         }
     }
 
-    @Override
-    protected boolean needsCallee() {
-        final boolean needsCallee = code.getFirst().needsCallee();
-        assert allNeedCallee(needsCallee);
-        return needsCallee;
-    }
-
-    private boolean allNeedCallee(final boolean needCallee) {
-        for (final CompiledFunction inv : code) {
-            if(inv.needsCallee() != needCallee) {
-                return false;
-            }
-        }
-        return true;
-    }
-
-    @Override
-    CompiledFunction getBest(final MethodType callSiteType, final ScriptObject runtimeScope, final Collection<CompiledFunction> forbidden, boolean linkLogicOkay) {
-        assert isValidCallSite(callSiteType) : callSiteType;
-
-        CompiledFunction best = null;
-        for (final CompiledFunction candidate: code) {
-            if (!linkLogicOkay && candidate.hasLinkLogic()) {
-                // Skip! Version with no link logic is desired, but this one has link logic!
-                continue;
-            }
-
-            if (!forbidden.contains(candidate) && candidate.betterThanFinal(best, callSiteType)) {
-                best = candidate;
-            }
-        }
-
-        return best;
-    }
-
-    @Override
-    MethodType getGenericType() {
-        // We need to ask the code for its generic type. We can't just rely on this function data's arity, as it's not
-        // actually correct for lots of built-ins. E.g. ECMAScript 5.1 section 15.5.3.2 prescribes that
-        // Script.fromCharCode([char0[, char1[, ...]]]) has a declared arity of 1 even though it's a variable arity
-        // method.
-        int max = 0;
-        for(final CompiledFunction fn: code) {
-            final MethodType t = fn.type();
-            if(ScriptFunctionData.isVarArg(t)) {
-                // 2 for (callee, this, args[])
-                return MethodType.genericMethodType(2, true);
-            }
-            final int paramCount = t.parameterCount() - (ScriptFunctionData.needsCallee(t) ? 1 : 0);
-            if(paramCount > max) {
-                max = paramCount;
-            }
-        }
-        // +1 for callee
-        return MethodType.genericMethodType(max + 1);
-    }
-
-    private CompiledFunction addInvoker(final MethodHandle mh, final Specialization specialization) {
-        assert !needsCallee(mh);
-
-        final CompiledFunction invoker;
+    private void addInvoker(final MethodHandle mh) {
         if (isConstructor(mh)) {
             // only nasgen constructors: (boolean, self, args) are subject to binding a boolean newObj. isConstructor
             // is too conservative a check. However, isConstructor(mh) always implies isConstructor param
             assert isConstructor();
-            invoker = CompiledFunction.createBuiltInConstructor(mh);
+            final MethodHandle invoker = MH.insertArguments(mh, 0, false);
+            final MethodHandle constructor = composeConstructor(MH.insertArguments(mh, 0, true));
+            code.add(new CompiledFunction(mh.type(), invoker, constructor));
         } else {
-            invoker = new CompiledFunction(mh, null, specialization);
+            code.add(new CompiledFunction(mh.type(), mh));
         }
-        code.add(invoker);
-
-        return invoker;
     }
 
-    private CompiledFunction addInvoker(final MethodHandle mh) {
-        return addInvoker(mh, null);
-    }
-
-    private static int methodHandleArity(final MethodHandle mh) {
+    private static int arity(final MethodHandle mh) {
         if (isVarArg(mh)) {
-            return MAX_ARITY;
+            return -1;
         }
 
         //drop self, callee and boolean constructor flag to get real arity

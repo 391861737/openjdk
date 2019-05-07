@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008, 2014, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2008, 2013, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -27,7 +27,6 @@ package sun.awt;
 
 import sun.misc.Unsafe;
 
-import javax.accessibility.AccessibleContext;
 import java.awt.*;
 import java.awt.KeyboardFocusManager;
 import java.awt.DefaultKeyboardFocusManager;
@@ -36,7 +35,6 @@ import java.awt.event.InvocationEvent;
 import java.awt.event.KeyEvent;
 import java.awt.geom.Point2D;
 import java.awt.peer.ComponentPeer;
-import java.awt.peer.MenuComponentPeer;
 
 import java.lang.reflect.InvocationTargetException;
 import java.security.AccessControlContext;
@@ -334,12 +332,6 @@ public final class AWTAccessor {
          * Marks the specified window as an utility window for TrayIcon.
          */
         void setTrayIconWindow(Window w, boolean isTrayIconWindow);
-
-        /**
-         * Return an array containing all the windows this
-         * window currently owns.
-         */
-        Window[] getOwnedWindows(Window w);
     }
 
     /**
@@ -470,11 +462,6 @@ public final class AWTAccessor {
          * Gets the font used for this menu component.
          */
         Font getFont_NoClientCode(MenuComponent menuComp);
-
-        /**
-         * Returns the peer of the menu component.
-         */
-        <T extends MenuComponentPeer> T getPeer(MenuComponent menuComp);
     }
 
     /**
@@ -516,12 +503,7 @@ public final class AWTAccessor {
         /**
          * Sets the delegate for the EventQueue used by FX/AWT single threaded mode
          */
-        void setFwDispatcher(EventQueue eventQueue, FwDispatcher dispatcher);
-
-        /**
-         * Gets most recent event time in the EventQueue
-         */
-        long getMostRecentEventTime(EventQueue eventQueue);
+        public void setFwDispatcher(EventQueue eventQueue, FwDispatcher dispatcher);
     }
 
     /*
@@ -747,21 +729,6 @@ public final class AWTAccessor {
     }
 
     /*
-     * An accessor object for the SystemColor class
-     */
-    public interface SystemColorAccessor {
-        void updateSystemColors();
-    }
-
-    /*
-     * An accessor object for the AccessibleContext class
-     */
-    public interface AccessibleContextAccessor {
-        void setAppContext(AccessibleContext accessibleContext, AppContext appContext);
-        AppContext getAppContext(AccessibleContext accessibleContext);
-    }
-
-    /*
      * Accessor instances are initialized in the static initializers of
      * corresponding AWT classes by using setters defined below.
      */
@@ -790,8 +757,6 @@ public final class AWTAccessor {
     private static SequencedEventAccessor sequencedEventAccessor;
     private static ToolkitAccessor toolkitAccessor;
     private static InvocationEventAccessor invocationEventAccessor;
-    private static SystemColorAccessor systemColorAccessor;
-    private static AccessibleContextAccessor accessibleContextAccessor;
 
     /*
      * Set an accessor object for the java.awt.Component class.
@@ -1216,40 +1181,5 @@ public final class AWTAccessor {
      */
     public static InvocationEventAccessor getInvocationEventAccessor() {
         return invocationEventAccessor;
-    }
-
-    /*
-     * Get the accessor object for the java.awt.SystemColor class.
-     */
-    public static SystemColorAccessor getSystemColorAccessor() {
-        if (systemColorAccessor == null) {
-            unsafe.ensureClassInitialized(SystemColor.class);
-        }
-
-        return systemColorAccessor;
-    }
-
-     /*
-     * Set the accessor object for the java.awt.SystemColor class.
-     */
-     public static void setSystemColorAccessor(SystemColorAccessor systemColorAccessor) {
-         AWTAccessor.systemColorAccessor = systemColorAccessor;
-     }
-
-    /*
-     * Get the accessor object for the javax.accessibility.AccessibleContext class.
-     */
-    public static AccessibleContextAccessor getAccessibleContextAccessor() {
-        if (accessibleContextAccessor == null) {
-            unsafe.ensureClassInitialized(AccessibleContext.class);
-        }
-        return accessibleContextAccessor;
-    }
-
-   /*
-    * Set the accessor object for the javax.accessibility.AccessibleContext class.
-    */
-    public static void setAccessibleContextAccessor(AccessibleContextAccessor accessor) {
-        AWTAccessor.accessibleContextAccessor = accessor;
     }
 }

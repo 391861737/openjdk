@@ -263,6 +263,12 @@ enum ScriptCodes {
     tirhScriptCode = 158,
 
 /**
+ * @stable ICU 52
+ */
+    aghbScriptCode = 159,
+    mahjScriptCode = 160,
+
+/**
  * @stable ICU 2.2
  */
     scriptCodeCount

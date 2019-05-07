@@ -53,6 +53,10 @@ import java.util.LinkedList;
  */
 
 class KQueueArrayWrapper {
+    // Event masks
+    static final short POLLIN       = AbstractPollArrayWrapper.POLLIN;
+    static final short POLLOUT      = AbstractPollArrayWrapper.POLLOUT;
+
     // kevent filters
     static short EVFILT_READ;
     static short EVFILT_WRITE;
@@ -125,9 +129,9 @@ class KQueueArrayWrapper {
         //   SinkChannelImpl, SourceChannelImpl, DatagramChannelImpl,
         //   ServerSocketChannelImpl, SocketChannelImpl
         if (filter == EVFILT_READ) {
-            result |= Net.POLLIN;
+            result |= POLLIN;
         } else if (filter == EVFILT_WRITE) {
-            result |= Net.POLLOUT;
+            result |= POLLOUT;
         }
 
         return result;
@@ -176,7 +180,7 @@ class KQueueArrayWrapper {
                 if (!ch.isOpen())
                     continue;
 
-                register0(kq, ch.getFDVal(), u.events & Net.POLLIN, u.events & Net.POLLOUT);
+                register0(kq, ch.getFDVal(), u.events & POLLIN, u.events & POLLOUT);
             }
         }
     }

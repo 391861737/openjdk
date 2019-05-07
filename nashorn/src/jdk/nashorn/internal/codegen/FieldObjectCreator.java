@@ -28,12 +28,12 @@ package jdk.nashorn.internal.codegen;
 import static jdk.nashorn.internal.codegen.CompilerConstants.ARGUMENTS;
 import static jdk.nashorn.internal.codegen.CompilerConstants.constructorNoLookup;
 import static jdk.nashorn.internal.codegen.CompilerConstants.typeDescriptor;
-import static jdk.nashorn.internal.codegen.ObjectClassGenerator.PRIMITIVE_FIELD_TYPE;
-import static jdk.nashorn.internal.codegen.ObjectClassGenerator.getFieldName;
 import static jdk.nashorn.internal.codegen.ObjectClassGenerator.getPaddedFieldCount;
+import static jdk.nashorn.internal.codegen.types.Type.OBJECT;
 import static jdk.nashorn.internal.runtime.arrays.ArrayIndex.getArrayIndex;
 import static jdk.nashorn.internal.runtime.arrays.ArrayIndex.isValidArrayIndex;
 
+import java.util.Iterator;
 import java.util.List;
 import jdk.nashorn.internal.codegen.types.Type;
 import jdk.nashorn.internal.ir.Symbol;
@@ -51,59 +51,61 @@ import jdk.nashorn.internal.runtime.arrays.ArrayIndex;
  * @param <T> the value type for the fields being written on object creation, e.g. Node
  * @see jdk.nashorn.internal.ir.Node
  */
-public abstract class FieldObjectCreator<T> extends ObjectCreator<T> {
+public abstract class FieldObjectCreator<T> extends ObjectCreator {
 
-    private String                        fieldObjectClassName;
-    private Class<? extends ScriptObject> fieldObjectClass;
-    private int                           fieldCount;
-    private int                           paddedFieldCount;
-    private int                           paramCount;
+    private         String        fieldObjectClassName;
+    private         Class<?>      fieldObjectClass;
+    private         int           fieldCount;
+    private         int           paddedFieldCount;
+    private         int           paramCount;
+
+    /** array of corresponding values to symbols (null for no values) */
+    private final List<T> values;
 
     /** call site flags to be used for invocations */
-    private final int callSiteFlags;
-    /** are we creating this field object from 'eval' code? */
-    private final boolean evalCode;
+    private final int     callSiteFlags;
 
     /**
      * Constructor
      *
      * @param codegen  code generator
-     * @param tuples   tuples for fields in object
+     * @param keys     keys for fields in object
+     * @param symbols  symbols for fields in object
+     * @param values   list of values corresponding to keys
      */
-    FieldObjectCreator(final CodeGenerator codegen, final List<MapTuple<T>> tuples) {
-        this(codegen, tuples, false, false);
+    FieldObjectCreator(final CodeGenerator codegen, final List<String> keys, final List<Symbol> symbols, final List<T> values) {
+        this(codegen, keys, symbols, values, false, false);
     }
 
     /**
      * Constructor
      *
      * @param codegen      code generator
-     * @param tuples       tuples for fields in object
+     * @param keys         keys for fields in object
+     * @param symbols      symbols for fields in object
+     * @param values       values (or null where no value) to be written to the fields
      * @param isScope      is this a scope object
      * @param hasArguments does the created object have an "arguments" property
      */
-    FieldObjectCreator(final CodeGenerator codegen, final List<MapTuple<T>> tuples, final boolean isScope, final boolean hasArguments) {
-        super(codegen, tuples, isScope, hasArguments);
+    FieldObjectCreator(final CodeGenerator codegen, final List<String> keys, final List<Symbol> symbols, final List<T> values, final boolean isScope, final boolean hasArguments) {
+        super(codegen, keys, symbols, isScope, hasArguments);
+        this.values        = values;
         this.callSiteFlags = codegen.getCallSiteFlags();
-        this.evalCode = codegen.isEvalCode();
+
         countFields();
         findClass();
     }
 
+    /**
+     * Construct an object.
+     *
+     * @param method the method emitter
+     */
     @Override
-    public void createObject(final MethodEmitter method) {
+    protected void makeObject(final MethodEmitter method) {
         makeMap();
-        final String className = getClassName();
-        // NOTE: we must load the actual structure class here, because the API operates with Nashorn Type objects,
-        // and Type objects need a loaded class, for better or worse. We also have to be specific and use the type
-        // of the actual structure class, we can't generalize it to e.g. Type.typeFor(ScriptObject.class) as the
-        // exact type information is needed for generating continuations in rest-of methods. If we didn't do this,
-        // object initializers like { x: arr[i] } would fail during deoptimizing compilation on arr[i], as the
-        // values restored from the RewriteException would be cast to "ScriptObject" instead of to e.g. "JO4", and
-        // subsequently the "PUTFIELD J04.L0" instruction in the continuation code would fail bytecode verification.
-        assert fieldObjectClass != null;
-        method._new(fieldObjectClass).dup();
 
+        method._new(getClassName()).dup(); // create instance
         loadMap(method); //load the map
 
         if (isScope()) {
@@ -111,34 +113,32 @@ public abstract class FieldObjectCreator<T> extends ObjectCreator<T> {
 
             if (hasArguments()) {
                 method.loadCompilerConstant(ARGUMENTS);
-                method.invoke(constructorNoLookup(className, PropertyMap.class, ScriptObject.class, ARGUMENTS.type()));
+                method.invoke(constructorNoLookup(getClassName(), PropertyMap.class, ScriptObject.class, ARGUMENTS.type()));
             } else {
-                method.invoke(constructorNoLookup(className, PropertyMap.class, ScriptObject.class));
+                method.invoke(constructorNoLookup(getClassName(), PropertyMap.class, ScriptObject.class));
             }
         } else {
-            method.invoke(constructorNoLookup(className, PropertyMap.class));
+            method.invoke(constructorNoLookup(getClassName(), PropertyMap.class));
         }
-    }
 
-    @Override
-    public void populateRange(final MethodEmitter method, final Type objectType, final int objectSlot, final int start, final int end) {
-        method.load(objectType, objectSlot);
         // Set values.
-        for (int i = start; i < end; i++) {
-            final MapTuple<T> tuple = tuples.get(i);
-            //we only load when we have both symbols and values (which can be == the symbol)
-            //if we didn't load, we need an array property
-            if (tuple.symbol != null && tuple.value != null) {
-                final int index = getArrayIndex(tuple.key);
-                method.dup();
-                if (!isValidArrayIndex(index)) {
-                    putField(method, tuple.key, tuple.symbol.getFieldIndex(), tuple);
-                } else {
-                    putSlot(method, ArrayIndex.toLongIndex(index), tuple);
-                }
+        final Iterator<Symbol> symbolIter = symbols.iterator();
+        final Iterator<String> keyIter    = keys.iterator();
+        final Iterator<T>      valueIter  = values.iterator();
 
-                //this is a nop of tuple.key isn't e.g. "apply" or another special name
-                method.invalidateSpecialName(tuple.key);
+        while (symbolIter.hasNext()) {
+            final Symbol symbol = symbolIter.next();
+            final String key    = keyIter.next();
+            final T      value  = valueIter.next();
+
+            if (symbol != null && value != null) {
+                final int index = getArrayIndex(key);
+
+                if (!isValidArrayIndex(index)) {
+                    putField(method, key, symbol.getFieldIndex(), value);
+                } else {
+                    putSlot(method, ArrayIndex.toLongIndex(index), value);
+                }
             }
         }
     }
@@ -146,9 +146,16 @@ public abstract class FieldObjectCreator<T> extends ObjectCreator<T> {
     @Override
     protected PropertyMap makeMap() {
         assert propertyMap == null : "property map already initialized";
-        propertyMap = newMapCreator(fieldObjectClass).makeFieldMap(hasArguments(), codegen.useDualFields(), fieldCount, paddedFieldCount, evalCode);
+        propertyMap = newMapCreator(fieldObjectClass).makeFieldMap(hasArguments(), fieldCount, paddedFieldCount);
         return propertyMap;
     }
+
+    /**
+     * Technique for loading an initial value. Defined by anonymous subclasses in code gen.
+     *
+     * @param value Value to load.
+     */
+    protected abstract void loadValue(T value);
 
     /**
      * Store a value in a field of the generated class object.
@@ -156,19 +163,14 @@ public abstract class FieldObjectCreator<T> extends ObjectCreator<T> {
      * @param method      Script method.
      * @param key         Property key.
      * @param fieldIndex  Field number.
-     * @param tuple       Tuple to store.
+     * @param value       Value to store.
      */
-    private void putField(final MethodEmitter method, final String key, final int fieldIndex, final MapTuple<T> tuple) {
-        final Type    fieldType   = codegen.useDualFields() && tuple.isPrimitive() ? PRIMITIVE_FIELD_TYPE : Type.OBJECT;
-        final String  fieldClass  = getClassName();
-        final String  fieldName   = getFieldName(fieldIndex, fieldType);
-        final String  fieldDesc   = typeDescriptor(fieldType.getTypeClass());
+    private void putField(final MethodEmitter method, final String key, final int fieldIndex, final T value) {
+        method.dup();
 
-        assert fieldName.equals(getFieldName(fieldIndex, PRIMITIVE_FIELD_TYPE)) || fieldType.isObject() :    key + " object keys must store to L*-fields";
-        assert fieldName.equals(getFieldName(fieldIndex, Type.OBJECT))          || fieldType.isPrimitive() : key + " primitive keys must store to J*-fields";
-
-        loadTuple(method, tuple, true);
-        method.putField(fieldClass, fieldName, fieldDesc);
+        loadValue(value);
+        method.convert(OBJECT);
+        method.putField(getClassName(), ObjectClassGenerator.getFieldName(fieldIndex, Type.OBJECT), typeDescriptor(Object.class));
     }
 
     /**
@@ -176,11 +178,16 @@ public abstract class FieldObjectCreator<T> extends ObjectCreator<T> {
      *
      * @param method Script method.
      * @param index  Slot index.
-     * @param tuple  Tuple to store.
+     * @param value  Value to store.
      */
-    private void putSlot(final MethodEmitter method, final long index, final MapTuple<T> tuple) {
-        loadIndex(method, index);
-        loadTuple(method, tuple, false); //we don't pack array like objects
+    private void putSlot(final MethodEmitter method, final long index, final T value) {
+        method.dup();
+        if (JSType.isRepresentableAsInt(index)) {
+            method.load((int) index);
+        } else {
+            method.load(index);
+        }
+        loadValue(value);
         method.dynamicSetIndex(callSiteFlags);
     }
 
@@ -189,19 +196,14 @@ public abstract class FieldObjectCreator<T> extends ObjectCreator<T> {
      */
     private void findClass() {
         fieldObjectClassName = isScope() ?
-                ObjectClassGenerator.getClassName(fieldCount, paramCount, codegen.useDualFields()) :
-                ObjectClassGenerator.getClassName(paddedFieldCount, codegen.useDualFields());
+                ObjectClassGenerator.getClassName(fieldCount, paramCount) :
+                ObjectClassGenerator.getClassName(paddedFieldCount);
 
         try {
             this.fieldObjectClass = Context.forStructureClass(Compiler.binaryName(fieldObjectClassName));
         } catch (final ClassNotFoundException e) {
             throw new AssertionError("Nashorn has encountered an internal error.  Structure can not be created.");
         }
-    }
-
-    @Override
-    protected Class<? extends ScriptObject> getAllocatorClass() {
-        return fieldObjectClass;
     }
 
     /**
@@ -218,12 +220,11 @@ public abstract class FieldObjectCreator<T> extends ObjectCreator<T> {
      * Tally the number of fields and parameters.
      */
     private void countFields() {
-        for (final MapTuple<T> tuple : tuples) {
-            final Symbol symbol = tuple.symbol;
+        for (final Symbol symbol : this.symbols) {
             if (symbol != null) {
                 if (hasArguments() && symbol.isParam()) {
                     symbol.setFieldIndex(paramCount++);
-                } else if (!isValidArrayIndex(getArrayIndex(tuple.key))) {
+                } else {
                     symbol.setFieldIndex(fieldCount++);
                 }
             }

@@ -2574,10 +2574,8 @@ public class X509CertSelector implements CertSelector {
         } else {
             if (maxPathLen < basicConstraints) {
                 if (debug != null) {
-                    debug.println("X509CertSelector.match: cert's maxPathLen " +
-                            "is less than the min maxPathLen set by " +
-                            "basicConstraints. " +
-                            "(" + maxPathLen + " < " + basicConstraints + ")");
+                    debug.println("X509CertSelector.match: maxPathLen too small ("
+                        + maxPathLen + " < " + basicConstraints + ")");
                 }
                 return false;
             }

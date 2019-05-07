@@ -68,11 +68,11 @@ class JvmtiConstantPoolReconstituter : public StackObj {
 
   ~JvmtiConstantPoolReconstituter() {
     if (_symmap != NULL) {
-      delete _symmap;
+      os::free(_symmap, mtClass);
       _symmap = NULL;
     }
     if (_classmap != NULL) {
-      delete _classmap;
+      os::free(_classmap, mtClass);
       _classmap = NULL;
     }
   }

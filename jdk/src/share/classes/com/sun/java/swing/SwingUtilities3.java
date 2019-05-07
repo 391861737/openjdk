@@ -27,8 +27,6 @@ package com.sun.java.swing;
 
 import sun.awt.EventQueueDelegate;
 import sun.awt.AppContext;
-import sun.awt.SunToolkit;
-
 import java.util.Collections;
 import java.util.Map;
 import java.util.WeakHashMap;
@@ -119,8 +117,8 @@ public class SwingUtilities3 {
     public static RepaintManager getDelegateRepaintManager(Component
                                                             component) {
         RepaintManager delegate = null;
-        if (Boolean.TRUE == SunToolkit.targetToAppContext(component)
-                                      .get(DELEGATE_REPAINT_MANAGER_KEY)) {
+        if (Boolean.TRUE == AppContext.getAppContext().get(
+                                               DELEGATE_REPAINT_MANAGER_KEY)) {
             while (delegate == null && component != null) {
                 while (component != null
                          && ! (component instanceof JComponent)) {

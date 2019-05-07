@@ -26,12 +26,6 @@ package java.net;
 
 import java.io.IOException;
 import java.io.FileDescriptor;
-import java.util.Set;
-import java.util.HashSet;
-import java.util.Collections;
-import jdk.net.*;
-
-import static sun.net.ExtendedOptionsImpl.*;
 
 /*
  * On Unix systems we simply delegate to native methods.
@@ -57,41 +51,6 @@ class PlainSocketImpl extends AbstractPlainSocketImpl
         this.fd = fd;
     }
 
-    protected <T> void setOption(SocketOption<T> name, T value) throws IOException {
-        if (!name.equals(ExtendedSocketOptions.SO_FLOW_SLA)) {
-            super.setOption(name, value);
-        } else {
-            if (isClosedOrPending()) {
-                throw new SocketException("Socket closed");
-            }
-            checkSetOptionPermission(name);
-            checkValueType(value, SocketFlow.class);
-            setFlowOption(getFileDescriptor(), (SocketFlow)value);
-        }
-    }
-
-    protected <T> T getOption(SocketOption<T> name) throws IOException {
-        if (!name.equals(ExtendedSocketOptions.SO_FLOW_SLA)) {
-            return super.getOption(name);
-        }
-        if (isClosedOrPending()) {
-            throw new SocketException("Socket closed");
-        }
-        checkGetOptionPermission(name);
-        SocketFlow flow = SocketFlow.create();
-        getFlowOption(getFileDescriptor(), flow);
-        return (T)flow;
-    }
-
-    protected void socketSetOption(int opt, boolean b, Object val) throws SocketException {
-        try {
-            socketSetOption0(opt, b, val);
-        } catch (SocketException se) {
-            if (socket == null || !socket.isConnected())
-                throw se;
-        }
-    }
-
     native void socketCreate(boolean isServer) throws IOException;
 
     native void socketConnect(InetAddress address, int port, int timeout)
@@ -112,10 +71,11 @@ class PlainSocketImpl extends AbstractPlainSocketImpl
 
     static native void initProto();
 
-    native void socketSetOption0(int cmd, boolean on, Object value)
+    native void socketSetOption(int cmd, boolean on, Object value)
         throws SocketException;
 
     native int socketGetOption(int opt, Object iaContainerObj) throws SocketException;
 
     native void socketSendUrgentData(int data) throws IOException;
+
 }

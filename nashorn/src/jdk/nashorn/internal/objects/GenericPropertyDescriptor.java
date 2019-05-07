@@ -55,8 +55,12 @@ public final class GenericPropertyDescriptor extends ScriptObject implements Pro
     // initialized by nasgen
     private static PropertyMap $nasgenmap$;
 
+    static PropertyMap getInitialMap() {
+        return $nasgenmap$;
+    }
+
     GenericPropertyDescriptor(final boolean configurable, final boolean enumerable, final Global global) {
-        super(global.getObjectPrototype(), $nasgenmap$);
+        super(global.getObjectPrototype(), global.getGenericPropertyDescriptorMap());
         this.configurable = configurable;
         this.enumerable   = enumerable;
     }
@@ -145,23 +149,6 @@ public final class GenericPropertyDescriptor extends ScriptObject implements Pro
     }
 
     @Override
-    public boolean hasAndEquals(final PropertyDescriptor other) {
-        if (has(CONFIGURABLE) && other.has(CONFIGURABLE)) {
-            if (isConfigurable() != other.isConfigurable()) {
-                return false;
-            }
-        }
-
-        if (has(ENUMERABLE) && other.has(ENUMERABLE)) {
-            if (isEnumerable() != other.isEnumerable()) {
-                return false;
-            }
-        }
-
-        return true;
-    }
-
-    @Override
     public boolean equals(final Object obj) {
         if (this == obj) {
             return true;
@@ -173,11 +160,6 @@ public final class GenericPropertyDescriptor extends ScriptObject implements Pro
         final GenericPropertyDescriptor other = (GenericPropertyDescriptor)obj;
         return ScriptRuntime.sameValue(configurable, other.configurable) &&
                ScriptRuntime.sameValue(enumerable, other.enumerable);
-    }
-
-    @Override
-    public String toString() {
-        return '[' + getClass().getSimpleName() + " {configurable=" + configurable + " enumerable=" + enumerable + "}]";
     }
 
     @Override

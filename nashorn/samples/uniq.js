@@ -1,21 +1,21 @@
 /*
- * Copyright (c) 2014, Oracle and/or its affiliates. All rights reserved.
- *
+ * Copyright (c) 2010, 2013, Oracle and/or its affiliates. All rights reserved.
+ * 
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
  * are met:
- *
+ * 
  *   - Redistributions of source code must retain the above copyright
  *     notice, this list of conditions and the following disclaimer.
- *
+ * 
  *   - Redistributions in binary form must reproduce the above copyright
  *     notice, this list of conditions and the following disclaimer in the
  *     documentation and/or other materials provided with the distribution.
- *
+ * 
  *   - Neither the name of Oracle nor the names of its
  *     contributors may be used to endorse or promote products derived
  *     from this software without specific prior written permission.
- *
+ * 
  * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS
  * IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO,
  * THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR
@@ -29,28 +29,27 @@
  * SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-// Usage: jjs uniq.js
-// or: jjs uniq.js -- <file>
+/**
+ * Prints unique lines from a given file.
+ */
 
-// omit repeated lines and print unique lines
+if (arguments.length != 1) {
+    print("Usage: jjs uniq.js -- <file>");
+    java.lang.System.exit(1);
+}
 
-var BufferedReader = Java.type("java.io.BufferedReader");
-var FileReader = Java.type("java.io.FileReader");
-var InputStreamReader = Java.type("java.io.InputStreamReader");
-var System = Java.type("java.lang.System");
+var imports = new JavaImporter(java.io);
 
-// use object as set - but insertion order preserved
 var uniqueLines = {};
-var reader = arguments.length > 0 ?
-    new FileReader(arguments[0])  :
-    new InputStreamReader(System.in);
-reader = new BufferedReader(reader);
+with (imports) {
+    var reader = new BufferedReader(new FileReader(arguments[0]));
+    while ((line = reader.readLine()) != null) {
+        // using a JS object as a map...
+        uniqueLines[line] = true;
+    }
+}
 
-// add unique lines
-reader.lines().forEach(function(line) {
-    uniqueLines[line] = true;
-})
-
-for (line in uniqueLines) {
-    print(line);
+// now print the collected lines
+for (i in uniqueLines) {
+    print(i);
 }

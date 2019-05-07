@@ -29,21 +29,10 @@ import java.io.FileDescriptor;
 import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.nio.MappedByteBuffer;
-import java.nio.channels.ClosedByInterruptException;
-import java.nio.channels.ClosedChannelException;
-import java.nio.channels.FileChannel;
-import java.nio.channels.FileLock;
-import java.nio.channels.FileLockInterruptionException;
-import java.nio.channels.NonReadableChannelException;
-import java.nio.channels.NonWritableChannelException;
-import java.nio.channels.OverlappingFileLockException;
-import java.nio.channels.ReadableByteChannel;
-import java.nio.channels.SelectableChannel;
-import java.nio.channels.WritableByteChannel;
-import java.security.AccessController;
+import java.nio.channels.*;
 import java.util.ArrayList;
 import java.util.List;
-
+import java.security.AccessController;
 import sun.misc.Cleaner;
 import sun.security.action.GetPropertyAction;
 
@@ -67,17 +56,13 @@ public class FileChannelImpl
     // Required to prevent finalization of creating stream (immutable)
     private final Object parent;
 
-    // The path of the referenced file
-    // (null if the parent stream is created with a file descriptor)
-    private final String path;
-
     // Thread-safe set of IDs of native threads, for signalling
     private final NativeThreadSet threads = new NativeThreadSet(2);
 
     // Lock for operations involving position and size
     private final Object positionLock = new Object();
 
-    private FileChannelImpl(FileDescriptor fd, String path, boolean readable,
+    private FileChannelImpl(FileDescriptor fd, boolean readable,
                             boolean writable, boolean append, Object parent)
     {
         this.fd = fd;
@@ -85,24 +70,23 @@ public class FileChannelImpl
         this.writable = writable;
         this.append = append;
         this.parent = parent;
-        this.path = path;
         this.nd = new FileDispatcherImpl(append);
     }
 
     // Used by FileInputStream.getChannel() and RandomAccessFile.getChannel()
-    public static FileChannel open(FileDescriptor fd, String path,
+    public static FileChannel open(FileDescriptor fd,
                                    boolean readable, boolean writable,
                                    Object parent)
     {
-        return new FileChannelImpl(fd, path, readable, writable, false, parent);
+        return new FileChannelImpl(fd, readable, writable, false, parent);
     }
 
     // Used by FileOutputStream.getChannel
-    public static FileChannel open(FileDescriptor fd, String path,
+    public static FileChannel open(FileDescriptor fd,
                                    boolean readable, boolean writable,
                                    boolean append, Object parent)
     {
-        return new FileChannelImpl(fd, path, readable, writable, append, parent);
+        return new FileChannelImpl(fd, readable, writable, append, parent);
     }
 
     private void ensureOpen() throws IOException {
@@ -126,7 +110,7 @@ public class FileChannelImpl
             }
         }
 
-        // signal any threads blocked on this channel
+        nd.preClose(fd);
         threads.signalAndWait();
 
         if (parent != null) {
@@ -328,7 +312,6 @@ public class FileChannelImpl
             int rv = -1;
             long p = -1;
             int ti = -1;
-            long rp = -1;
             try {
                 begin();
                 ti = threads.add();
@@ -364,8 +347,8 @@ public class FileChannelImpl
                 if (p > newSize)
                     p = newSize;
                 do {
-                    rp = position0(fd, p);
-                } while ((rp == IOStatus.INTERRUPTED) && isOpen());
+                    rv = (int)position0(fd, p);
+                } while ((rv == IOStatus.INTERRUPTED) && isOpen());
                 return this;
             } finally {
                 threads.remove(ti);
@@ -409,13 +392,30 @@ public class FileChannelImpl
     //
     private static volatile boolean fileSupported = true;
 
-    private long transferToDirectlyInternal(long position, int icount,
-                                            WritableByteChannel target,
-                                            FileDescriptor targetFD)
+    private long transferToDirectly(long position, int icount,
+                                    WritableByteChannel target)
         throws IOException
     {
-        assert !nd.transferToDirectlyNeedsPositionLock() ||
-               Thread.holdsLock(positionLock);
+        if (!transferSupported)
+            return IOStatus.UNSUPPORTED;
+
+        FileDescriptor targetFD = null;
+        if (target instanceof FileChannelImpl) {
+            if (!fileSupported)
+                return IOStatus.UNSUPPORTED_CASE;
+            targetFD = ((FileChannelImpl)target).fd;
+        } else if (target instanceof SelChImpl) {
+            // Direct transfer to pipe causes EINVAL on some configurations
+            if ((target instanceof SinkChannelImpl) && !pipeSupported)
+                return IOStatus.UNSUPPORTED_CASE;
+            targetFD = ((SelChImpl)target).getFD();
+        }
+        if (targetFD == null)
+            return IOStatus.UNSUPPORTED;
+        int thisFDVal = IOUtil.fdVal(fd);
+        int targetFDVal = IOUtil.fdVal(targetFD);
+        if (thisFDVal == targetFDVal) // Not supported on some configurations
+            return IOStatus.UNSUPPORTED;
 
         long n = -1;
         int ti = -1;
@@ -425,7 +425,7 @@ public class FileChannelImpl
             if (!isOpen())
                 return -1;
             do {
-                n = transferTo0(fd, position, icount, targetFD);
+                n = transferTo0(thisFDVal, position, icount, targetFDVal);
             } while ((n == IOStatus.INTERRUPTED) && isOpen());
             if (n == IOStatus.UNSUPPORTED_CASE) {
                 if (target instanceof SinkChannelImpl)
@@ -443,54 +443,6 @@ public class FileChannelImpl
         } finally {
             threads.remove(ti);
             end (n > -1);
-        }
-    }
-
-    private long transferToDirectly(long position, int icount,
-                                    WritableByteChannel target)
-        throws IOException
-    {
-        if (!transferSupported)
-            return IOStatus.UNSUPPORTED;
-
-        FileDescriptor targetFD = null;
-        if (target instanceof FileChannelImpl) {
-            if (!fileSupported)
-                return IOStatus.UNSUPPORTED_CASE;
-            targetFD = ((FileChannelImpl)target).fd;
-        } else if (target instanceof SelChImpl) {
-            // Direct transfer to pipe causes EINVAL on some configurations
-            if ((target instanceof SinkChannelImpl) && !pipeSupported)
-                return IOStatus.UNSUPPORTED_CASE;
-
-            // Platform-specific restrictions. Now there is only one:
-            // Direct transfer to non-blocking channel could be forbidden
-            SelectableChannel sc = (SelectableChannel)target;
-            if (!nd.canTransferToDirectly(sc))
-                return IOStatus.UNSUPPORTED_CASE;
-
-            targetFD = ((SelChImpl)target).getFD();
-        }
-
-        if (targetFD == null)
-            return IOStatus.UNSUPPORTED;
-        int thisFDVal = IOUtil.fdVal(fd);
-        int targetFDVal = IOUtil.fdVal(targetFD);
-        if (thisFDVal == targetFDVal) // Not supported on some configurations
-            return IOStatus.UNSUPPORTED;
-
-        if (nd.transferToDirectlyNeedsPositionLock()) {
-            synchronized (positionLock) {
-                long pos = position();
-                try {
-                    return transferToDirectlyInternal(position, icount,
-                                                      target, targetFD);
-                } finally {
-                    position(pos);
-                }
-            }
-        } else {
-            return transferToDirectlyInternal(position, icount, target, targetFD);
         }
     }
 
@@ -1209,8 +1161,7 @@ public class FileChannelImpl
     private static native int unmap0(long address, long length);
 
     // Transfers from src to dst, or returns -2 if kernel can't do that
-    private native long transferTo0(FileDescriptor src, long position,
-                                    long count, FileDescriptor dst);
+    private native long transferTo0(int src, long position, long count, int dst);
 
     // Sets or reports this file's position
     // If offset is -1, the current position is returned

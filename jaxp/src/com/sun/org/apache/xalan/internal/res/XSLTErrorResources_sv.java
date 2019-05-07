@@ -17,6 +17,9 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+/*
+ * $Id: XSLTErrorResources_sv.java /st_wptg_1.8.0.0.0jdk/2 2013/09/16 06:50:58 gmolloy Exp $
+ */
 package com.sun.org.apache.xalan.internal.res;
 
 import java.util.ListResourceBundle;
@@ -480,7 +483,7 @@ public class XSLTErrorResources_sv extends ListResourceBundle
   {"ER0000" , "{0}" },
 
     { ER_NO_CURLYBRACE,
-      "Fel: Uttryck f\u00E5r inte inneh\u00E5lla '{'"},
+      "Fel: Uttryck kan inte inneh\u00E5lla '{'"},
 
     { ER_ILLEGAL_ATTRIBUTE ,
      "{0} har ett otill\u00E5tet attribut: {1}"},
@@ -1223,10 +1226,10 @@ public class XSLTErrorResources_sv extends ListResourceBundle
       "Gammal syntax: Namnet p\u00E5 'expr'-attributet har \u00E4ndrats till 'select'."},
 
     { WG_NO_LOCALE_IN_FORMATNUMBER,
-      "Xalan hanterar \u00E4nnu inte spr\u00E5kkonventionen i funktionen format-number."},
+      "Xalan hanterar \u00E4nnu inte spr\u00E5knamnet i funktionen format-number."},
 
     { WG_LOCALE_NOT_FOUND,
-      "Varning: Hittade inte spr\u00E5kkonvention f\u00F6r xml:lang={0}"},
+      "Varning: Hittade inte spr\u00E5kinst\u00E4llning f\u00F6r xml:lang={0}"},
 
     { WG_CANNOT_MAKE_URL_FROM,
       "Kan inte skapa URL fr\u00E5n: {0}"},
@@ -1283,10 +1286,10 @@ public class XSLTErrorResources_sv extends ListResourceBundle
       "xsl:stylesheet kr\u00E4ver ett 'version'-attribut!"},
 
     { WG_ILLEGAL_ATTRIBUTE_NAME,
-      "Otill\u00E5tet attributnamn: {0}"},
+      "Ogiltigt attributnamn: {0}"},
 
     { WG_ILLEGAL_ATTRIBUTE_VALUE,
-      "Otill\u00E5tet v\u00E4rde anv\u00E4nds f\u00F6r attributet {0}: {1}"},
+      "Ogiltigt v\u00E4rde anv\u00E4nds f\u00F6r attributet {0}: {1}"},
 
     { WG_EMPTY_SECOND_ARG,
       "Resulterande nodupps\u00E4ttning fr\u00E5n dokumentfunktionens andra argumentet \u00E4r tomt. En tom nodupps\u00E4ttning anv\u00E4nds."},
@@ -1326,8 +1329,8 @@ public class XSLTErrorResources_sv extends ListResourceBundle
   {  "version", ">>>>>>> Xalan version "},
   {  "version2",  "<<<<<<<"},
   {  "yes", "ja"},
-  { "line", "Rad nr"},
-  { "column","Kolumn nr"},
+  { "line", "Rad #"},
+  { "column","Kolumn #"},
   { "xsldone", "XSLProcessor: utf\u00F6rd"},
 
 

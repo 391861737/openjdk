@@ -49,7 +49,7 @@ fi
 # set platform-dependent variables
 OS=`uname -s`
 case "$OS" in
-  SunOS | Linux | Darwin | AIX )
+  SunOS | Linux | Darwin )
     NULL=/dev/null
     PS=":"
     FS="/"
@@ -77,7 +77,7 @@ echo "HELLO!"
 echo "Checking for $HOME/.java.policy"
 
 # 8015274
-if [ -f $HOME/.java.policy ]; then
+if [ -e $HOME/.java.policy ]; then
     echo "You have a .java.policy file in your HOME directory"
     echo "The file must be removed before running this test"
     exit 1

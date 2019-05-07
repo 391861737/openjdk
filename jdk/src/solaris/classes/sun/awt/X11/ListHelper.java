@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2003, 2014, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2003, 2013, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -40,7 +40,7 @@ import sun.util.logging.PlatformLogger;
  * For now, this class manages the list of items and painting thereof, but not
  * posting of Item or ActionEvents
  */
-final class ListHelper implements XScrollbarClient {
+public class ListHelper implements XScrollbarClient {
     private static final PlatformLogger log = PlatformLogger.getLogger("sun.awt.X11.ListHelper");
 
     private final int FOCUS_INSET = 1;
@@ -79,16 +79,24 @@ final class ListHelper implements XScrollbarClient {
     // Holds the true if mouse is dragging outside of the area of the list
     // The flag is used at the moment of the dragging and releasing mouse
     // See 6243382 for more information
-    private boolean mouseDraggedOutVertically = false;
+    boolean mouseDraggedOutVertically = false;
     private volatile boolean vsbVisibilityChanged = false;
 
     /*
      * Comment
      */
-    ListHelper(XWindow peer, Color[] colors, int initialSize,
-               boolean multiSelect, boolean scrollVert, boolean scrollHoriz,
-               Font font, int maxVisItems, int SPACE, int MARGIN, int BORDER,
-               int SCROLLBAR) {
+    public ListHelper(XWindow peer,
+                      Color[] colors,
+                      int initialSize,
+                      boolean multiSelect,
+                      boolean scrollVert,
+                      boolean scrollHoriz,
+                      Font font,
+                      int maxVisItems,
+                      int SPACE,
+                      int MARGIN,
+                      int BORDER,
+                      int SCROLLBAR) {
         this.peer = peer;
         this.colors = colors;
         this.multiSelect = multiSelect;
@@ -113,7 +121,6 @@ final class ListHelper implements XScrollbarClient {
         SCROLLBAR_WIDTH = SCROLLBAR;
     }
 
-    @Override
     public Component getEventSource() {
         return peer.getEventSource();
     }
@@ -122,36 +129,36 @@ final class ListHelper implements XScrollbarClient {
     /* List management methods                                            */
     /**********************************************************************/
 
-    void add(String item) {
+    public void add(String item) {
         items.add(item);
         updateScrollbars();
     }
 
-    void add(String item, int index) {
+    public void add(String item, int index) {
         items.add(index, item);
         updateScrollbars();
     }
 
-    void remove(String item) {
+    public void remove(String item) {
         // FIXME: need to clean up select list, too?
         items.remove(item);
         updateScrollbars();
         // Is vsb visible now?
     }
 
-    void remove(int index) {
+    public void remove(int index) {
         // FIXME: need to clean up select list, too?
         items.remove(index);
         updateScrollbars();
         // Is vsb visible now?
     }
 
-    void removeAll() {
+    public void removeAll() {
         items.removeAll(items);
         updateScrollbars();
     }
 
-    void setMultiSelect(boolean ms) {
+    public void setMultiSelect(boolean ms) {
         multiSelect = ms;
     }
 
@@ -160,7 +167,7 @@ final class ListHelper implements XScrollbarClient {
      * merely keeps internal track of which items are selected for painting
      * dealing with target Components happens elsewhere
      */
-    void select(int index) {
+    public void select(int index) {
         if (index > getItemCount() - 1) {
             index = (isEmpty() ? -1 : 0);
         }
@@ -175,13 +182,13 @@ final class ListHelper implements XScrollbarClient {
     }
 
     /* docs */
-    void deselect(int index) {
+    public void deselect(int index) {
         assert(false);
     }
 
     /* docs */
     /* if called for multiselect, return -1 */
-    int getSelectedIndex() {
+    public int getSelectedIndex() {
         if (!multiSelect) {
             Integer val = (Integer)selected.get(0);
             return val.intValue();
@@ -195,21 +202,21 @@ final class ListHelper implements XScrollbarClient {
      * A getter method for XChoicePeer.
      * Returns vsbVisiblityChanged value and sets it to false.
      */
-    boolean checkVsbVisibilityChangedAndReset(){
+    public boolean checkVsbVisibilityChangedAndReset(){
         boolean returnVal = vsbVisibilityChanged;
         vsbVisibilityChanged = false;
         return returnVal;
     }
 
-    boolean isEmpty() {
+    public boolean isEmpty() {
         return items.isEmpty();
     }
 
-    int getItemCount() {
+    public int getItemCount() {
         return items.size();
     }
 
-    String getItem(int index) {
+    public String getItem(int index) {
         return (String) items.get(index);
     }
 
@@ -217,15 +224,15 @@ final class ListHelper implements XScrollbarClient {
     /* GUI-related methods                                                */
     /**********************************************************************/
 
-    void setFocusedIndex(int index) {
+    public void setFocusedIndex(int index) {
         focusedIndex = index;
     }
 
-    private boolean isFocusedIndex(int index) {
+    public boolean isFocusedIndex(int index) {
         return index == focusedIndex;
     }
 
-    void setFont(Font newFont) {
+    public void setFont(Font newFont) {
         if (newFont != font) {
             font = newFont;
             fm = Toolkit.getDefaultToolkit().getFontMetrics(font);
@@ -236,7 +243,7 @@ final class ListHelper implements XScrollbarClient {
     /*
      * Returns width of the text of the longest item
      */
-    int getMaxItemWidth() {
+    public int getMaxItemWidth() {
         int m = 0;
         int end = getItemCount();
         for(int i = 0 ; i < end ; i++) {
@@ -253,7 +260,7 @@ final class ListHelper implements XScrollbarClient {
         return fm.getHeight() + (2*TEXT_SPACE);
     }
 
-    int y2index(int y) {
+    public int y2index(int y) {
         if (log.isLoggable(PlatformLogger.Level.FINE)) {
             log.fine("y=" + y +", firstIdx=" + firstDisplayedIndex() +", itemHeight=" + getItemHeight()
                      + ",item_margin=" + ITEM_MARGIN);
@@ -268,14 +275,14 @@ final class ListHelper implements XScrollbarClient {
     public int numItemsDisplayed() {}
     */
 
-    int firstDisplayedIndex() {
+    public int firstDisplayedIndex() {
         if (vsbVis) {
             return vsb.getValue();
         }
         return 0;
     }
 
-    int lastDisplayedIndex() {
+    public int lastDisplayedIndex() {
         // FIXME: need to account for horiz scroll bar
         if (hsbVis) {
             assert false : "Implement for horiz scroll bar";
@@ -287,7 +294,7 @@ final class ListHelper implements XScrollbarClient {
     /*
      * If the given index is not visible in the List, scroll so that it is.
      */
-    private void makeVisible(int index) {
+    public void makeVisible(int index) {
         if (vsbVis) {
             if (index < firstDisplayedIndex()) {
                 vsb.setValue(index);
@@ -299,7 +306,7 @@ final class ListHelper implements XScrollbarClient {
     }
 
     // FIXME: multi-select needs separate focused index
-    void up() {
+    public void up() {
         int curIdx = getSelectedIndex();
         int numItems = getItemCount();
         int newIdx;
@@ -316,12 +323,12 @@ final class ListHelper implements XScrollbarClient {
         select(newIdx);
     }
 
-    void down() {
+    public void down() {
         int newIdx = (getSelectedIndex() + 1) % getItemCount();
         select(newIdx);
     }
 
-    void pageUp() {
+    public void pageUp() {
         // FIXME: for multi-select, move the focused item, not the selected item
         if (vsbVis && firstDisplayedIndex() > 0) {
             if (multiSelect) {
@@ -336,7 +343,7 @@ final class ListHelper implements XScrollbarClient {
             }
         }
     }
-    void pageDown() {
+    public void pageDown() {
         if (vsbVis && lastDisplayedIndex() < getItemCount() - 1) {
             if (multiSelect) {
                 assert false : "Implement pageDown() for multiSelect";
@@ -350,17 +357,17 @@ final class ListHelper implements XScrollbarClient {
             }
         }
     }
-    void home() {}
-    void end() {}
+    public void home() {}
+    public void end() {}
 
 
-    boolean isVSBVisible() { return vsbVis; }
-    boolean isHSBVisible() { return hsbVis; }
+    public boolean isVSBVisible() { return vsbVis; }
+    public boolean isHSBVisible() { return hsbVis; }
 
-    XVerticalScrollbar getVSB() { return vsb; }
-    XHorizontalScrollbar getHSB() { return hsb; }
+    public XVerticalScrollbar getVSB() { return vsb; }
+    public XHorizontalScrollbar getHSB() { return hsb; }
 
-    boolean isInVertSB(Rectangle bounds, int x, int y) {
+    public boolean isInVertSB(Rectangle bounds, int x, int y) {
         if (vsbVis) {
             assert vsb != null : "Vert scrollbar is visible, yet is null?";
             int sbHeight = hsbVis ? bounds.height - SCROLLBAR_WIDTH : bounds.height;
@@ -372,7 +379,7 @@ final class ListHelper implements XScrollbarClient {
         return false;
     }
 
-    boolean isInHorizSB(Rectangle bounds, int x, int y) {
+    public boolean isInHorizSB(Rectangle bounds, int x, int y) {
         if (hsbVis) {
             assert hsb != null : "Horiz scrollbar is visible, yet is null?";
 
@@ -385,7 +392,7 @@ final class ListHelper implements XScrollbarClient {
         return false;
     }
 
-    void handleVSBEvent(MouseEvent e, Rectangle bounds, int x, int y) {
+    public void handleVSBEvent(MouseEvent e, Rectangle bounds, int x, int y) {
         int sbHeight = hsbVis ? bounds.height - SCROLLBAR_WIDTH : bounds.height;
 
         vsb.handleMouseEvent(e.getID(),
@@ -398,7 +405,7 @@ final class ListHelper implements XScrollbarClient {
      * Called when items are added/removed.
      * Update whether the scrollbar is visible or not, scrollbar values
      */
-    private void updateScrollbars() {
+    void updateScrollbars() {
         boolean oldVsbVis = vsbVis;
         vsbVis = vsb != null && items.size() > maxVisItems;
         if (vsbVis) {
@@ -413,11 +420,10 @@ final class ListHelper implements XScrollbarClient {
         // FIXME: check if added item makes a hsb necessary (if supported, that of course)
     }
 
-    private int getNumItemsDisplayed() {
+    public int getNumItemsDisplayed() {
         return items.size() > maxVisItems ? maxVisItems : items.size();
     }
 
-    @Override
     public void repaintScrollbarRequest(XScrollbar sb) {
         Graphics g = peer.getGraphics();
         Rectangle bounds = peer.getBounds();
@@ -430,7 +436,6 @@ final class ListHelper implements XScrollbarClient {
         g.dispose();
     }
 
-    @Override
     public void notifyValue(XScrollbar obj, int type, int v, boolean isAdjusting) {
         if (obj == vsb) {
             int oldScrollValue = vsb.getValue();
@@ -462,7 +467,7 @@ final class ListHelper implements XScrollbarClient {
         }
     }
 
-    void updateColors(Color[] newColors) {
+    public void updateColors(Color[] newColors) {
         colors = newColors;
     }
 
@@ -476,7 +481,7 @@ final class ListHelper implements XScrollbarClient {
                            XVerticalScrollbar vsb,
                            XHorizontalScrollbar hsb) {
     */
-    void paintItems(Graphics g,
+    public void paintItems(Graphics g,
                            Color[] colors,
                            Rectangle bounds) {
         // paint border
@@ -485,14 +490,17 @@ final class ListHelper implements XScrollbarClient {
         // paint focus?
 
     }
-    void paintAllItems(Graphics g,
+    public void paintAllItems(Graphics g,
                            Color[] colors,
                            Rectangle bounds) {
         paintItems(g, colors, bounds,
                    firstDisplayedIndex(), lastDisplayedIndex());
     }
-    private void paintItems(Graphics g, Color[] colors, Rectangle bounds,
-                            int first, int last) {
+    public void paintItems(Graphics g,
+                           Color[] colors,
+                           Rectangle bounds,
+                           int first,
+                           int last) {
         peer.flush();
         int x = BORDER_WIDTH + ITEM_MARGIN;
         int width = bounds.width - 2*ITEM_MARGIN - 2*BORDER_WIDTH - (vsbVis ? SCROLLBAR_WIDTH : 0);
@@ -521,9 +529,12 @@ final class ListHelper implements XScrollbarClient {
     /*
      * comment about what is painted (i.e. the focus rect
      */
-    private void paintItem(Graphics g, Color[] colors, String string, int x,
-                           int y, int width, int height, boolean selected,
-                           boolean focused) {
+    public void paintItem(Graphics g,
+                          Color[] colors,
+                          String string,
+                          int x, int y, int width, int height,
+                          boolean selected,
+                          boolean focused) {
         //System.out.println("LP.pI(): x="+x+" y="+y+" w="+width+" h="+height);
         //g.setColor(colors[BACKGROUND_COLOR]);
 
@@ -564,7 +575,7 @@ final class ListHelper implements XScrollbarClient {
         //g.clipRect(clip.x, clip.y, clip.width, clip.height);
     }
 
-    private boolean isItemSelected(int index) {
+    boolean isItemSelected(int index) {
         Iterator itr = selected.iterator();
         while (itr.hasNext()) {
             Integer val = (Integer)itr.next();
@@ -575,7 +586,7 @@ final class ListHelper implements XScrollbarClient {
         return false;
     }
 
-    private void paintVSB(Graphics g, Color colors[], Rectangle bounds) {
+    public void paintVSB(Graphics g, Color colors[], Rectangle bounds) {
         int height = bounds.height - 2*BORDER_WIDTH - (hsbVis ? (SCROLLBAR_WIDTH-2) : 0);
         Graphics ng = g.create();
 
@@ -591,7 +602,7 @@ final class ListHelper implements XScrollbarClient {
         }
     }
 
-    private void paintHSB(Graphics g, Color colors[], Rectangle bounds) {
+    public void paintHSB(Graphics g, Color colors[], Rectangle bounds) {
 
     }
 

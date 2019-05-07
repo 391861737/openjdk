@@ -1,5 +1,12 @@
 '\" t
-.\" Copyright (c) 2013, 2014, Oracle and/or its affiliates. All rights reserved.
+.\" Copyright (c) 2013, Oracle and/or its affiliates. All rights reserved.
+.\" Title: jdeps
+.\" Language: English
+.\" Date: 2013Ç¯11·î21Æü
+.\" SectDesc: ´ðËÜ¥Ä¡¼¥ë
+.\" Software: JDK 8
+.\" Arch: ÈÆÍÑ
+.\"
 .\" DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
 .\"
 .\" This code is free software; you can redistribute it and/or modify it
@@ -8,7 +15,7 @@
 .\"
 .\" This code is distributed in the hope that it will be useful, but WITHOUT
 .\" ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
-.\" FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License
+.\" FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License
 .\" version 2 for more details (a copy is included in the LICENSE file that
 .\" accompanied this code).
 .\"
@@ -20,16 +27,7 @@
 .\" or visit www.oracle.com if you need additional information or have any
 .\" questions.
 .\"
-.\" Title: jdeps
-.\" Language: Japanese
-.\" Date: 2013Ç¯11·î21Æü
-.\" SectDesc: ´ðËÜ¥Ä¡¼¥ë
-.\" Software: JDK 8
-.\" Arch: ÈÆÍÑ
-.\" Part Number: E58103-01
-.\" Doc ID: JSSON
-.\"
-.if n .pl 99999
+.pl 99999
 .TH "jdeps" "1" "2013Ç¯11·î21Æü" "JDK 8" "´ðËÜ¥Ä¡¼¥ë"
 .\" -----------------------------------------------------------------
 .\" * Define some portability stuff
@@ -50,7 +48,7 @@
 .\" -----------------------------------------------------------------
 .\" * MAIN CONTENT STARTS HERE *
 .\" -----------------------------------------------------------------
-.SH "Ì¾Á°"
+.SH "NAME"
 jdeps \- Java¥¯¥é¥¹°ÍÂ¸À­¥¢¥Ê¥é¥¤¥¶¡£
 .SH "³µÍ×"
 .sp
@@ -58,7 +56,7 @@ jdeps \- Java¥¯¥é¥¹°ÍÂ¸À­¥¢¥Ê¥é¥¤¥¶¡£
 .RS 4
 .\}
 .nf
-\fBjdeps\fR [\fIoptions\fR] \fIclasses\fR \&.\&.\&.
+\fIjdeps\fR [\fIoptions\fR] \fIclasses\fR \&.\&.\&.
 .fi
 .if n \{\
 .RE
@@ -66,7 +64,7 @@ jdeps \- Java¥¯¥é¥¹°ÍÂ¸À­¥¢¥Ê¥é¥¤¥¶¡£
 .PP
 \fIoptions\fR
 .RS 4
-¥³¥Þ¥ó¥É¹Ô¥ª¥×¥·¥ç¥ó¡£¥ª¥×¥·¥ç¥ó¤ò»²¾È¤·¤Æ¤¯¤À¤µ¤¤¡£
+¥³¥Þ¥ó¥É¥é¥¤¥ó¡¦¥ª¥×¥·¥ç¥ó¡£¥ª¥×¥·¥ç¥ó¤ò»²¾È¤·¤Æ¤¯¤À¤µ¤¤¡£
 .RE
 .PP
 \fIclasses\fR
@@ -75,24 +73,20 @@ jdeps \- Java¥¯¥é¥¹°ÍÂ¸À­¥¢¥Ê¥é¥¤¥¶¡£
 .RE
 .SH "ÀâÌÀ"
 .PP
-\fBjdeps\fR¥³¥Þ¥ó¥É¤Ï¡¢Java¥¯¥é¥¹¡¦¥Õ¥¡¥¤¥ë¤Î¥Ñ¥Ã¥±¡¼¥¸¥ì¥Ù¥ë¤Þ¤¿¤Ï¥¯¥é¥¹¥ì¥Ù¥ë¤Î°ÍÂ¸À­¤ò¼¨¤·¤Þ¤¹¡£ÆþÎÏ¥¯¥é¥¹¤Ë¤Ï¡¢\fB\&.class\fR¥Õ¥¡¥¤¥ë¤Î¥Ñ¥¹Ì¾¡¢¥Ç¥£¥ì¥¯¥È¥ê¡¢JAR¥Õ¥¡¥¤¥ë¡¢¤Þ¤¿¤Ï¤¹¤Ù¤Æ¤Î¥¯¥é¥¹¡¦¥Õ¥¡¥¤¥ë¤òÊ¬ÀÏ¤¹¤ë¤¿¤á¤Î´°Á´½¤¾þ¥¯¥é¥¹Ì¾¤ò»ØÄê¤Ç¤­¤Þ¤¹¡£¥ª¥×¥·¥ç¥ó¤Ë¤è¤ê½ÐÎÏ¤¬·èÄê¤·¤Þ¤¹¡£¥Ç¥Õ¥©¥ë¥È¤Ç¤Ï¡¢\fBjdeps\fR¤Ï¥·¥¹¥Æ¥à½ÐÎÏ¤Ë°ÍÂ¸´Ø·¸¤ò½ÐÎÏ¤·¤Þ¤¹¡£DOT¸À¸ì¤Ç°ÍÂ¸´Ø·¸¤òÀ¸À®¤Ç¤­¤Þ¤¹(\fB\-dotoutput\fR¥ª¥×¥·¥ç¥ó¤ò»²¾È)¡£
+\fIjdeps\fR¥³¥Þ¥ó¥É¤Ï¡¢Java¥¯¥é¥¹¡¦¥Õ¥¡¥¤¥ë¤Î¥Ñ¥Ã¥±¡¼¥¸¥ì¥Ù¥ë¤Þ¤¿¤Ï¥¯¥é¥¹¥ì¥Ù¥ë¤Î°ÍÂ¸À­¤ò¼¨¤·¤Þ¤¹¡£ÆþÎÏ¥¯¥é¥¹¤Ë¤Ï¡¢\fI\&.class\fR¥Õ¥¡¥¤¥ë¤Î¥Ñ¥¹Ì¾¡¢¥Ç¥£¥ì¥¯¥È¥ê¡¢JAR¥Õ¥¡¥¤¥ë¡¢¤Þ¤¿¤Ï¤¹¤Ù¤Æ¤Î¥¯¥é¥¹¡¦¥Õ¥¡¥¤¥ë¤òÊ¬ÀÏ¤¹¤ë¤¿¤á¤Î´°Á´½¤¾þ¥¯¥é¥¹Ì¾¤ò»ØÄê¤Ç¤­¤Þ¤¹¡£¥ª¥×¥·¥ç¥ó¤Ë¤è¤ê½ÐÎÏ¤¬·èÄê¤·¤Þ¤¹¡£¥Ç¥Õ¥©¥ë¥È¤Ç¤Ï¡¢\fIjdeps\fR¤Ï¥·¥¹¥Æ¥à½ÐÎÏ¤Ë°ÍÂ¸´Ø·¸¤ò½ÐÎÏ¤·¤Þ¤¹¡£DOT¸À¸ì¤Ç°ÍÂ¸´Ø·¸¤òÀ¸À®¤Ç¤­¤Þ¤¹(\fI\-dotoutput\fR¥ª¥×¥·¥ç¥ó¤ò»²¾È)¡£
 .SH "¥ª¥×¥·¥ç¥ó"
 .PP
 \-dotoutput <\fIdir\fR>
 .RS 4
-DOT¥Õ¥¡¥¤¥ë½ÐÎÏ¤Î°¸Àè¥Ç¥£¥ì¥¯¥È¥ê¡£»ØÄê¤·¤¿¾ì¹ç¡¢\fBjdeps\fR¤Ï<\fIarchive\-file\-name\fR>\&.dot¤È¤¤¤¦Ì¾Á°¤ÎÊ¬ÀÏºÑ¥¢¡¼¥«¥¤¥Ö¤´¤È¤Ë°ÍÂ¸´Ø·¸¤ò¥ê¥¹¥È¤¹¤ë1¤Ä¤Îdot¥Õ¥¡¥¤¥ë¤òÀ¸À®¤·¡¢¥¢¡¼¥«¥¤¥Ö´Ö¤Î°ÍÂ¸´Ø·¸¤ò¥ê¥¹¥È¤¹¤ësummary\&.dot¤È¤¤¤¦Ì¾Á°¤Î¥µ¥Þ¥ê¡¼¡¦¥Õ¥¡¥¤¥ë¤âÀ¸À®¤·¤Þ¤¹¡£
+DOT¥Õ¥¡¥¤¥ë½ÐÎÏ¤Î°¸Àè¥Ç¥£¥ì¥¯¥È¥ê¡£»ØÄê¤·¤¿¾ì¹ç¤Ï\fIjdeps\fR¤Ï<\fIarchive\-file\-name\fR>\&.dot¤È¤¤¤¦Ì¾Á°¤ÎÊ¬ÀÏºÑ¤ß¥¢¡¼¥«¥¤¥Ö¤´¤È¤Ë°ÍÂ¸´Ø·¸¤ò¥ê¥¹¥È¤¹¤ë1¤Ä¤Îdot¥Õ¥¡¥¤¥ë¤òÀ¸À®¤·¡¢¥¢¡¼¥«¥¤¥Ö´Ö¤Î°ÍÂ¸´Ø·¸¤ò¥ê¥¹¥È¤¹¤ësummary\&.dot¤È¤¤¤¦Ì¾Á°¤Î¥µ¥Þ¥ê¡¼¡¦¥Õ¥¡¥¤¥ë¤âÀ¸À®¤·¤Þ¤¹¡£
 .RE
 .PP
-\-s
-.br
-\-summary
+\-s, \-summary
 .RS 4
 °ÍÂ¸´Ø·¸¤Î¥µ¥Þ¥ê¡¼¤Î¤ß¤ò½ÐÎÏ¤·¤Þ¤¹¡£
 .RE
 .PP
-\-v
-.br
-\-verbose
+\-v, \-verbose
 .RS 4
 ¤¹¤Ù¤Æ¤Î¥¯¥é¥¹¥ì¥Ù¥ë¤Î°ÍÂ¸´Ø·¸¤ò½ÐÎÏ¤·¤Þ¤¹¡£
 .RE
@@ -107,56 +101,46 @@ DOT¥Õ¥¡¥¤¥ë½ÐÎÏ¤Î°¸Àè¥Ç¥£¥ì¥¯¥È¥ê¡£»ØÄê¤·¤¿¾ì¹ç¡¢\fBjdeps\fR¤Ï<\fIarchive\-file\
 Æ±¤¸¥¢¡¼¥«¥¤¥ÖÆâ¤Î°ÍÂ¸´Ø·¸¤ò½ü¤­¡¢¥¯¥é¥¹¥ì¥Ù¥ë¤Î°ÍÂ¸´Ø·¸¤ò½ÐÎÏ¤·¤Þ¤¹¡£
 .RE
 .PP
-\-cp <\fIpath\fR>
-.br
-\-classpath <\fIpath\fR>
+\-cp <\fIpath\fR>, \-classpath <\fIpath\fR>
 .RS 4
 ¥¯¥é¥¹¡¦¥Õ¥¡¥¤¥ë¤Î¸¡º÷¾ì½ê¤ò»ØÄê¤·¤Þ¤¹¡£
 .sp
-¥¯¥é¥¹¡¦¥Ñ¥¹¤ÎÀßÄê ¤â»²¾È¤·¤Æ¤¯¤À¤µ¤¤¡£
+Setting the Class Path ¤â»²¾È¤·¤Æ¤¯¤À¤µ¤¤¡£
 .RE
 .PP
-\-p <\fIpkg name\fR>
-.br
-\-package <\fIpkg name\fR>
+\-p <\fIpkg name\fR>, \-package <\fIpkg name\fR>
 .RS 4
-»ØÄê¤·¤¿¥Ñ¥Ã¥±¡¼¥¸¤Î°ÍÂ¸´Ø·¸¤ò¸¡½Ð¤·¤Þ¤¹¡£°Û¤Ê¤ë¥Ñ¥Ã¥±¡¼¥¸¤ËÂÐ¤·¤Æ¤³¤Î¥ª¥×¥·¥ç¥ó¤òÊ£¿ô²ó»ØÄê¤Ç¤­¤Þ¤¹¡£\fB\-p\fR¥ª¥×¥·¥ç¥ó¤È\fB\-e\fR¥ª¥×¥·¥ç¥ó¤òÆ±»þ¤Ë»ØÄê¤¹¤ë¤³¤È¤Ï¤Ç¤­¤Þ¤»¤ó¡£
+»ØÄê¤·¤¿¥Ñ¥Ã¥±¡¼¥¸¤Î°ÍÂ¸´Ø·¸¤ò¸¡½Ð¤·¤Þ¤¹¡£°Û¤Ê¤ë¥Ñ¥Ã¥±¡¼¥¸¤ËÂÐ¤·¤Æ¤³¤Î¥ª¥×¥·¥ç¥ó¤òÊ£¿ô²ó»ØÄê¤Ç¤­¤Þ¤¹¡£\fI\-p\fR¥ª¥×¥·¥ç¥ó¤È\fI\-e\fR¥ª¥×¥·¥ç¥ó¤òÆ±»þ¤Ë»ØÄê¤¹¤ë¤³¤È¤Ï¤Ç¤­¤Þ¤»¤ó¡£
 .RE
 .PP
-\-e <\fIregex\fR>
-.br
-\-regex <\fIregex\fR>
+\-e <\fIregex\fR>, \-regex <\fIregex\fR>
 .RS 4
-»ØÄê¤·¤¿Àµµ¬É½¸½¥Ñ¥¿¡¼¥ó¤È°ìÃ×¤¹¤ë¥Ñ¥Ã¥±¡¼¥¸¤Î°ÍÂ¸´Ø·¸¤ò¸¡½Ð¤·¤Þ¤¹¡£\fB\-p\fR¥ª¥×¥·¥ç¥ó¤È\fB\-e\fR¥ª¥×¥·¥ç¥ó¤òÆ±»þ¤Ë»ØÄê¤¹¤ë¤³¤È¤Ï¤Ç¤­¤Þ¤»¤ó¡£
+»ØÄê¤·¤¿Àµµ¬É½¸½¥Ñ¥¿¡¼¥ó¤È°ìÃ×¤¹¤ë¥Ñ¥Ã¥±¡¼¥¸¤Î°ÍÂ¸´Ø·¸¤ò¸¡½Ð¤·¤Þ¤¹¡£\fI\-p\fR¥ª¥×¥·¥ç¥ó¤È\fI\-e\fR¥ª¥×¥·¥ç¥ó¤òÆ±»þ¤Ë»ØÄê¤¹¤ë¤³¤È¤Ï¤Ç¤­¤Þ¤»¤ó¡£
 .RE
 .PP
 \-include <\fIregex\fR>
 .RS 4
-Ê¬ÀÏ¤ò¥Ñ¥¿¡¼¥ó¤Ë°ìÃ×¤¹¤ë¥¯¥é¥¹¤ËÀ©¸Â¤·¤Þ¤¹¡£¤³¤Î¥ª¥×¥·¥ç¥ó¤Ï¡¢Ê¬ÀÏ¤¹¤ë¥¯¥é¥¹¤Î¥ê¥¹¥È¤ò¥Õ¥£¥ë¥¿¤·¤Þ¤¹¡£°ÍÂ¸´Ø·¸¤Ë¥Ñ¥¿¡¼¥ó¤òÅ¬ÍÑ¤¹¤ë\fB\-p\fR¤ª¤è¤Ó\fB\-e\fR¤È¤È¤â¤Ë»ÈÍÑ¤Ç¤­¤Þ¤¹¡£
+Ê¬ÀÏ¤ò¥Ñ¥¿¡¼¥ó¤Ë°ìÃ×¤¹¤ë¥¯¥é¥¹¤ËÀ©¸Â¤·¤Þ¤¹¡£¤³¤Î¥ª¥×¥·¥ç¥ó¤Ï¡¢Ê¬ÀÏ¤¹¤ë¥¯¥é¥¹¤Î¥ê¥¹¥È¤ò¥Õ¥£¥ë¥¿¤·¤Þ¤¹¡£°ÍÂ¸´Ø·¸¤Ë¥Ñ¥¿¡¼¥ó¤òÅ¬ÍÑ¤¹¤ë\fI\-p\fR¤ª¤è¤Ó\fI\-e\fR¤È¤È¤â¤Ë»ÈÍÑ¤Ç¤­¤Þ¤¹¡£
 .RE
 .PP
 \-jdkinternals
 .RS 4
-JDK¤ÎÆâÉôAPI¤Î¥¯¥é¥¹¥ì¥Ù¥ë¤Î°ÍÂ¸´Ø·¸¤ò¸¡½Ð¤·¤Þ¤¹¡£¥Ç¥Õ¥©¥ë¥È¤Ç¤Ï¡¢\fB\-include\fR¥ª¥×¥·¥ç¥ó¤ò»ØÄê¤·¤Ê¤¤¤«¤®¤ê¡¢\fB\-classpath\fR¥ª¥×¥·¥ç¥ó¤ª¤è¤ÓÆþÎÏ¥Õ¥¡¥¤¥ë¤Ë»ØÄê¤µ¤ì¤¿¤¹¤Ù¤Æ¤Î¥¯¥é¥¹¤òÊ¬ÀÏ¤·¤Þ¤¹¡£¤³¤Î¥ª¥×¥·¥ç¥ó¤Ï¡¢\fB\-p\fR¥ª¥×¥·¥ç¥ó¡¢\fB\-e\fR¥ª¥×¥·¥ç¥ó¤ª¤è¤Ó\fB\-s\fR¥ª¥×¥·¥ç¥ó¤È¤È¤â¤Ë»ÈÍÑ¤Ç¤­¤Þ¤»¤ó¡£
+JDK¤ÎÆâÉôAPI¤Î¥¯¥é¥¹¥ì¥Ù¥ë¤Î°ÍÂ¸´Ø·¸¤ò¸¡½Ð¤·¤Þ¤¹¡£¥Ç¥Õ¥©¥ë¥È¤Ç¤Ï¡¢\fI\-include\fR¥ª¥×¥·¥ç¥ó¤ò»ØÄê¤·¤Ê¤¤¤«¤®¤ê¡¢\fI\-classpath\fR¥ª¥×¥·¥ç¥ó¤ª¤è¤ÓÆþÎÏ¥Õ¥¡¥¤¥ë¤Ë»ØÄê¤µ¤ì¤¿¤¹¤Ù¤Æ¤Î¥¯¥é¥¹¤òÊ¬ÀÏ¤·¤Þ¤¹¡£¤³¤Î¥ª¥×¥·¥ç¥ó¤Ï¡¢\fI\-p\fR¥ª¥×¥·¥ç¥ó¡¢\fI\-e\fR¥ª¥×¥·¥ç¥ó¤ª¤è¤Ó\fI\-s\fR¥ª¥×¥·¥ç¥ó¤È¤È¤â¤Ë»ÈÍÑ¤Ç¤­¤Þ¤»¤ó¡£
 .sp
 \fB·Ù¹ð\fR: JDK¤ÎÆâÉôAPI¤Ï¡¢º£¸å¤Î¥ê¥ê¡¼¥¹¤Ç¥¢¥¯¥»¥¹¤Ç¤­¤Ê¤¯¤Ê¤ë²ÄÇ½À­¤¬¤¢¤ê¤Þ¤¹¡£
 .RE
 .PP
-\-P
-.br
-\-profile
+\-P, \-profile
 .RS 4
 ¥Ñ¥Ã¥±¡¼¥¸¤ò´Þ¤à¥×¥í¥Õ¥¡¥¤¥ë¤Þ¤¿¤Ï¥Õ¥¡¥¤¥ë¤òÉ½¼¨¤·¤Þ¤¹¡£
 .RE
 .PP
 \-apionly
 .RS 4
-¥Õ¥£¡¼¥ë¥É¡¦¥¿¥¤¥×¡¢¥á¥½¥Ã¥É¡¦¥Ñ¥é¥á¡¼¥¿¡¦¥¿¥¤¥×¡¢Ìá¤ê¥¿¥¤¥×¡¢¥Á¥§¥Ã¥¯¤µ¤ì¤¿Îã³°¥¿¥¤¥×¤ò´Þ¤à¥Ñ¥Ö¥ê¥Ã¥¯¡¦¥¯¥é¥¹¤Î\fBpublic\fR¤ª¤è¤Ó\fBprotected\fR¥á¥ó¥Ð¡¼¤Î½ðÌ¾¤«¤é¤Î°ÍÂ¸´Ø·¸¤Ê¤É¡¢Ê¬ÀÏ¤òAPI¤ËÀ©¸Â¤·¤Þ¤¹¡£
+¥Õ¥£¡¼¥ë¥É¡¦¥¿¥¤¥×¡¢¥á¥½¥Ã¥É¡¦¥Ñ¥é¥á¡¼¥¿¡¦¥¿¥¤¥×¡¢Ìá¤ê¥¿¥¤¥×¡¢¥Á¥§¥Ã¥¯¤µ¤ì¤¿Îã³°¥¿¥¤¥×¤ò´Þ¤à¥Ñ¥Ö¥ê¥Ã¥¯¡¦¥¯¥é¥¹¤Î\fIpublic\fR¤ª¤è¤Ó\fIprotected\fR¥á¥ó¥Ð¡¼¤Î½ðÌ¾¤«¤é¤Î°ÍÂ¸´Ø·¸¤Ê¤É¡¢Ê¬ÀÏ¤òAPI¤ËÀ©¸Â¤·¤Þ¤¹¡£
 .RE
 .PP
-\-R
-.br
-\-recursive
+\-R, \-recursive
 .RS 4
 ¤¹¤Ù¤Æ¤Î°ÍÂ¸´Ø·¸¤òºÆµ¢Åª¤ËÁöºº¤·¤Þ¤¹¡£
 .RE
@@ -166,13 +150,9 @@ JDK¤ÎÆâÉôAPI¤Î¥¯¥é¥¹¥ì¥Ù¥ë¤Î°ÍÂ¸´Ø·¸¤ò¸¡½Ð¤·¤Þ¤¹¡£¥Ç¥Õ¥©¥ë¥È¤Ç¤Ï¡¢\fB\-include\f
 ¥Ð¡¼¥¸¥ç¥ó¾ðÊó¤ò½ÐÎÏ¤·¤Þ¤¹¡£
 .RE
 .PP
-\-h
-.br
-\-?
-.br
-\-help
+\-h, \-?, \-help
 .RS 4
-\fBjdeps\fR¤Ë´Ø¤¹¤ë¥Ø¥ë¥×¡¦¥á¥Ã¥»¡¼¥¸¤ò½ÐÎÏ¤·¤Þ¤¹¡£
+\fIjdeps\fR¤Ë´Ø¤¹¤ë¥Ø¥ë¥×¡¦¥á¥Ã¥»¡¼¥¸¤ò½ÐÎÏ¤·¤Þ¤¹¡£
 .RE
 .SH "Îã"
 .PP
@@ -182,25 +162,24 @@ Notepad\&.jar¤Î°ÍÂ¸´Ø·¸¤ÎÊ¬ÀÏ¡£
 .RS 4
 .\}
 .nf
-\fB$ jdeps demo/jfc/Notepad/Notepad\&.jar\fR
-\fB \fR
-\fBdemo/jfc/Notepad/Notepad\&.jar \-> /usr/java/jre/lib/rt\&.jar\fR
-\fB   <unnamed> (Notepad\&.jar)\fR
-\fB      \-> java\&.awt                                           \fR
-\fB      \-> java\&.awt\&.event                                     \fR
-\fB      \-> java\&.beans                                         \fR
-\fB      \-> java\&.io                                            \fR
-\fB      \-> java\&.lang                                          \fR
-\fB      \-> java\&.net                                           \fR
-\fB      \-> java\&.util                                          \fR
-\fB      \-> java\&.util\&.logging                                  \fR
-\fB      \-> javax\&.swing                                        \fR
-\fB      \-> javax\&.swing\&.border                                 \fR
-\fB      \-> javax\&.swing\&.event                                  \fR
-\fB      \-> javax\&.swing\&.text                                   \fR
-\fB      \-> javax\&.swing\&.tree                                   \fR
-\fB      \-> javax\&.swing\&.undo  \fR
+$ jdeps demo/jfc/Notepad/Notepad\&.jar
  
+demo/jfc/Notepad/Notepad\&.jar \-> /usr/java/jre/lib/rt\&.jar
+   <unnamed> (Notepad\&.jar)
+      \-> java\&.awt                                           
+      \-> java\&.awt\&.event                                     
+      \-> java\&.beans                                         
+      \-> java\&.io                                            
+      \-> java\&.lang                                          
+      \-> java\&.net                                           
+      \-> java\&.util                                          
+      \-> java\&.util\&.logging                                  
+      \-> javax\&.swing                                        
+      \-> javax\&.swing\&.border                                 
+      \-> javax\&.swing\&.event                                  
+      \-> javax\&.swing\&.text                                   
+      \-> javax\&.swing\&.tree                                   
+      \-> javax\&.swing\&.undo  
 .fi
 .if n \{\
 .RE
@@ -212,119 +191,115 @@ Notepad\&.jar¤Î°ÍÂ¸´Ø·¸¤ÎÊ¬ÀÏ¡£
 .RS 4
 .\}
 .nf
-\fB$ jdeps \-profile demo/jfc/Notepad/Notepad\&.jar \fR
-\fBdemo/jfc/Notepad/Notepad\&.jar \-> /usr/java/jre/lib/rt\&.jar (Full JRE)\fR
-\fB   <unnamed> (Notepad\&.jar)\fR
-\fB      \-> java\&.awt                                           Full JRE\fR
-\fB      \-> java\&.awt\&.event                                     Full JRE\fR
-\fB      \-> java\&.beans                                         Full JRE\fR
-\fB      \-> java\&.io                                            compact1\fR
-\fB      \-> java\&.lang                                          compact1\fR
-\fB      \-> java\&.net                                           compact1\fR
-\fB      \-> java\&.util                                          compact1\fR
-\fB      \-> java\&.util\&.logging                                  compact1\fR
-\fB      \-> javax\&.swing                                        Full JRE\fR
-\fB      \-> javax\&.swing\&.border                                 Full JRE\fR
-\fB      \-> javax\&.swing\&.event                                  Full JRE\fR
-\fB      \-> javax\&.swing\&.text                                   Full JRE\fR
-\fB      \-> javax\&.swing\&.tree                                   Full JRE\fR
-\fB      \-> javax\&.swing\&.undo                                   Full JRE\fR
- 
+$ jdeps \-profile demo/jfc/Notepad/Notepad\&.jar 
+demo/jfc/Notepad/Notepad\&.jar \-> /usr/java/jre/lib/rt\&.jar (Full JRE)
+   <unnamed> (Notepad\&.jar)
+      \-> java\&.awt                                           Full JRE
+      \-> java\&.awt\&.event                                     Full JRE
+      \-> java\&.beans                                         Full JRE
+      \-> java\&.io                                            compact1
+      \-> java\&.lang                                          compact1
+      \-> java\&.net                                           compact1
+      \-> java\&.util                                          compact1
+      \-> java\&.util\&.logging                                  compact1
+      \-> javax\&.swing                                        Full JRE
+      \-> javax\&.swing\&.border                                 Full JRE
+      \-> javax\&.swing\&.event                                  Full JRE
+      \-> javax\&.swing\&.text                                   Full JRE
+      \-> javax\&.swing\&.tree                                   Full JRE
+      \-> javax\&.swing\&.undo                                   Full JRE
 .fi
 .if n \{\
 .RE
 .\}
 .PP
-tools\&.jar¥Õ¥¡¥¤¥ëÆâ¤Î\fBcom\&.sun\&.tools\&.jdeps\&.Main\fR¥¯¥é¥¹¤Ê¤É¡¢ÆÃÄê¤Î¥¯¥é¥¹¥Ñ¥¹Æâ¤ÎÆÃÄê¤Î¥¯¥é¥¹¤ÎÄ¾ÀÜ°ÍÂ¸´Ø·¸¤ÎÊ¬ÀÏ¡£
+tools\&.jar¥Õ¥¡¥¤¥ëÆâ¤Î\fIcom\&.sun\&.tools\&.jdeps\&.Main\fR¥¯¥é¥¹¤Ê¤É¡¢ÆÃÄê¤Î¥¯¥é¥¹¥Ñ¥¹Æâ¤ÎÆÃÄê¤Î¥¯¥é¥¹¤ÎÄ¾ÀÜ°ÍÂ¸´Ø·¸¤ÎÊ¬ÀÏ¡£
 .sp
 .if n \{\
 .RS 4
 .\}
 .nf
-\fB$ jdeps \-cp lib/tools\&.jar com\&.sun\&.tools\&.jdeps\&.Main\fR
-\fBlib/tools\&.jar \-> /usr/java/jre/lib/rt\&.jar\fR
-\fB   com\&.sun\&.tools\&.jdeps (tools\&.jar)\fR
-\fB      \-> java\&.io                                            \fR
-\fB      \-> java\&.lang \fR
- 
+$ jdeps \-cp lib/tools\&.jar com\&.sun\&.tools\&.jdeps\&.Main
+lib/tools\&.jar \-> /usr/java/jre/lib/rt\&.jar
+   com\&.sun\&.tools\&.jdeps (tools\&.jar)
+      \-> java\&.io                                            
+      \-> java\&.lang 
 .fi
 .if n \{\
 .RE
 .\}
 .PP
-\fB\-verbose:class\fR¥ª¥×¥·¥ç¥ó¤ò»ÈÍÑ¤·¤Æ¡¢¥¯¥é¥¹¥ì¥Ù¥ë°ÍÂ¸´Ø·¸¤ò¸¡º÷¤¹¤ë¤«\fB\-v\fR¤Þ¤¿¤Ï\fB\-verbose\fR¥ª¥×¥·¥ç¥ó¤ò»ÈÍÑ¤·¤ÆÆ±¤¸JAR¥Õ¥¡¥¤¥ë¤«¤é¤Î°ÍÂ¸´Ø·¸¤ò´Þ¤á¤Þ¤¹¡£
+\fI\-verbose:class\fR¥ª¥×¥·¥ç¥ó¤ò»ÈÍÑ¤·¤Æ¡¢¥¯¥é¥¹¥ì¥Ù¥ë°ÍÂ¸´Ø·¸¤ò¸¡º÷¤¹¤ë¤«\fI\-v\fR¤Þ¤¿¤Ï\fI\-verbose\fR¥ª¥×¥·¥ç¥ó¤ò»ÈÍÑ¤·¤ÆÆ±¤¸JAR¥Õ¥¡¥¤¥ë¤«¤é¤Î°ÍÂ¸´Ø·¸¤ò´Þ¤á¤Þ¤¹¡£
 .sp
 .if n \{\
 .RS 4
 .\}
 .nf
-\fB$ jdeps \-verbose:class \-cp lib/tools\&.jar com\&.sun\&.tools\&.jdeps\&.Main\fR
-\fB \fR
-\fBlib/tools\&.jar \-> /usr/java/jre/lib/rt\&.jar\fR
-\fB   com\&.sun\&.tools\&.jdeps\&.Main (tools\&.jar)\fR
-\fB      \-> java\&.io\&.PrintWriter                                \fR
-\fB      \-> java\&.lang\&.Exception                                \fR
-\fB      \-> java\&.lang\&.Object                                   \fR
-\fB      \-> java\&.lang\&.String                                   \fR
-\fB      \-> java\&.lang\&.System \fR
+$ jdeps \-verbose:class \-cp lib/tools\&.jar com\&.sun\&.tools\&.jdeps\&.Main
  
+lib/tools\&.jar \-> /usr/java/jre/lib/rt\&.jar
+   com\&.sun\&.tools\&.jdeps\&.Main (tools\&.jar)
+      \-> java\&.io\&.PrintWriter                                
+      \-> java\&.lang\&.Exception                                
+      \-> java\&.lang\&.Object                                   
+      \-> java\&.lang\&.String                                   
+      \-> java\&.lang\&.System 
 .fi
 .if n \{\
 .RE
 .\}
 .PP
-\fB\-R\fR¤Þ¤¿¤Ï\fB\-recursive\fR¥ª¥×¥·¥ç¥ó¤ò»ÈÍÑ¤·¤Æ¡¢\fBcom\&.sun\&.tools\&.jdeps\&.Main\fR¥¯¥é¥¹¤Î¿ä°ÜÅª¤Ê°ÍÂ¸´Ø·¸¤òÊ¬ÀÏ¤·¤Þ¤¹¡£
+\fI\-R\fR¤Þ¤¿¤Ï\fI\-recursive\fR¥ª¥×¥·¥ç¥ó¤ò»ÈÍÑ¤·¤Æ¡¢\fIcom\&.sun\&.tools\&.jdeps\&.Main\fR¥¯¥é¥¹¤Î¿ä°ÜÅª¤Ê°ÍÂ¸´Ø·¸¤òÊ¬ÀÏ¤·¤Þ¤¹¡£
 .sp
 .if n \{\
 .RS 4
 .\}
 .nf
-\fB$ jdeps \-R \-cp lib/tools\&.jar com\&.sun\&.tools\&.jdeps\&.Main\fR
-\fBlib/tools\&.jar \-> /usr/java/jre/lib/rt\&.jar\fR
-\fB   com\&.sun\&.tools\&.classfile (tools\&.jar)\fR
-\fB      \-> java\&.io                                            \fR
-\fB      \-> java\&.lang                                          \fR
-\fB      \-> java\&.lang\&.reflect                                  \fR
-\fB      \-> java\&.nio\&.charset                                   \fR
-\fB      \-> java\&.nio\&.file                                      \fR
-\fB      \-> java\&.util                                          \fR
-\fB      \-> java\&.util\&.regex                                    \fR
-\fB   com\&.sun\&.tools\&.jdeps (tools\&.jar)\fR
-\fB      \-> java\&.io                                            \fR
-\fB      \-> java\&.lang                                          \fR
-\fB      \-> java\&.nio\&.file                                      \fR
-\fB      \-> java\&.nio\&.file\&.attribute                            \fR
-\fB      \-> java\&.text                                          \fR
-\fB      \-> java\&.util                                          \fR
-\fB      \-> java\&.util\&.jar                                      \fR
-\fB      \-> java\&.util\&.regex                                    \fR
-\fB      \-> java\&.util\&.zip                                      \fR
-\fB/usr/java/jre/lib/jce\&.jar \-> /usr/java/jre/lib/rt\&.jar\fR
-\fB   javax\&.crypto (jce\&.jar)\fR
-\fB      \-> java\&.io                                            \fR
-\fB      \-> java\&.lang                                          \fR
-\fB      \-> java\&.lang\&.reflect                                  \fR
-\fB      \-> java\&.net                                           \fR
-\fB      \-> java\&.nio                                           \fR
-\fB      \-> java\&.security                                      \fR
-\fB      \-> java\&.security\&.cert                                 \fR
-\fB      \-> java\&.security\&.spec                                 \fR
-\fB      \-> java\&.util                                          \fR
-\fB      \-> java\&.util\&.concurrent                               \fR
-\fB      \-> java\&.util\&.jar                                      \fR
-\fB      \-> java\&.util\&.regex                                    \fR
-\fB      \-> java\&.util\&.zip                                      \fR
-\fB      \-> javax\&.security\&.auth                                \fR
-\fB      \-> sun\&.security\&.jca                                   JDK internal API (rt\&.jar)\fR
-\fB      \-> sun\&.security\&.util                                  JDK internal API (rt\&.jar)\fR
-\fB   javax\&.crypto\&.spec (jce\&.jar)\fR
-\fB      \-> java\&.lang                                          \fR
-\fB      \-> java\&.security\&.spec                                 \fR
-\fB      \-> java\&.util                                          \fR
-\fB/usr/java/jre/lib/rt\&.jar \-> /usr/java/jre/lib/jce\&.jar\fR
-\fB   java\&.security (rt\&.jar)\fR
-\fB      \-> javax\&.crypto\fR
- 
+$ jdeps \-R \-cp lib/tools\&.jar com\&.sun\&.tools\&.jdeps\&.Main
+lib/tools\&.jar \-> /usr/java/jre/lib/rt\&.jar
+   com\&.sun\&.tools\&.classfile (tools\&.jar)
+      \-> java\&.io                                            
+      \-> java\&.lang                                          
+      \-> java\&.lang\&.reflect                                  
+      \-> java\&.nio\&.charset                                   
+      \-> java\&.nio\&.file                                      
+      \-> java\&.util                                          
+      \-> java\&.util\&.regex                                    
+   com\&.sun\&.tools\&.jdeps (tools\&.jar)
+      \-> java\&.io                                            
+      \-> java\&.lang                                          
+      \-> java\&.nio\&.file                                      
+      \-> java\&.nio\&.file\&.attribute                            
+      \-> java\&.text                                          
+      \-> java\&.util                                          
+      \-> java\&.util\&.jar                                      
+      \-> java\&.util\&.regex                                    
+      \-> java\&.util\&.zip                                      
+/usr/java/jre/lib/jce\&.jar \-> /usr/java/jre/lib/rt\&.jar
+   javax\&.crypto (jce\&.jar)
+      \-> java\&.io                                            
+      \-> java\&.lang                                          
+      \-> java\&.lang\&.reflect                                  
+      \-> java\&.net                                           
+      \-> java\&.nio                                           
+      \-> java\&.security                                      
+      \-> java\&.security\&.cert                                 
+      \-> java\&.security\&.spec                                 
+      \-> java\&.util                                          
+      \-> java\&.util\&.concurrent                               
+      \-> java\&.util\&.jar                                      
+      \-> java\&.util\&.regex                                    
+      \-> java\&.util\&.zip                                      
+      \-> javax\&.security\&.auth                                
+      \-> sun\&.security\&.jca                                   JDK internal API (rt\&.jar)
+      \-> sun\&.security\&.util                                  JDK internal API (rt\&.jar)
+   javax\&.crypto\&.spec (jce\&.jar)
+      \-> java\&.lang                                          
+      \-> java\&.security\&.spec                                 
+      \-> java\&.util                                          
+/usr/java/jre/lib/rt\&.jar \-> /usr/java/jre/lib/jce\&.jar
+   java\&.security (rt\&.jar)
+      \-> javax\&.crypto
 .fi
 .if n \{\
 .RE
@@ -336,43 +311,41 @@ tools\&.jar¥Õ¥¡¥¤¥ëÆâ¤Î\fBcom\&.sun\&.tools\&.jdeps\&.Main\fR¥¯¥é¥¹¤Ê¤É¡¢ÆÃÄê¤Î¥
 .RS 4
 .\}
 .nf
-\fB$ jdeps \-dotoutput dot demo/jfc/Notepad/Notepad\&.jar\fR
- 
+$ jdeps \-dotoutput dot demo/jfc/Notepad/Notepad\&.jar
 .fi
 .if n \{\
 .RE
 .\}
 .PP
-\fBjdeps\fR¤Ï¡¢\fB\-dotoutput\fR¥ª¥×¥·¥ç¥ó¤Ç»ØÄê¤µ¤ì¤¿dot¥Ç¥£¥ì¥¯¥È¥ê¤Ë<\fIfilename\fR>\&.dot¤È¤¤¤¦Ì¾Á°¤Îdot¥Õ¥¡¥¤¥ë¤òÆÃÄê¤ÎJAR¥Õ¥¡¥¤¥ë¤´¤È¤ËºîÀ®¤·¡¢JAR¥Õ¥¡¥¤¥ë´Ö¤Î°ÍÂ¸´Ø·¸¤ò¥ê¥¹¥È¤¹¤ësummary\&.dot¤È¤¤¤¦Ì¾Á°¤Î¥µ¥Þ¥ê¡¼¡¦¥Õ¥¡¥¤¥ë¤âºîÀ®¤·¤Þ¤¹
+\fIjdeps\fR¤Ï¡¢\fI\-dotoutput\fR¥ª¥×¥·¥ç¥ó¤Ç»ØÄê¤µ¤ì¤¿dot¥Ç¥£¥ì¥¯¥È¥ê¤Ë<\fIfilename\fR>\&.dot¤È¤¤¤¦Ì¾Á°¤Îdot¥Õ¥¡¥¤¥ë¤òÆÃÄê¤ÎJAR¥Õ¥¡¥¤¥ë¤´¤È¤ËºîÀ®¤·¡¢JAR¥Õ¥¡¥¤¥ë´Ö¤Î°ÍÂ¸´Ø·¸¤ò¥ê¥¹¥È¤¹¤ësummary\&.dot¤È¤¤¤¦Ì¾Á°¤Î¥µ¥Þ¥ê¡¼¡¦¥Õ¥¡¥¤¥ë¤âºîÀ®¤·¤Þ¤¹
 .sp
 .if n \{\
 .RS 4
 .\}
 .nf
-\fB$ cat dot/Notepad\&.jar\&.dot \fR
-\fBdigraph "Notepad\&.jar" {\fR
-\fB    // Path: demo/jfc/Notepad/Notepad\&.jar\fR
-\fB   "<unnamed>"                                        \-> "java\&.awt";\fR
-\fB   "<unnamed>"                                        \-> "java\&.awt\&.event";\fR
-\fB   "<unnamed>"                                        \-> "java\&.beans";\fR
-\fB   "<unnamed>"                                        \-> "java\&.io";\fR
-\fB   "<unnamed>"                                        \-> "java\&.lang";\fR
-\fB   "<unnamed>"                                        \-> "java\&.net";\fR
-\fB   "<unnamed>"                                        \-> "java\&.util";\fR
-\fB   "<unnamed>"                                        \-> "java\&.util\&.logging";\fR
-\fB   "<unnamed>"                                        \-> "javax\&.swing";\fR
-\fB   "<unnamed>"                                        \-> "javax\&.swing\&.border";\fR
-\fB   "<unnamed>"                                        \-> "javax\&.swing\&.event";\fR
-\fB   "<unnamed>"                                        \-> "javax\&.swing\&.text";\fR
-\fB   "<unnamed>"                                        \-> "javax\&.swing\&.tree";\fR
-\fB   "<unnamed>"                                        \-> "javax\&.swing\&.undo";\fR
-\fB}\fR
-\fB \fR
-\fB$ cat dot/summary\&.dot\fR
-\fBdigraph "summary" {\fR
-\fB   "Notepad\&.jar"                  \-> "rt\&.jar";\fR
-\fB}\fR
+$ cat dot/Notepad\&.jar\&.dot 
+digraph "Notepad\&.jar" {
+    // Path: demo/jfc/Notepad/Notepad\&.jar
+   "<unnamed>"                                        \-> "java\&.awt";
+   "<unnamed>"                                        \-> "java\&.awt\&.event";
+   "<unnamed>"                                        \-> "java\&.beans";
+   "<unnamed>"                                        \-> "java\&.io";
+   "<unnamed>"                                        \-> "java\&.lang";
+   "<unnamed>"                                        \-> "java\&.net";
+   "<unnamed>"                                        \-> "java\&.util";
+   "<unnamed>"                                        \-> "java\&.util\&.logging";
+   "<unnamed>"                                        \-> "javax\&.swing";
+   "<unnamed>"                                        \-> "javax\&.swing\&.border";
+   "<unnamed>"                                        \-> "javax\&.swing\&.event";
+   "<unnamed>"                                        \-> "javax\&.swing\&.text";
+   "<unnamed>"                                        \-> "javax\&.swing\&.tree";
+   "<unnamed>"                                        \-> "javax\&.swing\&.undo";
+}
  
+$ cat dot/summary\&.dot
+digraph "summary" {
+   "Notepad\&.jar"                  \-> "rt\&.jar";
+}
 .fi
 .if n \{\
 .RE

@@ -26,7 +26,6 @@
 package sun.java2d.opengl;
 
 import java.awt.AlphaComposite;
-import java.awt.Composite;
 import java.awt.GraphicsEnvironment;
 import java.awt.Rectangle;
 import java.awt.Transparency;
@@ -401,8 +400,8 @@ public abstract class OGLSurfaceData extends SurfaceData
     /**
      * For now, we can only render LCD text if:
      *   - the fragment shader extension is available, and
-     *   - the source color is opaque, and
-     *   - blending is SrcOverNoEa or disabled
+     *   - blending is disabled, and
+     *   - the source color is opaque
      *   - and the destination is opaque
      *
      * Eventually, we could enhance the native OGL text rendering code
@@ -412,19 +411,9 @@ public abstract class OGLSurfaceData extends SurfaceData
     public boolean canRenderLCDText(SunGraphics2D sg2d) {
         return
             graphicsConfig.isCapPresent(CAPS_EXT_LCD_SHADER) &&
-            sg2d.surfaceData.getTransparency() == Transparency.OPAQUE &&
+            sg2d.compositeState <= SunGraphics2D.COMP_ISCOPY &&
             sg2d.paintState <= SunGraphics2D.PAINT_OPAQUECOLOR &&
-            (sg2d.compositeState <= SunGraphics2D.COMP_ISCOPY ||
-             (sg2d.compositeState <= SunGraphics2D.COMP_ALPHA && canHandleComposite(sg2d.composite)));
-    }
-
-    private boolean canHandleComposite(Composite c) {
-        if (c instanceof AlphaComposite) {
-            AlphaComposite ac = (AlphaComposite)c;
-
-            return ac.getRule() == AlphaComposite.SRC_OVER && ac.getAlpha() >= 1f;
-        }
-        return false;
+            sg2d.surfaceData.getTransparency() == Transparency.OPAQUE;
     }
 
     public void validatePipe(SunGraphics2D sg2d) {

@@ -21,7 +21,7 @@
  * under the License.
  */
 /*
- * Copyright (c) 2005, 2016, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2005, 2013, Oracle and/or its affiliates. All rights reserved.
  */
 /*
  * $Id: DOMSignatureMethod.java 1333415 2012-05-03 12:03:51Z coheigea $
@@ -34,14 +34,11 @@ import javax.xml.crypto.dsig.spec.SignatureMethodParameterSpec;
 
 import java.io.IOException;
 import java.security.*;
-import java.security.interfaces.DSAKey;
 import java.security.spec.AlgorithmParameterSpec;
 import org.w3c.dom.Element;
 
 import com.sun.org.apache.xml.internal.security.algorithms.implementations.SignatureECDSA;
-import com.sun.org.apache.xml.internal.security.utils.JavaUtils;
 import org.jcp.xml.dsig.internal.SignerOutputStream;
-import sun.security.util.KeyUtil;
 
 /**
  * DOM-based abstract implementation of SignatureMethod.
@@ -71,8 +68,6 @@ public abstract class DOMSignatureMethod extends AbstractDOMSignatureMethod {
         "http://www.w3.org/2001/04/xmldsig-more#ecdsa-sha384";
     static final String ECDSA_SHA512 =
         "http://www.w3.org/2001/04/xmldsig-more#ecdsa-sha512";
-    static final String DSA_SHA256 =
-        "http://www.w3.org/2009/xmldsig11#dsa-sha256";
 
     /**
      * Creates a <code>DOMSignatureMethod</code>.
@@ -124,8 +119,6 @@ public abstract class DOMSignatureMethod extends AbstractDOMSignatureMethod {
             return new SHA512withRSA(smElem);
         } else if (alg.equals(SignatureMethod.DSA_SHA1)) {
             return new SHA1withDSA(smElem);
-        } else if (alg.equals(DSA_SHA256)) {
-            return new SHA256withDSA(smElem);
         } else if (alg.equals(ECDSA_SHA1)) {
             return new SHA1withECDSA(smElem);
         } else if (alg.equals(ECDSA_SHA256)) {
@@ -163,7 +156,6 @@ public abstract class DOMSignatureMethod extends AbstractDOMSignatureMethod {
         if (!(key instanceof PublicKey)) {
             throw new InvalidKeyException("key must be PublicKey");
         }
-        checkKeySize(context, key);
         if (signature == null) {
             try {
                 Provider p = (Provider)context.getProperty
@@ -186,9 +178,7 @@ public abstract class DOMSignatureMethod extends AbstractDOMSignatureMethod {
         try {
             Type type = getAlgorithmType();
             if (type == Type.DSA) {
-                int size = ((DSAKey)key).getParams().getQ().bitLength();
-                return signature.verify(JavaUtils.convertDsaXMLDSIGtoASN1(sig,
-                                                                       size/8));
+                return signature.verify(convertXMLDSIGtoASN1(sig));
             } else if (type == Type.ECDSA) {
                 return signature.verify(SignatureECDSA.convertXMLDSIGtoASN1(sig));
             } else {
@@ -196,37 +186,6 @@ public abstract class DOMSignatureMethod extends AbstractDOMSignatureMethod {
             }
         } catch (IOException ioe) {
             throw new XMLSignatureException(ioe);
-        }
-    }
-
-    /**
-     * If secure validation mode is enabled, checks that the key size is
-     * restricted.
-     *
-     * @param context the context
-     * @param key the key to check
-     * @throws XMLSignatureException if the key size is restricted
-     */
-    private static void checkKeySize(XMLCryptoContext context, Key key)
-        throws XMLSignatureException {
-        if (Utils.secureValidation(context)) {
-            int size = KeyUtil.getKeySize(key);
-            if (size == -1) {
-                // key size cannot be determined, so we cannot check against
-                // restrictions. Note that a DSA key w/o params will be
-                // rejected later if the certificate chain is validated.
-                if (log.isLoggable(java.util.logging.Level.FINE)) {
-                    log.log(java.util.logging.Level.FINE, "Size for " +
-                            key.getAlgorithm() + " key cannot be determined");
-                }
-                return;
-            }
-            if (Policy.restrictKey(key.getAlgorithm(), size)) {
-                throw new XMLSignatureException(key.getAlgorithm() +
-                    " keys less than " +
-                    Policy.minKeySize(key.getAlgorithm()) + " bits are" +
-                    " forbidden when secure validation is enabled");
-            }
         }
     }
 
@@ -240,7 +199,6 @@ public abstract class DOMSignatureMethod extends AbstractDOMSignatureMethod {
         if (!(key instanceof PrivateKey)) {
             throw new InvalidKeyException("key must be PrivateKey");
         }
-        checkKeySize(context, key);
         if (signature == null) {
             try {
                 Provider p = (Provider)context.getProperty
@@ -264,9 +222,7 @@ public abstract class DOMSignatureMethod extends AbstractDOMSignatureMethod {
         try {
             Type type = getAlgorithmType();
             if (type == Type.DSA) {
-                int size = ((DSAKey)key).getParams().getQ().bitLength();
-                return JavaUtils.convertDsaASN1toXMLDSIG(signature.sign(),
-                                                         size/8);
+                return convertASN1toXMLDSIG(signature.sign());
             } else if (type == Type.ECDSA) {
                 return SignatureECDSA.convertASN1toXMLDSIG(signature.sign());
             } else {
@@ -277,6 +233,101 @@ public abstract class DOMSignatureMethod extends AbstractDOMSignatureMethod {
         } catch (IOException ioe) {
             throw new XMLSignatureException(ioe);
         }
+    }
+
+    /**
+     * Converts an ASN.1 DSA value to a XML Signature DSA Value.
+     *
+     * The JAVA JCE DSA Signature algorithm creates ASN.1 encoded (r,s) value
+     * pairs; the XML Signature requires the core BigInteger values.
+     *
+     * @param asn1Bytes
+     *
+     * @throws IOException
+     * @see <A HREF="http://www.w3.org/TR/xmldsig-core/#dsa-sha1">6.4.1 DSA</A>
+     */
+    private static byte[] convertASN1toXMLDSIG(byte asn1Bytes[])
+        throws IOException
+    {
+        byte rLength = asn1Bytes[3];
+        int i;
+
+        for (i = rLength; (i > 0) && (asn1Bytes[(4 + rLength) - i] == 0); i--);
+
+        byte sLength = asn1Bytes[5 + rLength];
+        int j;
+
+        for (j = sLength;
+            (j > 0) && (asn1Bytes[(6 + rLength + sLength) - j] == 0); j--);
+
+        if ((asn1Bytes[0] != 48) || (asn1Bytes[1] != asn1Bytes.length - 2)
+            || (asn1Bytes[2] != 2) || (i > 20)
+            || (asn1Bytes[4 + rLength] != 2) || (j > 20)) {
+            throw new IOException("Invalid ASN.1 format of DSA signature");
+        } else {
+            byte xmldsigBytes[] = new byte[40];
+
+            System.arraycopy(asn1Bytes, (4+rLength)-i, xmldsigBytes, 20-i, i);
+            System.arraycopy(asn1Bytes, (6+rLength+sLength)-j, xmldsigBytes,
+                             40 - j, j);
+
+            return xmldsigBytes;
+        }
+    }
+
+    /**
+     * Converts a XML Signature DSA Value to an ASN.1 DSA value.
+     *
+     * The JAVA JCE DSA Signature algorithm creates ASN.1 encoded (r,s) value
+     * pairs; the XML Signature requires the core BigInteger values.
+     *
+     * @param xmldsigBytes
+     *
+     * @throws IOException
+     * @see <A HREF="http://www.w3.org/TR/xmldsig-core/#dsa-sha1">6.4.1 DSA</A>
+     */
+    private static byte[] convertXMLDSIGtoASN1(byte xmldsigBytes[])
+        throws IOException
+    {
+        if (xmldsigBytes.length != 40) {
+            throw new IOException("Invalid XMLDSIG format of DSA signature");
+        }
+
+        int i;
+
+        for (i = 20; (i > 0) && (xmldsigBytes[20 - i] == 0); i--);
+
+        int j = i;
+
+        if (xmldsigBytes[20 - i] < 0) {
+            j += 1;
+        }
+
+        int k;
+
+        for (k = 20; (k > 0) && (xmldsigBytes[40 - k] == 0); k--);
+
+        int l = k;
+
+        if (xmldsigBytes[40 - k] < 0) {
+            l += 1;
+        }
+
+        byte asn1Bytes[] = new byte[6 + j + l];
+
+        asn1Bytes[0] = 48;
+        asn1Bytes[1] = (byte)(4 + j + l);
+        asn1Bytes[2] = 2;
+        asn1Bytes[3] = (byte)j;
+
+        System.arraycopy(xmldsigBytes, 20 - i, asn1Bytes, (4 + j) - i, i);
+
+        asn1Bytes[4 + j] = 2;
+        asn1Bytes[5 + j] = (byte) l;
+
+        System.arraycopy(xmldsigBytes, 40 - k, asn1Bytes, (6 + j + l) - k, k);
+
+        return asn1Bytes;
     }
 
     static final class SHA1withRSA extends DOMSignatureMethod {
@@ -368,25 +419,6 @@ public abstract class DOMSignatureMethod extends AbstractDOMSignatureMethod {
         }
         String getJCAAlgorithm() {
             return "SHA1withDSA";
-        }
-        Type getAlgorithmType() {
-            return Type.DSA;
-        }
-    }
-
-    static final class SHA256withDSA extends DOMSignatureMethod {
-        SHA256withDSA(AlgorithmParameterSpec params)
-            throws InvalidAlgorithmParameterException {
-            super(params);
-        }
-        SHA256withDSA(Element dmElem) throws MarshalException {
-            super(dmElem);
-        }
-        public String getAlgorithm() {
-            return DSA_SHA256;
-        }
-        String getJCAAlgorithm() {
-            return "SHA256withDSA";
         }
         Type getAlgorithmType() {
             return Type.DSA;

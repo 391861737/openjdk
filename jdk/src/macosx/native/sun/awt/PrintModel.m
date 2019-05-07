@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2011, 2016, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2011, 2012, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -48,6 +48,7 @@
 
     [super dealloc];
 }
+//- (void)finalize { [super finalize]; }
 
 - (BOOL)runPageSetup {
     __block BOOL fResult = NO;
@@ -85,8 +86,8 @@ AWT_ASSERT_NOT_APPKIT_THREAD;
         fResult = [self safePrintLoop:printerView withEnv:env];
     } else {
         // Retain these so they don't go away while we're in Java
-        [self retain];
-        [printerView retain];
+        CFRetain(self); // GC
+        if (printerView) CFRetain(printerView); // GC
 
         static JNF_CLASS_CACHE(jc_CPrinterJob, "sun/lwawt/macosx/CPrinterJob");
         static JNF_STATIC_MEMBER_CACHE(jm_detachPrintLoop, jc_CPrinterJob, "detachPrintLoop", "(JJ)V");
@@ -133,8 +134,8 @@ JNF_COCOA_ENTER(env);
     [model safePrintLoop:arg withEnv:env];
 
     // These are to match the retains in runPrintLoopWithView:
-    [model release];
-    [arg release];
+    if (model) CFRelease(model); // GC
+    if (arg) CFRelease(arg); // GC
 
 JNF_COCOA_EXIT(env);
 }

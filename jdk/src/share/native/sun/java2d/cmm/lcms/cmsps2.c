@@ -30,7 +30,7 @@
 //---------------------------------------------------------------------------------
 //
 //  Little Color Management System
-//  Copyright (c) 1998-2016 Marti Maria Saguer
+//  Copyright (c) 1998-2011 Marti Maria Saguer
 //
 // Permission is hereby granted, free of charge, to any person obtaining
 // a copy of this software and associated documentation files (the "Software"),
@@ -608,7 +608,7 @@ void EmitNGamma(cmsIOHANDLER* m, int n, cmsToneCurve* g[])
 //
 //  Each row contains Pipeline values for all but first component. So, I
 //  detect row changing by keeping a copy of last value of first
-//  component. -1 is used to mark beginning of whole block.
+//  component. -1 is used to mark begining of whole block.
 
 static
 int OutputValueSampler(register const cmsUInt16Number In[], register cmsUInt16Number Out[], register void* Cargo)
@@ -806,6 +806,7 @@ int EmitCIEBasedDEF(cmsIOHANDLER* m, cmsPipeline* Pipeline, int Intent, cmsCIEXY
 
     mpe = Pipeline ->Elements;
 
+
     switch (cmsStageInputChannels(mpe)) {
     case 3:
 
@@ -837,6 +838,8 @@ int EmitCIEBasedDEF(cmsIOHANDLER* m, cmsPipeline* Pipeline, int Intent, cmsCIEXY
         mpe = mpe ->Next;
     }
 
+
+
     if (cmsStageType(mpe) == cmsSigCLutElemType) {
 
             _cmsIOPrintf(m, "/Table ");
@@ -850,6 +853,7 @@ int EmitCIEBasedDEF(cmsIOHANDLER* m, cmsPipeline* Pipeline, int Intent, cmsCIEXY
 
     _cmsIOPrintf(m, "   >>\n");
     _cmsIOPrintf(m, "]\n");
+
 
     return 1;
 }
@@ -942,11 +946,10 @@ int WriteInputLUT(cmsIOHANDLER* m, cmsHPROFILE hProfile, int Intent, cmsUInt32Nu
             if (DeviceLink == NULL) return 0;
 
             dwFlags |= cmsFLAGS_FORCE_CLUT;
-            _cmsOptimizePipeline(m->ContextID, &DeviceLink, Intent, &InputFormat, &OutFrm, &dwFlags);
+            _cmsOptimizePipeline(&DeviceLink, Intent, &InputFormat, &OutFrm, &dwFlags);
 
             rc = EmitCIEBasedDEF(m, DeviceLink, Intent, &BlackPointAdaptedToD50);
             cmsPipelineFree(DeviceLink);
-            if (rc == 0) return 0;
             }
             break;
 
@@ -1359,7 +1362,7 @@ int WriteOutputLUT(cmsIOHANDLER* m, cmsHPROFILE hProfile, int Intent, cmsUInt32N
 
     // We need a CLUT
     dwFlags |= cmsFLAGS_FORCE_CLUT;
-    _cmsOptimizePipeline(m->ContextID, &DeviceLink, RelativeEncodingIntent, &InFrm, &OutputFormat, &dwFlags);
+    _cmsOptimizePipeline(&DeviceLink, RelativeEncodingIntent, &InFrm, &OutputFormat, &dwFlags);
 
     _cmsIOPrintf(m, "<<\n");
     _cmsIOPrintf(m, "/ColorRenderingType 1\n");
@@ -1422,15 +1425,14 @@ void BuildColorantList(char *Colorant, int nColorant, cmsUInt16Number Out[])
     if (nColorant > cmsMAXCHANNELS)
         nColorant = cmsMAXCHANNELS;
 
-    for (j = 0; j < nColorant; j++) {
+    for (j=0; j < nColorant; j++) {
 
-        snprintf(Buff, 31, "%.3f", Out[j] / 65535.0);
-        Buff[31] = 0;
-        strcat(Colorant, Buff);
-        if (j < nColorant - 1)
-            strcat(Colorant, " ");
+                sprintf(Buff, "%.3f", Out[j] / 65535.0);
+                strcat(Colorant, Buff);
+                if (j < nColorant -1)
+                        strcat(Colorant, " ");
 
-    }
+        }
 }
 
 

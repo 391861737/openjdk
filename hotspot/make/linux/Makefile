@@ -1,5 +1,5 @@
 #
-# Copyright (c) 1999, 2015, Oracle and/or its affiliates. All rights reserved.
+# Copyright (c) 1999, 2013, Oracle and/or its affiliates. All rights reserved.
 # DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
 #
 # This code is free software; you can redistribute it and/or modify it
@@ -64,14 +64,6 @@ include $(GAMMADIR)/make/$(OSNAME)/makefiles/rules.make
 ifndef CC_INTERP
   ifndef FORCE_TIERED
     FORCE_TIERED=1
-  endif
-endif
-# C1 is not ported on ppc64, so we cannot build a tiered VM:
-# Notice: after 8046471 ARCH will be 'ppc' for top-level ppc64 builds but
-# 'ppc64' for HotSpot-only ppc64 builds. Need to detect both variants here!
-ifneq (,$(findstring $(ARCH), ppc ppc64))
-  ifeq ($(ARCH_DATA_MODEL), 64)
-    FORCE_TIERED=0
   endif
 endif
 
@@ -233,7 +225,7 @@ checks: check_os_version check_j2se_version
 # Solaris 2.5.1, 2.6).
 # Disable this check by setting DISABLE_HOTSPOT_OS_VERSION_CHECK=ok.
 
-SUPPORTED_OS_VERSION = 2.4% 2.5% 2.6% 3% 4%
+SUPPORTED_OS_VERSION = 2.4% 2.5% 2.6% 3%
 OS_VERSION := $(shell uname -r)
 EMPTY_IF_NOT_SUPPORTED = $(filter $(SUPPORTED_OS_VERSION),$(OS_VERSION))
 

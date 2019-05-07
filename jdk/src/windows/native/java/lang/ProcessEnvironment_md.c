@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2003, 2014, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2003, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -32,17 +32,10 @@ static jstring
 environmentBlock9x(JNIEnv *env)
 {
     int i;
-    jmethodID String_init_ID;
+    jmethodID String_init_ID =
+        (*env)->GetMethodID(env, JNU_ClassString(env), "<init>", "([B)V");
     jbyteArray bytes;
-    jbyte *blockA;
-    jclass string_class;
-
-    string_class= JNU_ClassString(env);
-    CHECK_NULL_RETURN(string_class, NULL);
-    String_init_ID =
-        (*env)->GetMethodID(env, string_class, "<init>", "([B)V");
-    CHECK_NULL_RETURN(String_init_ID, NULL);
-    blockA = (jbyte *) GetEnvironmentStringsA();
+    jbyte *blockA = (jbyte *) GetEnvironmentStringsA();
     if (blockA == NULL) {
         /* Both GetEnvironmentStringsW and GetEnvironmentStringsA
          * failed.  Out of memory is our best guess.  */
@@ -56,13 +49,10 @@ environmentBlock9x(JNIEnv *env)
         while (blockA[i++])
             ;
 
-    if ((bytes = (*env)->NewByteArray(env, i)) == NULL) {
-        FreeEnvironmentStringsA(blockA);
-        return NULL;
-    }
+    if ((bytes = (*env)->NewByteArray(env, i)) == NULL) return NULL;
     (*env)->SetByteArrayRegion(env, bytes, 0, i, blockA);
     FreeEnvironmentStringsA(blockA);
-    return (*env)->NewObject(env, string_class,
+    return (*env)->NewObject(env, JNU_ClassString(env),
                              String_init_ID, bytes);
 }
 

@@ -31,7 +31,6 @@
 #include "ci/ciUtilities.hpp"
 #include "oops/methodData.hpp"
 #include "oops/oop.inline.hpp"
-#include "runtime/deoptimization.hpp"
 
 class ciBitData;
 class ciCounterData;
@@ -45,7 +44,6 @@ class ciArgInfoData;
 class ciCallTypeData;
 class ciVirtualCallTypeData;
 class ciParametersTypeData;
-class ciSpeculativeTrapData;;
 
 typedef ProfileData ciProfileData;
 
@@ -70,7 +68,6 @@ protected:
     Klass* v = TypeEntries::valid_klass(k);
     if (v != NULL) {
       ciKlass* klass = CURRENT_ENV->get_klass(v);
-      CURRENT_ENV->ensure_metadata_alive(klass);
       return with_status(klass, k);
     }
     return with_status(NULL, k);
@@ -176,7 +173,7 @@ public:
   }
 
 #ifndef PRODUCT
-  void print_data_on(outputStream* st, const char* extra) const;
+  void print_data_on(outputStream* st) const;
 #endif
 };
 
@@ -203,7 +200,7 @@ public:
   }
   void translate_receiver_data_from(const ProfileData* data);
 #ifndef PRODUCT
-  void print_data_on(outputStream* st, const char* extra) const;
+  void print_data_on(outputStream* st) const;
   void print_receiver_data_on(outputStream* st) const;
 #endif
 };
@@ -228,7 +225,7 @@ public:
     rtd_super()->translate_receiver_data_from(data);
   }
 #ifndef PRODUCT
-  void print_data_on(outputStream* st, const char* extra) const;
+  void print_data_on(outputStream* st) const;
 #endif
 };
 
@@ -290,7 +287,7 @@ public:
   }
 
 #ifndef PRODUCT
-  void print_data_on(outputStream* st, const char* extra) const;
+  void print_data_on(outputStream* st) const;
 #endif
 };
 
@@ -339,26 +336,7 @@ public:
   }
 
 #ifndef PRODUCT
-  void print_data_on(outputStream* st, const char* extra) const;
-#endif
-};
-
-class ciSpeculativeTrapData : public SpeculativeTrapData {
-public:
-  ciSpeculativeTrapData(DataLayout* layout) : SpeculativeTrapData(layout) {}
-
-  virtual void translate_from(const ProfileData* data);
-
-  ciMethod* method() const {
-    return (ciMethod*)intptr_at(method_offset);
-  }
-
-  void set_method(ciMethod* m) {
-    set_intptr_at(method_offset, (intptr_t)m);
-  }
-
-#ifndef PRODUCT
-  void print_data_on(outputStream* st, const char* extra) const;
+  void print_data_on(outputStream* st) const;
 #endif
 };
 
@@ -458,16 +436,6 @@ private:
 
   ciArgInfoData *arg_info() const;
 
-  address data_base() const {
-    return (address) _data;
-  }
-  DataLayout* limit_data_position() const {
-    return (DataLayout*)((address)data_base() + _data_size);
-  }
-
-  void load_extra_data();
-  ciProfileData* bci_to_extra_data(int bci, ciMethod* m, bool& two_free_slots);
-
 public:
   bool is_method_data() const { return true; }
 
@@ -479,18 +447,6 @@ public:
 
   int invocation_count() { return _invocation_counter; }
   int backedge_count()   { return _backedge_counter;   }
-
-#if INCLUDE_RTM_OPT
-  // return cached value
-  int rtm_state() {
-    if (is_empty()) {
-      return NoRTM;
-    } else {
-      return get_MethodData()->rtm_state();
-    }
-  }
-#endif
-
   // Transfer information about the method to MethodData*.
   // would_profile means we would like to profile this method,
   // meaning it's not trivial.
@@ -519,11 +475,9 @@ public:
   ciProfileData* next_data(ciProfileData* current);
   bool is_valid(ciProfileData* current) { return current != NULL; }
 
-  DataLayout* extra_data_base() const { return limit_data_position(); }
-
-  // Get the data at an arbitrary bci, or NULL if there is none. If m
-  // is not NULL look for a SpeculativeTrapData if any first.
-  ciProfileData* bci_to_data(int bci, ciMethod* m = NULL);
+  // Get the data at an arbitrary bci, or NULL if there is none.
+  ciProfileData* bci_to_data(int bci);
+  ciProfileData* bci_to_extra_data(int bci, bool create_if_missing);
 
   uint overflow_trap_count() const {
     return _orig.overflow_trap_count();
@@ -542,13 +496,12 @@ public:
 
   // Helpful query functions that decode trap_state.
   int has_trap_at(ciProfileData* data, int reason);
-  int has_trap_at(int bci, ciMethod* m, int reason) {
-    assert((m != NULL) == Deoptimization::reason_is_speculate(reason), "inconsistent method/reason");
-    return has_trap_at(bci_to_data(bci, m), reason);
+  int has_trap_at(int bci, int reason) {
+    return has_trap_at(bci_to_data(bci), reason);
   }
   int trap_recompiled_at(ciProfileData* data);
-  int trap_recompiled_at(int bci, ciMethod* m) {
-    return trap_recompiled_at(bci_to_data(bci, m));
+  int trap_recompiled_at(int bci) {
+    return trap_recompiled_at(bci_to_data(bci));
   }
 
   void clear_escape_info();

@@ -32,8 +32,6 @@
 #include "java_awt_Transparency.h"
 #include "jvm_md.h"
 #include "sizecalc.h"
-#include <jni_util.h>
-#include "awt.h"
 
 #define GTK2_LIB_VERSIONED VERSIONED_JNI_LIB_NAME("gtk-x11-2.0", "0")
 #define GTK2_LIB JNI_LIB_NAME("gtk-x11-2.0")
@@ -434,8 +432,7 @@ gboolean gtk2_check_version()
             result = TRUE;
         }
 
-        // 8048289: workaround for https://bugzilla.gnome.org/show_bug.cgi?id=733065
-        // dlclose(lib);
+        dlclose(lib);
 
         return result;
     }
@@ -459,19 +456,13 @@ void update_supported_actions(JNIEnv *env) {
     const gchar * const * schemes = NULL;
 
     jclass cls_action = (*env)->FindClass(env, "java/awt/Desktop$Action");
-    CHECK_NULL(cls_action);
     jclass cls_xDesktopPeer = (*env)->FindClass(env, "sun/awt/X11/XDesktopPeer");
-    CHECK_NULL(cls_xDesktopPeer);
     jfieldID fld_supportedActions = (*env)->GetStaticFieldID(env, cls_xDesktopPeer, "supportedActions", "Ljava/util/List;");
-    CHECK_NULL(fld_supportedActions);
     jobject supportedActions = (*env)->GetStaticObjectField(env, cls_xDesktopPeer, fld_supportedActions);
 
     jclass cls_arrayList = (*env)->FindClass(env, "java/util/ArrayList");
-    CHECK_NULL(cls_arrayList);
     jmethodID mid_arrayListAdd = (*env)->GetMethodID(env, cls_arrayList, "add", "(Ljava/lang/Object;)Z");
-    CHECK_NULL(mid_arrayListAdd);
     jmethodID mid_arrayListClear = (*env)->GetMethodID(env, cls_arrayList, "clear", "()V");
-    CHECK_NULL(mid_arrayListClear);
 
     (*env)->CallVoidMethod(env, supportedActions, mid_arrayListClear);
 
@@ -540,7 +531,9 @@ gboolean gtk2_show_uri_load(JNIEnv *env) {
              fprintf(stderr, "dlsym(gtk_show_uri) returned NULL\n");
 #endif /* INTERNAL_BUILD */
         } else {
+#ifdef __solaris__
             update_supported_actions(env);
+#endif
             success = TRUE;
         }
      }
@@ -785,8 +778,6 @@ gboolean gtk2_load(JNIEnv *env)
         fp_gtk_widget_show = dl_symbol("gtk_widget_show");
         fp_gtk_main = dl_symbol("gtk_main");
 
-        fp_g_path_get_dirname = dl_symbol("g_path_get_dirname");
-
         /**
          * GLib thread system
          */
@@ -891,7 +882,6 @@ gboolean gtk2_load(JNIEnv *env)
      * BadMatch errors which we would normally ignore. The IO error handler
      * is preserved here, too, just for consistency.
     */
-    AWT_LOCK();
     handler = XSetErrorHandler(NULL);
     io_handler = XSetIOErrorHandler(NULL);
 
@@ -928,7 +918,6 @@ gboolean gtk2_load(JNIEnv *env)
 
     XSetErrorHandler(handler);
     XSetIOErrorHandler(io_handler);
-    AWT_UNLOCK();
 
     /* Initialize widget array. */
     for (i = 0; i < _GTK_WIDGET_TYPE_SIZE; i++)

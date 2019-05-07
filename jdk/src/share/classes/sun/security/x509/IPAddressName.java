@@ -197,10 +197,8 @@ public class IPAddressName implements GeneralNameInterface {
 
             // append a mask corresponding to the num of prefix bits specified
             int prefixLen = Integer.parseInt(name.substring(slashNdx+1));
-            if (prefixLen < 0 || prefixLen > 128) {
-                throw new IOException("IPv6Address prefix length (" +
-                        prefixLen + ") in out of valid range [0,128]");
-            }
+            if (prefixLen > 128)
+                throw new IOException("IPv6Address prefix is longer than 128");
 
             // create new bit array initialized to zeros
             BitArray bitArray = new BitArray(MASKSIZE * 8);
@@ -319,8 +317,7 @@ public class IPAddressName implements GeneralNameInterface {
         if (!(obj instanceof IPAddressName))
             return false;
 
-        IPAddressName otherName = (IPAddressName)obj;
-        byte[] other = otherName.address;
+        byte[] other = ((IPAddressName)obj).getBytes();
 
         if (other.length != address.length)
             return false;
@@ -329,10 +326,12 @@ public class IPAddressName implements GeneralNameInterface {
             // Two subnet addresses
             // Mask each and compare masked values
             int maskLen = address.length/2;
+            byte[] maskedThis = new byte[maskLen];
+            byte[] maskedOther = new byte[maskLen];
             for (int i=0; i < maskLen; i++) {
-                byte maskedThis = (byte)(address[i] & address[i+maskLen]);
-                byte maskedOther = (byte)(other[i] & other[i+maskLen]);
-                if (maskedThis != maskedOther) {
+                maskedThis[i] = (byte)(address[i] & address[i+maskLen]);
+                maskedOther[i] = (byte)(other[i] & other[i+maskLen]);
+                if (maskedThis[i] != maskedOther[i]) {
                     return false;
                 }
             }
@@ -401,8 +400,7 @@ public class IPAddressName implements GeneralNameInterface {
         else if (((IPAddressName)inputName).equals(this))
             constraintType = NAME_MATCH;
         else {
-            IPAddressName otherName = (IPAddressName)inputName;
-            byte[] otherAddress = otherName.address;
+            byte[] otherAddress = ((IPAddressName)inputName).getBytes();
             if (otherAddress.length == 4 && address.length == 4)
                 // Two host addresses
                 constraintType = NAME_SAME_TYPE;

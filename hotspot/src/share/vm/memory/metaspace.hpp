@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2011, 2014, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2011, 2013, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -26,7 +26,6 @@
 
 #include "memory/allocation.hpp"
 #include "memory/memRegion.hpp"
-#include "memory/metaspaceChunkFreeListSummary.hpp"
 #include "runtime/virtualspace.hpp"
 #include "utilities/exceptions.hpp"
 
@@ -61,7 +60,6 @@ class ChunkManager;
 class ClassLoaderData;
 class Metablock;
 class Metachunk;
-class MetaspaceTracer;
 class MetaWord;
 class Mutex;
 class outputStream;
@@ -122,7 +120,6 @@ class Metaspace : public CHeapObj<mtClass> {
   static size_t compressed_class_space_size() {
     return _compressed_class_space_size;
   }
-
   static void set_compressed_class_space_size(size_t size) {
     _compressed_class_space_size = size;
   }
@@ -151,8 +148,6 @@ class Metaspace : public CHeapObj<mtClass> {
   static ChunkManager* _chunk_manager_metadata;
   static ChunkManager* _chunk_manager_class;
 
-  static const MetaspaceTracer* _tracer;
-
  public:
   static VirtualSpaceList* space_list()       { return _space_list; }
   static VirtualSpaceList* class_space_list() { return _class_space_list; }
@@ -168,13 +163,10 @@ class Metaspace : public CHeapObj<mtClass> {
     return mdtype == ClassType ? chunk_manager_class() : chunk_manager_metadata();
   }
 
-  static const MetaspaceTracer* tracer() { return _tracer; }
-
  private:
-  // These 2 methods are used by DumpSharedSpaces only, where only _vsm is used. So we will
+  // This is used by DumpSharedSpaces only, where only _vsm is used. So we will
   // maintain a single list for now.
   void record_allocation(void* ptr, MetaspaceObj::Type type, size_t word_size);
-  void record_deallocation(void* ptr, size_t word_size);
 
 #ifdef _LP64
   static void set_narrow_klass_base_and_shift(address metaspace_base, address cds_base);
@@ -209,7 +201,6 @@ class Metaspace : public CHeapObj<mtClass> {
 
   static void ergo_initialize();
   static void global_initialize();
-  static void post_initialize();
 
   static size_t first_chunk_word_size() { return _first_chunk_word_size; }
   static size_t first_class_chunk_word_size() { return _first_class_chunk_word_size; }
@@ -234,8 +225,7 @@ class Metaspace : public CHeapObj<mtClass> {
   MetaWord* expand_and_allocate(size_t size,
                                 MetadataType mdtype);
 
-  static bool contains(const void* ptr);
-
+  static bool contains(const void *ptr);
   void dump(outputStream* const out) const;
 
   // Free empty virtualspaces
@@ -243,9 +233,7 @@ class Metaspace : public CHeapObj<mtClass> {
   static void purge();
 
   static void report_metadata_oome(ClassLoaderData* loader_data, size_t word_size,
-                                   MetaspaceObj::Type type, MetadataType mdtype, TRAPS);
-
-  static const char* metadata_type_name(Metaspace::MetadataType mdtype);
+                                   MetadataType mdtype, TRAPS);
 
   void print_on(outputStream* st) const;
   // Debugging support
@@ -283,11 +271,11 @@ class MetaspaceAux : AllStatic {
   // allocated to a Metaspace.  This is used instead of
   // iterating over all the classloaders. One for each
   // type of Metadata
-  static size_t _capacity_words[Metaspace:: MetadataTypeCount];
-  // Running sum of space in all Metachunks that
+  static size_t _allocated_capacity_words[Metaspace:: MetadataTypeCount];
+  // Running sum of space in all Metachunks that have
   // are being used for metadata. One for each
   // type of Metadata.
-  static size_t _used_words[Metaspace:: MetadataTypeCount];
+  static size_t _allocated_used_words[Metaspace:: MetadataTypeCount];
 
  public:
   // Decrement and increment _allocated_capacity_words
@@ -311,32 +299,32 @@ class MetaspaceAux : AllStatic {
   static size_t free_chunks_total_bytes();
   static size_t free_chunks_total_bytes(Metaspace::MetadataType mdtype);
 
-  static size_t capacity_words(Metaspace::MetadataType mdtype) {
-    return _capacity_words[mdtype];
+  static size_t allocated_capacity_words(Metaspace::MetadataType mdtype) {
+    return _allocated_capacity_words[mdtype];
   }
-  static size_t capacity_words() {
-    return capacity_words(Metaspace::NonClassType) +
-           capacity_words(Metaspace::ClassType);
+  static size_t allocated_capacity_words() {
+    return allocated_capacity_words(Metaspace::NonClassType) +
+           allocated_capacity_words(Metaspace::ClassType);
   }
-  static size_t capacity_bytes(Metaspace::MetadataType mdtype) {
-    return capacity_words(mdtype) * BytesPerWord;
+  static size_t allocated_capacity_bytes(Metaspace::MetadataType mdtype) {
+    return allocated_capacity_words(mdtype) * BytesPerWord;
   }
-  static size_t capacity_bytes() {
-    return capacity_words() * BytesPerWord;
+  static size_t allocated_capacity_bytes() {
+    return allocated_capacity_words() * BytesPerWord;
   }
 
-  static size_t used_words(Metaspace::MetadataType mdtype) {
-    return _used_words[mdtype];
+  static size_t allocated_used_words(Metaspace::MetadataType mdtype) {
+    return _allocated_used_words[mdtype];
   }
-  static size_t used_words() {
-    return used_words(Metaspace::NonClassType) +
-           used_words(Metaspace::ClassType);
+  static size_t allocated_used_words() {
+    return allocated_used_words(Metaspace::NonClassType) +
+           allocated_used_words(Metaspace::ClassType);
   }
-  static size_t used_bytes(Metaspace::MetadataType mdtype) {
-    return used_words(mdtype) * BytesPerWord;
+  static size_t allocated_used_bytes(Metaspace::MetadataType mdtype) {
+    return allocated_used_words(mdtype) * BytesPerWord;
   }
-  static size_t used_bytes() {
-    return used_words() * BytesPerWord;
+  static size_t allocated_used_bytes() {
+    return allocated_used_words() * BytesPerWord;
   }
 
   static size_t free_bytes();
@@ -358,9 +346,6 @@ class MetaspaceAux : AllStatic {
   static size_t min_chunk_size_bytes() {
     return min_chunk_size_words() * BytesPerWord;
   }
-
-  static bool has_chunk_free_list(Metaspace::MetadataType mdtype);
-  static MetaspaceChunkFreeListSummary chunk_free_list_summary(Metaspace::MetadataType mdtype);
 
   // Print change in used metadata.
   static void print_metaspace_change(size_t prev_metadata_used);
@@ -400,13 +385,10 @@ class MetaspaceGC : AllStatic {
 
  public:
 
-  static void initialize();
-  static void post_initialize();
+  static void initialize() { _capacity_until_GC = MetaspaceSize; }
 
   static size_t capacity_until_GC();
-  static bool inc_capacity_until_GC(size_t v,
-                                    size_t* new_cap_until_GC = NULL,
-                                    size_t* old_cap_until_GC = NULL);
+  static size_t inc_capacity_until_GC(size_t v);
   static size_t dec_capacity_until_GC(size_t v);
 
   static bool should_concurrent_collect() { return _should_concurrent_collect; }

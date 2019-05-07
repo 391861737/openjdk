@@ -28,13 +28,8 @@ package jdk.nashorn.internal.ir;
 import static jdk.nashorn.internal.parser.TokenType.BIT_NOT;
 import static jdk.nashorn.internal.parser.TokenType.DECPOSTFIX;
 import static jdk.nashorn.internal.parser.TokenType.INCPOSTFIX;
-import static jdk.nashorn.internal.runtime.UnwarrantedOptimismException.INVALID_PROGRAM_POINT;
 
-import java.util.Arrays;
-import java.util.Collections;
-import java.util.List;
 import jdk.nashorn.internal.codegen.types.Type;
-import jdk.nashorn.internal.ir.annotations.Ignore;
 import jdk.nashorn.internal.ir.annotations.Immutable;
 import jdk.nashorn.internal.ir.visitor.NodeVisitor;
 import jdk.nashorn.internal.parser.Token;
@@ -44,27 +39,9 @@ import jdk.nashorn.internal.parser.TokenType;
  * UnaryNode nodes represent single operand operations.
  */
 @Immutable
-public final class UnaryNode extends Expression implements Assignment<Expression>, Optimistic {
-    private static final long serialVersionUID = 1L;
-
+public final class UnaryNode extends Expression implements Assignment<Expression> {
     /** Right hand side argument. */
-    private final Expression expression;
-
-    private final int programPoint;
-
-    private final Type type;
-
-    @Ignore
-    private static final List<TokenType> CAN_OVERFLOW =
-            Collections.unmodifiableList(
-                Arrays.asList(new TokenType[] {
-                    TokenType.ADD,
-                    TokenType.SUB, //negate
-                    TokenType.DECPREFIX,
-                    TokenType.DECPOSTFIX,
-                    TokenType.INCPREFIX,
-                    TokenType.INCPOSTFIX,
-                }));
+    private final Expression rhs;
 
     /**
      * Constructor
@@ -79,24 +56,20 @@ public final class UnaryNode extends Expression implements Assignment<Expression
     /**
      * Constructor
      *
-     * @param token      token
-     * @param start      start
-     * @param finish     finish
-     * @param expression expression
+     * @param token  token
+     * @param start  start
+     * @param finish finish
+     * @param rhs    expression
      */
-    public UnaryNode(final long token, final int start, final int finish, final Expression expression) {
+    public UnaryNode(final long token, final int start, final int finish, final Expression rhs) {
         super(token, start, finish);
-        this.expression   = expression;
-        this.programPoint = INVALID_PROGRAM_POINT;
-        this.type = null;
+        this.rhs = rhs;
     }
 
 
-    private UnaryNode(final UnaryNode unaryNode, final Expression expression, final Type type, final int programPoint) {
+    private UnaryNode(final UnaryNode unaryNode, final Expression rhs) {
         super(unaryNode);
-        this.expression   = expression;
-        this.programPoint = programPoint;
-        this.type = type;
+        this.rhs = rhs;
     }
 
     /**
@@ -124,39 +97,17 @@ public final class UnaryNode extends Expression implements Assignment<Expression
 
     @Override
     public Type getWidestOperationType() {
-        switch (tokenType()) {
-        case ADD:
-            final Type operandType = getExpression().getType();
-            if(operandType == Type.BOOLEAN) {
-                return Type.INT;
-            } else if(operandType.isObject()) {
-                return Type.NUMBER;
-            }
-            assert operandType.isNumeric();
-            return operandType;
-        case SUB:
-            // This might seems overly conservative until you consider that -0 can only be represented as a double.
-            return Type.NUMBER;
-        case NOT:
-        case DELETE:
-            return Type.BOOLEAN;
-        case BIT_NOT:
-            return Type.INT;
-        case VOID:
-            return Type.UNDEFINED;
-        default:
-            return isAssignment() ? Type.NUMBER : Type.OBJECT;
-        }
+        return isAssignment() ? Type.NUMBER : Type.OBJECT;
     }
 
     @Override
     public Expression getAssignmentDest() {
-        return isAssignment() ? getExpression() : null;
+        return isAssignment() ? rhs() : null;
     }
 
     @Override
-    public UnaryNode setAssignmentDest(final Expression n) {
-        return setExpression(n);
+    public UnaryNode setAssignmentDest(Expression n) {
+        return setRHS(n);
     }
 
     @Override
@@ -171,7 +122,7 @@ public final class UnaryNode extends Expression implements Assignment<Expression
     @Override
     public Node accept(final NodeVisitor<? extends LexicalContext> visitor) {
         if (visitor.enterUnaryNode(this)) {
-            return visitor.leaveUnaryNode(setExpression((Expression)expression.accept(visitor)));
+            return visitor.leaveUnaryNode(setRHS((Expression)rhs.accept(visitor)));
         }
 
         return this;
@@ -180,33 +131,31 @@ public final class UnaryNode extends Expression implements Assignment<Expression
     @Override
     public boolean isLocal() {
         switch (tokenType()) {
-        case NEW:
-            return false;
-        case ADD:
-        case SUB:
-        case NOT:
-        case BIT_NOT:
-            return expression.isLocal() && expression.getType().isJSPrimitive();
-        case DECPOSTFIX:
-        case DECPREFIX:
-        case INCPOSTFIX:
-        case INCPREFIX:
-            return expression instanceof IdentNode && expression.isLocal() && expression.getType().isJSPrimitive();
-        default:
-            return expression.isLocal();
+            case NEW:
+                return false;
+            case ADD:
+            case SUB:
+            case NOT:
+            case BIT_NOT:
+                return rhs.isLocal() && rhs.getType().isJSPrimitive();
+            case DECPOSTFIX:
+            case DECPREFIX:
+            case INCPOSTFIX:
+            case INCPREFIX:
+                return rhs instanceof IdentNode && rhs.isLocal() && rhs.getType().isJSPrimitive();
+            default:
+                return rhs.isLocal();
         }
     }
 
     @Override
-    public void toString(final StringBuilder sb, final boolean printType) {
-        toString(sb,
-                new Runnable() {
-                    @Override
-                    public void run() {
-                        getExpression().toString(sb, printType);
-                    }
-                },
-                printType);
+    public void toString(final StringBuilder sb) {
+        toString(sb, new Runnable() {
+            @Override
+            public void run() {
+                sb.append(rhs().toString());
+            }
+        });
     }
 
     /**
@@ -214,27 +163,23 @@ public final class UnaryNode extends Expression implements Assignment<Expression
      * operand to a specified runnable.
      * @param sb the string builder to use
      * @param rhsStringBuilder the runnable that appends the string representation of the operand to the string builder
-     * @param printType should we print type
      * when invoked.
      */
-    public void toString(final StringBuilder sb, final Runnable rhsStringBuilder, final boolean printType) {
-        final TokenType tokenType = tokenType();
-        final String    name      = tokenType.getName();
-        final boolean   isPostfix = tokenType == DECPOSTFIX || tokenType == INCPOSTFIX;
+    public void toString(final StringBuilder sb, final Runnable rhsStringBuilder) {
+        final TokenType type      = tokenType();
+        final String    name      = type.getName();
+        final boolean   isPostfix = type == DECPOSTFIX || type == INCPOSTFIX;
 
-        if (isOptimistic()) {
-            sb.append(Expression.OPT_IDENTIFIER);
-        }
-        boolean rhsParen = tokenType.needsParens(getExpression().tokenType(), false);
+        boolean rhsParen   = type.needsParens(rhs().tokenType(), false);
 
         if (!isPostfix) {
             if (name == null) {
-                sb.append(tokenType.name());
+                sb.append(type.name());
                 rhsParen = true;
             } else {
                 sb.append(name);
 
-                if (tokenType.ordinal() > BIT_NOT.ordinal()) {
+                if (type.ordinal() > BIT_NOT.ordinal()) {
                     sb.append(' ');
                 }
             }
@@ -249,7 +194,7 @@ public final class UnaryNode extends Expression implements Assignment<Expression
         }
 
         if (isPostfix) {
-            sb.append(tokenType == DECPOSTFIX ? "--" : "++");
+            sb.append(type == DECPOSTFIX ? "--" : "++");
         }
     }
 
@@ -261,8 +206,8 @@ public final class UnaryNode extends Expression implements Assignment<Expression
      *
      * @return right hand side or expression node
      */
-    public Expression getExpression() {
-        return expression;
+    public Expression rhs() {
+        return rhs;
     }
 
     /**
@@ -271,62 +216,13 @@ public final class UnaryNode extends Expression implements Assignment<Expression
      *
      * @see BinaryNode
      *
-     * @param expression right hand side or expression node
+     * @param rhs right hand side or expression node
      * @return a node equivalent to this one except for the requested change.
      */
-    public UnaryNode setExpression(final Expression expression) {
-        if (this.expression == expression) {
+    public UnaryNode setRHS(final Expression rhs) {
+        if (this.rhs == rhs) {
             return this;
         }
-        return new UnaryNode(this, expression, type, programPoint);
+        return new UnaryNode(this, rhs);
     }
-
-    @Override
-    public int getProgramPoint() {
-        return programPoint;
-    }
-
-    @Override
-    public UnaryNode setProgramPoint(final int programPoint) {
-        if (this.programPoint == programPoint) {
-            return this;
-        }
-        return new UnaryNode(this, expression, type, programPoint);
-    }
-
-    @Override
-    public boolean canBeOptimistic() {
-        return getMostOptimisticType() != getMostPessimisticType();
-    }
-
-    @Override
-    public Type getMostOptimisticType() {
-        if (CAN_OVERFLOW.contains(tokenType())) {
-            return Type.INT;
-        }
-        return getMostPessimisticType();
-    }
-
-    @Override
-    public Type getMostPessimisticType() {
-        return getWidestOperationType();
-    }
-
-    @Override
-    public Type getType() {
-        final Type widest = getWidestOperationType();
-        if(type == null) {
-            return widest;
-        }
-        return Type.narrowest(widest, Type.widest(type, expression.getType()));
-    }
-
-    @Override
-    public UnaryNode setType(final Type type) {
-        if (this.type == type) {
-            return this;
-        }
-        return new UnaryNode(this, expression, type, programPoint);
-    }
-
 }

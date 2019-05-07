@@ -1989,8 +1989,8 @@ elapsedTimer GenerateOopMap::_total_oopmap_time;
 
 // This function assumes "bcs" is at a "ret" instruction and that the vars
 // state is valid for that instruction. Furthermore, the ret instruction
-// must be the last instruction in "bb" (we store information about the
-// "ret" in "bb").
+// must be the last instruction in " BB" (we store information about the
+// "ret" in " BB").
 void GenerateOopMap::ret_jump_targets_do(BytecodeStream *bcs, jmpFct_t jmpFct, int varNo, int *data) {
   CellTypeState ra = vars()[varNo];
   if (!ra.is_good_address()) {
@@ -2133,7 +2133,7 @@ void GenerateOopMap::compute_map(TRAPS) {
 void GenerateOopMap::error_work(const char *format, va_list ap) {
   _got_error = true;
   char msg_buffer[512];
-  vsnprintf(msg_buffer, sizeof(msg_buffer), format, ap);
+  jvsnprintf(msg_buffer, sizeof(msg_buffer), format, ap);
   // Append method name
   char msg_buffer2[512];
   jio_snprintf(msg_buffer2, sizeof(msg_buffer2), "%s in method %s", msg_buffer, method()->name()->as_C_string());

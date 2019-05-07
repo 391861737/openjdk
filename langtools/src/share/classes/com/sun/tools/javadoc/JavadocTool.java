@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2001, 2014, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2001, 2013, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -30,7 +30,6 @@ import java.io.IOException;
 import java.util.Collection;
 import java.util.EnumSet;
 import java.util.HashMap;
-import java.util.HashSet;
 import java.util.Map;
 import java.util.Set;
 import javax.tools.JavaFileManager.Location;
@@ -68,7 +67,6 @@ public class JavadocTool extends com.sun.tools.javac.main.JavaCompiler {
     final Messager messager;
     final JavadocClassReader javadocReader;
     final JavadocEnter javadocEnter;
-    final Set<JavaFileObject> uniquefiles;
 
     /**
      * Construct a new JavaCompiler processor, using appropriately
@@ -79,7 +77,6 @@ public class JavadocTool extends com.sun.tools.javac.main.JavaCompiler {
         messager = Messager.instance0(context);
         javadocReader = JavadocClassReader.instance0(context);
         javadocEnter = JavadocEnter.instance0(context);
-        uniquefiles = new HashSet<>();
     }
 
     /**
@@ -150,7 +147,9 @@ public class JavadocTool extends com.sun.tools.javac.main.JavaCompiler {
                 String name = it.head;
                 if (!docClasses && fm != null && name.endsWith(".java") && new File(name).exists()) {
                     JavaFileObject fo = fm.getJavaFileObjects(name).iterator().next();
-                    parse(fo, classTrees, true);
+                    docenv.notice("main.Loading_source_file", name);
+                    JCCompilationUnit tree = parse(fo);
+                    classTrees.append(tree);
                 } else if (isValidPackageName(name)) {
                     names = names.append(name);
                 } else if (name.endsWith(".java")) {
@@ -163,7 +162,9 @@ public class JavadocTool extends com.sun.tools.javac.main.JavaCompiler {
                 }
             }
             for (JavaFileObject fo: fileObjects) {
-                parse(fo, classTrees, true);
+                docenv.notice("main.Loading_source_file", fo.getName());
+                JCCompilationUnit tree = parse(fo);
+                classTrees.append(tree);
             }
 
             if (!docClasses) {
@@ -211,7 +212,7 @@ public class JavadocTool extends com.sun.tools.javac.main.JavaCompiler {
      * .java files found in such a directory to args.
      */
     private void parsePackageClasses(String name,
-            List<JavaFileObject> files,
+            Iterable<JavaFileObject> files,
             ListBuffer<JCCompilationUnit> trees,
             List<String> excludedPackages)
             throws IOException {
@@ -219,6 +220,7 @@ public class JavadocTool extends com.sun.tools.javac.main.JavaCompiler {
             return;
         }
 
+        boolean hasFiles = false;
         docenv.notice("main.Loading_source_files_for_package", name);
 
         if (files == null) {
@@ -235,22 +237,16 @@ public class JavadocTool extends com.sun.tools.javac.main.JavaCompiler {
             }
             files = lb.toList();
         }
-        if (files.nonEmpty()) {
-            for (JavaFileObject fo : files) {
-                parse(fo, trees, false);
-            }
-        } else {
-            messager.warning(Messager.NOPOS, "main.no_source_files_for_package",
-                             name.replace(File.separatorChar, '.'));
-        }
-    }
 
-    private void parse(JavaFileObject fo, ListBuffer<JCCompilationUnit> trees,
-                       boolean trace) {
-        if (uniquefiles.add(fo)) { // ignore duplicates
-            if (trace)
-                docenv.notice("main.Loading_source_file", fo.getName());
+        for (JavaFileObject fo : files) {
+            // messager.notice("main.Loading_source_file", fn);
             trees.append(parse(fo));
+            hasFiles = true;
+        }
+
+        if (!hasFiles) {
+            messager.warning(Messager.NOPOS, "main.no_source_files_for_package",
+                    name.replace(File.separatorChar, '.'));
         }
     }
 

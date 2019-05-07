@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 1999, 2015, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 1999, 2013, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -114,9 +114,8 @@ void SetupThreadGraphicsInfo(JNIEnv *env, GDIWinSDOps *wsdo) {
         // which may've been disposed by this time, and we have
         // no means of checking against it.
         if (oldhDC != NULL) {
-            MoveDCToPassiveList(oldhDC, info->hWnd);
+            MoveDCToPassiveList(oldhDC);
             info->hDC = NULL;
-            info->hWnd = NULL;
         }
 
         if (wsdo->window != NULL){
@@ -128,7 +127,7 @@ void SetupThreadGraphicsInfo(JNIEnv *env, GDIWinSDOps *wsdo) {
                 return;
             }
             hDC = comp->GetDCFromComponent();
-            if (hDC != NULL && wsdo->device != NULL) {
+            if (hDC != NULL) {
                 ::SelectObject(hDC, nullbrush);
                 ::SelectObject(hDC, nullpen);
                 ::SelectClipRgn(hDC, (HRGN) NULL);
@@ -151,7 +150,6 @@ void SetupThreadGraphicsInfo(JNIEnv *env, GDIWinSDOps *wsdo) {
 
             // Finally, set these new values in the info for this thread
             info->hDC = hDC;
-            info->hWnd = wsdo->window;
         }
 
         // cached brush and pen are not associated with any DC, and can be
@@ -189,7 +187,7 @@ void DisposeThreadGraphicsInfo(JNIEnv *env, jlong tgi) {
         if (info->hDC != NULL) {
             // move the DC from the active dcs list to
             // the passive dc list to be released later
-            MoveDCToPassiveList(info->hDC, info->hWnd);
+            MoveDCToPassiveList(info->hDC);
         }
 
         if (info->clip != NULL) {
@@ -356,25 +354,16 @@ Java_sun_java2d_windows_GDIWindowSurfaceData_initIDs(JNIEnv *env, jclass wsd,
     initThreadInfoIndex();
 
     xorCompClass = (jclass)env->NewGlobalRef(XORComp);
-    if (env->ExceptionCheck()) {
-        return;
-    }
 
     tc = env->FindClass("java/lang/Thread");
     DASSERT(tc != NULL);
-    CHECK_NULL(tc);
-
     threadClass = (jclass)env->NewGlobalRef(tc);
     DASSERT(threadClass != NULL);
-    CHECK_NULL(threadClass);
-
     currentThreadMethodID =
         env->GetStaticMethodID(threadClass,
                                "currentThread",  "()Ljava/lang/Thread;");
     DASSERT(currentThreadMethodID != NULL);
 }
-
-#undef ExceptionOccurred
 
 /*
  * Class:     sun_java2d_windows_GDIWindowSurfaceData
@@ -405,9 +394,6 @@ Java_sun_java2d_windows_GDIWindowSurfaceData_initOps(JNIEnv *env, jobject wsd,
     wsdo->invalid = JNI_FALSE;
     wsdo->lockType = WIN32SD_LOCK_UNLOCKED;
     wsdo->peer = env->NewWeakGlobalRef(peer);
-    if (env->ExceptionOccurred()) {
-        return;
-    }
     wsdo->depth = depth;
     wsdo->pixelMasks[0] = redMask;
     wsdo->pixelMasks[1] = greenMask;
@@ -1011,7 +997,7 @@ static HDC GDIWinSD_GetDC(JNIEnv *env, GDIWinSDOps *wsdo,
 
     ThreadGraphicsInfo *info = GetThreadGraphicsInfo(env, wsdo);
     GDIWinSD_InitDC(env, wsdo, info, type, patrop, clip, comp, color);
-    return env->ExceptionCheck() ? (HDC)NULL : info->hDC;
+    return info->hDC;
 }
 
 JNIEXPORT void JNICALL
@@ -1070,14 +1056,8 @@ GDIWinSD_InitDC(JNIEnv *env, GDIWinSDOps *wsdo, ThreadGraphicsInfo *info,
             int topInset = wsdo->insets.top;
             Region_StartIteration(env, &clipInfo);
             jint numrects = Region_CountIterationRects(&clipInfo);
-            RGNDATA *lpRgnData;
-            try {
-                lpRgnData = (RGNDATA *) SAFE_SIZE_STRUCT_ALLOC(safe_Malloc,
+            RGNDATA *lpRgnData = (RGNDATA *) SAFE_SIZE_STRUCT_ALLOC(safe_Malloc,
                     sizeof(RGNDATAHEADER), numrects, sizeof(RECT));
-            } catch (std::bad_alloc&) {
-                JNU_ThrowOutOfMemoryError(env, "Initialization of surface region data failed.");
-                return;
-            }
             const DWORD nCount = sizeof(RGNDATAHEADER) + numrects * sizeof(RECT);
             lpRgnData->rdh.dwSize = sizeof(RGNDATAHEADER);
             lpRgnData->rdh.iType = RDH_RECTANGLES;
@@ -1106,9 +1086,6 @@ GDIWinSD_InitDC(JNIEnv *env, GDIWinSDOps *wsdo, ThreadGraphicsInfo *info,
             env->DeleteWeakGlobalRef(info->clip);
         }
         info->clip = env->NewWeakGlobalRef(clip);
-        if (env->ExceptionCheck()) {
-            return;
-        }
     }
 
     // init composite

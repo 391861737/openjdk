@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2007, 2016, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2007, 2013, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -539,9 +539,6 @@ address InterpreterGenerator::generate_accessor_entry(void) {
     __ cmp(G1_scratch, btos);
     __ br(Assembler::equal, true, Assembler::pt, xreturn_path);
     __ delayed()->ldsb(Otos_i, G3_scratch, Otos_i);
-    __ cmp(G1_scratch, ztos);
-    __ br(Assembler::equal, true, Assembler::pt, xreturn_path);
-    __ delayed()->ldsb(Otos_i, G3_scratch, Otos_i);
     __ should_not_reach_here();
 #endif
     __ ldsb(Otos_i, G3_scratch, Otos_i);
@@ -963,7 +960,7 @@ address InterpreterGenerator::generate_native_entry(bool synchronized) {
 
   // reset handle block
   __ ld_ptr(G2_thread, in_bytes(JavaThread::active_handles_offset()), G3_scratch);
-  __ st(G0, G3_scratch, JNIHandleBlock::top_offset_in_bytes());
+  __ st_ptr(G0, G3_scratch, JNIHandleBlock::top_offset_in_bytes());
 
 
   // handle exceptions (exception handling will handle unlocking!)
@@ -2104,7 +2101,7 @@ int AbstractInterpreter::size_top_interpreter_activation(Method* method) {
   int monitor_size    = method->is_synchronized() ?
                                 1*frame::interpreter_frame_monitor_size() : 0;
   return size_activation_helper(method->max_locals(), method->max_stack(),
-                                monitor_size) + call_stub_size;
+                                 monitor_size) + call_stub_size;
 }
 
 void BytecodeInterpreter::layout_interpreterState(interpreterState to_fill,
@@ -2188,31 +2185,31 @@ void BytecodeInterpreter::pd_layout_interpreterState(interpreterState istate, ad
   istate->_last_Java_pc = (intptr_t*) last_Java_pc;
 }
 
-static int frame_size_helper(int max_stack,
-                             int moncount,
-                             int callee_param_size,
-                             int callee_locals_size,
-                             bool is_top_frame,
-                             int& monitor_size,
-                             int& full_frame_words) {
-  int extra_locals_size = callee_locals_size - callee_param_size;
-  monitor_size = (sizeof(BasicObjectLock) * moncount) / wordSize;
-  full_frame_words = size_activation_helper(extra_locals_size, max_stack, monitor_size);
-  int short_frame_words = size_activation_helper(extra_locals_size, max_stack, monitor_size);
-  int frame_words = is_top_frame ? full_frame_words : short_frame_words;
 
-  return frame_words;
-}
+int AbstractInterpreter::layout_activation(Method* method,
+                                           int tempcount, // Number of slots on java expression stack in use
+                                           int popframe_extra_args,
+                                           int moncount,  // Number of active monitors
+                                           int caller_actual_parameters,
+                                           int callee_param_size,
+                                           int callee_locals_size,
+                                           frame* caller,
+                                           frame* interpreter_frame,
+                                           bool is_top_frame,
+                                           bool is_bottom_frame) {
 
-int AbstractInterpreter::size_activation(int max_stack,
-                                         int tempcount,
-                                         int extra_args,
-                                         int moncount,
-                                         int callee_param_size,
-                                         int callee_locals_size,
-                                         bool is_top_frame) {
-  assert(extra_args == 0, "NEED TO FIX");
+  assert(popframe_extra_args == 0, "NEED TO FIX");
+  // NOTE this code must exactly mimic what InterpreterGenerator::generate_compute_interpreter_state()
+  // does as far as allocating an interpreter frame.
+  // If interpreter_frame!=NULL, set up the method, locals, and monitors.
+  // The frame interpreter_frame, if not NULL, is guaranteed to be the right size,
+  // as determined by a previous call to this method.
+  // It is also guaranteed to be walkable even though it is in a skeletal state
   // NOTE: return size is in words not bytes
+  // NOTE: tempcount is the current size of the java expression stack. For top most
+  //       frames we will allocate a full sized expression stack and not the curback
+  //       version that non-top frames have.
+
   // Calculate the amount our frame will be adjust by the callee. For top frame
   // this is zero.
 
@@ -2221,108 +2218,87 @@ int AbstractInterpreter::size_activation(int max_stack,
   // to it. So it ignores last_frame_adjust value. Seems suspicious as far
   // as getting sender_sp correct.
 
-  int unused_monitor_size = 0;
-  int unused_full_frame_words = 0;
-  return frame_size_helper(max_stack, moncount, callee_param_size, callee_locals_size, is_top_frame,
-                           unused_monitor_size, unused_full_frame_words);
-}
-void AbstractInterpreter::layout_activation(Method* method,
-                                            int tempcount, // Number of slots on java expression stack in use
-                                            int popframe_extra_args,
-                                            int moncount,  // Number of active monitors
-                                            int caller_actual_parameters,
-                                            int callee_param_size,
-                                            int callee_locals_size,
-                                            frame* caller,
-                                            frame* interpreter_frame,
-                                            bool is_top_frame,
-                                            bool is_bottom_frame) {
-  assert(popframe_extra_args == 0, "NEED TO FIX");
-  // NOTE this code must exactly mimic what InterpreterGenerator::generate_compute_interpreter_state()
-  // does as far as allocating an interpreter frame.
-  // Set up the method, locals, and monitors.
-  // The frame interpreter_frame is guaranteed to be the right size,
-  // as determined by a previous call to the size_activation() method.
-  // It is also guaranteed to be walkable even though it is in a skeletal state
-  // NOTE: tempcount is the current size of the java expression stack. For top most
-  //       frames we will allocate a full sized expression stack and not the curback
-  //       version that non-top frames have.
+  int extra_locals_size = callee_locals_size - callee_param_size;
+  int monitor_size = (sizeof(BasicObjectLock) * moncount) / wordSize;
+  int full_frame_words = size_activation_helper(extra_locals_size, method->max_stack(), monitor_size);
+  int short_frame_words = size_activation_helper(extra_locals_size, method->max_stack(), monitor_size);
+  int frame_words = is_top_frame ? full_frame_words : short_frame_words;
 
-  int monitor_size = 0;
-  int full_frame_words = 0;
-  int frame_words = frame_size_helper(method->max_stack(), moncount, callee_param_size, callee_locals_size,
-                                      is_top_frame, monitor_size, full_frame_words);
 
   /*
-    We must now fill in all the pieces of the frame. This means both
+    if we actually have a frame to layout we must now fill in all the pieces. This means both
     the interpreterState and the registers.
   */
+  if (interpreter_frame != NULL) {
 
-  // MUCHO HACK
+    // MUCHO HACK
 
-  intptr_t* frame_bottom = interpreter_frame->sp() - (full_frame_words - frame_words);
-  // 'interpreter_frame->sp()' is unbiased while 'frame_bottom' must be a biased value in 64bit mode.
-  assert(((intptr_t)frame_bottom & 0xf) == 0, "SP biased in layout_activation");
-  frame_bottom = (intptr_t*)((intptr_t)frame_bottom - STACK_BIAS);
+    intptr_t* frame_bottom = interpreter_frame->sp() - (full_frame_words - frame_words);
+    // 'interpreter_frame->sp()' is unbiased while 'frame_bottom' must be a biased value in 64bit mode.
+    assert(((intptr_t)frame_bottom & 0xf) == 0, "SP biased in layout_activation");
+    frame_bottom = (intptr_t*)((intptr_t)frame_bottom - STACK_BIAS);
 
-  /* Now fillin the interpreterState object */
+    /* Now fillin the interpreterState object */
 
-  interpreterState cur_state = (interpreterState) ((intptr_t)interpreter_frame->fp() -  sizeof(BytecodeInterpreter));
+    interpreterState cur_state = (interpreterState) ((intptr_t)interpreter_frame->fp() -  sizeof(BytecodeInterpreter));
 
 
-  intptr_t* locals;
+    intptr_t* locals;
 
-  // Calculate the postion of locals[0]. This is painful because of
-  // stack alignment (same as ia64). The problem is that we can
-  // not compute the location of locals from fp(). fp() will account
-  // for the extra locals but it also accounts for aligning the stack
-  // and we can't determine if the locals[0] was misaligned but max_locals
-  // was enough to have the
-  // calculate postion of locals. fp already accounts for extra locals.
-  // +2 for the static long no_params() issue.
+    // Calculate the postion of locals[0]. This is painful because of
+    // stack alignment (same as ia64). The problem is that we can
+    // not compute the location of locals from fp(). fp() will account
+    // for the extra locals but it also accounts for aligning the stack
+    // and we can't determine if the locals[0] was misaligned but max_locals
+    // was enough to have the
+    // calculate postion of locals. fp already accounts for extra locals.
+    // +2 for the static long no_params() issue.
 
-  if (caller->is_interpreted_frame()) {
-    // locals must agree with the caller because it will be used to set the
-    // caller's tos when we return.
-    interpreterState prev  = caller->get_interpreterState();
-    // stack() is prepushed.
-    locals = prev->stack() + method->size_of_parameters();
-  } else {
-    // Lay out locals block in the caller adjacent to the register window save area.
-    //
-    // Compiled frames do not allocate a varargs area which is why this if
-    // statement is needed.
-    //
-    intptr_t* fp = interpreter_frame->fp();
-    int local_words = method->max_locals() * Interpreter::stackElementWords;
-
-    if (caller->is_compiled_frame()) {
-      locals = fp + frame::register_save_words + local_words - 1;
+    if (caller->is_interpreted_frame()) {
+      // locals must agree with the caller because it will be used to set the
+      // caller's tos when we return.
+      interpreterState prev  = caller->get_interpreterState();
+      // stack() is prepushed.
+      locals = prev->stack() + method->size_of_parameters();
     } else {
-      locals = fp + frame::memory_parameter_word_sp_offset + local_words - 1;
+      // Lay out locals block in the caller adjacent to the register window save area.
+      //
+      // Compiled frames do not allocate a varargs area which is why this if
+      // statement is needed.
+      //
+      intptr_t* fp = interpreter_frame->fp();
+      int local_words = method->max_locals() * Interpreter::stackElementWords;
+
+      if (caller->is_compiled_frame()) {
+        locals = fp + frame::register_save_words + local_words - 1;
+      } else {
+        locals = fp + frame::memory_parameter_word_sp_offset + local_words - 1;
+      }
+
     }
+    // END MUCHO HACK
+
+    intptr_t* monitor_base = (intptr_t*) cur_state;
+    intptr_t* stack_base =  monitor_base - monitor_size;
+    /* +1 because stack is always prepushed */
+    intptr_t* stack = stack_base - (tempcount + 1);
+
+
+    BytecodeInterpreter::layout_interpreterState(cur_state,
+                                          caller,
+                                          interpreter_frame,
+                                          method,
+                                          locals,
+                                          stack,
+                                          stack_base,
+                                          monitor_base,
+                                          frame_bottom,
+                                          is_top_frame);
+
+    BytecodeInterpreter::pd_layout_interpreterState(cur_state, interpreter_return_address, interpreter_frame->fp());
 
   }
-  // END MUCHO HACK
-
-  intptr_t* monitor_base = (intptr_t*) cur_state;
-  intptr_t* stack_base =  monitor_base - monitor_size;
-  /* +1 because stack is always prepushed */
-  intptr_t* stack = stack_base - (tempcount + 1);
-
-
-  BytecodeInterpreter::layout_interpreterState(cur_state,
-                                               caller,
-                                               interpreter_frame,
-                                               method,
-                                               locals,
-                                               stack,
-                                               stack_base,
-                                               monitor_base,
-                                               frame_bottom,
-                                               is_top_frame);
-
-  BytecodeInterpreter::pd_layout_interpreterState(cur_state, interpreter_return_address, interpreter_frame->fp());
+  return frame_words;
 }
 
 #endif // CC_INTERP

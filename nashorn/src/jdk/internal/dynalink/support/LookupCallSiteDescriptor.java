@@ -92,7 +92,7 @@ import jdk.internal.dynalink.CallSiteDescriptor;
  * @author Attila Szegedi
  */
 class LookupCallSiteDescriptor extends DefaultCallSiteDescriptor {
-    private final Lookup lookup;
+    private Lookup lookup;
 
     /**
      * Create a new call site descriptor from explicit information.
@@ -100,7 +100,7 @@ class LookupCallSiteDescriptor extends DefaultCallSiteDescriptor {
      * @param methodType the method type
      * @param lookup the lookup
      */
-    LookupCallSiteDescriptor(final String[] tokenizedName, final MethodType methodType, final Lookup lookup) {
+    LookupCallSiteDescriptor(String[] tokenizedName, MethodType methodType, Lookup lookup) {
         super(tokenizedName, methodType);
         this.lookup = lookup;
     }
@@ -111,7 +111,7 @@ class LookupCallSiteDescriptor extends DefaultCallSiteDescriptor {
     }
 
     @Override
-    public CallSiteDescriptor changeMethodType(final MethodType newMethodType) {
+    public CallSiteDescriptor changeMethodType(MethodType newMethodType) {
         return new LookupCallSiteDescriptor(getTokenizedName(), newMethodType, lookup);
     }
 }

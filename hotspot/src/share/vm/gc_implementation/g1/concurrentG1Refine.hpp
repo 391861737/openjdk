@@ -34,14 +34,13 @@
 class ConcurrentG1RefineThread;
 class G1CollectedHeap;
 class G1HotCardCache;
-class G1RegionToSpaceMapper;
 class G1RemSet;
 class DirtyCardQueue;
 
 class ConcurrentG1Refine: public CHeapObj<mtGC> {
   ConcurrentG1RefineThread** _threads;
-  uint _n_threads;
-  uint _n_worker_threads;
+  int _n_threads;
+  int _n_worker_threads;
  /*
   * The value of the update buffer queue length falls into one of 3 zones:
   * green, yellow, red. If the value is in [0, green) nothing is
@@ -72,10 +71,10 @@ class ConcurrentG1Refine: public CHeapObj<mtGC> {
   void reset_threshold_step();
 
  public:
-  ConcurrentG1Refine(G1CollectedHeap* g1h, CardTableEntryClosure* refine_closure);
+  ConcurrentG1Refine(G1CollectedHeap* g1h);
   ~ConcurrentG1Refine();
 
-  void init(G1RegionToSpaceMapper* card_counts_storage);
+  void init(); // Accomplish some initialization that has to wait.
   void stop();
 
   void reinitialize_threads();
@@ -89,7 +88,7 @@ class ConcurrentG1Refine: public CHeapObj<mtGC> {
   // The RS sampling thread
   ConcurrentG1RefineThread * sampling_thread() const;
 
-  static uint thread_num();
+  static int thread_num();
 
   void print_worker_threads_on(outputStream* st) const;
 
@@ -101,8 +100,8 @@ class ConcurrentG1Refine: public CHeapObj<mtGC> {
   int yellow_zone() const     { return _yellow_zone; }
   int red_zone() const        { return _red_zone;    }
 
-  uint total_thread_num() const  { return _n_threads;        }
-  uint worker_thread_num() const { return _n_worker_threads; }
+  int total_thread_num() const  { return _n_threads;        }
+  int worker_thread_num() const { return _n_worker_threads; }
 
   int thread_threshold_step() const { return _thread_threshold_step; }
 

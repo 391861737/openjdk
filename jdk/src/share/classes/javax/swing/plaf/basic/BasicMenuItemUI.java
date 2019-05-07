@@ -180,15 +180,6 @@ public class BasicMenuItemUI extends MenuItemUI
             arrowIcon instanceof UIResource) {
             arrowIcon = UIManager.getIcon(prefix + ".arrowIcon");
         }
-        updateCheckIcon();
-    }
-
-    /**
-     * Updates check Icon based on column layout
-     */
-    private void updateCheckIcon() {
-        String prefix = getPropertyPrefix();
-
         if (checkIcon == null ||
             checkIcon instanceof UIResource) {
             checkIcon = UIManager.getIcon(prefix + ".checkIcon");
@@ -199,8 +190,8 @@ public class BasicMenuItemUI extends MenuItemUI
                     BasicGraphicsUtils.isLeftToRight(menuItem), menuItem);
             if (isColumnLayout) {
                 MenuItemCheckIconFactory iconFactory =
-                        (MenuItemCheckIconFactory) UIManager.get(prefix
-                                + ".checkIconFactory");
+                    (MenuItemCheckIconFactory) UIManager.get(prefix
+                        + ".checkIconFactory");
                 if (iconFactory != null
                         && MenuItemLayoutHelper.useCheckAndArrow(menuItem)
                         && iconFactory.isCompatible(checkIcon, prefix)) {
@@ -975,8 +966,6 @@ public class BasicMenuItemUI extends MenuItemUI
                 BasicHTML.updateRenderer(lbl, text);
             } else if (name  == "iconTextGap") {
                 defaultTextIconGap = ((Number)e.getNewValue()).intValue();
-            } else if (name == "horizontalTextPosition") {
-                updateCheckIcon();
             }
         }
     }

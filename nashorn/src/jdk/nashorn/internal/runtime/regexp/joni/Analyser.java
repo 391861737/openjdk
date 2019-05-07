@@ -27,7 +27,9 @@ import static jdk.nashorn.internal.runtime.regexp.joni.Option.isIgnoreCase;
 import static jdk.nashorn.internal.runtime.regexp.joni.Option.isMultiline;
 import static jdk.nashorn.internal.runtime.regexp.joni.ast.ConsAltNode.newAltNode;
 import static jdk.nashorn.internal.runtime.regexp.joni.ast.QuantifierNode.isRepeatInfinite;
+
 import java.util.HashSet;
+
 import jdk.nashorn.internal.runtime.regexp.joni.ast.AnchorNode;
 import jdk.nashorn.internal.runtime.regexp.joni.ast.BackRefNode;
 import jdk.nashorn.internal.runtime.regexp.joni.ast.CClassNode;
@@ -48,11 +50,10 @@ import jdk.nashorn.internal.runtime.regexp.joni.exception.ValueException;
 
 final class Analyser extends Parser {
 
-    protected Analyser(final ScanEnvironment env, final char[] chars, final int p, final int end) {
+    protected Analyser(ScanEnvironment env, char[] chars, int p, int end) {
         super(env, chars, p, end);
     }
 
-    @SuppressWarnings("unused")
     protected final void compile() {
         if (Config.DEBUG) {
             Config.log.println(new String(chars, getBegin(), getEnd()));
@@ -76,9 +77,7 @@ final class Analyser extends Parser {
 
         root = setupTree(root, 0);
         if (Config.DEBUG_PARSE_TREE) {
-            if (Config.DEBUG_PARSE_TREE_RAW) {
-                Config.log.println("<TREE>");
-            }
+            if (Config.DEBUG_PARSE_TREE_RAW) Config.log.println("<TREE>");
             root.verifyTree(new HashSet<Node>(), env.reg.warnings);
             Config.log.println(root + "\n");
         }
@@ -96,9 +95,7 @@ final class Analyser extends Parser {
 
         regex.clearOptimizeInfo();
 
-        if (!Config.DONT_OPTIMIZE) {
-            setOptimizedInfoFromTree(root);
-        }
+        if (!Config.DONT_OPTIMIZE) setOptimizedInfoFromTree(root);
 
         env.memNodes = null;
 
@@ -114,15 +111,13 @@ final class Analyser extends Parser {
 
         if (Config.DEBUG_COMPILE) {
             Config.log.println("stack used: " + regex.stackNeeded);
-            if (Config.USE_STRING_TEMPLATES) {
-                Config.log.print("templates: " + regex.templateNum + "\n");
-            }
+            if (Config.USE_STRING_TEMPLATES) Config.log.print("templates: " + regex.templateNum + "\n");
             Config.log.println(new ByteCodePrinter(regex).byteCodeListToString());
 
         } // DEBUG_COMPILE
     }
 
-    private void swap(final Node a, final Node b) {
+    private void swap(Node a, Node b) {
         a.swap(b);
 
         if (root == b) {
@@ -133,7 +128,7 @@ final class Analyser extends Parser {
     }
 
     // USE_INFINITE_REPEAT_MONOMANIAC_MEM_STATUS_CHECK
-    private int quantifiersMemoryInfo(final Node node) {
+    private int quantifiersMemoryInfo(Node node) {
         int info = 0;
 
         switch(node.getType()) {
@@ -141,22 +136,20 @@ final class Analyser extends Parser {
         case NodeType.ALT:
             ConsAltNode can = (ConsAltNode)node;
             do {
-                final int v = quantifiersMemoryInfo(can.car);
-                if (v > info) {
-                    info = v;
-                }
+                int v = quantifiersMemoryInfo(can.car);
+                if (v > info) info = v;
             } while ((can = can.cdr) != null);
             break;
 
         case NodeType.QTFR:
-            final QuantifierNode qn = (QuantifierNode)node;
+            QuantifierNode qn = (QuantifierNode)node;
             if (qn.upper != 0) {
                 info = quantifiersMemoryInfo(qn.target);
             }
             break;
 
         case NodeType.ENCLOSE:
-            final EncloseNode en = (EncloseNode)node;
+            EncloseNode en = (EncloseNode)node;
             switch (en.type) {
             case EncloseType.MEMORY:
                 return TargetInfo.IS_EMPTY_MEM;
@@ -184,15 +177,13 @@ final class Analyser extends Parser {
         return info;
     }
 
-    private int getMinMatchLength(final Node node) {
+    private int getMinMatchLength(Node node) {
         int min = 0;
 
         switch (node.getType()) {
         case NodeType.BREF:
-            final BackRefNode br = (BackRefNode)node;
-            if (br.isRecursion()) {
-                break;
-            }
+            BackRefNode br = (BackRefNode)node;
+            if (br.isRecursion()) break;
 
             if (br.backRef > env.numMem) {
                 throw new ValueException(ERR_INVALID_BACKREF);
@@ -211,8 +202,8 @@ final class Analyser extends Parser {
         case NodeType.ALT:
             ConsAltNode y = (ConsAltNode)node;
             do {
-                final Node x = y.car;
-                final int tmin = getMinMatchLength(x);
+                Node x = y.car;
+                int tmin = getMinMatchLength(x);
                 if (y == node) {
                     min = tmin;
                 } else if (min > tmin) {
@@ -235,7 +226,7 @@ final class Analyser extends Parser {
             break;
 
         case NodeType.QTFR:
-            final QuantifierNode qn = (QuantifierNode)node;
+            QuantifierNode qn = (QuantifierNode)node;
             if (qn.lower > 0) {
                 min = getMinMatchLength(qn.target);
                 min = MinMaxLen.distanceMultiply(min, qn.lower);
@@ -243,7 +234,7 @@ final class Analyser extends Parser {
             break;
 
         case NodeType.ENCLOSE:
-            final EncloseNode en = (EncloseNode)node;
+            EncloseNode en = (EncloseNode)node;
             switch (en.type) {
             case EncloseType.MEMORY:
                 if (en.isMinFixed()) {
@@ -259,9 +250,6 @@ final class Analyser extends Parser {
             case EncloseType.STOP_BACKTRACK:
                 min = getMinMatchLength(en.target);
                 break;
-
-            default:
-                break;
             } // inner switch
             break;
 
@@ -273,14 +261,14 @@ final class Analyser extends Parser {
         return min;
     }
 
-    private int getMaxMatchLength(final Node node) {
+    private int getMaxMatchLength(Node node) {
         int max = 0;
 
         switch (node.getType()) {
         case NodeType.LIST:
             ConsAltNode ln = (ConsAltNode)node;
             do {
-                final int tmax = getMaxMatchLength(ln.car);
+                int tmax = getMaxMatchLength(ln.car);
                 max = MinMaxLen.distanceAdd(max, tmax);
             } while ((ln = ln.cdr) != null);
             break;
@@ -288,10 +276,8 @@ final class Analyser extends Parser {
         case NodeType.ALT:
             ConsAltNode an = (ConsAltNode)node;
             do {
-                final int tmax = getMaxMatchLength(an.car);
-                if (max < tmax) {
-                    max = tmax;
-                }
+                int tmax = getMaxMatchLength(an.car);
+                if (max < tmax) max = tmax;
             } while ((an = an.cdr) != null);
             break;
 
@@ -309,7 +295,7 @@ final class Analyser extends Parser {
             break;
 
         case NodeType.BREF:
-            final BackRefNode br = (BackRefNode)node;
+            BackRefNode br = (BackRefNode)node;
             if (br.isRecursion()) {
                 max = MinMaxLen.INFINITE_DISTANCE;
                 break;
@@ -318,14 +304,12 @@ final class Analyser extends Parser {
             if (br.backRef > env.numMem) {
                 throw new ValueException(ERR_INVALID_BACKREF);
             }
-            final int tmax = getMaxMatchLength(env.memNodes[br.backRef]);
-            if (max < tmax) {
-                max = tmax;
-            }
+            int tmax = getMaxMatchLength(env.memNodes[br.backRef]);
+            if (max < tmax) max = tmax;
             break;
 
         case NodeType.QTFR:
-            final QuantifierNode qn = (QuantifierNode)node;
+            QuantifierNode qn = (QuantifierNode)node;
             if (qn.upper != 0) {
                 max = getMaxMatchLength(qn.target);
                 if (max != 0) {
@@ -339,7 +323,7 @@ final class Analyser extends Parser {
             break;
 
         case NodeType.ENCLOSE:
-            final EncloseNode en = (EncloseNode)node;
+            EncloseNode en = (EncloseNode)node;
             switch (en.type) {
             case EncloseType.MEMORY:
                 if (en.isMaxFixed()) {
@@ -355,9 +339,6 @@ final class Analyser extends Parser {
             case EncloseType.STOP_BACKTRACK:
                 max = getMaxMatchLength(en.target);
                 break;
-
-            default:
-                break;
             } // inner switch
             break;
 
@@ -371,12 +352,12 @@ final class Analyser extends Parser {
 
     private static final int GET_CHAR_LEN_VARLEN            = -1;
     private static final int GET_CHAR_LEN_TOP_ALT_VARLEN    = -2;
-    protected final int getCharLengthTree(final Node node) {
+    protected final int getCharLengthTree(Node node) {
         return getCharLengthTree(node, 0);
     }
 
-    private int getCharLengthTree(final Node node, final int levelp) {
-        final int level = levelp + 1;
+    private int getCharLengthTree(Node node, int level) {
+        level++;
 
         int len = 0;
         returnCode = 0;
@@ -385,10 +366,8 @@ final class Analyser extends Parser {
         case NodeType.LIST:
             ConsAltNode ln = (ConsAltNode)node;
             do {
-                final int tlen = getCharLengthTree(ln.car, level);
-                if (returnCode == 0) {
-                    len = MinMaxLen.distanceAdd(len, tlen);
-                }
+                int tlen = getCharLengthTree(ln.car, level);
+                if (returnCode == 0) len = MinMaxLen.distanceAdd(len, tlen);
             } while (returnCode == 0 && (ln = ln.cdr) != null);
             break;
 
@@ -398,11 +377,9 @@ final class Analyser extends Parser {
 
             int tlen = getCharLengthTree(an.car, level);
             while (returnCode == 0 && (an = an.cdr) != null) {
-                final int tlen2 = getCharLengthTree(an.car, level);
+                int tlen2 = getCharLengthTree(an.car, level);
                 if (returnCode == 0) {
-                    if (tlen != tlen2) {
-                        varLen = true;
-                    }
+                    if (tlen != tlen2) varLen = true;
                 }
             }
 
@@ -420,17 +397,15 @@ final class Analyser extends Parser {
             break;
 
         case NodeType.STR:
-            final StringNode sn = (StringNode)node;
+            StringNode sn = (StringNode)node;
             len = sn.length();
             break;
 
         case NodeType.QTFR:
-            final QuantifierNode qn = (QuantifierNode)node;
+            QuantifierNode qn = (QuantifierNode)node;
             if (qn.lower == qn.upper) {
                 tlen = getCharLengthTree(qn.target, level);
-                if (returnCode == 0) {
-                    len = MinMaxLen.distanceMultiply(tlen, qn.lower);
-                }
+                if (returnCode == 0) len = MinMaxLen.distanceMultiply(tlen, qn.lower);
             } else {
                 returnCode = GET_CHAR_LEN_VARLEN;
             }
@@ -443,7 +418,7 @@ final class Analyser extends Parser {
             break;
 
         case NodeType.ENCLOSE:
-            final EncloseNode en = (EncloseNode)node;
+            EncloseNode en = (EncloseNode)node;
             switch(en.type) {
             case EncloseType.MEMORY:
                 if (en.isCLenFixed()) {
@@ -461,9 +436,6 @@ final class Analyser extends Parser {
             case EncloseType.STOP_BACKTRACK:
                 len = getCharLengthTree(en.target, level);
                 break;
-
-            default:
-                break;
             } // inner switch
             break;
 
@@ -477,15 +449,13 @@ final class Analyser extends Parser {
     }
 
     /* x is not included y ==>  1 : 0 */
-    private static boolean isNotIncluded(final Node xn, final Node yn) {
-        Node x = xn;
-        Node y = yn;
+    private boolean isNotIncluded(Node x, Node y) {
         Node tmp;
 
         // !retry:!
         retry: while(true) {
 
-        final int yType = y.getType();
+        int yType = y.getType();
 
         switch(x.getType()) {
         case NodeType.CTYPE:
@@ -512,25 +482,21 @@ final class Analyser extends Parser {
             break;
 
         case NodeType.CCLASS:
-            final CClassNode xc = (CClassNode)x;
+            CClassNode xc = (CClassNode)x;
 
             switch(yType) {
 
             case NodeType.CCLASS:
-                final CClassNode yc = (CClassNode)y;
+                CClassNode yc = (CClassNode)y;
 
                 for (int i=0; i<BitSet.SINGLE_BYTE_SIZE; i++) {
                     boolean v = xc.bs.at(i);
                     if ((v && !xc.isNot()) || (!v && xc.isNot())) {
                         v = yc.bs.at(i);
-                        if ((v && !yc.isNot()) || (!v && yc.isNot())) {
-                            return false;
-                        }
+                        if ((v && !yc.isNot()) || (!v && yc.isNot())) return false;
                     }
                 }
-                if ((xc.mbuf == null && !xc.isNot()) || yc.mbuf == null && !yc.isNot()) {
-                    return true;
-                }
+                if ((xc.mbuf == null && !xc.isNot()) || yc.mbuf == null && !yc.isNot()) return true;
                 return false;
                 // break; not reached
 
@@ -548,31 +514,26 @@ final class Analyser extends Parser {
             break; // case NodeType.CCLASS
 
         case NodeType.STR:
-            final StringNode xs = (StringNode)x;
-            if (xs.length() == 0) {
-                break;
-            }
+            StringNode xs = (StringNode)x;
+            if (xs.length() == 0) break;
 
             switch (yType) {
 
             case NodeType.CCLASS:
-                final CClassNode cc = (CClassNode)y;
-                final int code = xs.chars[xs.p];
+                CClassNode cc = (CClassNode)y;
+                int code = xs.chars[xs.p];
                 return !cc.isCodeInCC(code);
 
             case NodeType.STR:
-                final StringNode ys = (StringNode)y;
+                StringNode ys = (StringNode)y;
                 int len = xs.length();
-                if (len > ys.length()) {
-                    len = ys.length();
-                }
+                if (len > ys.length()) len = ys.length();
                 if (xs.isAmbig() || ys.isAmbig()) {
                     /* tiny version */
                     return false;
-                }
-                for (int i=0, pt=ys.p, q=xs.p; i<len; i++, pt++, q++) {
-                    if (ys.chars[pt] != xs.chars[q]) {
-                        return true;
+                } else {
+                    for (int i=0, p=ys.p, q=xs.p; i<len; i++, p++, q++) {
+                        if (ys.chars[p] != xs.chars[q]) return true;
                     }
                 }
                 break;
@@ -582,8 +543,6 @@ final class Analyser extends Parser {
             } // inner switch
 
             break; // case NodeType.STR
-        default:
-            break;
 
         } // switch
 
@@ -592,7 +551,7 @@ final class Analyser extends Parser {
         return false;
     }
 
-    private Node getHeadValueNode(final Node node, final boolean exact) {
+    private Node getHeadValueNode(Node node, boolean exact) {
         Node n = null;
 
         switch(node.getType()) {
@@ -603,9 +562,7 @@ final class Analyser extends Parser {
 
         case NodeType.CTYPE:
         case NodeType.CCLASS:
-            if (!exact) {
-                n = node;
-            }
+            if (!exact) n = node;
             break;
 
         case NodeType.LIST:
@@ -613,11 +570,8 @@ final class Analyser extends Parser {
             break;
 
         case NodeType.STR:
-            final StringNode sn = (StringNode)node;
-            if (sn.end <= sn.p)
-             {
-                break; // ???
-            }
+            StringNode sn = (StringNode)node;
+            if (sn.end <= sn.p) break; // ???
 
             if (exact && !sn.isRaw() && isIgnoreCase(regex.options)){
                 // nothing
@@ -627,7 +581,7 @@ final class Analyser extends Parser {
             break;
 
         case NodeType.QTFR:
-            final QuantifierNode qn = (QuantifierNode)node;
+            QuantifierNode qn = (QuantifierNode)node;
             if (qn.lower > 0) {
                 if (qn.headExact != null) {
                     n = qn.headExact;
@@ -638,11 +592,11 @@ final class Analyser extends Parser {
             break;
 
         case NodeType.ENCLOSE:
-            final EncloseNode en = (EncloseNode)node;
+            EncloseNode en = (EncloseNode)node;
 
             switch (en.type) {
             case EncloseType.OPTION:
-                final int options = regex.options;
+                int options = regex.options;
                 regex.options = en.option;
                 n = getHeadValueNode(en.target, exact);
                 regex.options = options;
@@ -652,17 +606,12 @@ final class Analyser extends Parser {
             case EncloseType.STOP_BACKTRACK:
                 n = getHeadValueNode(en.target, exact);
                 break;
-
-            default:
-                break;
             } // inner switch
             break;
 
         case NodeType.ANCHOR:
-            final AnchorNode an = (AnchorNode)node;
-            if (an.type == AnchorType.PREC_READ) {
-                n = getHeadValueNode(an.target, exact);
-            }
+            AnchorNode an = (AnchorNode)node;
+            if (an.type == AnchorType.PREC_READ) n = getHeadValueNode(an.target, exact);
             break;
 
         default:
@@ -673,10 +622,8 @@ final class Analyser extends Parser {
     }
 
     // true: invalid
-    private boolean checkTypeTree(final Node node, final int typeMask, final int encloseMask, final int anchorMask) {
-        if ((node.getType2Bit() & typeMask) == 0) {
-            return true;
-        }
+    private boolean checkTypeTree(Node node, int typeMask, int encloseMask, int anchorMask) {
+        if ((node.getType2Bit() & typeMask) == 0) return true;
 
         boolean invalid = false;
 
@@ -694,22 +641,16 @@ final class Analyser extends Parser {
             break;
 
         case NodeType.ENCLOSE:
-            final EncloseNode en = (EncloseNode)node;
-            if ((en.type & encloseMask) == 0) {
-                return true;
-            }
+            EncloseNode en = (EncloseNode)node;
+            if ((en.type & encloseMask) == 0) return true;
             invalid = checkTypeTree(en.target, typeMask, encloseMask, anchorMask);
             break;
 
         case NodeType.ANCHOR:
-            final AnchorNode an = (AnchorNode)node;
-            if ((an.type & anchorMask) == 0) {
-                return true;
-            }
+            AnchorNode an = (AnchorNode)node;
+            if ((an.type & anchorMask) == 0) return true;
 
-            if (an.target != null) {
-                invalid = checkTypeTree(an.target, typeMask, encloseMask, anchorMask);
-            }
+            if (an.target != null) invalid = checkTypeTree(an.target, typeMask, encloseMask, anchorMask);
             break;
 
         default:
@@ -724,16 +665,15 @@ final class Analyser extends Parser {
     (?<=A|B) ==> (?<=A)|(?<=B)
     (?<!A|B) ==> (?<!A)(?<!B)
      */
-    private Node divideLookBehindAlternatives(final Node nodep) {
-        Node node = nodep;
-        final AnchorNode an = (AnchorNode)node;
-        final int anchorType = an.type;
+    private Node divideLookBehindAlternatives(Node node) {
+        AnchorNode an = (AnchorNode)node;
+        int anchorType = an.type;
         Node head = an.target;
         Node np = ((ConsAltNode)head).car;
 
         swap(node, head);
 
-        final Node tmp = node;
+        Node tmp = node;
         node = head;
         head = tmp;
 
@@ -742,7 +682,7 @@ final class Analyser extends Parser {
         np = node;
 
         while ((np = ((ConsAltNode)np).cdr) != null) {
-            final AnchorNode insert = new AnchorNode(anchorType);
+            AnchorNode insert = new AnchorNode(anchorType);
             insert.setTarget(((ConsAltNode)np).car);
             ((ConsAltNode)np).setCar(insert);
         }
@@ -757,10 +697,10 @@ final class Analyser extends Parser {
         return node;
     }
 
-    private Node setupLookBehind(final Node node) {
-        final AnchorNode an = (AnchorNode)node;
-        final int len = getCharLengthTree(an.target);
-        switch (returnCode) {
+    private Node setupLookBehind(Node node) {
+        AnchorNode an = (AnchorNode)node;
+        int len = getCharLengthTree(an.target);
+        switch(returnCode) {
         case 0:
             an.charLength = len;
             break;
@@ -769,26 +709,23 @@ final class Analyser extends Parser {
         case GET_CHAR_LEN_TOP_ALT_VARLEN:
             if (syntax.differentLengthAltLookBehind()) {
                 return divideLookBehindAlternatives(node);
+            } else {
+                throw new SyntaxException(ERR_INVALID_LOOK_BEHIND_PATTERN);
             }
-            throw new SyntaxException(ERR_INVALID_LOOK_BEHIND_PATTERN);
-        default:
-            break;
         }
         return node;
     }
 
-    private void nextSetup(final Node nodep, final Node nextNode) {
-        Node node = nodep;
-
+    private void nextSetup(Node node, Node nextNode) {
         // retry:
         retry: while(true) {
 
-        final int type = node.getType();
+        int type = node.getType();
         if (type == NodeType.QTFR) {
-            final QuantifierNode qn = (QuantifierNode)node;
+            QuantifierNode qn = (QuantifierNode)node;
             if (qn.greedy && isRepeatInfinite(qn.upper)) {
                 if (Config.USE_QTFR_PEEK_NEXT) {
-                    final StringNode n = (StringNode)getHeadValueNode(nextNode, true);
+                    StringNode n = (StringNode)getHeadValueNode(nextNode, true);
                     /* '\0': for UTF-16BE etc... */
                     if (n != null && n.chars[n.p] != 0) { // ?????????
                         qn.nextHeadExact = n;
@@ -797,11 +734,11 @@ final class Analyser extends Parser {
                 /* automatic posseivation a*b ==> (?>a*)b */
                 if (qn.lower <= 1) {
                     if (qn.target.isSimple()) {
-                        final Node x = getHeadValueNode(qn.target, false);
+                        Node x = getHeadValueNode(qn.target, false);
                         if (x != null) {
-                            final Node y = getHeadValueNode(nextNode, false);
+                            Node y = getHeadValueNode(nextNode, false);
                             if (y != null && isNotIncluded(x, y)) {
-                                final EncloseNode en = new EncloseNode(EncloseType.STOP_BACKTRACK); //onig_node_new_enclose
+                                EncloseNode en = new EncloseNode(EncloseType.STOP_BACKTRACK); //onig_node_new_enclose
                                 en.setStopBtSimpleRepeat();
                                 //en.setTarget(qn.target); // optimize it ??
                                 swap(node, en);
@@ -813,7 +750,7 @@ final class Analyser extends Parser {
                 }
             }
         } else if (type == NodeType.ENCLOSE) {
-            final EncloseNode en = (EncloseNode)node;
+            EncloseNode en = (EncloseNode)node;
             if (en.isMemory()) {
                 node = en.target;
                 // !goto retry;!
@@ -825,26 +762,26 @@ final class Analyser extends Parser {
         } // while
     }
 
-    private void updateStringNodeCaseFoldMultiByte(final StringNode sn) {
-        final char[] ch = sn.chars;
-        final int end = sn.end;
+    private void updateStringNodeCaseFoldMultiByte(StringNode sn) {
+        char[] chars = sn.chars;
+        int end = sn.end;
         value = sn.p;
         int sp = 0;
         char buf;
 
         while (value < end) {
-            final int ovalue = value;
-            buf = EncodingHelper.toLowerCase(ch[value++]);
+            int ovalue = value;
+            buf = Character.toLowerCase(chars[value++]);
 
-            if (ch[ovalue] != buf) {
+            if (chars[ovalue] != buf) {
 
                 char[] sbuf = new char[sn.length() << 1];
-                System.arraycopy(ch, sn.p, sbuf, 0, ovalue - sn.p);
+                System.arraycopy(chars, sn.p, sbuf, 0, ovalue - sn.p);
                 value = ovalue;
                 while (value < end) {
-                    buf = EncodingHelper.toLowerCase(ch[value++]);
+                    buf = Character.toLowerCase(chars[value++]);
                     if (sp >= sbuf.length) {
-                        final char[]tmp = new char[sbuf.length << 1];
+                        char[]tmp = new char[sbuf.length << 1];
                         System.arraycopy(sbuf, 0, tmp, 0, sbuf.length);
                         sbuf = tmp;
                     }
@@ -857,13 +794,13 @@ final class Analyser extends Parser {
         }
     }
 
-    private void updateStringNodeCaseFold(final Node node) {
-        final StringNode sn = (StringNode)node;
+    private void updateStringNodeCaseFold(Node node) {
+        StringNode sn = (StringNode)node;
         updateStringNodeCaseFoldMultiByte(sn);
     }
 
-    private Node expandCaseFoldMakeRemString(final char[] ch, final int pp, final int end) {
-        final StringNode node = new StringNode(ch, pp, end);
+    private Node expandCaseFoldMakeRemString(char[] chars, int p, int end) {
+        StringNode node = new StringNode(chars, p, end);
 
         updateStringNodeCaseFold(node);
         node.setAmbig();
@@ -871,8 +808,8 @@ final class Analyser extends Parser {
         return node;
     }
 
-    private static boolean expandCaseFoldStringAlt(final int itemNum, final char[] items,
-                                              final char[] chars, final int p, final int slen, final int end, final ObjPtr<Node> node) {
+    private boolean expandCaseFoldStringAlt(int itemNum, char[] items,
+                                              char[] chars, int p, int slen, int end, ObjPtr<Node> node) {
 
         ConsAltNode altNode;
         node.p = altNode = newAltNode(null, null);
@@ -885,7 +822,7 @@ final class Analyser extends Parser {
 
             snode.catCode(items[i]);
 
-            final ConsAltNode an = newAltNode(null, null);
+            ConsAltNode an = newAltNode(null, null);
             an.setCar(snode);
             altNode.setCdr(an);
             altNode = an;
@@ -894,75 +831,66 @@ final class Analyser extends Parser {
     }
 
     private static final int THRESHOLD_CASE_FOLD_ALT_FOR_EXPANSION = 8;
-    private Node expandCaseFoldString(final Node node) {
-        final StringNode sn = (StringNode)node;
+    private Node expandCaseFoldString(Node node) {
+        StringNode sn = (StringNode)node;
 
-        if (sn.isAmbig() || sn.length() <= 0) {
-            return node;
-        }
+        if (sn.isAmbig() || sn.length() <= 0) return node;
 
-        final char[] chars1 = sn.chars;
-        int pt = sn.p;
-        final int end = sn.end;
+        char[] chars = sn.chars;
+        int p = sn.p;
+        int end = sn.end;
         int altNum = 1;
 
-        ConsAltNode topRoot = null, r = null;
-        @SuppressWarnings("unused")
-        final ObjPtr<Node> prevNode = new ObjPtr<Node>();
+        ConsAltNode topRoot = null, root = null;
+        ObjPtr<Node> prevNode = new ObjPtr<Node>();
         StringNode stringNode = null;
 
-        while (pt < end) {
-            final char[] items = EncodingHelper.caseFoldCodesByString(regex.caseFoldFlag, chars1[pt]);
+        while (p < end) {
+            char[] items = EncodingHelper.caseFoldCodesByString(regex.caseFoldFlag, chars[p]);
 
             if (items.length == 0) {
                 if (stringNode == null) {
-                    if (r == null && prevNode.p != null) {
-                        topRoot = r = ConsAltNode.listAdd(null, prevNode.p);
+                    if (root == null && prevNode.p != null) {
+                        topRoot = root = ConsAltNode.listAdd(null, prevNode.p);
                     }
 
                     prevNode.p = stringNode = new StringNode(); // onig_node_new_str(NULL, NULL);
 
-                    if (r != null) {
-                        ConsAltNode.listAdd(r, stringNode);
-                    }
+                    if (root != null) ConsAltNode.listAdd(root, stringNode);
 
                 }
 
-                stringNode.cat(chars1, pt, pt + 1);
+                stringNode.cat(chars, p, p + 1);
             } else {
                 altNum *= (items.length + 1);
-                if (altNum > THRESHOLD_CASE_FOLD_ALT_FOR_EXPANSION) {
-                    break;
+                if (altNum > THRESHOLD_CASE_FOLD_ALT_FOR_EXPANSION) break;
+
+                if (root == null && prevNode.p != null) {
+                    topRoot = root = ConsAltNode.listAdd(null, prevNode.p);
                 }
 
-                if (r == null && prevNode.p != null) {
-                    topRoot = r = ConsAltNode.listAdd(null, prevNode.p);
-                }
-
-                expandCaseFoldStringAlt(items.length, items, chars1, pt, 1, end, prevNode);
-                if (r != null) {
-                    ConsAltNode.listAdd(r, prevNode.p);
-                }
+                expandCaseFoldStringAlt(items.length, items, chars, p, 1, end, prevNode);
+                if (root != null) ConsAltNode.listAdd(root, prevNode.p);
                 stringNode = null;
             }
-            pt++;
+            p++;
         }
 
-        if (pt < end) {
-            final Node srem = expandCaseFoldMakeRemString(chars1, pt, end);
+        if (p < end) {
+            Node srem = expandCaseFoldMakeRemString(chars, p, end);
 
-            if (prevNode.p != null && r == null) {
-                topRoot = r = ConsAltNode.listAdd(null, prevNode.p);
+            if (prevNode.p != null && root == null) {
+                topRoot = root = ConsAltNode.listAdd(null, prevNode.p);
             }
 
-            if (r == null) {
+            if (root == null) {
                 prevNode.p = srem;
             } else {
-                ConsAltNode.listAdd(r, srem);
+                ConsAltNode.listAdd(root, srem);
             }
         }
         /* ending */
-        final Node xnode = topRoot != null ? topRoot : prevNode.p;
+        Node xnode = topRoot != null ? topRoot : prevNode.p;
 
         swap(node, xnode);
         return xnode;
@@ -982,10 +910,7 @@ final class Analyser extends Parser {
     5. find invalid patterns in look-behind.
     6. expand repeated string.
     */
-    protected final Node setupTree(final Node nodep, final int statep) {
-        Node node = nodep;
-        int state = statep;
-
+    protected final Node setupTree(Node node, int state) {
         restart: while (true) {
         switch (node.getType()) {
         case NodeType.LIST:
@@ -1021,7 +946,7 @@ final class Analyser extends Parser {
             break;
 
         case NodeType.BREF:
-            final BackRefNode br = (BackRefNode)node;
+            BackRefNode br = (BackRefNode)node;
             if (br.backRef > env.numMem) {
                 throw new ValueException(ERR_INVALID_BACKREF);
             }
@@ -1031,31 +956,25 @@ final class Analyser extends Parser {
             break;
 
         case NodeType.QTFR:
-            final QuantifierNode qn = (QuantifierNode)node;
+            QuantifierNode qn = (QuantifierNode)node;
             Node target = qn.target;
 
-            if ((state & IN_REPEAT) != 0) {
-                qn.setInRepeat();
-            }
+            if ((state & IN_REPEAT) != 0) qn.setInRepeat();
 
             if (isRepeatInfinite(qn.upper) || qn.lower >= 1) {
-                final int d = getMinMatchLength(target);
+                int d = getMinMatchLength(target);
                 if (d == 0) {
                     qn.targetEmptyInfo = TargetInfo.IS_EMPTY;
                     if (Config.USE_MONOMANIAC_CHECK_CAPTURES_IN_ENDLESS_REPEAT) {
-                        final int info = quantifiersMemoryInfo(target);
-                        if (info > 0) {
-                            qn.targetEmptyInfo = info;
-                        }
+                        int info = quantifiersMemoryInfo(target);
+                        if (info > 0) qn.targetEmptyInfo = info;
                     } // USE_INFINITE_REPEAT_MONOMANIAC_MEM_STATUS_CHECK
                     // strange stuff here (turned off)
                 }
             }
 
             state |= IN_REPEAT;
-            if (qn.lower != qn.upper) {
-                state |= IN_VAR_REPEAT;
-            }
+            if (qn.lower != qn.upper) state |= IN_VAR_REPEAT;
 
             target = setupTree(target, state);
 
@@ -1063,12 +982,12 @@ final class Analyser extends Parser {
             if (target.getType() == NodeType.STR) {
                 if (!isRepeatInfinite(qn.lower) && qn.lower == qn.upper &&
                     qn.lower > 1 && qn.lower <= EXPAND_STRING_MAX_LENGTH) {
-                    final StringNode sn = (StringNode)target;
-                    final int len = sn.length();
+                    StringNode sn = (StringNode)target;
+                    int len = sn.length();
 
                     if (len * qn.lower <= EXPAND_STRING_MAX_LENGTH) {
-                        final StringNode str = qn.convertToString(sn.flag);
-                        final int n = qn.lower;
+                        StringNode str = qn.convertToString(sn.flag);
+                        int n = qn.lower;
                         for (int i = 0; i < n; i++) {
                             str.cat(sn.chars, sn.p, sn.end);
                         }
@@ -1080,7 +999,7 @@ final class Analyser extends Parser {
             if (Config.USE_OP_PUSH_OR_JUMP_EXACT) {
                 if (qn.greedy && qn.targetEmptyInfo != 0) {
                     if (target.getType() == NodeType.QTFR) {
-                        final QuantifierNode tqn = (QuantifierNode)target;
+                        QuantifierNode tqn = (QuantifierNode)target;
                         if (tqn.headExact != null) {
                             qn.headExact = tqn.headExact;
                             tqn.headExact = null;
@@ -1093,10 +1012,10 @@ final class Analyser extends Parser {
             break;
 
         case NodeType.ENCLOSE:
-            final EncloseNode en = (EncloseNode)node;
+            EncloseNode en = (EncloseNode)node;
             switch (en.type) {
             case EncloseType.OPTION:
-                final int options = regex.options;
+                int options = regex.options;
                 regex.options = en.option;
                 setupTree(en.target, state);
                 regex.options = options;
@@ -1114,24 +1033,19 @@ final class Analyser extends Parser {
             case EncloseType.STOP_BACKTRACK:
                 setupTree(en.target, state);
                 if (en.target.getType() == NodeType.QTFR) {
-                    final QuantifierNode tqn = (QuantifierNode)en.target;
+                    QuantifierNode tqn = (QuantifierNode)en.target;
                     if (isRepeatInfinite(tqn.upper) && tqn.lower <= 1 && tqn.greedy) {
                         /* (?>a*), a*+ etc... */
-                        if (tqn.target.isSimple()) {
-                            en.setStopBtSimpleRepeat();
-                        }
+                        if (tqn.target.isSimple()) en.setStopBtSimpleRepeat();
                     }
                 }
-                break;
-
-            default:
                 break;
 
             } // inner switch
             break;
 
         case NodeType.ANCHOR:
-            final AnchorNode an = (AnchorNode)node;
+            AnchorNode an = (AnchorNode)node;
             switch (an.type) {
             case AnchorType.PREC_READ:
                 setupTree(an.target, state);
@@ -1146,9 +1060,7 @@ final class Analyser extends Parser {
                     throw new SyntaxException(ERR_INVALID_LOOK_BEHIND_PATTERN);
                 }
                 node = setupLookBehind(node);
-                if (node.getType() != NodeType.ANCHOR) {
-                    continue restart;
-                }
+                if (node.getType() != NodeType.ANCHOR) continue restart;
                 setupTree(((AnchorNode)node).target, state);
                 break;
 
@@ -1157,18 +1069,11 @@ final class Analyser extends Parser {
                     throw new SyntaxException(ERR_INVALID_LOOK_BEHIND_PATTERN);
                 }
                 node = setupLookBehind(node);
-                if (node.getType() != NodeType.ANCHOR) {
-                    continue restart;
-                }
+                if (node.getType() != NodeType.ANCHOR) continue restart;
                 setupTree(((AnchorNode)node).target, (state | IN_NOT));
                 break;
 
-            default:
-                break;
-
             } // inner switch
-            break;
-        default:
             break;
         } // switch
         return node;
@@ -1176,14 +1081,14 @@ final class Analyser extends Parser {
     }
 
     private static final int MAX_NODE_OPT_INFO_REF_COUNT   = 5;
-    private void optimizeNodeLeft(final Node node, final NodeOptInfo opt, final OptEnvironment oenv) { // oenv remove, pass mmd
+    private void optimizeNodeLeft(Node node, NodeOptInfo opt, OptEnvironment oenv) { // oenv remove, pass mmd
         opt.clear();
         opt.setBoundNode(oenv.mmd);
 
         switch (node.getType()) {
         case NodeType.LIST: {
-            final OptEnvironment nenv = new OptEnvironment();
-            final NodeOptInfo nopt = new NodeOptInfo();
+            OptEnvironment nenv = new OptEnvironment();
+            NodeOptInfo nopt = new NodeOptInfo();
             nenv.copy(oenv);
             ConsAltNode lin = (ConsAltNode)node;
             do {
@@ -1195,7 +1100,7 @@ final class Analyser extends Parser {
         }
 
         case NodeType.ALT: {
-            final NodeOptInfo nopt = new NodeOptInfo();
+            NodeOptInfo nopt = new NodeOptInfo();
             ConsAltNode aln = (ConsAltNode)node;
             do {
                 optimizeNodeLeft(aln.car, nopt, oenv);
@@ -1209,9 +1114,9 @@ final class Analyser extends Parser {
         }
 
         case NodeType.STR: {
-            final StringNode sn = (StringNode)node;
+            StringNode sn = (StringNode)node;
 
-            final int slen = sn.length();
+            int slen = sn.length();
 
             if (!sn.isAmbig()) {
                 opt.exb.concatStr(sn.chars, sn.p, sn.end, sn.isRaw());
@@ -1245,13 +1150,13 @@ final class Analyser extends Parser {
         }
 
         case NodeType.CCLASS: {
-            final CClassNode cc = (CClassNode)node;
+            CClassNode cc = (CClassNode)node;
             /* no need to check ignore case. (setted in setup_tree()) */
             if (cc.mbuf != null || cc.isNot()) {
                 opt.length.set(1, 1);
             } else {
                 for (int i=0; i<BitSet.SINGLE_BYTE_SIZE; i++) {
-                    final boolean z = cc.bs.at(i);
+                    boolean z = cc.bs.at(i);
                     if ((z && !cc.isNot()) || (!z && cc.isNot())) {
                         opt.map.addChar(i);
                     }
@@ -1267,7 +1172,7 @@ final class Analyser extends Parser {
         }
 
         case NodeType.ANCHOR: {
-            final AnchorNode an = (AnchorNode)node;
+            AnchorNode an = (AnchorNode)node;
             switch (an.type) {
             case AnchorType.BEGIN_BUF:
             case AnchorType.BEGIN_POSITION:
@@ -1279,7 +1184,7 @@ final class Analyser extends Parser {
                 break;
 
             case AnchorType.PREC_READ:
-                final NodeOptInfo nopt = new NodeOptInfo();
+                NodeOptInfo nopt = new NodeOptInfo();
                 optimizeNodeLeft(an.target, nopt, oenv);
                 if (nopt.exb.length > 0) {
                     opt.expr.copy(nopt.exb);
@@ -1287,9 +1192,7 @@ final class Analyser extends Parser {
                     opt.expr.copy(nopt.exm);
                 }
                 opt.expr.reachEnd = false;
-                if (nopt.map.value > 0) {
-                    opt.map.copy(nopt.map);
-                }
+                if (nopt.map.value > 0) opt.map.copy(nopt.map);
                 break;
 
             case AnchorType.PREC_READ_NOT:
@@ -1297,25 +1200,22 @@ final class Analyser extends Parser {
             case AnchorType.LOOK_BEHIND_NOT:
                 break;
 
-            default:
-                break;
-
             } // inner switch
             break;
         }
 
         case NodeType.BREF: {
-            final BackRefNode br = (BackRefNode)node;
+            BackRefNode br = (BackRefNode)node;
 
             if (br.isRecursion()) {
                 opt.length.set(0, MinMaxLen.INFINITE_DISTANCE);
                 break;
             }
 
-            final Node[]nodes = oenv.scanEnv.memNodes;
+            Node[]nodes = oenv.scanEnv.memNodes;
 
-            final int min = getMinMatchLength(nodes[br.backRef]);
-            final int max = getMaxMatchLength(nodes[br.backRef]);
+            int min = getMinMatchLength(nodes[br.backRef]);
+            int max = getMaxMatchLength(nodes[br.backRef]);
 
             opt.length.set(min, max);
             break;
@@ -1323,8 +1223,8 @@ final class Analyser extends Parser {
 
 
         case NodeType.QTFR: {
-            final NodeOptInfo nopt = new NodeOptInfo();
-            final QuantifierNode qn = (QuantifierNode)node;
+            NodeOptInfo nopt = new NodeOptInfo();
+            QuantifierNode qn = (QuantifierNode)node;
             optimizeNodeLeft(qn.target, nopt, oenv);
             if (qn.lower == 0 && isRepeatInfinite(qn.upper)) {
                 if (oenv.mmd.max == 0 && qn.target.getType() == NodeType.CANY && qn.greedy) {
@@ -1358,7 +1258,7 @@ final class Analyser extends Parser {
 
                 }
             }
-            final int min = MinMaxLen.distanceMultiply(nopt.length.min, qn.lower);
+            int min = MinMaxLen.distanceMultiply(nopt.length.min, qn.lower);
             int max;
             if (isRepeatInfinite(qn.upper)) {
                 max = nopt.length.max > 0 ? MinMaxLen.INFINITE_DISTANCE : 0;
@@ -1370,10 +1270,10 @@ final class Analyser extends Parser {
         }
 
         case NodeType.ENCLOSE: {
-            final EncloseNode en = (EncloseNode)node;
+            EncloseNode en = (EncloseNode)node;
             switch (en.type) {
             case EncloseType.OPTION:
-                final int save = oenv.options;
+                int save = oenv.options;
                 oenv.options = en.option;
                 optimizeNodeLeft(en.target, opt, oenv);
                 oenv.options = save;
@@ -1383,12 +1283,8 @@ final class Analyser extends Parser {
                 if (++en.optCount > MAX_NODE_OPT_INFO_REF_COUNT) {
                     int min = 0;
                     int max = MinMaxLen.INFINITE_DISTANCE;
-                    if (en.isMinFixed()) {
-                        min = en.minLength;
-                    }
-                    if (en.isMaxFixed()) {
-                        max = en.maxLength;
-                    }
+                    if (en.isMinFixed()) min = en.minLength;
+                    if (en.isMaxFixed()) max = en.maxLength;
                     opt.length.set(min, max);
                 } else { // USE_SUBEXP_CALL
                     optimizeNodeLeft(en.target, opt, oenv);
@@ -1403,9 +1299,6 @@ final class Analyser extends Parser {
             case EncloseType.STOP_BACKTRACK:
                 optimizeNodeLeft(en.target, opt, oenv);
                 break;
-
-            default:
-                break;
             } // inner switch
             break;
         }
@@ -1415,10 +1308,9 @@ final class Analyser extends Parser {
         } // switch
     }
 
-    @SuppressWarnings("unused")
-    protected final void setOptimizedInfoFromTree(final Node node) {
-        final NodeOptInfo opt = new NodeOptInfo();
-        final OptEnvironment oenv = new OptEnvironment();
+    protected final void setOptimizedInfoFromTree(Node node) {
+        NodeOptInfo opt = new NodeOptInfo();
+        OptEnvironment oenv = new OptEnvironment();
 
         oenv.options = regex.options;
         oenv.caseFoldFlag = regex.caseFoldFlag;
@@ -1456,9 +1348,7 @@ final class Analyser extends Parser {
             regex.setSubAnchor(opt.map.anchor);
         } else {
             regex.subAnchor |= opt.anchor.leftAnchor & AnchorType.BEGIN_LINE;
-            if (opt.length.max == 0) {
-                regex.subAnchor |= opt.anchor.rightAnchor & AnchorType.END_LINE;
-            }
+            if (opt.length.max == 0) regex.subAnchor |= opt.anchor.rightAnchor & AnchorType.END_LINE;
         }
 
         if (Config.DEBUG_COMPILE || Config.DEBUG_MATCH) {

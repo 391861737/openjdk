@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 1997, 2017, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 1997, 2013, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -27,7 +27,6 @@
 #include "classfile/vmSymbols.hpp"
 #include "gc_implementation/shared/markSweep.inline.hpp"
 #include "memory/gcLocker.hpp"
-#include "memory/metaspaceShared.hpp"
 #include "memory/resourceArea.hpp"
 #include "memory/universe.inline.hpp"
 #include "oops/instanceKlass.hpp"
@@ -40,16 +39,10 @@
 #include "runtime/handles.inline.hpp"
 #include "utilities/copy.hpp"
 
-PRAGMA_FORMAT_MUTE_WARNINGS_FOR_GCC
-
 inline InstanceKlass* klassVtable::ik() const {
   Klass* k = _klass();
   assert(k->oop_is_instance(), "not an InstanceKlass");
   return (InstanceKlass*)k;
-}
-
-bool klassVtable::is_preinitialized_vtable() {
-  return _klass->is_shared() && !MetaspaceShared::remapped_readwrite();
 }
 
 
@@ -133,12 +126,6 @@ int klassVtable::index_of(Method* m, int len) const {
 int klassVtable::initialize_from_super(KlassHandle super) {
   if (super.is_null()) {
     return 0;
-  } else if (is_preinitialized_vtable()) {
-    // A shared class' vtable is preinitialized at dump time. No need to copy
-    // methods from super class for shared class, as that was already done
-    // during archiving time. However, if Jvmti has redefined a class,
-    // copy super class's vtable in case the super class has changed.
-    return super->vtable()->length();
   } else {
     // copy methods from superKlass
     // can't inherit from array class, so must be InstanceKlass
@@ -168,8 +155,6 @@ void klassVtable::initialize_vtable(bool checkconstraints, TRAPS) {
   KlassHandle super (THREAD, klass()->java_super());
   int nofNewEntries = 0;
 
-  bool is_shared = _klass->is_shared();
-
   if (PrintVtables && !klass()->oop_is_array()) {
     ResourceMark rm(THREAD);
     tty->print_cr("Initializing: %s", _klass->name()->as_C_string());
@@ -182,7 +167,6 @@ void klassVtable::initialize_vtable(bool checkconstraints, TRAPS) {
 #endif
 
   if (Universe::is_bootstrapping()) {
-    assert(!is_shared, "sanity");
     // just clear everything
     for (int i = 0; i < _length; i++) table()[i].clear();
     return;
@@ -222,7 +206,6 @@ void klassVtable::initialize_vtable(bool checkconstraints, TRAPS) {
       if (len > 0) {
         Array<int>* def_vtable_indices = NULL;
         if ((def_vtable_indices = ik()->default_vtable_indices()) == NULL) {
-          assert(!is_shared, "shared class def_vtable_indices does not exist");
           def_vtable_indices = ik()->create_new_default_vtable_indices(len, CHECK);
         } else {
           assert(def_vtable_indices->length() == len, "reinit vtable len?");
@@ -237,15 +220,7 @@ void klassVtable::initialize_vtable(bool checkconstraints, TRAPS) {
           // needs new entry
           if (needs_new_entry) {
             put_method_at(mh(), initialized);
-            if (is_preinitialized_vtable()) {
-              // At runtime initialize_vtable is rerun for a shared class
-              // (loaded by the non-boot loader) as part of link_class_impl().
-              // The dumptime vtable index should be the same as the runtime index.
-              assert(def_vtable_indices->at(i) == initialized,
-                     "dump time vtable index is different from runtime index");
-            } else {
-              def_vtable_indices->at_put(i, initialized); //set vtable index
-            }
+            def_vtable_indices->at_put(i, initialized); //set vtable index
             initialized++;
           }
         }
@@ -274,17 +249,6 @@ void klassVtable::initialize_vtable(bool checkconstraints, TRAPS) {
 // For bytecodes not produced by javac together it is possible that a method does not override
 // the superclass's method, but might indirectly override a super-super class's vtable entry
 // If none found, return a null superk, else return the superk of the method this does override
-// For public and protected methods: if they override a superclass, they will
-// also be overridden themselves appropriately.
-// Private methods do not override and are not overridden.
-// Package Private methods are trickier:
-// e.g. P1.A, pub m
-// P2.B extends A, package private m
-// P1.C extends B, public m
-// P1.C.m needs to override P1.A.m and can not override P2.B.m
-// Therefore: all package private methods need their own vtable entries for
-// them to be the root of an inheritance overriding decision
-// Package private methods may also override other vtable entries
 InstanceKlass* klassVtable::find_transitive_override(InstanceKlass* initialsuper, methodHandle target_method,
                             int vtable_index, Handle target_loader, Symbol* target_classname, Thread * THREAD) {
   InstanceKlass* superk = initialsuper;
@@ -388,8 +352,7 @@ bool klassVtable::update_inherited_vtable(InstanceKlass* klass, methodHandle tar
   }
 
   // we need a new entry if there is no superclass
-  Klass* super = klass->super();
-  if (super == NULL) {
+  if (klass->super() == NULL) {
     return allocate_new;
   }
 
@@ -418,36 +381,23 @@ bool klassVtable::update_inherited_vtable(InstanceKlass* klass, methodHandle tar
 
   Symbol* target_classname = target_klass->name();
   for(int i = 0; i < super_vtable_len; i++) {
-    Method* super_method;
-    if (is_preinitialized_vtable()) {
-      // If this is a shared class, the vtable is already in the final state (fully
-      // initialized). Need to look at the super's vtable.
-      klassVtable* superVtable = super->vtable();
-      super_method = superVtable->method_at(i);
-    } else {
-      super_method = method_at(i);
-    }
+    Method* super_method = method_at(i);
     // Check if method name matches
     if (super_method->name() == name && super_method->signature() == signature) {
 
       // get super_klass for method_holder for the found method
       InstanceKlass* super_klass =  super_method->method_holder();
 
-      // private methods are also never overridden
-      if (!super_method->is_private() &&
-          (is_default
+      if (is_default
           || ((super_klass->is_override(super_method, target_loader, target_classname, THREAD))
           || ((klass->major_version() >= VTABLE_TRANSITIVE_OVERRIDE_VERSION)
           && ((super_klass = find_transitive_override(super_klass,
                              target_method, i, target_loader,
                              target_classname, THREAD))
-                             != (InstanceKlass*)NULL)))))
+                             != (InstanceKlass*)NULL))))
         {
-        // Package private methods always need a new entry to root their own
-        // overriding. They may also override other methods.
-        if (!target_method()->is_package_private()) {
-          allocate_new = false;
-        }
+        // overriding, so no new entry
+        allocate_new = false;
 
         if (checkconstraints) {
         // Override vtable entry if passes loader constraint check
@@ -490,15 +440,7 @@ bool klassVtable::update_inherited_vtable(InstanceKlass* klass, methodHandle tar
          target_method()->set_vtable_index(i);
        } else {
          if (def_vtable_indices != NULL) {
-           if (is_preinitialized_vtable()) {
-             // At runtime initialize_vtable is rerun as part of link_class_impl()
-             // for a shared class loaded by the non-boot loader.
-             // The dumptime vtable index should be the same as the runtime index.
-             assert(def_vtable_indices->at(default_index) == i,
-                    "dump time vtable index is different from runtime index");
-           } else {
-             def_vtable_indices->at_put(default_index, i);
-           }
+           def_vtable_indices->at_put(default_index, i);
          }
          assert(super_method->is_default_method() || super_method->is_overpass()
                 || super_method->is_abstract(), "default override error");
@@ -563,33 +505,24 @@ bool klassVtable::update_inherited_vtable(InstanceKlass* klass, methodHandle tar
 }
 
 void klassVtable::put_method_at(Method* m, int index) {
-  if (is_preinitialized_vtable()) {
-    // At runtime initialize_vtable is rerun as part of link_class_impl()
-    // for shared class loaded by the non-boot loader to obtain the loader
-    // constraints based on the runtime classloaders' context. The dumptime
-    // method at the vtable index should be the same as the runtime method.
-    assert(table()[index].method() == m,
-           "archived method is different from the runtime method");
-  } else {
 #ifndef PRODUCT
-    if (PrintVtables && Verbose) {
-      ResourceMark rm;
-      const char* sig = (m != NULL) ? m->name_and_sig_as_C_string() : "<NULL>";
-      tty->print("adding %s at index %d, flags: ", sig, index);
-      if (m != NULL) {
-        m->access_flags().print_on(tty);
-        if (m->is_default_method()) {
-          tty->print("default ");
-        }
-        if (m->is_overpass()) {
-          tty->print("overpass");
-        }
+  if (PrintVtables && Verbose) {
+    ResourceMark rm;
+    const char* sig = (m != NULL) ? m->name_and_sig_as_C_string() : "<NULL>";
+    tty->print("adding %s at index %d, flags: ", sig, index);
+    if (m != NULL) {
+      m->access_flags().print_on(tty);
+      if (m->is_default_method()) {
+        tty->print("default ");
       }
-      tty->cr();
+      if (m->is_overpass()) {
+        tty->print("overpass");
+      }
     }
-#endif
-    table()[index].set(m);
+    tty->cr();
   }
+#endif
+  table()[index].set(m);
 }
 
 // Find out if a method "m" with superclass "super", loader "classloader" and
@@ -608,9 +541,8 @@ bool klassVtable::needs_new_vtable_entry(methodHandle target_method,
                                          AccessFlags class_flags,
                                          TRAPS) {
   if (class_flags.is_interface()) {
-    // Interfaces do not use vtables, except for java.lang.Object methods,
-    // so there is no point to assigning
-    // a vtable index to any of their local methods.  If we refrain from doing this,
+    // Interfaces do not use vtables, so there is no point to assigning
+    // a vtable index to any of their methods.  If we refrain from doing this,
     // we can use Method::_vtable_index to hold the itable index
     return false;
   }
@@ -645,12 +577,6 @@ bool klassVtable::needs_new_vtable_entry(methodHandle target_method,
   // private methods not overriding
   // JDK8 adds private  methods in interfaces which require invokespecial
   if (target_method()->is_private()) {
-    return true;
-  }
-
-  // Package private methods always need a new entry to root their own
-  // overriding. This allows transitive overriding to work.
-  if (target_method()->is_package_private()) {
     return true;
   }
 
@@ -696,7 +622,7 @@ bool klassVtable::needs_new_vtable_entry(methodHandle target_method,
   // this check for all access permissions.
   InstanceKlass *sk = InstanceKlass::cast(super);
   if (sk->has_miranda_methods()) {
-    if (sk->lookup_method_in_all_interfaces(name, signature, Klass::find_defaults) != NULL) {
+    if (sk->lookup_method_in_all_interfaces(name, signature, false) != NULL) {
       return false;  // found a matching miranda; we do not need a new entry
     }
   }
@@ -729,6 +655,7 @@ bool klassVtable::is_miranda_entry_at(int i) {
   if (mhk->is_interface()) {
     assert(m->is_public(), "should be public");
     assert(ik()->implements_interface(method_holder) , "this class should implement the interface");
+    // the search could find a miranda or a default method
     if (is_miranda(m, ik()->methods(), ik()->default_methods(), ik()->super())) {
       return true;
     }
@@ -736,57 +663,19 @@ bool klassVtable::is_miranda_entry_at(int i) {
   return false;
 }
 
-// Check if a method is a miranda method, given a class's methods array,
-// its default_method table and its super class.
-// "Miranda" means an abstract non-private method that would not be
-// overridden for the local class.
-// A "miranda" method should only include non-private interface
-// instance methods, i.e. not private methods, not static methods,
-// not default methods (concrete interface methods), not overpass methods.
-// If a given class already has a local (including overpass) method, a
-// default method, or any of its superclasses has the same which would have
-// overridden an abstract method, then this is not a miranda method.
-//
-// Miranda methods are checked multiple times.
-// Pass 1: during class load/class file parsing: before vtable size calculation:
-// include superinterface abstract and default methods (non-private instance).
-// We include potential default methods to give them space in the vtable.
-// During the first run, the current instanceKlass has not yet been
-// created, the superclasses and superinterfaces do have instanceKlasses
-// but may not have vtables, the default_methods list is empty, no overpasses.
-// This is seen by default method creation.
-//
-// Pass 2: recalculated during vtable initialization: only include abstract methods.
-// The goal of pass 2 is to walk through the superinterfaces to see if any of
-// the superinterface methods (which were all abstract pre-default methods)
-// need to be added to the vtable.
-// With the addition of default methods, we have three new challenges:
-// overpasses, static interface methods and private interface methods.
-// Static and private interface methods do not get added to the vtable and
-// are not seen by the method resolution process, so we skip those.
-// Overpass methods are already in the vtable, so vtable lookup will
-// find them and we don't need to add a miranda method to the end of
-// the vtable. So we look for overpass methods and if they are found we
-// return false. Note that we inherit our superclasses vtable, so
-// the superclass' search also needs to use find_overpass so that if
-// one is found we return false.
-// False means - we don't need a miranda method added to the vtable.
-//
-// During the second run, default_methods is set up, so concrete methods from
-// superinterfaces with matching names/signatures to default_methods are already
-// in the default_methods list and do not need to be appended to the vtable
-// as mirandas. Abstract methods may already have been handled via
-// overpasses - either local or superclass overpasses, which may be
-// in the vtable already.
-//
-// Pass 3: They are also checked by link resolution and selection,
-// for invocation on a method (not interface method) reference that
-// resolves to a method with an interface as its method_holder.
-// Used as part of walking from the bottom of the vtable to find
-// the vtable index for the miranda method.
-//
-// Part of the Miranda Rights in the US mean that if you do not have
-// an attorney one will be appointed for you.
+// check if a method is a miranda method, given a class's methods table,
+// its default_method table  and its super
+// Miranda methods are calculated twice:
+// first: before vtable size calculation: including abstract and default
+// This is seen by default method creation
+// Second: recalculated during vtable initialization: only abstract
+// This is seen by link resolution and selection.
+// "miranda" means not static, not defined by this class.
+// private methods in interfaces do not belong in the miranda list.
+// the caller must make sure that the method belongs to an interface implemented by the class
+// Miranda methods only include public interface instance methods
+// Not private methods, not static methods, not default == concrete abstract
+// Miranda methods also do not include overpass methods in interfaces
 bool klassVtable::is_miranda(Method* m, Array<Method*>* class_methods,
                              Array<Method*>* default_methods, Klass* super) {
   if (m->is_static() || m->is_private() || m->is_overpass()) {
@@ -795,35 +684,30 @@ bool klassVtable::is_miranda(Method* m, Array<Method*>* class_methods,
   Symbol* name = m->name();
   Symbol* signature = m->signature();
 
-  // First look in local methods to see if already covered
-  if (InstanceKlass::find_local_method(class_methods, name, signature,
-              Klass::find_overpass, Klass::skip_static, Klass::skip_private) != NULL)
-  {
-    return false;
+  if (InstanceKlass::find_instance_method(class_methods, name, signature) == NULL) {
+    // did not find it in the method table of the current class
+    if ((default_methods == NULL) ||
+        InstanceKlass::find_method(default_methods, name, signature) == NULL) {
+      if (super == NULL) {
+        // super doesn't exist
+        return true;
+      }
+
+      Method* mo = InstanceKlass::cast(super)->lookup_method(name, signature);
+      while (mo != NULL && mo->access_flags().is_static()
+             && mo->method_holder() != NULL
+             && mo->method_holder()->super() != NULL)
+      {
+         mo = mo->method_holder()->super()->uncached_lookup_method(name, signature);
+      }
+      if (mo == NULL || mo->access_flags().is_private() ) {
+        // super class hierarchy does not implement it or protection is different
+        return true;
+      }
+    }
   }
 
-  // Check local default methods
-  if ((default_methods != NULL) &&
-    (InstanceKlass::find_method(default_methods, name, signature) != NULL))
-   {
-     return false;
-   }
-
-  InstanceKlass* cursuper;
-  // Iterate on all superclasses, which should have instanceKlasses
-  // Note that we explicitly look for overpasses at each level.
-  // Overpasses may or may not exist for supers for pass 1,
-  // they should have been created for pass 2 and later.
-
-  for (cursuper = InstanceKlass::cast(super); cursuper != NULL;  cursuper = (InstanceKlass*)cursuper->super())
-  {
-     if (cursuper->find_local_method(name, signature,
-           Klass::find_overpass, Klass::skip_static, Klass::skip_private) != NULL) {
-       return false;
-     }
-  }
-
-  return true;
+  return false;
 }
 
 // Scans current_interface_methods for miranda methods that do not
@@ -859,7 +743,7 @@ void klassVtable::add_new_mirandas_to_lists(
       if (is_miranda(im, class_methods, default_methods, super)) { // is it a miranda at all?
         InstanceKlass *sk = InstanceKlass::cast(super);
         // check if it is a duplicate of a super's miranda
-        if (sk->lookup_method_in_all_interfaces(im->name(), im->signature(), Klass::find_defaults) == NULL) {
+        if (sk->lookup_method_in_all_interfaces(im->name(), im->signature(), false) == NULL) {
           new_mirandas->append(im);
         }
         if (all_mirandas != NULL) {
@@ -953,43 +837,44 @@ bool klassVtable::adjust_default_method(int vtable_index, Method* old_method, Me
   }
   return updated;
 }
+void klassVtable::adjust_method_entries(Method** old_methods, Method** new_methods,
+                                        int methods_length, bool * trace_name_printed) {
+  // search the vtable for uses of either obsolete or EMCP methods
+  for (int j = 0; j < methods_length; j++) {
+    Method* old_method = old_methods[j];
+    Method* new_method = new_methods[j];
 
-// search the vtable for uses of either obsolete or EMCP methods
-void klassVtable::adjust_method_entries(InstanceKlass* holder, bool * trace_name_printed) {
-  int prn_enabled = 0;
-  for (int index = 0; index < length(); index++) {
-    Method* old_method = unchecked_method_at(index);
-    if (old_method == NULL || old_method->method_holder() != holder || !old_method->is_old()) {
-      continue; // skip uninteresting entries
-    }
-    assert(!old_method->is_deleted(), "vtable methods may not be deleted");
+    // In the vast majority of cases we could get the vtable index
+    // by using:  old_method->vtable_index()
+    // However, there are rare cases, eg. sun.awt.X11.XDecoratedPeer.getX()
+    // in sun.awt.X11.XFramePeer where methods occur more than once in the
+    // vtable, so, alas, we must do an exhaustive search.
+    for (int index = 0; index < length(); index++) {
+      if (unchecked_method_at(index) == old_method) {
+        put_method_at(new_method, index);
+          // For default methods, need to update the _default_methods array
+          // which can only have one method entry for a given signature
+          bool updated_default = false;
+          if (old_method->is_default_method()) {
+            updated_default = adjust_default_method(index, old_method, new_method);
+          }
 
-    Method* new_method = holder->method_with_idnum(old_method->orig_method_idnum());
-
-    assert(new_method != NULL, "method_with_idnum() should not be NULL");
-    assert(old_method != new_method, "sanity check");
-
-    put_method_at(new_method, index);
-    // For default methods, need to update the _default_methods array
-    // which can only have one method entry for a given signature
-    bool updated_default = false;
-    if (old_method->is_default_method()) {
-      updated_default = adjust_default_method(index, old_method, new_method);
-    }
-
-    if (RC_TRACE_IN_RANGE(0x00100000, 0x00400000)) {
-      if (!(*trace_name_printed)) {
-        // RC_TRACE_MESG macro has an embedded ResourceMark
-        RC_TRACE_MESG(("adjust: klassname=%s for methods from name=%s",
-                       klass()->external_name(),
-                       old_method->method_holder()->external_name()));
-        *trace_name_printed = true;
+        if (RC_TRACE_IN_RANGE(0x00100000, 0x00400000)) {
+          if (!(*trace_name_printed)) {
+            // RC_TRACE_MESG macro has an embedded ResourceMark
+            RC_TRACE_MESG(("adjust: klassname=%s for methods from name=%s",
+                           klass()->external_name(),
+                           old_method->method_holder()->external_name()));
+            *trace_name_printed = true;
+          }
+          // RC_TRACE macro has an embedded ResourceMark
+          RC_TRACE(0x00100000, ("vtable method update: %s(%s), updated default = %s",
+                                new_method->name()->as_C_string(),
+                                new_method->signature()->as_C_string(),
+                                updated_default ? "true" : "false"));
+        }
+        // cannot 'break' here; see for-loop comment above.
       }
-      // RC_TRACE macro has an embedded ResourceMark
-      RC_TRACE(0x00100000, ("vtable method update: %s(%s), updated default = %s",
-                            new_method->name()->as_C_string(),
-                            new_method->signature()->as_C_string(),
-                            updated_default ? "true" : "false"));
     }
   }
 }
@@ -1043,15 +928,7 @@ bool klassVtable::is_initialized() {
 void itableMethodEntry::initialize(Method* m) {
   if (m == NULL) return;
 
-  if (MetaspaceShared::is_in_shared_space((void*)&_method) &&
-     !MetaspaceShared::remapped_readwrite()) {
-    // At runtime initialize_itable is rerun as part of link_class_impl()
-    // for a shared class loaded by the non-boot loader.
-    // The dumptime itable method entry should be the same as the runtime entry.
-    assert(_method == m, "sanity");
-  } else {
-    _method = m;
-  }
+  _method = m;
 }
 
 klassItable::klassItable(instanceKlassHandle klass) {
@@ -1161,11 +1038,7 @@ int klassItable::assign_itable_indices_for_interface(Klass* klass) {
         tty->cr();
       }
       if (!m->has_vtable_index()) {
-        // A shared method could have an initialized itable_index that
-        // is < 0.
-        assert(m->vtable_index() == Method::pending_itable_index ||
-               m->is_shared(),
-               "set by initialize_vtable");
+        assert(m->vtable_index() == Method::pending_itable_index, "set by initialize_vtable");
         m->set_itable_index(ime_num);
         // Progress to next itable entry
         ime_num++;
@@ -1294,35 +1167,37 @@ void klassItable::initialize_with_method(Method* m) {
 }
 
 #if INCLUDE_JVMTI
-// search the itable for uses of either obsolete or EMCP methods
-void klassItable::adjust_method_entries(InstanceKlass* holder, bool * trace_name_printed) {
+void klassItable::adjust_method_entries(Method** old_methods, Method** new_methods,
+                                        int methods_length, bool * trace_name_printed) {
+  // search the itable for uses of either obsolete or EMCP methods
+  for (int j = 0; j < methods_length; j++) {
+    Method* old_method = old_methods[j];
+    Method* new_method = new_methods[j];
+    itableMethodEntry* ime = method_entry(0);
 
-  itableMethodEntry* ime = method_entry(0);
-  for (int i = 0; i < _size_method_table; i++, ime++) {
-    Method* old_method = ime->method();
-    if (old_method == NULL || old_method->method_holder() != holder || !old_method->is_old()) {
-      continue; // skip uninteresting entries
-    }
-    assert(!old_method->is_deleted(), "itable methods may not be deleted");
+    // The itable can describe more than one interface and the same
+    // method signature can be specified by more than one interface.
+    // This means we have to do an exhaustive search to find all the
+    // old_method references.
+    for (int i = 0; i < _size_method_table; i++) {
+      if (ime->method() == old_method) {
+        ime->initialize(new_method);
 
-    Method* new_method = holder->method_with_idnum(old_method->orig_method_idnum());
-
-    assert(new_method != NULL, "method_with_idnum() should not be NULL");
-    assert(old_method != new_method, "sanity check");
-
-    ime->initialize(new_method);
-
-    if (RC_TRACE_IN_RANGE(0x00100000, 0x00400000)) {
-      if (!(*trace_name_printed)) {
-        // RC_TRACE_MESG macro has an embedded ResourceMark
-        RC_TRACE_MESG(("adjust: name=%s",
-          old_method->method_holder()->external_name()));
-        *trace_name_printed = true;
+        if (RC_TRACE_IN_RANGE(0x00100000, 0x00400000)) {
+          if (!(*trace_name_printed)) {
+            // RC_TRACE_MESG macro has an embedded ResourceMark
+            RC_TRACE_MESG(("adjust: name=%s",
+              old_method->method_holder()->external_name()));
+            *trace_name_printed = true;
+          }
+          // RC_TRACE macro has an embedded ResourceMark
+          RC_TRACE(0x00200000, ("itable method update: %s(%s)",
+            new_method->name()->as_C_string(),
+            new_method->signature()->as_C_string()));
+        }
+        // cannot 'break' here; see for-loop comment above.
       }
-      // RC_TRACE macro has an embedded ResourceMark
-      RC_TRACE(0x00200000, ("itable method update: %s(%s)",
-        new_method->name()->as_C_string(),
-        new_method->signature()->as_C_string()));
+      ime++;
     }
   }
 }
@@ -1360,6 +1235,7 @@ void klassItable::dump_itable() {
   }
 }
 #endif // INCLUDE_JVMTI
+
 
 // Setup
 class InterfaceVisiterClosure : public StackObj {

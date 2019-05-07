@@ -56,8 +56,8 @@ typedef struct _X11RIPrivate {
     int                 x, y;
 } X11RIPrivate;
 
-#define XSD_MAX(a,b) ((a) > (b) ? (a) : (b))
-#define XSD_MIN(a,b) ((a) < (b) ? (a) : (b))
+#define MAX(a,b) ((a) > (b) ? (a) : (b))
+#define MIN(a,b) ((a) < (b) ? (a) : (b))
 
 static LockFunc X11SD_Lock;
 static GetRasInfoFunc X11SD_GetRasInfo;
@@ -438,15 +438,6 @@ jboolean XShared_initSurface(JNIEnv *env, X11SDOps *xsdo, jint depth, jint width
         xsdo->drawable = drawable;
         xsdo->isPixmap = JNI_FALSE;
     } else {
-        /*
-         * width , height must be nonzero otherwise XCreatePixmap
-         * generates BadValue in error_handler
-         */
-        if (width <= 0 || height <= 0 || width > 32767 || height > 32767) {
-            JNU_ThrowOutOfMemoryError(env,
-                                  "Can't create offscreen surface");
-            return JNI_FALSE;
-        }
         xsdo->isPixmap = JNI_TRUE;
         /* REMIND: workaround for bug 4420220 on pgx32 boards:
            don't use DGA with pixmaps unless USE_DGA_PIXMAPS is set.
@@ -463,7 +454,6 @@ jboolean XShared_initSurface(JNIEnv *env, X11SDOps *xsdo, jint depth, jint width
             AWT_LOCK();
             xsdo->drawable = X11SD_CreateSharedPixmap(xsdo);
             AWT_UNLOCK();
-            JNU_CHECK_EXCEPTION_RETURN(env, JNI_FALSE);
             if (xsdo->drawable) {
                 xsdo->shmPMData.usingShmPixmap = JNI_TRUE;
                 xsdo->shmPMData.shmPixmap = xsdo->drawable;
@@ -479,7 +469,6 @@ jboolean XShared_initSurface(JNIEnv *env, X11SDOps *xsdo, jint depth, jint width
                                      xsdo->configData->awt_visInfo.screen),
                           width, height, depth);
         AWT_UNLOCK();
-        JNU_CHECK_EXCEPTION_RETURN(env, JNI_FALSE);
 #ifdef MITSHM
         xsdo->shmPMData.usingShmPixmap = JNI_FALSE;
         xsdo->shmPMData.pixmap = xsdo->drawable;
@@ -515,7 +504,6 @@ Java_sun_java2d_x11_X11SurfaceData_initSurface(JNIEnv *env, jclass xsd,
 
     if (xsdo->configData->awt_cmap == (Colormap)NULL) {
         awtJNI_CreateColorData(env, xsdo->configData, 1);
-        JNU_CHECK_EXCEPTION(env);
     }
     /* color_data will be initialized in awtJNI_CreateColorData for
        8-bit visuals */
@@ -817,10 +805,7 @@ static jint X11SD_Lock(JNIEnv *env,
          xsdo->cData->awt_icmLUT == NULL))
     {
         AWT_UNLOCK();
-        if (!(*env)->ExceptionCheck(env))
-        {
-             JNU_ThrowNullPointerException(env, "colormap lookup table");
-        }
+        JNU_ThrowNullPointerException(env, "colormap lookup table");
         return SD_FAILURE;
     }
     if ((lockflags & SD_LOCK_INVCOLOR) != 0 &&
@@ -831,10 +816,7 @@ static jint X11SD_Lock(JNIEnv *env,
          xsdo->cData->img_oda_blue == NULL))
     {
         AWT_UNLOCK();
-        if (!(*env)->ExceptionCheck(env))
-        {
-             JNU_ThrowNullPointerException(env, "inverse colormap lookup table");
-        }
+        JNU_ThrowNullPointerException(env, "inverse colormap lookup table");
         return SD_FAILURE;
     }
     if ((lockflags & SD_LOCK_INVGRAY) != 0 &&
@@ -842,10 +824,7 @@ static jint X11SD_Lock(JNIEnv *env,
          xsdo->cData->pGrayInverseLutData == NULL))
     {
         AWT_UNLOCK();
-        if (!(*env)->ExceptionCheck(env))
-        {
-            JNU_ThrowNullPointerException(env, "inverse gray lookup table");
-        }
+        JNU_ThrowNullPointerException(env, "inverse gray lookup table");
         return SD_FAILURE;
     }
     if (xsdo->dgaAvailable && (lockflags & (SD_LOCK_RD_WR))) {
@@ -1111,10 +1090,10 @@ X11SD_ClipToRoot(SurfaceDataBounds *b, SurfaceDataBounds *bounds,
     x2 = x1 + DisplayWidth(awt_display, xsdo->configData->awt_visInfo.screen);
     y2 = y1 + DisplayHeight(awt_display, xsdo->configData->awt_visInfo.screen);
 
-    x1 = XSD_MAX(bounds->x1, x1);
-    y1 = XSD_MAX(bounds->y1, y1);
-    x2 = XSD_MIN(bounds->x2, x2);
-    y2 = XSD_MIN(bounds->y2, y2);
+    x1 = MAX(bounds->x1, x1);
+    y1 = MAX(bounds->y1, y1);
+    x2 = MIN(bounds->x2, x2);
+    y2 = MIN(bounds->y2, y2);
     if ((x1 >= x2) || (y1 >= y2)) {
         return FALSE;
     }

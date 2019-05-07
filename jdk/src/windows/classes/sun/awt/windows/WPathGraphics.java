@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 1998, 2014, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 1998, 2013, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -74,7 +74,7 @@ import sun.font.TrueTypeFont;
 import sun.print.PathGraphics;
 import sun.print.ProxyGraphics2D;
 
-final class WPathGraphics extends PathGraphics {
+class WPathGraphics extends PathGraphics {
 
     /**
      * For a drawing application the initial user space
@@ -494,48 +494,24 @@ final class WPathGraphics extends PathGraphics {
          */
         float fontSize = font.getSize2D();
 
-        double devResX = wPrinterJob.getXRes();
-        double devResY = wPrinterJob.getYRes();
-
-        double fontDevScaleY = devResY / DEFAULT_USER_RES;
-
-        int orient = getPageFormat().getOrientation();
-        if (orient == PageFormat.LANDSCAPE ||
-            orient == PageFormat.REVERSE_LANDSCAPE)
-        {
-            double tmp = devResX;
-            devResX = devResY;
-            devResY = tmp;
-        }
-
-        double devScaleX = devResX / DEFAULT_USER_RES;
-        double devScaleY = devResY / DEFAULT_USER_RES;
-        fontTransform.scale(1.0/devScaleX, 1.0/devScaleY);
-
         Point2D.Double pty = new Point2D.Double(0.0, 1.0);
         fontTransform.deltaTransform(pty, pty);
         double scaleFactorY = Math.sqrt(pty.x*pty.x+pty.y*pty.y);
-        float scaledFontSizeY = (float)(fontSize * scaleFactorY * fontDevScaleY);
+        float scaledFontSizeY = (float)(fontSize * scaleFactorY);
 
         Point2D.Double ptx = new Point2D.Double(1.0, 0.0);
         fontTransform.deltaTransform(ptx, ptx);
         double scaleFactorX = Math.sqrt(ptx.x*ptx.x+ptx.y*ptx.y);
+        float scaledFontSizeX = (float)(fontSize * scaleFactorX);
 
         float awScale = getAwScale(scaleFactorX, scaleFactorY);
         int iangle = getAngle(ptx);
-
-        ptx = new Point2D.Double(1.0, 0.0);
-        deviceTransform.deltaTransform(ptx, ptx);
-        double advanceScaleX = Math.sqrt(ptx.x*ptx.x+ptx.y*ptx.y);
-        pty = new Point2D.Double(0.0, 1.0);
-        deviceTransform.deltaTransform(pty, pty);
-        double advanceScaleY = Math.sqrt(pty.x*pty.x+pty.y*pty.y);
 
         Font2D font2D = FontUtilities.getFont2D(font);
         if (font2D instanceof TrueTypeFont) {
             textOut(str, font, (TrueTypeFont)font2D, frc,
                     scaledFontSizeY, iangle, awScale,
-                    advanceScaleX, advanceScaleY,
+                    deviceTransform, scaleFactorX,
                     x, y, devpos.x, devpos.y, targetW);
         } else if (font2D instanceof CompositeFont) {
             /* Composite fonts are made up of multiple fonts and each
@@ -566,7 +542,7 @@ final class WPathGraphics extends PathGraphics {
                 PhysicalFont slotFont = compFont.getSlotFont(slot);
                 textOut(substr, font, slotFont, frc,
                         scaledFontSizeY, iangle, awScale,
-                        advanceScaleX, advanceScaleY,
+                        deviceTransform, scaleFactorX,
                         userx, usery, devx, devy, 0f);
                 Rectangle2D bds = font.getStringBounds(substr, frc);
                 float xAdvance = (float)bds.getWidth();
@@ -659,42 +635,18 @@ final class WPathGraphics extends PathGraphics {
          */
         float fontSize = font.getSize2D();
 
-        double devResX = wPrinterJob.getXRes();
-        double devResY = wPrinterJob.getYRes();
-
-        double fontDevScaleY = devResY / DEFAULT_USER_RES;
-
-        int orient = getPageFormat().getOrientation();
-        if (orient == PageFormat.LANDSCAPE ||
-            orient == PageFormat.REVERSE_LANDSCAPE)
-        {
-            double tmp = devResX;
-            devResX = devResY;
-            devResY = tmp;
-        }
-
-        double devScaleX = devResX / DEFAULT_USER_RES;
-        double devScaleY = devResY / DEFAULT_USER_RES;
-        fontTransform.scale(1.0/devScaleX, 1.0/devScaleY);
-
         Point2D.Double pty = new Point2D.Double(0.0, 1.0);
         fontTransform.deltaTransform(pty, pty);
         double scaleFactorY = Math.sqrt(pty.x*pty.x+pty.y*pty.y);
-        float scaledFontSizeY = (float)(fontSize * scaleFactorY * fontDevScaleY);
+        float scaledFontSizeY = (float)(fontSize * scaleFactorY);
 
-        Point2D.Double ptx = new Point2D.Double(1.0, 0.0);
-        fontTransform.deltaTransform(ptx, ptx);
-        double scaleFactorX = Math.sqrt(ptx.x*ptx.x+ptx.y*ptx.y);
+        Point2D.Double pt = new Point2D.Double(1.0, 0.0);
+        fontTransform.deltaTransform(pt, pt);
+        double scaleFactorX = Math.sqrt(pt.x*pt.x+pt.y*pt.y);
+        float scaledFontSizeX = (float)(fontSize * scaleFactorX);
 
         float awScale = getAwScale(scaleFactorX, scaleFactorY);
-        int iangle = getAngle(ptx);
-
-        ptx = new Point2D.Double(1.0, 0.0);
-        deviceTransform.deltaTransform(ptx, ptx);
-        double advanceScaleX = Math.sqrt(ptx.x*ptx.x+ptx.y*ptx.y);
-        pty = new Point2D.Double(0.0, 1.0);
-        deviceTransform.deltaTransform(pty, pty);
-        double advanceScaleY = Math.sqrt(pty.x*pty.x+pty.y*pty.y);
+        int iangle = getAngle(pt);
 
         int numGlyphs = gv.getNumGlyphs();
         int[] glyphCodes = gv.getGlyphCodes(0, numGlyphs, null);
@@ -753,7 +705,8 @@ final class WPathGraphics extends PathGraphics {
          * rotation element of the deviceTransform.
          */
         AffineTransform advanceTransform =
-           AffineTransform.getScaleInstance(advanceScaleX, advanceScaleY);
+            new AffineTransform(deviceTransform);
+        advanceTransform.rotate(iangle*Math.PI/1800.0);
         float[] glyphAdvPos = new float[glyphPos.length];
 
         advanceTransform.transform(glyphPos, 0,         //source
@@ -831,7 +784,8 @@ final class WPathGraphics extends PathGraphics {
                           Font font, PhysicalFont font2D,
                           FontRenderContext frc,
                           float deviceSize, int rotation, float awScale,
-                          double scaleFactorX, double scaleFactorY,
+                          AffineTransform deviceTransform,
+                          double scaleFactorX,
                           float userx, float usery,
                           float devx, float devy, float targetW) {
 
@@ -872,7 +826,8 @@ final class WPathGraphics extends PathGraphics {
               * See earlier comment in printGlyphVector() for details.
               */
              AffineTransform advanceTransform =
-                AffineTransform.getScaleInstance(scaleFactorX, scaleFactorY);
+               new AffineTransform(deviceTransform);
+             advanceTransform.rotate(rotation*Math.PI/1800.0);
              float[] glyphAdvPos = new float[glyphPos.length];
 
              advanceTransform.transform(glyphPos, 0,         //source
@@ -886,11 +841,11 @@ final class WPathGraphics extends PathGraphics {
      /* If 2D and GDI agree on the advance of the string we do not
       * need to explicitly assign glyph positions.
       * If we are to use the GDI advance, require it to agree with
-      * JDK to a precision of <= 1.0% - ie 1 pixel in 100
+      * JDK to a precision of <= 0.2% - ie 1 pixel in 500
       * discrepancy after rounding the 2D advance to the
       * nearest pixel and is greater than one pixel in total.
-      * ie strings < 100 pixels in length will be OK so long
-      * as they differ by only 1 pixel even though that is > 1%
+      * ie strings < 500 pixels in length will be OK so long
+      * as they differ by only 1 pixel even though that is > 0.02%
       * The bounds from 2D are in user space so need to
       * be scaled to device space for comparison with GDI.
       * scaleX is the scale from user space to device space needed for this.
@@ -908,7 +863,7 @@ final class WPathGraphics extends PathGraphics {
              if (ratio < 1) {
                  ratio = 1/ratio;
              }
-             return diff <= 1 || ratio < 1.01;
+             return diff <= 1 || ratio < 1.002;
          }
          return true;
      }
@@ -941,7 +896,6 @@ final class WPathGraphics extends PathGraphics {
      * @param   handlingTransparency if being recursively called to
      *                    print opaque region of transparent image
      */
-    @Override
     protected boolean drawImageToPlatform(Image image, AffineTransform xform,
                                           Color bgcolor,
                                           int srcX, int srcY,
@@ -1381,7 +1335,6 @@ final class WPathGraphics extends PathGraphics {
      * Have the printing application redraw everything that falls
      * within the page bounds defined by <code>region</code>.
      */
-    @Override
     public void redrawRegion(Rectangle2D region, double scaleX, double scaleY,
                              Shape savedClip, AffineTransform savedTransform)
             throws PrinterException {
@@ -1445,9 +1398,7 @@ final class WPathGraphics extends PathGraphics {
          * The saved device transform is needed as the current transform
          * is not likely to be the same.
          */
-        if (savedClip != null) {
-            deviceClip(savedClip.getPathIterator(savedTransform));
-        }
+        deviceClip(savedClip.getPathIterator(savedTransform));
 
         /* Scale the bounding rectangle by the scale transform.
          * Because the scaling transform has only x and y
@@ -1483,7 +1434,6 @@ final class WPathGraphics extends PathGraphics {
      * with the specified color.
      * The path is provided in device coordinates.
      */
-    @Override
     protected void deviceFill(PathIterator pathIter, Color color) {
 
         WPrinterJob wPrinterJob = (WPrinterJob) getPrinterJob();
@@ -1498,7 +1448,6 @@ final class WPathGraphics extends PathGraphics {
      * path defined by <code>pathIter</code>
      * The path is provided in device coordinates.
      */
-    @Override
     protected void deviceClip(PathIterator pathIter) {
 
         WPrinterJob wPrinterJob = (WPrinterJob) getPrinterJob();
@@ -1510,7 +1459,6 @@ final class WPathGraphics extends PathGraphics {
     /**
      * Draw the bounding rectangle using transformed coordinates.
      */
-     @Override
      protected void deviceFrameRect(int x, int y, int width, int height,
                                      Color color) {
 
@@ -1600,7 +1548,6 @@ final class WPathGraphics extends PathGraphics {
       * GDI fillRect function.
       * Boundaries are determined by the given coordinates.
       */
-    @Override
     protected void deviceFillRect(int x, int y, int width, int height,
                                   Color color) {
         /*
@@ -1637,7 +1584,6 @@ final class WPathGraphics extends PathGraphics {
      * Draw a line using a pen created using the specified color
      * and current stroke properties.
      */
-    @Override
     protected void deviceDrawLine(int xBegin, int yBegin, int xEnd, int yEnd,
                                   Color color) {
         Stroke stroke = getStroke();

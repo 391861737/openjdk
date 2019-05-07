@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2001, 2014, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2001, 2013, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -27,8 +27,6 @@
 #include "memory/allocation.inline.hpp"
 #include "runtime/os.hpp"
 #include "utilities/workgroup.hpp"
-
-PRAGMA_FORMAT_MUTE_WARNINGS_FOR_GCC
 
 // Definitions of WorkGang methods.
 
@@ -378,22 +376,21 @@ const char* AbstractGangTask::name() const {
 
 WorkGangBarrierSync::WorkGangBarrierSync()
   : _monitor(Mutex::safepoint, "work gang barrier sync", true),
-    _n_workers(0), _n_completed(0), _should_reset(false), _aborted(false) {
+    _n_workers(0), _n_completed(0), _should_reset(false) {
 }
 
 WorkGangBarrierSync::WorkGangBarrierSync(uint n_workers, const char* name)
   : _monitor(Mutex::safepoint, name, true),
-    _n_workers(n_workers), _n_completed(0), _should_reset(false), _aborted(false) {
+    _n_workers(n_workers), _n_completed(0), _should_reset(false) {
 }
 
 void WorkGangBarrierSync::set_n_workers(uint n_workers) {
-  _n_workers    = n_workers;
-  _n_completed  = 0;
+  _n_workers   = n_workers;
+  _n_completed = 0;
   _should_reset = false;
-  _aborted      = false;
 }
 
-bool WorkGangBarrierSync::enter() {
+void WorkGangBarrierSync::enter() {
   MutexLockerEx x(monitor(), Mutex::_no_safepoint_check_flag);
   if (should_reset()) {
     // The should_reset() was set and we are the first worker to enter
@@ -416,17 +413,10 @@ bool WorkGangBarrierSync::enter() {
     set_should_reset(true);
     monitor()->notify_all();
   } else {
-    while (n_completed() != n_workers() && !aborted()) {
+    while (n_completed() != n_workers()) {
       monitor()->wait(/* no_safepoint_check */ true);
     }
   }
-  return !aborted();
-}
-
-void WorkGangBarrierSync::abort() {
-  MutexLockerEx x(monitor(), Mutex::_no_safepoint_check_flag);
-  set_aborted();
-  monitor()->notify_all();
 }
 
 // SubTasksDone functions.

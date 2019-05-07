@@ -35,8 +35,6 @@ import jdk.nashorn.internal.ir.visitor.NodeVisitor;
  */
 @Immutable
 public final class ExpressionStatement extends Statement {
-    private static final long serialVersionUID = 1L;
-
     /** Expression to execute. */
     private final Expression expression;
 
@@ -59,6 +57,11 @@ public final class ExpressionStatement extends Statement {
     }
 
     @Override
+    public boolean isTerminal() {
+        return expression.isTerminal();
+    }
+
+    @Override
     public Node accept(final NodeVisitor<? extends LexicalContext> visitor) {
         if (visitor.enterExpressionStatement(this)) {
             return visitor.leaveExpressionStatement(setExpression((Expression)expression.accept(visitor)));
@@ -68,8 +71,8 @@ public final class ExpressionStatement extends Statement {
     }
 
     @Override
-    public void toString(final StringBuilder sb, final boolean printTypes) {
-        expression.toString(sb, printTypes);
+    public void toString(final StringBuilder sb) {
+        expression.toString(sb);
     }
 
     /**

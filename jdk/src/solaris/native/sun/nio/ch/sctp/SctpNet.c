@@ -157,7 +157,6 @@ Java_sun_nio_ch_sctp_SctpNet_init
     }
     preCloseFD = sp[0];
     close(sp[1]);
-    initInetAddressIDs(env);
 }
 
 /*
@@ -316,12 +315,11 @@ void initializeISA
     if (isaCls == 0) {
         jclass c = (*env)->FindClass(env, "java/net/InetSocketAddress");
         CHECK_NULL(c);
-        isaCtrID = (*env)->GetMethodID(env, c, "<init>",
-                                     "(Ljava/net/InetAddress;I)V");
-        CHECK_NULL(isaCtrID);
         isaCls = (*env)->NewGlobalRef(env, c);
         CHECK_NULL(isaCls);
         (*env)->DeleteLocalRef(env, c);
+        isaCtrID = (*env)->GetMethodID(env, isaCls, "<init>",
+                                     "(Ljava/net/InetAddress;I)V");
     }
 }
 
@@ -384,9 +382,8 @@ JNIEXPORT jobjectArray JNICALL Java_sun_nio_ch_sctp_SctpNet_getLocalAddresses0
         ia = NET_SockaddrToInetAddress(env, sap, &port);
         if (ia != NULL)
             isa = (*env)->NewObject(env, isaCls, isaCtrID, ia, port);
-        if (isa == NULL)
-            break;
-        (*env)->SetObjectArrayElement(env, isaa, i, isa);
+        if (isa != NULL)
+            (*env)->SetObjectArrayElement(env, isaa, i, isa);
 
         if (sap->sa_family == AF_INET)
             addr_buf = ((struct sockaddr_in*)addr_buf) + 1;
@@ -431,14 +428,13 @@ jobjectArray getRemoteAddresses
     paddr = addr_buf;
     for (i=0; i<addrCount; i++) {
         jobject ia, isa = NULL;
-        int port = 0;
+        int port;
         sap = (struct sockaddr*)addr_buf;
         ia = NET_SockaddrToInetAddress(env, sap, &port);
         if (ia != NULL)
             isa = (*env)->NewObject(env, isaCls, isaCtrID, ia, port);
-        if (isa == NULL)
-            break;
-        (*env)->SetObjectArrayElement(env, isaa, i, isa);
+        if (isa != NULL)
+            (*env)->SetObjectArrayElement(env, isaa, i, isa);
 
         if (sap->sa_family == AF_INET)
             addr_buf = ((struct sockaddr_in*)addr_buf) + 1;
@@ -543,7 +539,6 @@ JNIEXPORT int JNICALL Java_sun_nio_ch_sctp_SctpNet_getIntOption0
     void *arg;
     int arglen;
 
-    memset((char *) &linger, 0, sizeof(linger));
     if (mapSocketOption(opt, &klevel, &kopt) < 0) {
         JNU_ThrowByNameWithLastError(env, JNU_JAVANETPKG "SocketException",
                                      "Unsupported socket option");
@@ -601,7 +596,7 @@ JNIEXPORT void JNICALL Java_sun_nio_ch_sctp_SctpNet_setPrimAddrOption0
   (JNIEnv *env, jclass klass, jint fd, jint assocId, jobject iaObj, jint port) {
     struct sctp_setprim prim;
     struct sockaddr* sap = (struct sockaddr*)&prim.ssp_addr;
-    int sap_len = sizeof(sap);
+    int sap_len;
 
     if (NET_InetAddressToSockaddr(env, iaObj, port, sap,
                                   &sap_len, JNI_TRUE) != 0) {
@@ -626,7 +621,7 @@ JNIEXPORT void JNICALL Java_sun_nio_ch_sctp_SctpNet_setPeerPrimAddrOption0
    jobject iaObj, jint port, jboolean preferIPv6) {
     struct sctp_setpeerprim prim;
     struct sockaddr* sap = (struct sockaddr*)&prim.sspp_addr;
-    int sap_len = sizeof(sap);
+    int sap_len;
 
     if (NET_InetAddressToSockaddr(env, iaObj, port, sap,
                                   &sap_len, preferIPv6) != 0) {

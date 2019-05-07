@@ -213,10 +213,6 @@ public class DescendingVisitor implements Visitor {
   public void visitLocalVariableTypeTable(LocalVariableTypeTable obj) {
     stack.push(obj);
     obj.accept(visitor);
-
-    LocalVariable[] vars = obj.getLocalVariableTypeTable();
-    for(int i=0; i < vars.length; i++)
-      vars[i].accept(this);
     stack.pop();
   }
 

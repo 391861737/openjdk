@@ -1328,8 +1328,7 @@ class StubGenerator: public StubCodeGenerator {
       __ BIND(L_end);
       if (UseAVX >= 2) {
         // clean upper bits of YMM registers
-        __ vpxor(xmm0, xmm0);
-        __ vpxor(xmm1, xmm1);
+        __ vzeroupper();
       }
     } else {
       // Copy 32-bytes per iteration
@@ -1406,8 +1405,7 @@ class StubGenerator: public StubCodeGenerator {
       __ BIND(L_end);
       if (UseAVX >= 2) {
         // clean upper bits of YMM registers
-        __ vpxor(xmm0, xmm0);
-        __ vpxor(xmm1, xmm1);
+        __ vzeroupper();
       }
     } else {
       // Copy 32-bytes per iteration
@@ -3219,9 +3217,6 @@ class StubGenerator: public StubCodeGenerator {
   //   c_rarg3   - r vector byte array address
   //   c_rarg4   - input length
   //
-  // Output:
-  //   rax       - input length
-  //
   address generate_cipherBlockChaining_encryptAESCrypt() {
     assert(UseAES, "need AES instructions and misaligned SSE support");
     __ align(CodeEntryAlignment);
@@ -3237,7 +3232,7 @@ class StubGenerator: public StubCodeGenerator {
 #ifndef _WIN64
     const Register len_reg     = c_rarg4;  // src len (must be multiple of blocksize 16)
 #else
-    const Address  len_mem(rbp, 6 * wordSize);  // length is on stack on Win64
+    const Address  len_mem(rsp, 6 * wordSize);  // length is on stack on Win64
     const Register len_reg     = r10;      // pick the first volatile windows register
 #endif
     const Register pos         = rax;
@@ -3264,8 +3259,6 @@ class StubGenerator: public StubCodeGenerator {
     for (int i = 6; i <= XMM_REG_NUM_KEY_LAST; i++) {
       __ movdqu(xmm_save(i), as_XMMRegister(i));
     }
-#else
-    __ push(len_reg); // Save
 #endif
 
     const XMMRegister xmm_key_shuf_mask = xmm_temp;  // used temporarily to swap key bytes up front
@@ -3308,10 +3301,8 @@ class StubGenerator: public StubCodeGenerator {
     for (int i = 6; i <= XMM_REG_NUM_KEY_LAST; i++) {
       __ movdqu(as_XMMRegister(i), xmm_save(i));
     }
-    __ movl(rax, len_mem);
-#else
-    __ pop(rax); // return length
 #endif
+    __ movl(rax, 0); // return 0 (why?)
     __ leave(); // required for proper stackwalking of RuntimeStub frame
     __ ret(0);
 
@@ -3418,9 +3409,6 @@ class StubGenerator: public StubCodeGenerator {
   //   c_rarg3   - r vector byte array address
   //   c_rarg4   - input length
   //
-  // Output:
-  //   rax       - input length
-  //
 
   address generate_cipherBlockChaining_decryptAESCrypt_Parallel() {
     assert(UseAES, "need AES instructions and misaligned SSE support");
@@ -3439,7 +3427,7 @@ class StubGenerator: public StubCodeGenerator {
 #ifndef _WIN64
     const Register len_reg     = c_rarg4;  // src len (must be multiple of blocksize 16)
 #else
-    const Address  len_mem(rbp, 6 * wordSize);  // length is on stack on Win64
+    const Address  len_mem(rsp, 6 * wordSize);  // length is on stack on Win64
     const Register len_reg     = r10;      // pick the first volatile windows register
 #endif
     const Register pos         = rax;
@@ -3460,10 +3448,7 @@ class StubGenerator: public StubCodeGenerator {
     for (int i = 6; i <= XMM_REG_NUM_KEY_LAST; i++) {
       __ movdqu(xmm_save(i), as_XMMRegister(i));
     }
-#else
-    __ push(len_reg); // Save
 #endif
-
     // the java expanded key ordering is rotated one position from what we want
     // so we start from 0x10 here and hit 0x00 last
     const XMMRegister xmm_key_shuf_mask = xmm1;  // used temporarily to swap key bytes up front
@@ -3569,10 +3554,8 @@ class StubGenerator: public StubCodeGenerator {
     for (int i = 6; i <= XMM_REG_NUM_KEY_LAST; i++) {
       __ movdqu(as_XMMRegister(i), xmm_save(i));
     }
-    __ movl(rax, len_mem);
-#else
-    __ pop(rax); // return length
 #endif
+    __ movl(rax, 0); // return 0 (why?)
     __ leave(); // required for proper stackwalking of RuntimeStub frame
     __ ret(0);
 
@@ -3679,171 +3662,6 @@ class StubGenerator: public StubCodeGenerator {
     return start;
   }
 
-
-  /**
-   *  Arguments:
-   *
-   *  Input:
-   *    c_rarg0   - x address
-   *    c_rarg1   - x length
-   *    c_rarg2   - y address
-   *    c_rarg3   - y lenth
-   * not Win64
-   *    c_rarg4   - z address
-   *    c_rarg5   - z length
-   * Win64
-   *    rsp+40    - z address
-   *    rsp+48    - z length
-   */
-  address generate_multiplyToLen() {
-    __ align(CodeEntryAlignment);
-    StubCodeMark mark(this, "StubRoutines", "multiplyToLen");
-
-    address start = __ pc();
-    // Win64: rcx, rdx, r8, r9 (c_rarg0, c_rarg1, ...)
-    // Unix:  rdi, rsi, rdx, rcx, r8, r9 (c_rarg0, c_rarg1, ...)
-    const Register x     = rdi;
-    const Register xlen  = rax;
-    const Register y     = rsi;
-    const Register ylen  = rcx;
-    const Register z     = r8;
-    const Register zlen  = r11;
-
-    // Next registers will be saved on stack in multiply_to_len().
-    const Register tmp1  = r12;
-    const Register tmp2  = r13;
-    const Register tmp3  = r14;
-    const Register tmp4  = r15;
-    const Register tmp5  = rbx;
-
-    BLOCK_COMMENT("Entry:");
-    __ enter(); // required for proper stackwalking of RuntimeStub frame
-
-#ifndef _WIN64
-    __ movptr(zlen, r9); // Save r9 in r11 - zlen
-#endif
-    setup_arg_regs(4); // x => rdi, xlen => rsi, y => rdx
-                       // ylen => rcx, z => r8, zlen => r11
-                       // r9 and r10 may be used to save non-volatile registers
-#ifdef _WIN64
-    // last 2 arguments (#4, #5) are on stack on Win64
-    __ movptr(z, Address(rsp, 6 * wordSize));
-    __ movptr(zlen, Address(rsp, 7 * wordSize));
-#endif
-
-    __ movptr(xlen, rsi);
-    __ movptr(y,    rdx);
-    __ multiply_to_len(x, xlen, y, ylen, z, zlen, tmp1, tmp2, tmp3, tmp4, tmp5);
-
-    restore_arg_regs();
-
-    __ leave(); // required for proper stackwalking of RuntimeStub frame
-    __ ret(0);
-
-    return start;
-  }
-
-/**
-   *  Arguments:
-   *
-  //  Input:
-  //    c_rarg0   - x address
-  //    c_rarg1   - x length
-  //    c_rarg2   - z address
-  //    c_rarg3   - z lenth
-   *
-   */
-  address generate_squareToLen() {
-
-    __ align(CodeEntryAlignment);
-    StubCodeMark mark(this, "StubRoutines", "squareToLen");
-
-    address start = __ pc();
-    // Win64: rcx, rdx, r8, r9 (c_rarg0, c_rarg1, ...)
-    // Unix:  rdi, rsi, rdx, rcx (c_rarg0, c_rarg1, ...)
-    const Register x      = rdi;
-    const Register len    = rsi;
-    const Register z      = r8;
-    const Register zlen   = rcx;
-
-   const Register tmp1      = r12;
-   const Register tmp2      = r13;
-   const Register tmp3      = r14;
-   const Register tmp4      = r15;
-   const Register tmp5      = rbx;
-
-    BLOCK_COMMENT("Entry:");
-    __ enter(); // required for proper stackwalking of RuntimeStub frame
-
-       setup_arg_regs(4); // x => rdi, len => rsi, z => rdx
-                          // zlen => rcx
-                          // r9 and r10 may be used to save non-volatile registers
-    __ movptr(r8, rdx);
-    __ square_to_len(x, len, z, zlen, tmp1, tmp2, tmp3, tmp4, tmp5, rdx, rax);
-
-    restore_arg_regs();
-
-    __ leave(); // required for proper stackwalking of RuntimeStub frame
-    __ ret(0);
-
-    return start;
-  }
-
-   /**
-   *  Arguments:
-   *
-   *  Input:
-   *    c_rarg0   - out address
-   *    c_rarg1   - in address
-   *    c_rarg2   - offset
-   *    c_rarg3   - len
-   * not Win64
-   *    c_rarg4   - k
-   * Win64
-   *    rsp+40    - k
-   */
-  address generate_mulAdd() {
-    __ align(CodeEntryAlignment);
-    StubCodeMark mark(this, "StubRoutines", "mulAdd");
-
-    address start = __ pc();
-    // Win64: rcx, rdx, r8, r9 (c_rarg0, c_rarg1, ...)
-    // Unix:  rdi, rsi, rdx, rcx, r8, r9 (c_rarg0, c_rarg1, ...)
-    const Register out     = rdi;
-    const Register in      = rsi;
-    const Register offset  = r11;
-    const Register len     = rcx;
-    const Register k       = r8;
-
-    // Next registers will be saved on stack in mul_add().
-    const Register tmp1  = r12;
-    const Register tmp2  = r13;
-    const Register tmp3  = r14;
-    const Register tmp4  = r15;
-    const Register tmp5  = rbx;
-
-    BLOCK_COMMENT("Entry:");
-    __ enter(); // required for proper stackwalking of RuntimeStub frame
-
-    setup_arg_regs(4); // out => rdi, in => rsi, offset => rdx
-                       // len => rcx, k => r8
-                       // r9 and r10 may be used to save non-volatile registers
-#ifdef _WIN64
-    // last argument is on stack on Win64
-    __ movl(k, Address(rsp, 6 * wordSize));
-#endif
-    __ movptr(r11, rdx);  // move offset in rdx to offset(r11)
-    __ mul_add(out, in, offset, len, k, tmp1, tmp2, tmp3, tmp4, tmp5, rdx, rax);
-
-    restore_arg_regs();
-
-    __ leave(); // required for proper stackwalking of RuntimeStub frame
-    __ ret(0);
-
-    return start;
-  }
-
-
 #undef __
 #define __ masm->
 
@@ -3923,7 +3741,7 @@ class StubGenerator: public StubCodeGenerator {
 
     oop_maps->add_gc_map(the_pc - start, map);
 
-    __ reset_last_Java_frame(true);
+    __ reset_last_Java_frame(true, true);
 
     __ leave(); // required for proper stackwalking of RuntimeStub frame
 
@@ -4084,28 +3902,6 @@ class StubGenerator: public StubCodeGenerator {
     generate_safefetch("SafeFetchN", sizeof(intptr_t), &StubRoutines::_safefetchN_entry,
                                                        &StubRoutines::_safefetchN_fault_pc,
                                                        &StubRoutines::_safefetchN_continuation_pc);
-#ifdef COMPILER2
-    if (UseMultiplyToLenIntrinsic) {
-      StubRoutines::_multiplyToLen = generate_multiplyToLen();
-    }
-    if (UseSquareToLenIntrinsic) {
-      StubRoutines::_squareToLen = generate_squareToLen();
-    }
-    if (UseMulAddIntrinsic) {
-      StubRoutines::_mulAdd = generate_mulAdd();
-    }
-
-#ifndef _WINDOWS
-    if (UseMontgomeryMultiplyIntrinsic) {
-      StubRoutines::_montgomeryMultiply
-        = CAST_FROM_FN_PTR(address, SharedRuntime::montgomery_multiply);
-    }
-    if (UseMontgomerySquareIntrinsic) {
-      StubRoutines::_montgomerySquare
-        = CAST_FROM_FN_PTR(address, SharedRuntime::montgomery_square);
-    }
-#endif // WINDOWS
-#endif // COMPILER2
   }
 
  public:

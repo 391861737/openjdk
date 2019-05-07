@@ -1,5 +1,12 @@
 '\" t
-.\" Copyright (c) 2006, 2014, Oracle and/or its affiliates. All rights reserved.
+.\" Copyright (c) 2006, 2013, Oracle and/or its affiliates. All rights reserved.
+.\" Title: jhat
+.\" Language: English
+.\" Date: 2013年11月21日
+.\" SectDesc: トラブルシューティング・ツール
+.\" Software: JDK 8
+.\" Arch: 汎用
+.\"
 .\" DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
 .\"
 .\" This code is free software; you can redistribute it and/or modify it
@@ -8,7 +15,7 @@
 .\"
 .\" This code is distributed in the hope that it will be useful, but WITHOUT
 .\" ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
-.\" FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License
+.\" FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License
 .\" version 2 for more details (a copy is included in the LICENSE file that
 .\" accompanied this code).
 .\"
@@ -20,16 +27,7 @@
 .\" or visit www.oracle.com if you need additional information or have any
 .\" questions.
 .\"
-.\" Title: jhat
-.\" Language: Japanese
-.\" Date: 2013年11月21日
-.\" SectDesc: トラブルシューティング・ツール
-.\" Software: JDK 8
-.\" Arch: 汎用
-.\" Part Number: E58103-01
-.\" Doc ID: JSSON
-.\"
-.if n .pl 99999
+.pl 99999
 .TH "jhat" "1" "2013年11月21日" "JDK 8" "トラブルシューティング・ツール"
 .\" -----------------------------------------------------------------
 .\" * Define some portability stuff
@@ -50,7 +48,7 @@
 .\" -----------------------------------------------------------------
 .\" * MAIN CONTENT STARTS HERE *
 .\" -----------------------------------------------------------------
-.SH "名前"
+.SH "NAME"
 jhat \- Javaヒープを分析します。このコマンドは試験的なもので、サポートされていません。
 .SH "概要"
 .sp
@@ -58,7 +56,7 @@ jhat \- Javaヒープを分析します。このコマンドは試験的なもので、サポートされていま
 .RS 4
 .\}
 .nf
-\fBjhat\fR [ \fIoptions\fR ] \fIheap\-dump\-file\fR 
+\fIjhat\fR [ \fIoptions\fR ] \fIheap\-dump\-file\fR 
 .fi
 .if n \{\
 .RE
@@ -66,16 +64,16 @@ jhat \- Javaヒープを分析します。このコマンドは試験的なもので、サポートされていま
 .PP
 \fIoptions\fR
 .RS 4
-コマンド行オプション。オプションを参照してください。
+コマンドライン・オプション。オプションを参照してください。
 .RE
 .PP
 \fIheap\-dump\-file\fR
 .RS 4
-ブラウズ対象となるJavaバイナリ・ヒープ・ダンプ・ファイル。複数のヒープ・ダンプを含むダンプ・ファイルの場合、\fBmyfile\&.hprof#3\fRのようにファイル名の後に\fB#<number>\fRを付加することで、ファイル内の特定のダンプを指定できます。
+ブラウズ対象となるJavaバイナリ・ヒープ・ダンプ・ファイル。複数のヒープ・ダンプを含むダンプ・ファイルの場合、\fImyfile\&.hprof#3\fRのようにファイル名の後に\fI#<number>\fRを付加することで、ファイル内の特定のダンプを指定できます。
 .RE
 .SH "説明"
 .PP
-\fBjhat\fRコマンドはJavaヒープ・ダンプ・ファイルを解析し、Webサーバーを開始します。\fBjhat\fRコマンドを使用して、お気に入りのブラウザでヒープ・ダンプを参照できます。\fBjhat\fRコマンドは、既知のクラス\fBMyClass\fRのすべてのインスタンスを表示するなどの事前設計済の問合せやObject Query Language (OQL)をサポートします。ヒープ・ダンプの問合せを除き、OQLはSQLに似ています。OQLのヘルプには、\fBjhat\fRコマンドによって表示されるOQLヘルプ・ページからアクセスできます。デフォルト・ポートを使用する場合、OQLのヘルプはhttp://localhost:7000/oqlhelp/で利用可能です。
+\fIjhat\fRコマンドはJavaヒープ・ダンプ・ファイルを解析し、Webサーバーを開始します。\fIjhat\fRコマンドを使用して、お気に入りのブラウザでヒープ・ダンプを参照できます。\fIjhat\fRコマンドは、既知のクラス\fIMyClass\fRのすべてのインスタンスを表示するなどの事前設計済の問合せやObject Query Language (OQL)をサポートします。ヒープ・ダンプの問合せを除き、OQLはSQLに似ています。OQLのヘルプには、\fIjhat\fRコマンドによって表示されるOQLヘルプ・ページからアクセスできます。デフォルト・ポートを使用する場合、OQLのヘルプはhttp://localhost:7000/oqlhelp/で利用可能です。
 .PP
 Javaのヒープ・ダンプを生成するには、次のいくつかの方法があります。
 .sp
@@ -87,7 +85,7 @@ Javaのヒープ・ダンプを生成するには、次のいくつかの方法があります。
 .sp -1
 .IP \(bu 2.3
 .\}
-\fBjmap \-dump\fRオプションを使用して実行時にヒープ・ダンプを取得します。jmap(1)を参照してください。
+\fIjmap \-dump\fRオプションを使用して実行時にヒープ・ダンプを取得します。jmap(1)を参照してください。
 .RE
 .sp
 .RS 4
@@ -98,7 +96,7 @@ Javaのヒープ・ダンプを生成するには、次のいくつかの方法があります。
 .sp -1
 .IP \(bu 2.3
 .\}
-\fBjconsole\fRオプションを使用して\fBHotSpotDiagnosticMXBean\fR経由で実行時にヒープ・ダンプを取得します。jconsole(1)および\fBHotSpotDiagnosticMXBean\fRのインタフェースの説明(
+\fIjconsole\fRオプションを使用して\fIHotSpotDiagnosticMXBean\fR経由で実行時にヒープ・ダンプを取得します。jconsole(1)および\fIHotSpotDiagnosticMXBean\fRのインタフェースの説明(
 http://docs\&.oracle\&.com/javase/8/docs/jre/api/management/extension/com/sun/management/HotSpotDiagnosticMXBean\&.html)を参照してください。
 .RE
 .sp
@@ -110,8 +108,8 @@ http://docs\&.oracle\&.com/javase/8/docs/jre/api/management/extension/com/sun/ma
 .sp -1
 .IP \(bu 2.3
 .\}
-ヒープ・ダンプは、\fB\-XX:+HeapDumpOnOutOfMemoryError\fR
-Java Virtual Machine (JVM)オプションを指定することで、\fBOutOfMemoryError\fRがスローされたときに生成されます。
+ヒープ・ダンプは、\fI\-XX:+HeapDumpOnOutOfMemoryError\fR
+Java仮想マシン(JVM)オプションを指定することで、\fIOutOfMemoryError\fRがスローされたときに生成されます。
 .RE
 .sp
 .RS 4
@@ -122,29 +120,29 @@ Java Virtual Machine (JVM)オプションを指定することで、\fBOutOfMemoryError\fRがス
 .sp -1
 .IP \(bu 2.3
 .\}
-\fBhprof\fRコマンドを使用します。HPROF: Heap/CPUプロファイリング・ツール
+\fIhprof\fRコマンドを使用します。HPROF: Heap/CPUプロファイリング・ツール
 (http://docs\&.oracle\&.com/javase/8/docs/technotes/samples/hprof\&.html)を参照してください
 .RE
 .SH "オプション"
 .PP
 \-stack false|true
 .RS 4
-オブジェクト割当呼出しスタックの追跡を無効にします。ヒープ・ダンプ内で割当サイト情報が使用できない場合、このフラグを\fBfalse\fRに設定する必要があります。デフォルトは\fBtrue\fRです。
+オブジェクト割当呼出しスタックの追跡を無効にします。ヒープ・ダンプ内で割当サイト情報が使用できない場合、このフラグを\fIfalse\fRに設定する必要があります。デフォルトは\fItrue\fRです。
 .RE
 .PP
 \-refs false|true
 .RS 4
-オブジェクトへの参照の追跡を無効にします。デフォルトは\fBtrue\fRです。デフォルトでは、ヒープ内のすべてのオブジェクトについて、バックポインタ(指定されたオブジェクトをポイントしているオブジェクト。参照者または受信参照とも呼ばれる)が計算されます。
+オブジェクトへの参照の追跡を無効にします。デフォルトは\fItrue\fRです。デフォルトでは、ヒープ内のすべてのオブジェクトについて、バックポインタ(指定されたオブジェクトをポイントしているオブジェクト。参照者または受信参照とも呼ばれる)が計算されます。
 .RE
 .PP
 \-port \fIport\-number\fR
 .RS 4
-\fBjhat\fRのHTTPサーバーのポートを設定します。デフォルトは7000です。
+\fIjhat\fRのHTTPサーバーのポートを設定します。デフォルトは7000です。
 .RE
 .PP
 \-exclude \fIexclude\-file\fR
 .RS 4
-到達可能なオブジェクトの問合せから除外する必要があるデータ・メンバーの一覧を含むファイルを指定します。たとえば、このファイルに\fBjava\&.lang\&.String\&.value\fRが含まれていた場合、特定のオブジェクト\fBo\fRから到達可能なオブジェクトのリストを計算する際に、\fBjava\&.lang\&.String\&.value\fRフィールドに関連する参照パスが考慮されなくなります。
+到達可能なオブジェクトの問合せから除外する必要があるデータ・メンバーの一覧を含むファイルを指定します。たとえば、このファイルに\fIjava\&.lang\&.String\&.value\fRが含まれていた場合、特定のオブジェクト\fIo\fRから到達可能なオブジェクトのリストを計算する際に、\fIjava\&.lang\&.String\&.value\fRフィールドに関連する参照パスが考慮されなくなります。
 .RE
 .PP
 \-baseline \fIexclude\-file\fR
@@ -174,7 +172,7 @@ Java Virtual Machine (JVM)オプションを指定することで、\fBOutOfMemoryError\fRがス
 .PP
 \-J\fIflag\fR
 .RS 4
-\fBjhat\fRコマンドを実行しているJava Virtual Machineに\fBflag\fRを渡します。たとえば、512Mバイトの最大ヒープ・サイズを使用するには、\fB\-J\-Xmx512m\fRとします。
+\fIjhat\fRコマンドを実行しているJava仮想マシンに\fIflag\fRを渡します。たとえば、512Mバイトの最大ヒープ・サイズを使用するには、\fI\-J\-Xmx512m\fRとします。
 .RE
 .SH "関連項目"
 .sp

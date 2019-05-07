@@ -92,14 +92,6 @@ case "$OS" in
       TMP="/tmp"
       ;;
 
-   AIX )
-      VAR="A different value for AIX"
-      DEFAULT_JDK=/
-      FILESEP="/"
-      PATHSEP=":"
-      TMP="/tmp"
-      ;;
-
    Darwin )
       VAR="A different value for MacOSX"
       DEFAULT_JDK=/usr

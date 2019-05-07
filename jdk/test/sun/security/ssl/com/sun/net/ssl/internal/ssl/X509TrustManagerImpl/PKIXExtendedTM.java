@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2010, 2016, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2010, 2011, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -21,31 +21,25 @@
  * questions.
  */
 
-//
-// SunJSSE does not support dynamic system properties, no way to re-use
-// system properties in samevm/agentvm mode.
-//
 
 /*
  * @test
- * @bug 6916074 8170131
+ * @bug 6916074
  * @summary Add support for TLS 1.2
- * @run main/othervm PKIXExtendedTM 0
- * @run main/othervm PKIXExtendedTM 1
- * @run main/othervm PKIXExtendedTM 2
- * @run main/othervm PKIXExtendedTM 3
+ * @run main/othervm PKIXExtendedTM
+ *
+ *     SunJSSE does not support dynamic system properties, no way to re-use
+ *     system properties in samevm/agentvm mode.
  */
 
 import java.net.*;
 import java.util.*;
 import java.io.*;
 import javax.net.ssl.*;
-import java.security.Security;
 import java.security.KeyStore;
 import java.security.KeyFactory;
 import java.security.cert.Certificate;
 import java.security.cert.CertificateFactory;
-import java.security.cert.CertPathValidatorException;
 import java.security.spec.*;
 import java.security.interfaces.*;
 import java.math.BigInteger;
@@ -796,85 +790,14 @@ public class PKIXExtendedTM {
     volatile Exception serverException = null;
     volatile Exception clientException = null;
 
-    static class Test {
-        String tlsDisAlgs;
-        String certPathDisAlgs;
-        boolean fail;
-        Test(String tlsDisAlgs, String certPathDisAlgs, boolean fail) {
-            this.tlsDisAlgs = tlsDisAlgs;
-            this.certPathDisAlgs = certPathDisAlgs;
-            this.fail = fail;
-        }
-    }
-
-    static Test[] tests = {
-        // MD5 is used in this test case, don't disable MD5 algorithm.
-        new Test(
-            "SSLv3, RC4, DH keySize < 768",
-            "MD2, RSA keySize < 1024",
-            false),
-        // Disable MD5 but only if cert chains back to public root CA, should
-        // pass because the MD5 cert in this test case is issued by test CA
-        new Test(
-            "SSLv3, RC4, DH keySize < 768",
-            "MD2, MD5 jdkCA, RSA keySize < 1024",
-            false),
-        // Disable MD5 alg via TLS property and expect failure
-        new Test(
-            "SSLv3, MD5, RC4, DH keySize < 768",
-            "MD2, RSA keySize < 1024",
-            true),
-        // Disable MD5 alg via certpath property and expect failure
-        new Test(
-            "SSLv3, RC4, DH keySize < 768",
-            "MD2, MD5, RSA keySize < 1024",
-            true),
-    };
-
     public static void main(String args[]) throws Exception {
-        if (args.length != 1) {
-            throw new Exception("Incorrect number of arguments");
-        }
-        Test test = tests[Integer.parseInt(args[0])];
-        Security.setProperty("jdk.tls.disabledAlgorithms", test.tlsDisAlgs);
-        Security.setProperty("jdk.certpath.disabledAlgorithms",
-                             test.certPathDisAlgs);
-
-        if (debug) {
+        if (debug)
             System.setProperty("javax.net.debug", "all");
-        }
 
         /*
          * Start the tests.
          */
-        try {
-            new PKIXExtendedTM();
-            if (test.fail) {
-                throw new Exception("Expected MD5 certificate to be blocked");
-            }
-        } catch (Exception e) {
-            if (test.fail) {
-                // find expected cause
-                boolean correctReason = false;
-                Throwable cause = e.getCause();
-                while (cause != null) {
-                    if (cause instanceof CertPathValidatorException) {
-                        CertPathValidatorException cpve =
-                            (CertPathValidatorException)cause;
-                        if (cpve.getReason() == CertPathValidatorException.BasicReason.ALGORITHM_CONSTRAINED) {
-                            correctReason = true;
-                            break;
-                        }
-                    }
-                    cause = cause.getCause();
-                }
-                if (!correctReason) {
-                    throw new Exception("Unexpected exception", e);
-                }
-            } else {
-                throw e;
-            }
-        }
+        new PKIXExtendedTM();
     }
 
     Thread clientThread = null;

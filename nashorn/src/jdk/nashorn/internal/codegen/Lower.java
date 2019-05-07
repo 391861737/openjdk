@@ -27,15 +27,12 @@ package jdk.nashorn.internal.codegen;
 
 import static jdk.nashorn.internal.codegen.CompilerConstants.EVAL;
 import static jdk.nashorn.internal.codegen.CompilerConstants.RETURN;
-import static jdk.nashorn.internal.ir.Expression.isAlwaysTrue;
+import static jdk.nashorn.internal.codegen.CompilerConstants.THIS;
 
 import java.util.ArrayList;
 import java.util.Arrays;
-import java.util.Collections;
 import java.util.List;
 import java.util.ListIterator;
-import java.util.regex.Pattern;
-import jdk.nashorn.internal.ir.AccessNode;
 import jdk.nashorn.internal.ir.BaseNode;
 import jdk.nashorn.internal.ir.BinaryNode;
 import jdk.nashorn.internal.ir.Block;
@@ -43,7 +40,6 @@ import jdk.nashorn.internal.ir.BlockLexicalContext;
 import jdk.nashorn.internal.ir.BlockStatement;
 import jdk.nashorn.internal.ir.BreakNode;
 import jdk.nashorn.internal.ir.CallNode;
-import jdk.nashorn.internal.ir.CaseNode;
 import jdk.nashorn.internal.ir.CatchNode;
 import jdk.nashorn.internal.ir.ContinueNode;
 import jdk.nashorn.internal.ir.EmptyNode;
@@ -51,19 +47,15 @@ import jdk.nashorn.internal.ir.Expression;
 import jdk.nashorn.internal.ir.ExpressionStatement;
 import jdk.nashorn.internal.ir.ForNode;
 import jdk.nashorn.internal.ir.FunctionNode;
+import jdk.nashorn.internal.ir.FunctionNode.CompilationState;
 import jdk.nashorn.internal.ir.IdentNode;
 import jdk.nashorn.internal.ir.IfNode;
-import jdk.nashorn.internal.ir.IndexNode;
-import jdk.nashorn.internal.ir.JumpStatement;
-import jdk.nashorn.internal.ir.JumpToInlinedFinally;
 import jdk.nashorn.internal.ir.LabelNode;
 import jdk.nashorn.internal.ir.LexicalContext;
 import jdk.nashorn.internal.ir.LiteralNode;
-import jdk.nashorn.internal.ir.LiteralNode.PrimitiveLiteralNode;
 import jdk.nashorn.internal.ir.LoopNode;
 import jdk.nashorn.internal.ir.Node;
 import jdk.nashorn.internal.ir.ReturnNode;
-import jdk.nashorn.internal.ir.RuntimeNode;
 import jdk.nashorn.internal.ir.Statement;
 import jdk.nashorn.internal.ir.SwitchNode;
 import jdk.nashorn.internal.ir.Symbol;
@@ -73,15 +65,13 @@ import jdk.nashorn.internal.ir.VarNode;
 import jdk.nashorn.internal.ir.WhileNode;
 import jdk.nashorn.internal.ir.WithNode;
 import jdk.nashorn.internal.ir.visitor.NodeOperatorVisitor;
-import jdk.nashorn.internal.ir.visitor.SimpleNodeVisitor;
+import jdk.nashorn.internal.ir.visitor.NodeVisitor;
 import jdk.nashorn.internal.parser.Token;
 import jdk.nashorn.internal.parser.TokenType;
-import jdk.nashorn.internal.runtime.Context;
-import jdk.nashorn.internal.runtime.JSType;
+import jdk.nashorn.internal.runtime.CodeInstaller;
+import jdk.nashorn.internal.runtime.DebugLogger;
+import jdk.nashorn.internal.runtime.ScriptRuntime;
 import jdk.nashorn.internal.runtime.Source;
-import jdk.nashorn.internal.runtime.logging.DebugLogger;
-import jdk.nashorn.internal.runtime.logging.Loggable;
-import jdk.nashorn.internal.runtime.logging.Logger;
 
 /**
  * Lower to more primitive operations. After lowering, an AST still has no symbols
@@ -92,19 +82,18 @@ import jdk.nashorn.internal.runtime.logging.Logger;
  * harder and context dependent to do any code copying after symbols have been
  * finalized.
  */
-@Logger(name="lower")
-final class Lower extends NodeOperatorVisitor<BlockLexicalContext> implements Loggable {
 
-    private final DebugLogger log;
+final class Lower extends NodeOperatorVisitor<BlockLexicalContext> {
 
-    // Conservative pattern to test if element names consist of characters valid for identifiers.
-    // This matches any non-zero length alphanumeric string including _ and $ and not starting with a digit.
-    private static Pattern SAFE_PROPERTY_NAME = Pattern.compile("[a-zA-Z_$][\\w$]*");
+    private static final DebugLogger LOG = new DebugLogger("lower");
+
+    // needed only to get unique eval id
+    private final CodeInstaller<?> installer;
 
     /**
      * Constructor.
      */
-    Lower(final Compiler compiler) {
+    Lower(final CodeInstaller<?> installer) {
         super(new BlockLexicalContext() {
 
             @Override
@@ -116,11 +105,17 @@ final class Lower extends NodeOperatorVisitor<BlockLexicalContext> implements Lo
                 for (final Statement statement : statements) {
                     if (!terminated) {
                         newStatements.add(statement);
-                        if (statement.isTerminal() || statement instanceof JumpStatement) { //TODO hasGoto? But some Loops are hasGoto too - why?
+                        if (statement.isTerminal() || statement instanceof BreakNode || statement instanceof ContinueNode) { //TODO hasGoto? But some Loops are hasGoto too - why?
                             terminated = true;
                         }
                     } else {
-                        FoldConstants.extractVarNodesFromDeadCode(statement, newStatements);
+                        statement.accept(new NodeVisitor<LexicalContext>(new LexicalContext()) {
+                            @Override
+                            public boolean enterVarNode(final VarNode varNode) {
+                                newStatements.add(varNode.setInit(null));
+                                return false;
+                            }
+                        });
                     }
                 }
                 return newStatements;
@@ -141,18 +136,40 @@ final class Lower extends NodeOperatorVisitor<BlockLexicalContext> implements Lo
                 return block.setIsTerminal(this, false);
             }
         });
-
-        this.log = initLogger(compiler.getContext());
+        this.installer = installer;
     }
 
     @Override
-    public DebugLogger getLogger() {
-        return log;
+    public boolean enterBlock(final Block block) {
+        final FunctionNode   function = lc.getCurrentFunction();
+        if (lc.isFunctionBody() && function.isProgram() && !function.hasDeclaredFunctions()) {
+            new ExpressionStatement(function.getLineNumber(), block.getToken(), block.getFinish(), LiteralNode.newInstance(block, ScriptRuntime.UNDEFINED)).accept(this);
+        }
+        return true;
     }
 
     @Override
-    public DebugLogger initLogger(final Context context) {
-        return context.getLogger(this.getClass());
+    public Node leaveBlock(final Block block) {
+        //now we have committed the entire statement list to the block, but we need to truncate
+        //whatever is after the last terminal. block append won't append past it
+
+
+        if (lc.isFunctionBody()) {
+            final FunctionNode currentFunction = lc.getCurrentFunction();
+            final boolean isProgram = currentFunction.isProgram();
+            final Statement last = lc.getLastStatement();
+            final ReturnNode returnNode = new ReturnNode(
+                last == null ? currentFunction.getLineNumber() : last.getLineNumber(), //TODO?
+                currentFunction.getToken(),
+                currentFunction.getFinish(),
+                isProgram ?
+                    compilerConstant(RETURN) :
+                    LiteralNode.newInstance(block, ScriptRuntime.UNDEFINED));
+
+            returnNode.accept(this);
+        }
+
+        return block;
     }
 
     @Override
@@ -178,36 +195,8 @@ final class Lower extends NodeOperatorVisitor<BlockLexicalContext> implements Lo
     }
 
     @Override
-    public boolean enterJumpToInlinedFinally(final JumpToInlinedFinally jumpToInlinedFinally) {
-        addStatement(jumpToInlinedFinally);
-        return false;
-    }
-
-    @Override
     public boolean enterEmptyNode(final EmptyNode emptyNode) {
         return false;
-    }
-
-    @Override
-    public Node leaveIndexNode(final IndexNode indexNode) {
-        final String name = getConstantPropertyName(indexNode.getIndex());
-        if (name != null) {
-            // If index node is a constant property name convert index node to access node.
-            assert indexNode.isIndex();
-            return new AccessNode(indexNode.getToken(), indexNode.getFinish(), indexNode.getBase(), name);
-        }
-        return super.leaveIndexNode(indexNode);
-    }
-
-    // If expression is a primitive literal that is not an array index and does return its string value. Else return null.
-    private static String getConstantPropertyName(final Expression expression) {
-        if (expression instanceof LiteralNode.PrimitiveLiteralNode) {
-            final Object value = ((LiteralNode) expression).getValue();
-            if (value instanceof String && SAFE_PROPERTY_NAME.matcher((String) value).matches()) {
-                return (String) value;
-            }
-        }
-        return null;
     }
 
     @Override
@@ -233,7 +222,7 @@ final class Lower extends NodeOperatorVisitor<BlockLexicalContext> implements Lo
     }
 
     @Override
-    public Node leaveBlockStatement(final BlockStatement blockStatement) {
+    public Node leaveBlockStatement(BlockStatement blockStatement) {
         return addStatement(blockStatement);
     }
 
@@ -241,40 +230,28 @@ final class Lower extends NodeOperatorVisitor<BlockLexicalContext> implements Lo
     public Node leaveForNode(final ForNode forNode) {
         ForNode newForNode = forNode;
 
-        final Expression test = forNode.getTest();
-        if (!forNode.isForIn() && isAlwaysTrue(test)) {
+        final Node  test = forNode.getTest();
+        if (!forNode.isForIn() && conservativeAlwaysTrue(test)) {
             newForNode = forNode.setTest(lc, null);
         }
 
-        newForNode = checkEscape(newForNode);
-        if(newForNode.isForIn()) {
-            // Wrap it in a block so its internally created iterator is restricted in scope
-            addStatementEnclosedInBlock(newForNode);
-        } else {
-            addStatement(newForNode);
-        }
-        return newForNode;
+        return addStatement(checkEscape(newForNode));
+    }
+
+    @Override
+    public boolean enterFunctionNode(final FunctionNode functionNode) {
+        return !functionNode.isLazy();
     }
 
     @Override
     public Node leaveFunctionNode(final FunctionNode functionNode) {
-        log.info("END FunctionNode: ", functionNode.getName());
-        return functionNode;
+        LOG.info("END FunctionNode: ", functionNode.getName());
+        return functionNode.setState(lc, CompilationState.LOWERED);
     }
 
     @Override
     public Node leaveIfNode(final IfNode ifNode) {
         return addStatement(ifNode);
-    }
-
-    @Override
-    public Node leaveIN(final BinaryNode binaryNode) {
-        return new RuntimeNode(binaryNode);
-    }
-
-    @Override
-    public Node leaveINSTANCEOF(final BinaryNode binaryNode) {
-        return new RuntimeNode(binaryNode);
     }
 
     @Override
@@ -288,40 +265,20 @@ final class Lower extends NodeOperatorVisitor<BlockLexicalContext> implements Lo
         return returnNode;
     }
 
-    @Override
-    public Node leaveCaseNode(final CaseNode caseNode) {
-        // Try to represent the case test as an integer
-        final Node test = caseNode.getTest();
-        if (test instanceof LiteralNode) {
-            final LiteralNode<?> lit = (LiteralNode<?>)test;
-            if (lit.isNumeric() && !(lit.getValue() instanceof Integer)) {
-                if (JSType.isRepresentableAsInt(lit.getNumber())) {
-                    return caseNode.setTest((Expression)LiteralNode.newInstance(lit, lit.getInt32()).accept(this));
-                }
-            }
-        }
-        return caseNode;
-    }
 
     @Override
     public Node leaveSwitchNode(final SwitchNode switchNode) {
-        if(!switchNode.isUniqueInteger()) {
-            // Wrap it in a block so its internally created tag is restricted in scope
-            addStatementEnclosedInBlock(switchNode);
-        } else {
-            addStatement(switchNode);
-        }
-        return switchNode;
+        return addStatement(switchNode);
     }
 
     @Override
     public Node leaveThrowNode(final ThrowNode throwNode) {
-        return addStatement(throwNode); //ThrowNodes are always terminal, marked as such in constructor
+        addStatement(throwNode); //ThrowNodes are always terminal, marked as such in constructor
+        return throwNode;
     }
 
-    @SuppressWarnings("unchecked")
-    private static <T extends Node> T ensureUniqueNamesIn(final T node) {
-        return (T)node.accept(new SimpleNodeVisitor() {
+    private static Node ensureUniqueNamesIn(final Node node) {
+        return node.accept(new NodeVisitor<LexicalContext>(new LexicalContext()) {
             @Override
             public Node leaveFunctionNode(final FunctionNode functionNode) {
                 final String name = functionNode.getName();
@@ -335,15 +292,15 @@ final class Lower extends NodeOperatorVisitor<BlockLexicalContext> implements Lo
         });
     }
 
-    private static Block createFinallyBlock(final Block finallyBody) {
+    private static List<Statement> copyFinally(final Block finallyBody) {
         final List<Statement> newStatements = new ArrayList<>();
         for (final Statement statement : finallyBody.getStatements()) {
-            newStatements.add(statement);
+            newStatements.add((Statement)ensureUniqueNamesIn(statement));
             if (statement.hasTerminalFlags()) {
-                break;
+                return newStatements;
             }
         }
-        return finallyBody.setStatements(null, newStatements);
+        return newStatements;
     }
 
     private Block catchAllBlock(final TryNode tryNode) {
@@ -351,12 +308,12 @@ final class Lower extends NodeOperatorVisitor<BlockLexicalContext> implements Lo
         final long token      = tryNode.getToken();
         final int  finish     = tryNode.getFinish();
 
-        final IdentNode exception = new IdentNode(token, finish, lc.getCurrentFunction().uniqueName(CompilerConstants.EXCEPTION_PREFIX.symbolName()));
+        final IdentNode exception = new IdentNode(token, finish, lc.getCurrentFunction().uniqueName("catch_all"));
 
-        final Block catchBody = new Block(token, finish, new ThrowNode(lineNumber, token, finish, new IdentNode(exception), true));
+        final Block catchBody = new Block(token, finish, new ThrowNode(lineNumber, token, finish, new IdentNode(exception), ThrowNode.IS_SYNTHETIC_RETHROW));
         assert catchBody.isTerminal(); //ends with throw, so terminal
 
-        final CatchNode catchAllNode  = new CatchNode(lineNumber, token, finish, new IdentNode(exception), null, catchBody, true);
+        final CatchNode catchAllNode  = new CatchNode(lineNumber, token, finish, new IdentNode(exception), null, catchBody, CatchNode.IS_SYNTHETIC_RETHROW);
         final Block     catchAllBlock = new Block(token, finish, catchAllNode);
 
         //catchallblock -> catchallnode (catchnode) -> exception -> throw
@@ -369,24 +326,28 @@ final class Lower extends NodeOperatorVisitor<BlockLexicalContext> implements Lo
         return new IdentNode(functionNode.getToken(), functionNode.getFinish(), cc.symbolName());
     }
 
-    private static boolean isTerminalFinally(final Block finallyBlock) {
-        return finallyBlock.getLastStatement().hasTerminalFlags();
+    private static boolean isTerminal(final List<Statement> statements) {
+        return !statements.isEmpty() && statements.get(statements.size() - 1).hasTerminalFlags();
     }
 
     /**
      * Splice finally code into all endpoints of a trynode
      * @param tryNode the try node
-     * @param rethrow the rethrowing throw nodes from the synthetic catch block
+     * @param rethrows list of rethrowing throw nodes from synthetic catch blocks
      * @param finallyBody the code in the original finally block
      * @return new try node after splicing finally code (same if nop)
      */
-    private TryNode spliceFinally(final TryNode tryNode, final ThrowNode rethrow, final Block finallyBody) {
+    private Node spliceFinally(final TryNode tryNode, final List<ThrowNode> rethrows, final Block finallyBody) {
         assert tryNode.getFinallyBody() == null;
 
-        final Block finallyBlock = createFinallyBlock(finallyBody);
-        final ArrayList<Block> inlinedFinallies = new ArrayList<>();
-        final FunctionNode fn = lc.getCurrentFunction();
-        final TryNode newTryNode = (TryNode)tryNode.accept(new SimpleNodeVisitor() {
+        final TryNode newTryNode = (TryNode)tryNode.accept(new NodeVisitor<LexicalContext>(new LexicalContext()) {
+            final List<Node> insideTry = new ArrayList<>();
+
+            @Override
+            public boolean enterDefault(final Node node) {
+                insideTry.add(node);
+                return true;
+            }
 
             @Override
             public boolean enterFunctionNode(final FunctionNode functionNode) {
@@ -396,115 +357,79 @@ final class Lower extends NodeOperatorVisitor<BlockLexicalContext> implements Lo
 
             @Override
             public Node leaveThrowNode(final ThrowNode throwNode) {
-                if (rethrow == throwNode) {
-                    return new BlockStatement(prependFinally(finallyBlock, throwNode));
+                if (rethrows.contains(throwNode)) {
+                    final List<Statement> newStatements = copyFinally(finallyBody);
+                    if (!isTerminal(newStatements)) {
+                        newStatements.add(throwNode);
+                    }
+                    return BlockStatement.createReplacement(throwNode, newStatements);
                 }
                 return throwNode;
             }
 
             @Override
             public Node leaveBreakNode(final BreakNode breakNode) {
-                return leaveJumpStatement(breakNode);
+                return copy(breakNode, (Node)Lower.this.lc.getBreakable(breakNode.getLabel()));
             }
 
             @Override
             public Node leaveContinueNode(final ContinueNode continueNode) {
-                return leaveJumpStatement(continueNode);
-            }
-
-            private Node leaveJumpStatement(final JumpStatement jump) {
-                // NOTE: leaveJumpToInlinedFinally deliberately does not delegate to this method, only break and
-                // continue are edited. JTIF nodes should not be changed, rather the surroundings of
-                // break/continue/return that were moved into the inlined finally block itself will be changed.
-
-                // If this visitor's lc doesn't find the target of the jump, it means it's external to the try block.
-                if (jump.getTarget(lc) == null) {
-                    return createJumpToInlinedFinally(fn, inlinedFinallies, prependFinally(finallyBlock, jump));
-                }
-                return jump;
+                return copy(continueNode, Lower.this.lc.getContinueTo(continueNode.getLabel()));
             }
 
             @Override
             public Node leaveReturnNode(final ReturnNode returnNode) {
-                final Expression expr = returnNode.getExpression();
-                if (isTerminalFinally(finallyBlock)) {
-                    if (expr == null) {
-                        // Terminal finally; no return expression.
-                        return createJumpToInlinedFinally(fn, inlinedFinallies, ensureUniqueNamesIn(finallyBlock));
-                    }
-                    // Terminal finally; has a return expression.
-                    final List<Statement> newStatements = new ArrayList<>(2);
-                    final int retLineNumber = returnNode.getLineNumber();
-                    final long retToken = returnNode.getToken();
-                    // Expression is evaluated for side effects.
-                    newStatements.add(new ExpressionStatement(retLineNumber, retToken, returnNode.getFinish(), expr));
-                    newStatements.add(createJumpToInlinedFinally(fn, inlinedFinallies, ensureUniqueNamesIn(finallyBlock)));
-                    return new BlockStatement(retLineNumber, new Block(retToken, finallyBlock.getFinish(), newStatements));
-                } else if (expr == null || expr instanceof PrimitiveLiteralNode<?> || (expr instanceof IdentNode && RETURN.symbolName().equals(((IdentNode)expr).getName()))) {
-                    // Nonterminal finally; no return expression, or returns a primitive literal, or returns :return.
-                    // Just move the return expression into the finally block.
-                    return createJumpToInlinedFinally(fn, inlinedFinallies, prependFinally(finallyBlock, returnNode));
+                final Expression expr  = returnNode.getExpression();
+                final List<Statement> newStatements = new ArrayList<>();
+
+                final Expression resultNode;
+                if (expr != null) {
+                    //we need to evaluate the result of the return in case it is complex while
+                    //still in the try block, store it in a result value and return it afterwards
+                    resultNode = new IdentNode(Lower.this.compilerConstant(RETURN));
+                    newStatements.add(new ExpressionStatement(returnNode.getLineNumber(), returnNode.getToken(), returnNode.getFinish(), new BinaryNode(Token.recast(returnNode.getToken(), TokenType.ASSIGN), resultNode, expr)));
                 } else {
-                    // We need to evaluate the result of the return in case it is complex while still in the try block,
-                    // store it in :return, and return it afterwards.
-                    final List<Statement> newStatements = new ArrayList<>();
-                    final int retLineNumber = returnNode.getLineNumber();
-                    final long retToken = returnNode.getToken();
-                    final int retFinish = returnNode.getFinish();
-                    final Expression resultNode = new IdentNode(expr.getToken(), expr.getFinish(), RETURN.symbolName());
-                    // ":return = <expr>;"
-                    newStatements.add(new ExpressionStatement(retLineNumber, retToken, retFinish, new BinaryNode(Token.recast(returnNode.getToken(), TokenType.ASSIGN), resultNode, expr)));
-                    // inline finally and end it with "return :return;"
-                    newStatements.add(createJumpToInlinedFinally(fn, inlinedFinallies, prependFinally(finallyBlock, returnNode.setExpression(resultNode))));
-                    return new BlockStatement(retLineNumber, new Block(retToken, retFinish, newStatements));
+                    resultNode = null;
                 }
+
+                newStatements.addAll(copyFinally(finallyBody));
+                if (!isTerminal(newStatements)) {
+                    newStatements.add(expr == null ? returnNode : returnNode.setExpression(resultNode));
+                }
+
+                return BlockStatement.createReplacement(returnNode, lc.getCurrentBlock().getFinish(), newStatements);
+            }
+
+            private Node copy(final Statement endpoint, final Node targetNode) {
+                if (!insideTry.contains(targetNode)) {
+                    final List<Statement> newStatements = copyFinally(finallyBody);
+                    if (!isTerminal(newStatements)) {
+                        newStatements.add(endpoint);
+                    }
+                    return BlockStatement.createReplacement(endpoint, tryNode.getFinish(), newStatements);
+                }
+                return endpoint;
             }
         });
-        addStatement(inlinedFinallies.isEmpty() ? newTryNode : newTryNode.setInlinedFinallies(lc, inlinedFinallies));
-        // TODO: if finallyStatement is terminal, we could just have sites of inlined finallies jump here.
-        addStatement(new BlockStatement(finallyBlock));
+
+        addStatement(newTryNode);
+        for (final Node statement : finallyBody.getStatements()) {
+            addStatement((Statement)statement);
+        }
 
         return newTryNode;
-    }
-
-    private static JumpToInlinedFinally createJumpToInlinedFinally(final FunctionNode fn, final List<Block> inlinedFinallies, final Block finallyBlock) {
-        final String labelName = fn.uniqueName(":finally");
-        final long token = finallyBlock.getToken();
-        final int finish = finallyBlock.getFinish();
-        inlinedFinallies.add(new Block(token, finish, new LabelNode(finallyBlock.getFirstStatementLineNumber(),
-                token, finish, labelName, finallyBlock)));
-        return new JumpToInlinedFinally(labelName);
-    }
-
-    private static Block prependFinally(final Block finallyBlock, final Statement statement) {
-        final Block inlinedFinally = ensureUniqueNamesIn(finallyBlock);
-        if (isTerminalFinally(finallyBlock)) {
-            return inlinedFinally;
-        }
-        final List<Statement> stmts = inlinedFinally.getStatements();
-        final List<Statement> newStmts = new ArrayList<>(stmts.size() + 1);
-        newStmts.addAll(stmts);
-        newStmts.add(statement);
-        return new Block(inlinedFinally.getToken(), statement.getFinish(), newStmts);
     }
 
     @Override
     public Node leaveTryNode(final TryNode tryNode) {
         final Block finallyBody = tryNode.getFinallyBody();
-        TryNode newTryNode = tryNode.setFinallyBody(lc, null);
 
-        // No finally or empty finally
-        if (finallyBody == null || finallyBody.getStatementCount() == 0) {
-            final List<CatchNode> catches = newTryNode.getCatches();
-            if (catches == null || catches.isEmpty()) {
-                // A completely degenerate try block: empty finally, no catches. Replace it with try body.
-                return addStatement(new BlockStatement(tryNode.getBody()));
-            }
-            return addStatement(ensureUnconditionalCatch(newTryNode));
+        if (finallyBody == null) {
+            return addStatement(tryNode);
         }
 
         /*
-         * create a new try node
+         * create a new trynode
          *    if we have catches:
          *
          *    try            try
@@ -515,7 +440,7 @@ final class Lower extends NodeOperatorVisitor<BlockLexicalContext> implements Lo
          *                   catchall
          *                        rethrow
          *
-         *   otherwise
+         *   otheriwse
          *
          *   try              try
          *      x               x
@@ -526,10 +451,12 @@ final class Lower extends NodeOperatorVisitor<BlockLexicalContext> implements Lo
          *   now splice in finally code wherever needed
          *
          */
+        TryNode newTryNode;
+
         final Block catchAll = catchAllBlock(tryNode);
 
-        final List<ThrowNode> rethrows = new ArrayList<>(1);
-        catchAll.accept(new SimpleNodeVisitor() {
+        final List<ThrowNode> rethrows = new ArrayList<>();
+        catchAll.accept(new NodeVisitor<LexicalContext>(new LexicalContext()) {
             @Override
             public boolean enterThrowNode(final ThrowNode throwNode) {
                 rethrows.add(throwNode);
@@ -538,30 +465,20 @@ final class Lower extends NodeOperatorVisitor<BlockLexicalContext> implements Lo
         });
         assert rethrows.size() == 1;
 
-        if (!tryNode.getCatchBlocks().isEmpty()) {
-            final Block outerBody = new Block(newTryNode.getToken(), newTryNode.getFinish(), ensureUnconditionalCatch(newTryNode));
-            newTryNode = newTryNode.setBody(lc, outerBody).setCatchBlocks(lc, null);
+        if (tryNode.getCatchBlocks().isEmpty()) {
+            newTryNode = tryNode.setFinallyBody(null);
+        } else {
+            Block outerBody = new Block(tryNode.getToken(), tryNode.getFinish(), tryNode.setFinallyBody(null));
+            newTryNode = tryNode.setBody(outerBody).setCatchBlocks(null);
         }
 
-        newTryNode = newTryNode.setCatchBlocks(lc, Arrays.asList(catchAll));
+        newTryNode = newTryNode.setCatchBlocks(Arrays.asList(catchAll)).setFinallyBody(null);
 
         /*
          * Now that the transform is done, we have to go into the try and splice
          * the finally block in front of any statement that is outside the try
          */
-        return (TryNode)lc.replace(tryNode, spliceFinally(newTryNode, rethrows.get(0), finallyBody));
-    }
-
-    private TryNode ensureUnconditionalCatch(final TryNode tryNode) {
-        final List<CatchNode> catches = tryNode.getCatches();
-        if(catches == null || catches.isEmpty() || catches.get(catches.size() - 1).getExceptionCondition() == null) {
-            return tryNode;
-        }
-        // If the last catch block is conditional, add an unconditional rethrow block
-        final List<Block> newCatchBlocks = new ArrayList<>(tryNode.getCatchBlocks());
-
-        newCatchBlocks.add(catchAllBlock(tryNode));
-        return tryNode.setCatchBlocks(lc, newCatchBlocks);
+        return spliceFinally(newTryNode, rethrows, finallyBody);
     }
 
     @Override
@@ -575,12 +492,12 @@ final class Lower extends NodeOperatorVisitor<BlockLexicalContext> implements Lo
 
     @Override
     public Node leaveWhileNode(final WhileNode whileNode) {
-        final Expression test = whileNode.getTest();
+        final Node test  = whileNode.getTest();
         final Block body = whileNode.getBody();
 
-        if (isAlwaysTrue(test)) {
+        if (conservativeAlwaysTrue(test)) {
             //turn it into a for node without a test.
-            final ForNode forNode = (ForNode)new ForNode(whileNode.getLineNumber(), whileNode.getToken(), whileNode.getFinish(), body, 0).accept(this);
+            final ForNode forNode = (ForNode)new ForNode(whileNode.getLineNumber(), whileNode.getToken(), whileNode.getFinish(), null, null, body, null, ForNode.IS_FOR).accept(this);
             lc.replace(whileNode, forNode);
             return forNode;
         }
@@ -618,13 +535,16 @@ final class Lower extends NodeOperatorVisitor<BlockLexicalContext> implements Lo
     private String evalLocation(final IdentNode node) {
         final Source source = lc.getCurrentFunction().getSource();
         final int pos = node.position();
+        // Code installer is null when running with --compile-only, use 0 as id in that case
+        final long id = installer == null ? 0 : installer.getUniqueEvalId();
         return new StringBuilder().
             append(source.getName()).
             append('#').
             append(source.getLine(pos)).
             append(':').
             append(source.getColumn(pos)).
-            append("<eval>").
+            append("<eval>@").
+            append(id).
             toString();
     }
 
@@ -651,15 +571,21 @@ final class Lower extends NodeOperatorVisitor<BlockLexicalContext> implements Lo
 
             // 'eval' call with at least one argument
             if (args.size() >= 1 && EVAL.symbolName().equals(callee.getName())) {
-                final List<Expression> evalArgs = new ArrayList<>(args.size());
-                for(final Expression arg: args) {
-                    evalArgs.add((Expression)ensureUniqueNamesIn(arg).accept(this));
-                }
-                return callNode.setEvalArgs(new CallNode.EvalArgs(evalArgs, evalLocation(callee)));
+                final FunctionNode currentFunction = lc.getCurrentFunction();
+                return callNode.setEvalArgs(
+                    new CallNode.EvalArgs(
+                        (Expression)ensureUniqueNamesIn(args.get(0)).accept(this),
+                        compilerConstant(THIS),
+                        evalLocation(callee),
+                        currentFunction.isStrict()));
             }
         }
 
         return callNode;
+    }
+
+    private static boolean conservativeAlwaysTrue(final Node node) {
+        return node == null || ((node instanceof LiteralNode) && Boolean.TRUE.equals(((LiteralNode<?>)node).getValue()));
     }
 
     /**
@@ -674,7 +600,7 @@ final class Lower extends NodeOperatorVisitor<BlockLexicalContext> implements Lo
     private static boolean controlFlowEscapes(final LexicalContext lex, final Block loopBody) {
         final List<Node> escapes = new ArrayList<>();
 
-        loopBody.accept(new SimpleNodeVisitor() {
+        loopBody.accept(new NodeVisitor<LexicalContext>(new LexicalContext()) {
             @Override
             public Node leaveBreakNode(final BreakNode node) {
                 escapes.add(node);
@@ -684,7 +610,7 @@ final class Lower extends NodeOperatorVisitor<BlockLexicalContext> implements Lo
             @Override
             public Node leaveContinueNode(final ContinueNode node) {
                 // all inner loops have been popped.
-                if (lex.contains(node.getTarget(lex))) {
+                if (lex.contains(lex.getContinueTo(node.getLabel()))) {
                     escapes.add(node);
                 }
                 return node;
@@ -694,11 +620,10 @@ final class Lower extends NodeOperatorVisitor<BlockLexicalContext> implements Lo
         return !escapes.isEmpty();
     }
 
-    @SuppressWarnings("unchecked")
-    private <T extends LoopNode> T checkEscape(final T loopNode) {
+    private LoopNode checkEscape(final LoopNode loopNode) {
         final boolean escapes = controlFlowEscapes(lc, loopNode.getBody());
         if (escapes) {
-            return (T)loopNode.
+            return loopNode.
                 setBody(lc, loopNode.getBody().setIsTerminal(lc, false)).
                 setControlFlowEscapes(lc, escapes);
         }
@@ -711,14 +636,6 @@ final class Lower extends NodeOperatorVisitor<BlockLexicalContext> implements Lo
         return statement;
     }
 
-    private void addStatementEnclosedInBlock(final Statement stmt) {
-        BlockStatement b = BlockStatement.createReplacement(stmt, Collections.<Statement>singletonList(stmt));
-        if(stmt.isTerminal()) {
-            b = b.setBlock(b.getBlock().setIsTerminal(null, true));
-        }
-        addStatement(b);
-    }
-
     /**
      * An internal expression has a symbol that is tagged internal. Check if
      * this is such a node
@@ -727,10 +644,7 @@ final class Lower extends NodeOperatorVisitor<BlockLexicalContext> implements Lo
      * @return true if internal, false otherwise
      */
     private static boolean isInternalExpression(final Expression expression) {
-        if (!(expression instanceof IdentNode)) {
-            return false;
-        }
-        final Symbol symbol = ((IdentNode)expression).getSymbol();
+        final Symbol symbol = expression.getSymbol();
         return symbol != null && symbol.isInternal();
     }
 
@@ -742,7 +656,8 @@ final class Lower extends NodeOperatorVisitor<BlockLexicalContext> implements Lo
      * @return true if an assignment to eval result, false otherwise
      */
     private static boolean isEvalResultAssignment(final Node expression) {
-        final Node e = expression;
+        Node e = expression;
+        assert e.tokenType() != TokenType.DISCARD; //there are no discards this early anymore
         if (e instanceof BinaryNode) {
             final Node lhs = ((BinaryNode)e).lhs();
             if (lhs instanceof IdentNode) {
@@ -751,4 +666,5 @@ final class Lower extends NodeOperatorVisitor<BlockLexicalContext> implements Lo
         }
         return false;
     }
+
 }

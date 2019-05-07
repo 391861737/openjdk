@@ -95,9 +95,6 @@ public final class BerDecoder extends Ber {
             for( int i = 0; i < lengthbyte; i++) {
                 retval = (retval << 8) + (buf[offset++] & 0xff);
             }
-            if (retval < 0) {
-              throw new DecodeException("Invalid length bytes");
-            }
             return retval;
         } else {
             return lengthbyte;

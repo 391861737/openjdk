@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 1997, 2015, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 1997, 2013, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -30,16 +30,20 @@
 #include "runtime/thread.inline.hpp"
 #include "runtime/vmThread.hpp"
 #include "utilities/top.hpp"
-#if defined INTERP_MASM_MD_HPP
-# include INTERP_MASM_MD_HPP
-#elif defined TARGET_ARCH_x86
+#ifdef TARGET_ARCH_x86
 # include "interp_masm_x86.hpp"
-#elif defined TARGET_ARCH_MODEL_sparc
+#endif
+#ifdef TARGET_ARCH_MODEL_sparc
 # include "interp_masm_sparc.hpp"
-#elif defined TARGET_ARCH_MODEL_zero
+#endif
+#ifdef TARGET_ARCH_MODEL_zero
 # include "interp_masm_zero.hpp"
-#elif defined TARGET_ARCH_MODEL_ppc_64
-# include "interp_masm_ppc_64.hpp"
+#endif
+#ifdef TARGET_ARCH_MODEL_arm
+# include "interp_masm_arm.hpp"
+#endif
+#ifdef TARGET_ARCH_MODEL_ppc
+# include "interp_masm_ppc.hpp"
 #endif
 
 // This file contains the platform-independent parts
@@ -174,16 +178,30 @@ class AbstractInterpreter: AllStatic {
   // Deoptimization should reexecute this bytecode
   static bool    bytecode_should_reexecute(Bytecodes::Code code);
 
-  // deoptimization support
-  static int        size_activation(int max_stack,
+  // share implementation of size_activation and layout_activation:
+  static int        size_activation(Method* method,
                                     int temps,
-                                    int extra_args,
+                                    int popframe_args,
                                     int monitors,
+                                    int caller_actual_parameters,
                                     int callee_params,
                                     int callee_locals,
-                                    bool is_top_frame);
+                                    bool is_top_frame,
+                                    bool is_bottom_frame) {
+    return layout_activation(method,
+                             temps,
+                             popframe_args,
+                             monitors,
+                             caller_actual_parameters,
+                             callee_params,
+                             callee_locals,
+                             (frame*)NULL,
+                             (frame*)NULL,
+                             is_top_frame,
+                             is_bottom_frame);
+  }
 
-  static void      layout_activation(Method* method,
+  static int       layout_activation(Method* method,
                                      int temps,
                                      int popframe_args,
                                      int monitors,

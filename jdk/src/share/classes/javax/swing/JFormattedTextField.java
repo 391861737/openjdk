@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2000, 2015, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2000, 2013, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -30,6 +30,7 @@ import java.awt.im.InputContext;
 import java.io.*;
 import java.text.*;
 import java.util.*;
+import javax.swing.UIManager;
 import javax.swing.event.*;
 import javax.swing.plaf.UIResource;
 import javax.swing.text.*;
@@ -150,7 +151,7 @@ import javax.swing.text.*;
  * will be created to handle formatting of numbers:
  * <pre>
  *   JFormattedTextField tf = new JFormattedTextField();
- *   tf.setValue(100);
+ *   tf.setValue(new Number(100));
  * </pre>
  * <p>
  * <strong>Warning:</strong> As the <code>AbstractFormatter</code> will

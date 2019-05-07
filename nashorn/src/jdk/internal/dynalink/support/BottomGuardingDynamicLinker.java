@@ -105,12 +105,12 @@ public class BottomGuardingDynamicLinker implements TypeBasedGuardingDynamicLink
     }
 
     @Override
-    public boolean canLinkType(final Class<?> type) {
+    public boolean canLinkType(Class<?> type) {
         return false;
     }
 
     @Override
-    public GuardedInvocation getGuardedInvocation(final LinkRequest linkRequest, final LinkerServices linkerServices) {
+    public GuardedInvocation getGuardedInvocation(LinkRequest linkRequest, LinkerServices linkerServices) {
         return null;
     }
 }

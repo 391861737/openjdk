@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 1997, 2015, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 1997, 2013, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -53,12 +53,12 @@ import java.util.*;
  * configuring a button.  Refer to <a href="Action.html#buttonActions">
  * Swing Components Supporting <code>Action</code></a> for more
  * details, and you can find more information in <a
- * href="https://docs.oracle.com/javase/tutorial/uiswing/misc/action.html">How
+ * href="http://docs.oracle.com/javase/tutorial/uiswing/misc/action.html">How
  * to Use Actions</a>, a section in <em>The Java Tutorial</em>.
  * <p>
  * For further information see
  * <a
- href="https://docs.oracle.com/javase/tutorial/uiswing/components/button.html">How to Use Buttons, Check Boxes, and Radio Buttons</a>,
+ href="http://docs.oracle.com/javase/tutorial/uiswing/components/button.html">How to Use Buttons, Check Boxes, and Radio Buttons</a>,
  * a section in <em>The Java Tutorial</em>.
  * <p>
  * <strong>Warning:</strong>
@@ -2197,7 +2197,10 @@ public abstract class AbstractButton extends JComponent implements ItemSelectabl
      */
     public boolean imageUpdate(Image img, int infoflags,
                                int x, int y, int w, int h) {
-        Icon iconDisplayed = null;
+        Icon iconDisplayed = getIcon();
+        if (iconDisplayed == null) {
+            return false;
+        }
 
         if (!model.isEnabled()) {
             if (model.isSelected()) {
@@ -2217,12 +2220,7 @@ public abstract class AbstractButton extends JComponent implements ItemSelectabl
             iconDisplayed = getSelectedIcon();
         }
 
-        if (iconDisplayed == null) {
-            iconDisplayed = getIcon();
-        }
-
-        if (iconDisplayed == null
-            || !SwingUtilities.doesIconReferenceImage(iconDisplayed, img)) {
+        if (!SwingUtilities.doesIconReferenceImage(iconDisplayed, img)) {
             // We don't know about this image, disable the notification so
             // we don't keep repainting.
             return false;

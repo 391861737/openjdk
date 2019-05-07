@@ -1,13 +1,13 @@
 /*
- * Copyright (c) 2015, Oracle and/or its affiliates. All rights reserved.
+ * reserved comment block
+ * DO NOT REMOVE OR ALTER!
  */
 /*
- * Licensed to the Apache Software Foundation (ASF) under one or more
- * contributor license agreements.  See the NOTICE file distributed with
- * this work for additional information regarding copyright ownership.
- * The ASF licenses this file to You under the Apache License, Version 2.0
- * (the "License"); you may not use this file except in compliance with
- * the License.  You may obtain a copy of the License at
+ * Copyright 1999-2002,2004 The Apache Software Foundation.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
  *
  *      http://www.apache.org/licenses/LICENSE-2.0
  *
@@ -20,17 +20,11 @@
 
 package com.sun.org.apache.xerces.internal.dom;
 
-import java.io.IOException;
-import java.io.ObjectInputStream;
-import java.io.ObjectOutputStream;
-import java.io.ObjectStreamField;
-import java.util.HashMap;
-import java.util.Hashtable;
-import java.util.Map;
 import org.w3c.dom.DOMException;
 import org.w3c.dom.DocumentType;
-import org.w3c.dom.NamedNodeMap;
 import org.w3c.dom.Node;
+import org.w3c.dom.NamedNodeMap;
+import java.util.Hashtable;
 import org.w3c.dom.UserDataHandler;
 
 /**
@@ -101,37 +95,10 @@ public class DocumentTypeImpl
     // a number, on demand, for ordering purposes for compareDocumentPosition
     private int doctypeNumber=0;
 
-    private Map<String, UserDataRecord> userData =  null;
-
-
-    /**
-     * @serialField name String document type name
-     * @serialField entities NamedNodeMapImpl entities
-     * @serialField notations NamedNodeMapImpl notations
-     * @serialField elements NamedNodeMapImpl elements
-     * @serialField publicID String support public ID
-     * @serialField systemID String support system ID
-     * @serialField internalSubset String support internal subset
-     * @serialField doctypeNumber int Doctype number
-     * @serialField userData Hashtable user data
-     */
-    private static final ObjectStreamField[] serialPersistentFields =
-        new ObjectStreamField[] {
-            new ObjectStreamField("name", String.class),
-            new ObjectStreamField("entities", NamedNodeMapImpl.class),
-            new ObjectStreamField("notations", NamedNodeMapImpl.class),
-            new ObjectStreamField("elements", NamedNodeMapImpl.class),
-            new ObjectStreamField("publicID", String.class),
-            new ObjectStreamField("systemID", String.class),
-            new ObjectStreamField("internalSubset", String.class),
-            new ObjectStreamField("doctypeNumber", int.class),
-            new ObjectStreamField("userData", Hashtable.class),
-        };
-
     //
     // Constructors
     //
-
+    private Hashtable userData =  null;
     /** Factory method for creating a document type node. */
     public DocumentTypeImpl(CoreDocumentImpl ownerDocument, String name) {
         super(ownerDocument);
@@ -478,20 +445,22 @@ public class DocumentTypeImpl
     public Object setUserData(String key,
     Object data, UserDataHandler handler) {
         if(userData == null)
-            userData = new HashMap<>();
+            userData = new Hashtable();
         if (data == null) {
             if (userData != null) {
-                UserDataRecord udr = userData.remove(key);
-                if (udr != null) {
-                    return udr.fData;
+                Object o = userData.remove(key);
+                if (o != null) {
+                    UserDataRecord r = (UserDataRecord) o;
+                    return r.fData;
                 }
             }
             return null;
         }
         else {
-            UserDataRecord udr = userData.put(key, new UserDataRecord(data, handler));
-            if (udr != null) {
-                return udr.fData;
+            Object o = userData.put(key, new UserDataRecord(data, handler));
+            if (o != null) {
+                UserDataRecord r = (UserDataRecord) o;
+                return r.fData;
             }
         }
         return null;
@@ -501,58 +470,16 @@ public class DocumentTypeImpl
         if (userData == null) {
             return null;
         }
-        UserDataRecord udr = userData.get(key);
-        if (udr != null) {
-            return udr.fData;
+        Object o = userData.get(key);
+        if (o != null) {
+            UserDataRecord r = (UserDataRecord) o;
+            return r.fData;
         }
         return null;
     }
 
-    @Override
-    protected Map<String, UserDataRecord> getUserDataRecord(){
+    protected Hashtable getUserDataRecord(){
         return userData;
     }
 
-    /**
-     * @serialData Serialized fields. Convert Map to Hashtable for backward
-     * compatibility.
-     */
-    private void writeObject(ObjectOutputStream out) throws IOException {
-        // Convert the HashMap to Hashtable
-        Hashtable<String, UserDataRecord> ud = (userData == null)? null : new Hashtable<>(userData);
-
-        // Write serialized fields
-        ObjectOutputStream.PutField pf = out.putFields();
-        pf.put("name", name);
-        pf.put("entities", entities);
-        pf.put("notations", notations);
-        pf.put("elements", elements);
-        pf.put("publicID", publicID);
-        pf.put("systemID", systemID);
-        pf.put("internalSubset", internalSubset);
-        pf.put("doctypeNumber", doctypeNumber);
-        pf.put("userData", ud);
-        out.writeFields();
-    }
-
-    @SuppressWarnings("unchecked")
-    private void readObject(ObjectInputStream in)
-                        throws IOException, ClassNotFoundException {
-        // We have to read serialized fields first.
-        ObjectInputStream.GetField gf = in.readFields();
-        name = (String)gf.get("name", null);
-        entities = (NamedNodeMapImpl)gf.get("entities", null);
-        notations = (NamedNodeMapImpl)gf.get("notations", null);
-        elements = (NamedNodeMapImpl)gf.get("elements", null);
-        publicID = (String)gf.get("publicID", null);
-        systemID = (String)gf.get("systemID", null);
-        internalSubset = (String)gf.get("internalSubset", null);
-        doctypeNumber = gf.get("doctypeNumber", 0);
-
-        Hashtable<String, UserDataRecord> ud =
-                (Hashtable<String, UserDataRecord>)gf.get("userData", null);
-
-        //convert the Hashtable back to HashMap
-        if (ud != null) userData = new HashMap<>(ud);
-    }
 } // class DocumentTypeImpl

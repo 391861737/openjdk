@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2012, 2014, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2012, 2013, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -23,7 +23,6 @@
 
 import java.util.ArrayList;
 import java.util.Arrays;
-import java.util.Collection;
 import java.util.Collections;
 import java.util.Comparator;
 import java.util.List;
@@ -44,45 +43,31 @@ import static org.testng.Assert.fail;
 
 import java.lang.reflect.Constructor;
 import java.util.ConcurrentModificationException;
-import java.util.function.Consumer;
-import java.util.function.Function;
 import java.util.function.Predicate;
 import java.util.function.Supplier;
 
 /**
  * @test
  * @summary Unit tests for extension methods on List
- * @bug 8023367 8037106
+ * @bug 8023367
  * @library ../Collection/testlibrary
  * @build CollectionAsserts CollectionSupplier ExtendsAbstractList
  * @run testng ListDefaults
  */
 public class ListDefaults {
 
-    // Suppliers of lists that can support structural modifications
-    private static final List<Function<Collection, List>> LIST_STRUCT_MOD_SUPPLIERS = Arrays.asList(
-            java.util.ArrayList::new,
-            java.util.LinkedList::new,
-            java.util.Vector::new,
-            java.util.concurrent.CopyOnWriteArrayList::new,
-            ExtendsAbstractList::new
-    );
+    private static final Supplier<?>[] LIST_CLASSES = {
+        java.util.ArrayList::new,
+        java.util.LinkedList::new,
+        java.util.Vector::new,
+        java.util.concurrent.CopyOnWriteArrayList::new,
+        ExtendsAbstractList::new
+     };
 
-    // Suppliers of lists that can support in place modifications
-    private static final List<Function<Collection, List>> LIST_SUPPLIERS = Arrays.asList(
-            java.util.ArrayList::new,
-            java.util.LinkedList::new,
-            java.util.Vector::new,
-            java.util.concurrent.CopyOnWriteArrayList::new,
-            ExtendsAbstractList::new,
-            c -> Arrays.asList(c.toArray())
-    );
-
-    // Suppliers of lists supporting CMEs
-    private static final List<Function<Collection, List>> LIST_CME_SUPPLIERS = Arrays.asList(
-            java.util.ArrayList::new,
-            java.util.Vector::new
-    );
+    private static final Supplier<?>[] LIST_CME_CLASSES = {
+        java.util.ArrayList::new,
+        java.util.Vector::new
+     };
 
     private static final Predicate<Integer> pEven = x -> 0 == x % 2;
     private static final Predicate<Integer> pOdd = x -> 1 == x % 2;
@@ -98,13 +83,17 @@ public class ListDefaults {
     private static final int SUBLIST_TO = SIZE - 5;
     private static final int SUBLIST_SIZE = SUBLIST_TO - SUBLIST_FROM;
 
+    private static interface Callback {
+        void call(List<Integer> list);
+    }
+
     // call the callback for each recursive subList
-    private void trimmedSubList(final List<Integer> list, final Consumer<List<Integer>> callback) {
+    private void trimmedSubList(final List<Integer> list, final Callback callback) {
         int size = list.size();
         if (size > 1) {
             // trim 1 element from both ends
             final List<Integer> subList = list.subList(1, size - 1);
-            callback.accept(subList);
+            callback.call(subList);
             trimmedSubList(subList, callback);
         }
     }
@@ -118,21 +107,17 @@ public class ListDefaults {
         cases.add(new Object[] { new Vector<>() });
         cases.add(new Object[] { new Stack<>() });
         cases.add(new Object[] { new CopyOnWriteArrayList<>() });
-        cases.add(new Object[] { Arrays.asList() });
 
-        List<Integer> l = Arrays.asList(42);
-        cases.add(new Object[] { new ArrayList<>(l) });
-        cases.add(new Object[] { new LinkedList<>(l) });
-        cases.add(new Object[] { new Vector<>(l) });
-        Stack<Integer> s = new Stack<>(); s.addAll(l);
-        cases.add(new Object[]{s});
-        cases.add(new Object[] { new CopyOnWriteArrayList<>(l) });
-        cases.add(new Object[] { l });
+        cases.add(new Object[] { new ArrayList(){{add(42);}} });
+        cases.add(new Object[] { new LinkedList(){{add(42);}} });
+        cases.add(new Object[] { new Vector(){{add(42);}} });
+        cases.add(new Object[] { new Stack(){{add(42);}} });
+        cases.add(new Object[] { new CopyOnWriteArrayList(){{add(42);}} });
         return cases.toArray(new Object[0][cases.size()]);
     }
 
     @Test(dataProvider = "listProvider")
-    public void testProvidedWithNull(final List<Integer> list) {
+    public void testProvidedWithNull(final List<Integer> list) throws Exception {
         try {
             list.forEach(null);
             fail("expected NPE not thrown");
@@ -153,12 +138,11 @@ public class ListDefaults {
     }
 
     @Test
-    public void testForEach() {
-        @SuppressWarnings("unchecked")
-        final CollectionSupplier<List<Integer>> supplier = new CollectionSupplier(LIST_SUPPLIERS, SIZE);
+    public void testForEach() throws Exception {
+        final CollectionSupplier<List<Integer>> supplier = new CollectionSupplier((Supplier<List<Integer>>[])LIST_CLASSES, SIZE);
         for (final CollectionSupplier.TestCase<List<Integer>> test : supplier.get()) {
-            final List<Integer> original = test.expected;
-            final List<Integer> list = test.collection;
+            final List<Integer> original = ((List<Integer>) test.expected);
+            final List<Integer> list = ((List<Integer>) test.collection);
 
             try {
                 list.forEach(null);
@@ -181,21 +165,23 @@ public class ListDefaults {
                 }
             }
 
-            trimmedSubList(list, l -> {
-                    final List<Integer> a = new LinkedList<>();
-                    l.forEach(a::add);
-                    CollectionAsserts.assertContents(a, l);
-                });
+            trimmedSubList(list, new Callback() {
+                @Override
+                public void call(final List<Integer> list) {
+                    final List<Integer> actual = new LinkedList<>();
+                    list.forEach(actual::add);
+                    CollectionAsserts.assertContents(actual, list);
+                }
+            });
         }
     }
 
     @Test
-    public void testRemoveIf() {
-        @SuppressWarnings("unchecked")
-        final CollectionSupplier<List<Integer>> supplier = new CollectionSupplier(LIST_STRUCT_MOD_SUPPLIERS, SIZE);
+    public void testRemoveIf() throws Exception {
+        final CollectionSupplier<List<Integer>> supplier = new CollectionSupplier((Supplier<List<Integer>>[])LIST_CLASSES, SIZE);
         for (final CollectionSupplier.TestCase<List<Integer>> test : supplier.get()) {
-            final List<Integer> original = test.expected;
-            final List<Integer> list = test.collection;
+            final List<Integer> original = ((List<Integer>) test.expected);
+            final List<Integer> list = ((List<Integer>) test.collection);
 
             try {
                 list.removeIf(null);
@@ -209,9 +195,9 @@ public class ListDefaults {
             }
         }
 
-        for (final CollectionSupplier.TestCase<List<Integer>> test : supplier.get()) {
-            final List<Integer> original = test.expected;
-            final List<Integer> list = test.collection;
+        for (final CollectionSupplier.TestCase test : supplier.get()) {
+            final List<Integer> original = ((List<Integer>) test.expected);
+            final List<Integer> list = ((List<Integer>) test.collection);
             list.removeIf(pOdd);
             for (int i : list) {
                 assertTrue((i % 2) == 0);
@@ -225,9 +211,9 @@ public class ListDefaults {
             assertTrue(list.isEmpty());
         }
 
-        for (final CollectionSupplier.TestCase<List<Integer>> test : supplier.get()) {
-            final List<Integer> original = test.expected;
-            final List<Integer> list = test.collection;
+        for (final CollectionSupplier.TestCase test : supplier.get()) {
+            final List<Integer> original = ((List<Integer>) test.expected);
+            final List<Integer> list = ((List<Integer>) test.collection);
             final List<Integer> listCopy = new ArrayList<>(list);
             if (original.size() > SUBLIST_SIZE) {
                 final List<Integer> subList = list.subList(SUBLIST_FROM, SUBLIST_TO);
@@ -251,19 +237,22 @@ public class ListDefaults {
             }
         }
 
-        for (final CollectionSupplier.TestCase<List<Integer>> test : supplier.get()) {
-            final List<Integer> list = test.collection;
-            trimmedSubList(list, l -> {
-                final List<Integer> copy = new ArrayList<>(l);
-                l.removeIf(pOdd);
-                for (int i : l) {
-                    assertTrue((i % 2) == 0);
-                }
-                for (int i : copy) {
-                    if (i % 2 == 0) {
-                        assertTrue(l.contains(i));
-                    } else {
-                        assertFalse(l.contains(i));
+        for (final CollectionSupplier.TestCase test : supplier.get()) {
+            final List<Integer> list = ((List<Integer>) test.collection);
+            trimmedSubList(list, new Callback() {
+                @Override
+                public void call(final List<Integer> list) {
+                    final List<Integer> copy = new ArrayList<>(list);
+                    list.removeIf(pOdd);
+                    for (int i : list) {
+                        assertTrue((i % 2) == 0);
+                    }
+                    for (int i : copy) {
+                        if (i % 2 == 0) {
+                            assertTrue(list.contains(i));
+                        } else {
+                            assertFalse(list.contains(i));
+                        }
                     }
                 }
             });
@@ -278,13 +267,12 @@ public class ListDefaults {
     }
 
     @Test
-    public void testReplaceAll() {
+    public void testReplaceAll() throws Exception {
         final int scale = 3;
-        @SuppressWarnings("unchecked")
-        final CollectionSupplier<List<Integer>> supplier = new CollectionSupplier(LIST_SUPPLIERS, SIZE);
+        final CollectionSupplier<List<Integer>> supplier = new CollectionSupplier((Supplier<List<Integer>>[])LIST_CLASSES, SIZE);
         for (final CollectionSupplier.TestCase<List<Integer>> test : supplier.get()) {
-            final List<Integer> original = test.expected;
-            final List<Integer> list = test.collection;
+            final List<Integer> original = ((List<Integer>) test.expected);
+            final List<Integer> list = ((List<Integer>) test.collection);
 
             try {
                 list.replaceAll(null);
@@ -293,7 +281,7 @@ public class ListDefaults {
             CollectionAsserts.assertContents(list, original);
 
             list.replaceAll(x -> scale * x);
-            for (int i = 0; i < original.size(); i++) {
+            for (int i=0; i < original.size(); i++) {
                 assertTrue(list.get(i) == (scale * original.get(i)), "mismatch at index " + i);
             }
 
@@ -318,26 +306,28 @@ public class ListDefaults {
             }
         }
 
-        for (final CollectionSupplier.TestCase<List<Integer>> test : supplier.get()) {
-            final List<Integer> list = test.collection;
-            trimmedSubList(list, l -> {
-                final List<Integer> copy = new ArrayList<>(l);
-                final int offset = 5;
-                l.replaceAll(x -> offset + x);
-                for (int i = 0; i < copy.size(); i++) {
-                    assertTrue(l.get(i) == (offset + copy.get(i)), "mismatch at index " + i);
+        for (final CollectionSupplier.TestCase test : supplier.get()) {
+            final List<Integer> list = ((List<Integer>) test.collection);
+            trimmedSubList(list, new Callback() {
+                @Override
+                public void call(final List<Integer> list) {
+                    final List<Integer> copy = new ArrayList<>(list);
+                    final int offset = 5;
+                    list.replaceAll(x -> offset + x);
+                    for (int i=0; i < copy.size(); i++) {
+                        assertTrue(list.get(i) == (offset + copy.get(i)), "mismatch at index " + i);
+                    }
                 }
             });
         }
     }
 
     @Test
-    public void testSort() {
-        @SuppressWarnings("unchecked")
-        final CollectionSupplier<List<Integer>> supplier = new CollectionSupplier(LIST_SUPPLIERS, SIZE);
+    public void testSort() throws Exception {
+        final CollectionSupplier<List<Integer>> supplier = new CollectionSupplier((Supplier<List<Integer>>[])LIST_CLASSES, SIZE);
         for (final CollectionSupplier.TestCase<List<Integer>> test : supplier.get()) {
-            final List<Integer> original = test.expected;
-            final List<Integer> list = test.collection;
+            final List<Integer> original = ((List<Integer>) test.expected);
+            final List<Integer> list = ((List<Integer>) test.collection);
             CollectionSupplier.shuffle(list);
             list.sort(Integer::compare);
             CollectionAsserts.assertSorted(list, Integer::compare);
@@ -348,23 +338,23 @@ public class ListDefaults {
 
             CollectionSupplier.shuffle(list);
             list.sort(null);
-            CollectionAsserts.assertSorted(list, Comparator.naturalOrder());
+            CollectionAsserts.assertSorted(list, Comparator.<Integer>naturalOrder());
             if (test.name.startsWith("reverse")) {
                 Collections.reverse(list);
             }
             CollectionAsserts.assertContents(list, original);
 
             CollectionSupplier.shuffle(list);
-            list.sort(Comparator.naturalOrder());
-            CollectionAsserts.assertSorted(list, Comparator.naturalOrder());
+            list.sort(Comparator.<Integer>naturalOrder());
+            CollectionAsserts.assertSorted(list, Comparator.<Integer>naturalOrder());
             if (test.name.startsWith("reverse")) {
                 Collections.reverse(list);
             }
             CollectionAsserts.assertContents(list, original);
 
             CollectionSupplier.shuffle(list);
-            list.sort(Comparator.reverseOrder());
-            CollectionAsserts.assertSorted(list, Comparator.reverseOrder());
+            list.sort(Comparator.<Integer>reverseOrder());
+            CollectionAsserts.assertSorted(list, Comparator.<Integer>reverseOrder());
             if (!test.name.startsWith("reverse")) {
                 Collections.reverse(list);
             }
@@ -375,35 +365,32 @@ public class ListDefaults {
             CollectionAsserts.assertSorted(list, BIT_COUNT_COMPARATOR);
             // check sort by verifying that bitCount increases and never drops
             int minBitCount = 0;
+            int bitCount = 0;
             for (final Integer i : list) {
-                int bitCount = Integer.bitCount(i);
+                bitCount = Integer.bitCount(i);
                 assertTrue(bitCount >= minBitCount);
                 minBitCount = bitCount;
             }
 
-            // Resuse the supplier to store AtomicInteger instead of Integer
-            // Hence the use of raw type and cast
-            List<AtomicInteger> incomparablesData = new ArrayList<>();
-            for (int i = 0; i < test.expected.size(); i++) {
-                incomparablesData.add(new AtomicInteger(i));
-            }
-            Function f = test.supplier;
             @SuppressWarnings("unchecked")
-            List<AtomicInteger> incomparables = (List<AtomicInteger>) f.apply(incomparablesData);
+            final Constructor<? extends List<?>> defaultConstructor = ((Class<? extends List<?>>)test.collection.getClass()).getConstructor();
+            final List<AtomicInteger> incomparables = (List<AtomicInteger>) defaultConstructor.newInstance();
 
+            for (int i=0; i < test.expected.size(); i++) {
+                incomparables.add(new AtomicInteger(i));
+            }
             CollectionSupplier.shuffle(incomparables);
             incomparables.sort(ATOMIC_INTEGER_COMPARATOR);
-            for (int i = 0; i < test.expected.size(); i++) {
+            for (int i=0; i < test.expected.size(); i++) {
                 assertEquals(i, incomparables.get(i).intValue());
             }
-
 
             if (original.size() > SUBLIST_SIZE) {
                 final List<Integer> copy = new ArrayList<>(list);
                 final List<Integer> subList = list.subList(SUBLIST_FROM, SUBLIST_TO);
                 CollectionSupplier.shuffle(subList);
-                subList.sort(Comparator.naturalOrder());
-                CollectionAsserts.assertSorted(subList, Comparator.naturalOrder());
+                subList.sort(Comparator.<Integer>naturalOrder());
+                CollectionAsserts.assertSorted(subList, Comparator.<Integer>naturalOrder());
                 // verify that elements [0, from) remain unmodified
                 for (int i = 0; i < SUBLIST_FROM; i++) {
                     assertTrue(list.get(i) == copy.get(i),
@@ -417,22 +404,25 @@ public class ListDefaults {
             }
         }
 
-        for (final CollectionSupplier.TestCase<List<Integer>> test : supplier.get()) {
-            final List<Integer> list = test.collection;
-            trimmedSubList(list, l -> {
-                CollectionSupplier.shuffle(l);
-                l.sort(Comparator.naturalOrder());
-                CollectionAsserts.assertSorted(l, Comparator.naturalOrder());
+        for (final CollectionSupplier.TestCase test : supplier.get()) {
+            final List<Integer> list = ((List<Integer>) test.collection);
+            trimmedSubList(list, new Callback() {
+                @Override
+                public void call(final List<Integer> list) {
+                    final List<Integer> copy = new ArrayList<>(list);
+                    CollectionSupplier.shuffle(list);
+                    list.sort(Comparator.<Integer>naturalOrder());
+                    CollectionAsserts.assertSorted(list, Comparator.<Integer>naturalOrder());
+                }
             });
         }
     }
 
     @Test
-    public void testForEachThrowsCME() {
-        @SuppressWarnings("unchecked")
-        final CollectionSupplier<List<Integer>> supplier = new CollectionSupplier(LIST_CME_SUPPLIERS, SIZE);
+    public void testForEachThrowsCME() throws Exception {
+        final CollectionSupplier<List<Integer>> supplier = new CollectionSupplier((Supplier<List<Integer>>[])LIST_CME_CLASSES, SIZE);
         for (final CollectionSupplier.TestCase<List<Integer>> test : supplier.get()) {
-            final List<Integer> list = test.collection;
+            final List<Integer> list = ((List<Integer>) test.collection);
 
             if (list.size() <= 1) {
                 continue;
@@ -440,7 +430,7 @@ public class ListDefaults {
             boolean gotException = false;
             try {
                 // bad predicate that modifies its list, should throw CME
-                list.forEach(list::add);
+                list.forEach((x) -> {list.add(x);});
             } catch (ConcurrentModificationException cme) {
                 gotException = true;
             }
@@ -451,11 +441,11 @@ public class ListDefaults {
     }
 
     @Test
-    public void testRemoveIfThrowsCME() {
-        @SuppressWarnings("unchecked")
-        final CollectionSupplier<List<Integer>> supplier = new CollectionSupplier(LIST_CME_SUPPLIERS, SIZE);
+    public void testRemoveIfThrowsCME() throws Exception {
+        final CollectionSupplier<List<Integer>> supplier = new CollectionSupplier((Supplier<List<Integer>>[])LIST_CME_CLASSES, SIZE);
         for (final CollectionSupplier.TestCase<List<Integer>> test : supplier.get()) {
-            final List<Integer> list = test.collection;
+            final List<Integer> original = ((List<Integer>) test.expected);
+            final List<Integer> list = ((List<Integer>) test.collection);
 
             if (list.size() <= 1) {
                 continue;
@@ -463,7 +453,7 @@ public class ListDefaults {
             boolean gotException = false;
             try {
                 // bad predicate that modifies its list, should throw CME
-                list.removeIf(list::add);
+                list.removeIf((x) -> {return list.add(x);});
             } catch (ConcurrentModificationException cme) {
                 gotException = true;
             }
@@ -474,11 +464,10 @@ public class ListDefaults {
     }
 
     @Test
-    public void testReplaceAllThrowsCME() {
-        @SuppressWarnings("unchecked")
-        final CollectionSupplier<List<Integer>> supplier = new CollectionSupplier(LIST_CME_SUPPLIERS, SIZE);
+    public void testReplaceAllThrowsCME() throws Exception {
+        final CollectionSupplier<List<Integer>> supplier = new CollectionSupplier((Supplier<List<Integer>>[])LIST_CME_CLASSES, SIZE);
         for (final CollectionSupplier.TestCase<List<Integer>> test : supplier.get()) {
-            final List<Integer> list = test.collection;
+            final List<Integer> list = ((List<Integer>) test.collection);
 
             if (list.size() <= 1) {
                 continue;
@@ -497,11 +486,10 @@ public class ListDefaults {
     }
 
     @Test
-    public void testSortThrowsCME() {
-        @SuppressWarnings("unchecked")
-        final CollectionSupplier<List<Integer>> supplier = new CollectionSupplier(LIST_CME_SUPPLIERS, SIZE);
+    public void testSortThrowsCME() throws Exception {
+        final CollectionSupplier<List<Integer>> supplier = new CollectionSupplier((Supplier<List<Integer>>[])LIST_CME_CLASSES, SIZE);
         for (final CollectionSupplier.TestCase<List<Integer>> test : supplier.get()) {
-            final List<Integer> list = test.collection;
+            final List<Integer> list = ((List<Integer>) test.collection);
 
             if (list.size() <= 1) {
                 continue;
@@ -535,7 +523,7 @@ public class ListDefaults {
     }
 
     @Test(dataProvider = "shortIntListProvider")
-    public void testRemoveIfFromSlice(final List<Integer> list) {
+    public void testRemoveIfFromSlice(final List<Integer> list) throws Exception {
         final List<Integer> sublist = list.subList(3, 6);
         assertTrue(sublist.removeIf(x -> x == 4));
         CollectionAsserts.assertContents(list, SLICED_EXPECTED);

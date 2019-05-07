@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 1999, 2016, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 1999, 2013, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -381,7 +381,6 @@ class Instruction: public CompilationResourceObj {
     UnorderedIsTrueFlag,
     NeedsPatchingFlag,
     ThrowIncompatibleClassChangeErrorFlag,
-    InvokeSpecialReceiverCheckFlag,
     ProfileMDOFlag,
     IsLinkedInBlockFlag,
     NeedsRangeCheckFlag,
@@ -977,13 +976,11 @@ LEAF(StoreIndexed, AccessIndexed)
 
   ciMethod* _profiled_method;
   int       _profiled_bci;
-  bool      _check_boolean;
-
  public:
   // creation
-  StoreIndexed(Value array, Value index, Value length, BasicType elt_type, Value value, ValueStack* state_before, bool check_boolean)
+  StoreIndexed(Value array, Value index, Value length, BasicType elt_type, Value value, ValueStack* state_before)
   : AccessIndexed(array, index, length, elt_type, state_before)
-  , _value(value), _profiled_method(NULL), _profiled_bci(0), _check_boolean(check_boolean)
+  , _value(value), _profiled_method(NULL), _profiled_bci(0)
   {
     set_flag(NeedsWriteBarrierFlag, (as_ValueType(elt_type)->is_object()));
     set_flag(NeedsStoreCheckFlag, (as_ValueType(elt_type)->is_object()));
@@ -995,7 +992,6 @@ LEAF(StoreIndexed, AccessIndexed)
   Value value() const                            { return _value; }
   bool needs_write_barrier() const               { return check_flag(NeedsWriteBarrierFlag); }
   bool needs_store_check() const                 { return check_flag(NeedsStoreCheckFlag); }
-  bool check_boolean() const                     { return _check_boolean; }
   // Helpers for MethodData* profiling
   void set_should_profile(bool value)                { set_flag(ProfileMDOFlag, value); }
   void set_profiled_method(ciMethod* method)         { _profiled_method = method;   }
@@ -1295,18 +1291,16 @@ LEAF(Invoke, StateSplit)
 LEAF(NewInstance, StateSplit)
  private:
   ciInstanceKlass* _klass;
-  bool _is_unresolved;
 
  public:
   // creation
-  NewInstance(ciInstanceKlass* klass, ValueStack* state_before, bool is_unresolved)
+  NewInstance(ciInstanceKlass* klass, ValueStack* state_before)
   : StateSplit(instanceType, state_before)
-  , _klass(klass), _is_unresolved(is_unresolved)
+  , _klass(klass)
   {}
 
   // accessors
   ciInstanceKlass* klass() const                 { return _klass; }
-  bool is_unresolved() const                     { return _is_unresolved; }
 
   virtual bool needs_exception_state() const     { return false; }
 
@@ -1456,16 +1450,6 @@ LEAF(CheckCast, TypeCheck)
   }
   bool is_incompatible_class_change_check() const {
     return check_flag(ThrowIncompatibleClassChangeErrorFlag);
-  }
-  void set_invokespecial_receiver_check() {
-    set_flag(InvokeSpecialReceiverCheckFlag, true);
-  }
-  bool is_invokespecial_receiver_check() const {
-    return check_flag(InvokeSpecialReceiverCheckFlag);
-  }
-
-  virtual bool needs_exception_state() const {
-    return !is_invokespecial_receiver_check();
   }
 
   ciType* declared_type() const;

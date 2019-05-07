@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 1997, 2014, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 1997, 2013, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -23,7 +23,6 @@
  * questions.
  */
 
-#include "jni_util.h"
 #include "awt_p.h"
 #include "awt.h"
 #include "color.h"
@@ -153,11 +152,8 @@ Java_sun_awt_X11GraphicsConfig_initIDs (JNIEnv *env, jclass cls)
     x11GraphicsConfigIDs.screen = NULL;
 
     x11GraphicsConfigIDs.aData = (*env)->GetFieldID (env, cls, "aData", "J");
-    CHECK_NULL(x11GraphicsConfigIDs.aData);
     x11GraphicsConfigIDs.bitsPerPixel = (*env)->GetFieldID (env, cls, "bitsPerPixel", "I");
-    CHECK_NULL(x11GraphicsConfigIDs.bitsPerPixel);
     x11GraphicsConfigIDs.screen = (*env)->GetFieldID (env, cls, "screen", "Lsun/awt/X11GraphicsDevice;");
-    CHECK_NULL(x11GraphicsConfigIDs.screen);
 
     if (x11GraphicsConfigIDs.aData == NULL ||
             x11GraphicsConfigIDs.bitsPerPixel == NULL ||
@@ -764,7 +760,6 @@ awt_init_Display(JNIEnv *env, jobject this)
     XSetIOErrorHandler(xioerror_handler);
     JNU_CallStaticMethodByName(env, NULL, "sun/awt/X11/XErrorHandlerUtil", "init", "(J)V",
         ptr_to_jlong(awt_display));
-    JNU_CHECK_EXCEPTION_RETURN(env, NULL);
 
     /* set awt_numScreens, and whether or not we're using Xinerama */
     xineramaInit();
@@ -791,7 +786,6 @@ awt_init_Display(JNIEnv *env, jobject this)
             x11Screens[i].root = RootWindow(awt_display, i);
         }
         x11Screens[i].defaultConfig = makeDefaultConfig(env, i);
-        JNU_CHECK_EXCEPTION_RETURN(env, NULL);
     }
 
     return dpy;
@@ -1351,8 +1345,7 @@ JNIEnv *env, jobject this)
     }
 
     /* Make Color Model object for this GraphicsConfiguration */
-    colorModel = (*env)->ExceptionCheck(env)
-                 ? NULL : awtJNI_GetColorModel (env, adata);
+    colorModel = awtJNI_GetColorModel (env, adata);
 
     AWT_UNLOCK ();
 
@@ -1381,7 +1374,6 @@ Java_sun_awt_X11GraphicsConfig_pGetBounds(JNIEnv *env, jobject this, jint screen
         JNU_GetLongFieldAsPtr(env, this, x11GraphicsConfigIDs.aData);
 
     clazz = (*env)->FindClass(env, "java/awt/Rectangle");
-    CHECK_NULL_RETURN(clazz, NULL);
     mid = (*env)->GetMethodID(env, clazz, "<init>", "(IIII)V");
     if (mid != NULL) {
         if (usingXinerama) {
@@ -1498,7 +1490,7 @@ Java_sun_awt_X11GraphicsConfig_isTranslucencyCapable
     if (aData == NULL) {
         return JNI_FALSE;
     }
-    return aData->isTranslucencySupported ? JNI_TRUE : JNI_FALSE;
+    return (jboolean)aData->isTranslucencySupported;
 #endif
 }
 
@@ -1551,7 +1543,7 @@ Java_sun_awt_X11GraphicsDevice_getDoubleBufferVisuals(JNIEnv *env,
     clazz = (*env)->GetObjectClass(env, this);
     midAddVisual = (*env)->GetMethodID(env, clazz, "addDoubleBufferVisual",
         "(I)V");
-    CHECK_NULL(midAddVisual);
+
     AWT_LOCK();
     rootWindow = RootWindow(awt_display, xinawareScreen);
     visScreenInfo = XdbeGetVisualInfo(awt_display, &rootWindow, &n);
@@ -1578,9 +1570,9 @@ Java_sun_awt_X11GraphicsEnvironment_pRunningXinerama(JNIEnv *env,
     jobject this)
 {
 #ifdef HEADLESS
-    return JNI_FALSE;
+    return false;
 #else
-    return usingXinerama ? JNI_TRUE : JNI_FALSE;
+    return usingXinerama;
 #endif /* HEADLESS */
 }
 
@@ -1716,9 +1708,9 @@ X11GD_InitXrandrFuncs(JNIEnv *env)
 
         /*
          * REMIND: Fullscreen mode doesn't work quite right with multi-monitor
-         * setups and RANDR 1.2.
+         * setups and RANDR 1.2. So for now we also require a single screen.
          */
-        if ((rr_maj_ver == 1 && rr_min_ver <= 2) && awt_numScreens > 1) {
+        if (awt_numScreens > 1 ) {
             J2dRlsTraceLn(J2D_TRACE_INFO, "X11GD_InitXrandrFuncs: Can't use Xrandr. "
                           "Multiple screens in use");
             dlclose(pLibRandR);
@@ -1747,7 +1739,6 @@ X11GD_CreateDisplayMode(JNIEnv *env, jint width, jint height,
     jint validRefreshRate = refreshRate;
 
     displayModeClass = (*env)->FindClass(env, "java/awt/DisplayMode");
-    CHECK_NULL_RETURN(displayModeClass, NULL);
     if (JNU_IsNull(env, displayModeClass)) {
         JNU_ThrowInternalError(env,
                                "Could not get display mode class");
@@ -1755,7 +1746,6 @@ X11GD_CreateDisplayMode(JNIEnv *env, jint width, jint height,
     }
 
     cid = (*env)->GetMethodID(env, displayModeClass, "<init>", "(IIII)V");
-    CHECK_NULL_RETURN(cid, NULL);
     if (cid == NULL) {
         JNU_ThrowInternalError(env,
                                "Could not get display mode constructor");
@@ -1789,7 +1779,6 @@ X11GD_AddDisplayMode(JNIEnv *env, jobject arrayList,
         }
         mid = (*env)->GetMethodID(env, arrayListClass, "add",
                                   "(Ljava/lang/Object;)Z");
-        CHECK_NULL(mid);
         if (mid == NULL) {
             JNU_ThrowInternalError(env,
                 "Could not get method java.util.ArrayList.add()");
@@ -1806,13 +1795,39 @@ X11GD_SetFullscreenMode(Window win, jboolean enabled)
     Atom wmState = XInternAtom(awt_display, "_NET_WM_STATE", False);
     Atom wmStateFs = XInternAtom(awt_display,
                                  "_NET_WM_STATE_FULLSCREEN", False);
-    XWindowAttributes attr;
+    Window root, parent, *children = NULL;
+    unsigned int numchildren;
     XEvent event;
+    Status status;
 
-    if (wmState == None || wmStateFs == None
-            || !XGetWindowAttributes(awt_display, win, &attr)) {
+    if (wmState == None || wmStateFs == None) {
         return;
     }
+
+    /*
+     * Note: the Window passed to this method is typically the "content
+     * window" of the top-level, but we need the actual shell window for
+     * the purposes of constructing the XEvent.  Therefore, we walk up the
+     * window hierarchy here to find the true top-level.
+     */
+    do {
+        if (!XQueryTree(awt_display, win,
+                        &root, &parent,
+                        &children, &numchildren))
+        {
+            return;
+        }
+
+        if (children != NULL) {
+            XFree(children);
+        }
+
+        if (parent == root) {
+            break;
+        }
+
+        win = parent;
+    } while (root != parent);
 
     memset(&event, 0, sizeof(event));
     event.xclient.type = ClientMessage;
@@ -1823,7 +1838,7 @@ X11GD_SetFullscreenMode(Window win, jboolean enabled)
     event.xclient.data.l[0] = enabled ? 1 : 0; // 1==add, 0==remove
     event.xclient.data.l[1] = wmStateFs;
 
-    XSendEvent(awt_display, attr.root, False,
+    XSendEvent(awt_display, root, False,
                SubstructureRedirectMask | SubstructureNotifyMask,
                &event);
     XSync(awt_display, False);
@@ -1940,9 +1955,6 @@ Java_sun_awt_X11GraphicsDevice_enumDisplayModes
                                          size.height,
                                          BIT_DEPTH_MULTI,
                                          rates[j]);
-                    if ((*env)->ExceptionCheck(env)) {
-                        break;
-                    }
                 }
             }
         }
@@ -2031,7 +2043,7 @@ Java_sun_awt_X11GraphicsDevice_configDisplayMode
 
     AWT_FLUSH_UNLOCK();
 
-    if (!success && !(*env)->ExceptionCheck(env)) {
+    if (!success) {
         JNU_ThrowInternalError(env, "Could not set display mode");
     }
 #endif /* !HEADLESS */

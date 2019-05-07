@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 1998, 2014, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 1998, 2004, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -25,23 +25,33 @@
 
 package javax.swing.plaf.metal;
 
-import java.awt.Color;
-import java.awt.Dimension;
+import java.awt.Component;
+import java.awt.Container;
+import java.awt.LayoutManager;
+import java.awt.Adjustable;
+import java.awt.event.AdjustmentListener;
+import java.awt.event.AdjustmentEvent;
+import java.awt.event.ActionListener;
+import java.awt.event.ActionEvent;
+import java.awt.event.MouseListener;
+import java.awt.event.MouseMotionListener;
+import java.awt.event.MouseAdapter;
+import java.awt.event.MouseEvent;
 import java.awt.Graphics;
+import java.awt.Dimension;
 import java.awt.Rectangle;
-import java.beans.PropertyChangeEvent;
-import java.beans.PropertyChangeListener;
+import java.awt.Point;
+import java.awt.Insets;
+import java.awt.Color;
+import java.awt.IllegalComponentStateException;
 
-import javax.swing.JButton;
-import javax.swing.JComponent;
-import javax.swing.JScrollBar;
-import javax.swing.UIManager;
-import javax.swing.plaf.ComponentUI;
+import java.beans.*;
+
+import javax.swing.*;
+import javax.swing.event.*;
+
+import javax.swing.plaf.*;
 import javax.swing.plaf.basic.BasicScrollBarUI;
-
-import static sun.swing.SwingUtilities2.drawHLine;
-import static sun.swing.SwingUtilities2.drawRect;
-import static sun.swing.SwingUtilities2.drawVLine;
 
 
 /**
@@ -149,21 +159,21 @@ public class MetalScrollBarUI extends BasicScrollBarUI
 
             if ( c.isEnabled() ) {
                 g.setColor( darkShadowColor );
-                drawVLine(g, 0, 0, trackBounds.height - 1);
-                drawVLine(g, trackBounds.width - 2, 0, trackBounds.height - 1);
-                drawHLine(g, 2, trackBounds.width - 1, trackBounds.height - 1);
-                drawHLine(g, 2, trackBounds.width - 2, 0);
+                g.drawLine( 0, 0, 0, trackBounds.height - 1 );
+                g.drawLine( trackBounds.width - 2, 0, trackBounds.width - 2, trackBounds.height - 1 );
+                g.drawLine( 2, trackBounds.height - 1, trackBounds.width - 1, trackBounds.height - 1);
+                g.drawLine( 2, 0, trackBounds.width - 2, 0 );
 
                 g.setColor( shadowColor );
                 //      g.setColor( Color.red);
-                drawVLine(g, 1, 1, trackBounds.height - 2);
-                drawHLine(g, 1, trackBounds.width - 3, 1);
+                g.drawLine( 1, 1, 1, trackBounds.height - 2 );
+                g.drawLine( 1, 1, trackBounds.width - 3, 1 );
                 if (scrollbar.getValue() != scrollbar.getMaximum()) {  // thumb shadow
                     int y = thumbRect.y + thumbRect.height - trackBounds.y;
-                    drawHLine(g, 1, trackBounds.width - 1, y);
+                    g.drawLine( 1, y, trackBounds.width-1, y);
                 }
                 g.setColor(highlightColor);
-                drawVLine(g, trackBounds.width - 1, 0, trackBounds.height - 1);
+                g.drawLine( trackBounds.width - 1, 0, trackBounds.width - 1, trackBounds.height - 1 );
             } else {
                 MetalUtils.drawDisabledBorder(g, 0, 0, trackBounds.width, trackBounds.height );
             }
@@ -183,19 +193,19 @@ public class MetalScrollBarUI extends BasicScrollBarUI
 
             if ( c.isEnabled() ) {
                 g.setColor( darkShadowColor );
-                drawHLine(g, 0, trackBounds.width - 1, 0);  // top
-                drawVLine(g, 0, 2, trackBounds.height - 2); // left
-                drawHLine(g, 0, trackBounds.width - 1, trackBounds.height - 2 ); // bottom
-                drawVLine(g, trackBounds.width - 1, 2,  trackBounds.height - 1 ); // right
+                g.drawLine( 0, 0, trackBounds.width - 1, 0 );  // top
+                g.drawLine( 0, 2, 0, trackBounds.height - 2 ); // left
+                g.drawLine( 0, trackBounds.height - 2, trackBounds.width - 1, trackBounds.height - 2 ); // bottom
+                g.drawLine( trackBounds.width - 1, 2, trackBounds.width - 1, trackBounds.height - 1 ); // right
 
                 g.setColor( shadowColor );
                 //      g.setColor( Color.red);
-                drawHLine(g, 1, trackBounds.width - 2, 1 );  // top
-                drawVLine(g, 1, 1, trackBounds.height - 3 ); // left
-                drawHLine(g, 0, trackBounds.width - 1, trackBounds.height - 1 ); // bottom
+                g.drawLine( 1, 1, trackBounds.width - 2, 1 );  // top
+                g.drawLine( 1, 1, 1, trackBounds.height - 3 ); // left
+                g.drawLine( 0, trackBounds.height - 1, trackBounds.width - 1, trackBounds.height - 1 ); // bottom
                 if (scrollbar.getValue() != scrollbar.getMaximum()) {  // thumb shadow
                     int x = thumbRect.x + thumbRect.width - trackBounds.x;
-                    drawVLine(g, x, 1, trackBounds.height-1);
+                    g.drawLine( x, 1, x, trackBounds.height-1);
                 }
             } else {
                 MetalUtils.drawDisabledBorder(g, 0, 0, trackBounds.width, trackBounds.height );
@@ -237,11 +247,11 @@ public class MetalScrollBarUI extends BasicScrollBarUI
             g.fillRect( 0, 0, thumbBounds.width - 2, thumbBounds.height - 1 );
 
             g.setColor( thumbShadow );
-            drawRect(g, 0, 0, thumbBounds.width - 2, thumbBounds.height - 1);
+            g.drawRect( 0, 0, thumbBounds.width - 2, thumbBounds.height - 1 );
 
             g.setColor( thumbHighlightColor );
-            drawHLine(g, 1, thumbBounds.width - 3, 1);
-            drawVLine(g, 1, 1, thumbBounds.height - 2);
+            g.drawLine( 1, 1, thumbBounds.width - 3, 1 );
+            g.drawLine( 1, 1, 1, thumbBounds.height - 2 );
 
             bumps.setBumpArea( thumbBounds.width - 6, thumbBounds.height - 7 );
             bumps.paintIcon( c, g, 3, 4 );
@@ -263,11 +273,11 @@ public class MetalScrollBarUI extends BasicScrollBarUI
             g.fillRect( 0, 0, thumbBounds.width - 1, thumbBounds.height - 2 );
 
             g.setColor( thumbShadow );
-            drawRect(g, 0, 0, thumbBounds.width - 1, thumbBounds.height - 2);
+            g.drawRect( 0, 0, thumbBounds.width - 1, thumbBounds.height - 2 );
 
             g.setColor( thumbHighlightColor );
-            drawHLine(g, 1, thumbBounds.width - 3, 1);
-            drawVLine(g, 1, 1, thumbBounds.height - 3);
+            g.drawLine( 1, 1, thumbBounds.width - 3, 1 );
+            g.drawLine( 1, 1, 1, thumbBounds.height - 3 );
 
             bumps.setBumpArea( thumbBounds.width - 7, thumbBounds.height - 6 );
             bumps.paintIcon( c, g, 4, 3 );
@@ -300,11 +310,11 @@ public class MetalScrollBarUI extends BasicScrollBarUI
             }
 
             g.setColor(thumbShadow);
-            drawRect(g, 0, 0, thumbBounds.width - 2, thumbBounds.height - 1);
+            g.drawRect(0, 0, thumbBounds.width - 2, thumbBounds.height - 1);
 
             g.setColor(thumbHighlightColor);
-            drawHLine(g, 1, thumbBounds.width - 3, 1);
-            drawVLine(g, 1, 1, thumbBounds.height - 2);
+            g.drawLine(1, 1, thumbBounds.width - 3, 1);
+            g.drawLine(1, 1, 1, thumbBounds.height - 2);
 
             MetalUtils.drawGradient(c, g, "ScrollBar.gradient", 2, 2,
                                     thumbBounds.width - 4,
@@ -342,11 +352,11 @@ public class MetalScrollBarUI extends BasicScrollBarUI
             }
 
             g.setColor(thumbShadow);
-            drawRect(g, 0, 0, thumbBounds.width - 1, thumbBounds.height - 2);
+            g.drawRect(0, 0, thumbBounds.width - 1, thumbBounds.height - 2);
 
             g.setColor(thumbHighlightColor);
-            drawHLine(g, 1, thumbBounds.width - 2, 1);
-            drawVLine(g, 1, 1, thumbBounds.height - 3);
+            g.drawLine(1, 1, thumbBounds.width - 2, 1);
+            g.drawLine(1, 1, 1, thumbBounds.height - 3);
 
             MetalUtils.drawGradient(c, g, "ScrollBar.gradient", 2, 2,
                                     thumbBounds.width - 3,

@@ -141,7 +141,7 @@ JNIEXPORT jint JNICALL JNI_OnLoad(JavaVM *jvm, void *reserved)
 #endif /* DEBUG */
 
     ticketConstructor = (*env)->GetMethodID(env, ticketClass, "<init>", "(Lsun/security/util/DerValue;)V");
-    if (ticketConstructor == 0) {
+    if (derValueConstructor == 0) {
         printf("Couldn't find Ticket constructor\n");
         return JNI_ERR;
     }
@@ -272,7 +272,6 @@ int isIn(krb5_enctype e, int n, jint* etypes)
     }
     return 0;
 }
-
 /*
  * Class:     sun_security_krb5_Credentials
  * Method:    acquireDefaultNativeCreds
@@ -310,7 +309,7 @@ JNIEXPORT jobject JNICALL Java_sun_security_krb5_Credentials_acquireDefaultNativ
     netypes = (*env)->GetArrayLength(env, jetypes);
     etypes = (jint *) (*env)->GetIntArrayElements(env, jetypes, NULL);
 
-    if (etypes != NULL && !err) {
+    if (!err) {
         while ((err = krb5_cc_next_cred (kcontext, ccache, &cursor, &creds)) == 0) {
             char *serverName = NULL;
 
@@ -320,16 +319,8 @@ JNIEXPORT jobject JNICALL Java_sun_security_krb5_Credentials_acquireDefaultNativ
             }
 
             if (!err) {
-                char* slash = strchr(serverName, '/');
-                char* at = strchr(serverName, '@');
-                // Make sure the server's name is krbtgt/REALM@REALM, the etype
-                // is supported, and the ticket has not expired
-                if (slash && at &&
-                        strncmp (serverName, "krbtgt", slash-serverName) == 0 &&
-                            // the ablove line shows at must be after slash
-                        strncmp (slash+1, at+1, at-slash-1) == 0 &&
-                        isIn (creds.keyblock.enctype, netypes, etypes) &&
-                        creds.times.endtime > time(0)) {
+                if (strncmp (serverName, "krbtgt", sizeof("krbtgt")-1) == 0 &&
+                        isIn(creds.keyblock.enctype, netypes, etypes)) {
                     jobject ticket, clientPrincipal, targetPrincipal, encryptionKey;
                     jobject ticketFlags, startTime, endTime;
                     jobject authTime, renewTillTime, hostAddresses;
@@ -408,12 +399,8 @@ cleanup:
                     if (endTime) (*env)->DeleteLocalRef(env, endTime);
                     if (renewTillTime) (*env)->DeleteLocalRef(env, renewTillTime);
                     if (hostAddresses) (*env)->DeleteLocalRef(env, hostAddresses);
-
-                    // Stop if there is an exception or we already found the initial TGT
-                    if ((*env)->ExceptionCheck(env) || krbCreds) {
-                        break;
-                    }
                 }
+
             }
 
             if (serverName != NULL) { krb5_free_unparsed_name (kcontext, serverName); }
@@ -423,6 +410,7 @@ cleanup:
 
         if (err == KRB5_CC_END) { err = 0; }
         printiferr (err, "while retrieving a ticket");
+
     }
 
     if (!err) {
@@ -457,25 +445,25 @@ jobject BuildTicket(JNIEnv *env, krb5_data *encodedTicket)
     jbyteArray ary;
 
     ary = (*env)->NewByteArray(env, encodedTicket->length);
-    if ((*env)->ExceptionCheck(env)) {
+    if ((*env)->ExceptionOccurred(env)) {
         return (jobject) NULL;
     }
 
     (*env)->SetByteArrayRegion(env, ary, (jsize) 0, encodedTicket->length, (jbyte *)encodedTicket->data);
-    if ((*env)->ExceptionCheck(env)) {
+    if ((*env)->ExceptionOccurred(env)) {
         (*env)->DeleteLocalRef(env, ary);
         return (jobject) NULL;
     }
 
     derValue = (*env)->NewObject(env, derValueClass, derValueConstructor, ary);
-    if ((*env)->ExceptionCheck(env)) {
+    if ((*env)->ExceptionOccurred(env)) {
         (*env)->DeleteLocalRef(env, ary);
         return (jobject) NULL;
     }
 
     (*env)->DeleteLocalRef(env, ary);
     ticket = (*env)->NewObject(env, ticketClass, ticketConstructor, derValue);
-    if ((*env)->ExceptionCheck(env)) {
+    if ((*env)->ExceptionOccurred(env)) {
         (*env)->DeleteLocalRef(env, derValue);
         return (jobject) NULL;
     }
@@ -492,10 +480,6 @@ jobject BuildClientPrincipal(JNIEnv *env, krb5_context kcontext, krb5_principal 
     if (!err) {
         // Make a PrincipalName from the full string and the type.  Let the PrincipalName class parse it out.
         jstring principalStringObj = (*env)->NewStringUTF(env, principalString);
-        if (principalStringObj == NULL) {
-            if (principalString != NULL) { krb5_free_unparsed_name (kcontext, principalString); }
-            return (jobject) NULL;
-        }
         principal = (*env)->NewObject(env, principalNameClass, principalNameConstructor, principalStringObj, principalName->type);
         if (principalString != NULL) { krb5_free_unparsed_name (kcontext, principalString); }
         (*env)->DeleteLocalRef(env, principalStringObj);
@@ -510,13 +494,8 @@ jobject BuildEncryptionKey(JNIEnv *env, krb5_keyblock *cryptoKey) {
     jobject encryptionKey = NULL;
 
     ary = (*env)->NewByteArray(env,cryptoKey->length);
-
-    if (ary == NULL) {
-        return (jobject) NULL;
-    }
-
     (*env)->SetByteArrayRegion(env, ary, (jsize) 0, cryptoKey->length, (jbyte *)cryptoKey->contents);
-    if (!(*env)->ExceptionCheck(env)) {
+    if (!(*env)->ExceptionOccurred(env)) {
         encryptionKey = (*env)->NewObject(env, encryptionKeyClass, encryptionKeyConstructor, cryptoKey->enctype, ary);
     }
 
@@ -535,14 +514,9 @@ jobject BuildTicketFlags(JNIEnv *env, krb5_flags flags) {
     unsigned long nlflags = htonl(flags);
 
     ary = (*env)->NewByteArray(env, sizeof(flags));
-
-    if (ary == NULL) {
-        return (jobject) NULL;
-    }
-
     (*env)->SetByteArrayRegion(env, ary, (jsize) 0, sizeof(flags), (jbyte *)&nlflags);
 
-    if (!(*env)->ExceptionCheck(env)) {
+    if (!(*env)->ExceptionOccurred(env)) {
         ticketFlags = (*env)->NewObject(env, ticketFlagsClass, ticketFlagsConstructor, sizeof(flags)*8, ary);
     }
 
@@ -576,10 +550,6 @@ jobject BuildAddressList(JNIEnv *env, krb5_address **addresses) {
 
     jobject address_list = (*env)->NewObjectArray(env, addressCount, hostAddressClass, NULL);
 
-    if (address_list == NULL) {
-        return (jobject) NULL;
-    }
-
     // Create a new HostAddress object for each address block.
     // First, reset the iterator.
     p = addresses;
@@ -597,15 +567,8 @@ jobject BuildAddressList(JNIEnv *env, krb5_address **addresses) {
 
         (*env)->DeleteLocalRef(env, ary);
 
-        if (address == NULL) {
-            return (jobject) NULL;
-        }
         // Add the HostAddress to the arrray.
         (*env)->SetObjectArrayElement(env, address_list, index, address);
-
-        if ((*env)->ExceptionCheck(env)) {
-            return (jobject) NULL;
-        }
 
         index++;
         p++;

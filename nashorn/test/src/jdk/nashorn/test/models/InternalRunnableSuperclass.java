@@ -30,9 +30,8 @@ import jdk.nashorn.internal.test.models.InternalRunnable;
 
 /**
  * Acts as a non-restricted superclass for a restricted class.
+ *
  */
-
-@SuppressWarnings("javadoc")
 public class InternalRunnableSuperclass {
     public final int canSeeThisField = 19;
 

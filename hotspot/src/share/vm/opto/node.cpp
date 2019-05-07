@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 1997, 2014, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 1997, 2013, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -27,7 +27,6 @@
 #include "memory/allocation.inline.hpp"
 #include "opto/cfgnode.hpp"
 #include "opto/connode.hpp"
-#include "opto/loopnode.hpp"
 #include "opto/machnode.hpp"
 #include "opto/matcher.hpp"
 #include "opto/node.hpp"
@@ -69,7 +68,7 @@ void Node::verify_construction() {
   Compile::set_debug_idx(new_debug_idx);
   set_debug_idx( new_debug_idx );
   assert(Compile::current()->unique() < (INT_MAX - 1), "Node limit exceeded INT_MAX");
-  assert(Compile::current()->live_nodes() < Compile::current()->max_node_limit(), "Live Node limit exceeded limit");
+  assert(Compile::current()->live_nodes() < (uint)MaxNodeLimit, "Live Node limit exceeded limit");
   if (BreakAtNode != 0 && (_debug_idx == BreakAtNode || (int)_idx == BreakAtNode)) {
     tty->print_cr("BreakAtNode: _idx=%d _debug_idx=%d", _idx, _debug_idx);
     BREAKPOINT;
@@ -325,11 +324,8 @@ inline int Node::Init(int req, Compile* C) {
 // Create a Node, with a given number of required edges.
 Node::Node(uint req)
   : _idx(IDX_INIT(req))
-#ifdef ASSERT
-  , _parse_idx(_idx)
-#endif
 {
-  assert( req < Compile::current()->max_node_limit() - NodeLimitFudgeFactor, "Input limit exceeded" );
+  assert( req < (uint)(MaxNodeLimit - NodeLimitFudgeFactor), "Input limit exceeded" );
   debug_only( verify_construction() );
   NOT_PRODUCT(nodes_created++);
   if (req == 0) {
@@ -347,9 +343,6 @@ Node::Node(uint req)
 //------------------------------Node-------------------------------------------
 Node::Node(Node *n0)
   : _idx(IDX_INIT(1))
-#ifdef ASSERT
-  , _parse_idx(_idx)
-#endif
 {
   debug_only( verify_construction() );
   NOT_PRODUCT(nodes_created++);
@@ -362,9 +355,6 @@ Node::Node(Node *n0)
 //------------------------------Node-------------------------------------------
 Node::Node(Node *n0, Node *n1)
   : _idx(IDX_INIT(2))
-#ifdef ASSERT
-  , _parse_idx(_idx)
-#endif
 {
   debug_only( verify_construction() );
   NOT_PRODUCT(nodes_created++);
@@ -379,9 +369,6 @@ Node::Node(Node *n0, Node *n1)
 //------------------------------Node-------------------------------------------
 Node::Node(Node *n0, Node *n1, Node *n2)
   : _idx(IDX_INIT(3))
-#ifdef ASSERT
-  , _parse_idx(_idx)
-#endif
 {
   debug_only( verify_construction() );
   NOT_PRODUCT(nodes_created++);
@@ -398,9 +385,6 @@ Node::Node(Node *n0, Node *n1, Node *n2)
 //------------------------------Node-------------------------------------------
 Node::Node(Node *n0, Node *n1, Node *n2, Node *n3)
   : _idx(IDX_INIT(4))
-#ifdef ASSERT
-  , _parse_idx(_idx)
-#endif
 {
   debug_only( verify_construction() );
   NOT_PRODUCT(nodes_created++);
@@ -419,9 +403,6 @@ Node::Node(Node *n0, Node *n1, Node *n2, Node *n3)
 //------------------------------Node-------------------------------------------
 Node::Node(Node *n0, Node *n1, Node *n2, Node *n3, Node *n4)
   : _idx(IDX_INIT(5))
-#ifdef ASSERT
-  , _parse_idx(_idx)
-#endif
 {
   debug_only( verify_construction() );
   NOT_PRODUCT(nodes_created++);
@@ -443,9 +424,6 @@ Node::Node(Node *n0, Node *n1, Node *n2, Node *n3, Node *n4)
 Node::Node(Node *n0, Node *n1, Node *n2, Node *n3,
                      Node *n4, Node *n5)
   : _idx(IDX_INIT(6))
-#ifdef ASSERT
-  , _parse_idx(_idx)
-#endif
 {
   debug_only( verify_construction() );
   NOT_PRODUCT(nodes_created++);
@@ -469,9 +447,6 @@ Node::Node(Node *n0, Node *n1, Node *n2, Node *n3,
 Node::Node(Node *n0, Node *n1, Node *n2, Node *n3,
                      Node *n4, Node *n5, Node *n6)
   : _idx(IDX_INIT(7))
-#ifdef ASSERT
-  , _parse_idx(_idx)
-#endif
 {
   debug_only( verify_construction() );
   NOT_PRODUCT(nodes_created++);
@@ -521,11 +496,6 @@ Node *Node::clone() const {
     C->add_macro_node(n);
   if (is_expensive())
     C->add_expensive_node(n);
-  // If the cloned node is a range check dependent CastII, add it to the list.
-  CastIINode* cast = n->isa_CastII();
-  if (cast != NULL && cast->has_range_check()) {
-    C->add_range_check_cast(cast);
-  }
 
   n->set_idx(C->next_unique()); // Get new unique index as well
   debug_only( n->verify_construction() );
@@ -555,9 +525,6 @@ Node *Node::clone() const {
   // cloning CallNode may need to clone JVMState
   if (n->is_Call()) {
     n->as_Call()->clone_jvms(C);
-  }
-  if (n->is_SafePoint()) {
-    n->as_SafePoint()->clone_replaced_nodes();
   }
   return n;                     // Return the clone
 }
@@ -653,14 +620,6 @@ void Node::destruct() {
   }
   if (is_expensive()) {
     compile->remove_expensive_node(this);
-  }
-  CastIINode* cast = isa_CastII();
-  if (cast != NULL && cast->has_range_check()) {
-    compile->remove_range_check_cast(cast);
-  }
-
-  if (is_SafePoint()) {
-    as_SafePoint()->delete_replaced_nodes();
   }
 #ifdef ASSERT
   // We will not actually delete the storage, but we'll make the node unusable.
@@ -1036,13 +995,13 @@ void Node::raise_bottom_type(const Type* new_type) {
   if (is_Type()) {
     TypeNode *n = this->as_Type();
     if (VerifyAliases) {
-      assert(new_type->higher_equal_speculative(n->type()), "new type must refine old type");
+      assert(new_type->higher_equal(n->type()), "new type must refine old type");
     }
     n->set_type(new_type);
   } else if (is_Load()) {
     LoadNode *n = this->as_Load();
     if (VerifyAliases) {
-      assert(new_type->higher_equal_speculative(n->type()), "new type must refine old type");
+      assert(new_type->higher_equal(n->type()), "new type must refine old type");
     }
     n->set_type(new_type);
   }
@@ -1127,9 +1086,6 @@ bool Node::has_special_unique_user() const {
   if( this->is_Store() ) {
     // Condition for back-to-back stores folding.
     return n->Opcode() == op && n->in(MemNode::Memory) == this;
-  } else if (this->is_Load()) {
-    // Condition for removing an unused LoadNode from the MemBarAcquire precedence input
-    return n->Opcode() == Op_MemBarAcquire;
   } else if( op == Op_AddL ) {
     // Condition for convL2I(addL(x,y)) ==> addI(convL2I(x),convL2I(y))
     return n->Opcode() == Op_ConvL2I && n->in(1) == this;
@@ -1299,7 +1255,6 @@ static void kill_dead_code( Node *dead, PhaseIterGVN *igvn ) {
 
   Node *top = igvn->C->top();
   nstack.push(dead);
-  bool has_irreducible_loop = igvn->C->has_irreducible_loop();
 
   while (nstack.size() > 0) {
     dead = nstack.pop();
@@ -1314,31 +1269,13 @@ static void kill_dead_code( Node *dead, PhaseIterGVN *igvn ) {
           assert (!use->is_Con(), "Control for Con node should be Root node.");
           use->set_req(0, top);       // Cut dead edge to prevent processing
           nstack.push(use);           // the dead node again.
-        } else if (!has_irreducible_loop && // Backedge could be alive in irreducible loop
-                   use->is_Loop() && !use->is_Root() &&       // Don't kill Root (RootNode extends LoopNode)
-                   use->in(LoopNode::EntryControl) == dead) { // Dead loop if its entry is dead
-          use->set_req(LoopNode::EntryControl, top);          // Cut dead edge to prevent processing
-          use->set_req(0, top);       // Cut self edge
-          nstack.push(use);
         } else {                      // Else found a not-dead user
-          // Dead if all inputs are top or null
-          bool dead_use = !use->is_Root(); // Keep empty graph alive
           for (uint j = 1; j < use->req(); j++) {
-            Node* in = use->in(j);
-            if (in == dead) {         // Turn all dead inputs into TOP
+            if (use->in(j) == dead) { // Turn all dead inputs into TOP
               use->set_req(j, top);
-            } else if (in != NULL && !in->is_top()) {
-              dead_use = false;
             }
           }
-          if (dead_use) {
-            if (use->is_Region()) {
-              use->set_req(0, top);   // Cut self edge
-            }
-            nstack.push(use);
-          } else {
-            igvn->_worklist.push(use);
-          }
+          igvn->_worklist.push(use);
         }
         // Refresh the iterator, since any number of kills might have happened.
         k = dead->last_outs(kmin);
@@ -1353,10 +1290,6 @@ static void kill_dead_code( Node *dead, PhaseIterGVN *igvn ) {
       }
       if (dead->is_expensive()) {
         igvn->C->remove_expensive_node(dead);
-      }
-      CastIINode* cast = dead->isa_CastII();
-      if (cast != NULL && cast->has_range_check()) {
-        igvn->C->remove_range_check_cast(cast);
       }
       igvn->C->record_dead_node(dead->_idx);
       // Kill all inputs to the dead guy
@@ -1590,6 +1523,7 @@ Node* Node::find_ctrl(int idx) const {
 
 
 #ifndef PRODUCT
+int Node::_in_dump_cnt = 0;
 
 // -----------------------------Name-------------------------------------------
 extern const char *NodeClassNames[];
@@ -1661,7 +1595,7 @@ void Node::set_debug_orig(Node* orig) {
 void Node::dump(const char* suffix, outputStream *st) const {
   Compile* C = Compile::current();
   bool is_new = C->node_arena()->contains(this);
-  C->_in_dump_cnt++;
+  _in_dump_cnt++;
   st->print("%c%d\t%s\t=== ", is_new ? ' ' : 'o', _idx, Name());
 
   // Dump the required and precedence inputs
@@ -1676,7 +1610,7 @@ void Node::dump(const char* suffix, outputStream *st) const {
     dump_orig(debug_orig(), st);
 #endif
     st->cr();
-    C->_in_dump_cnt--;
+    _in_dump_cnt--;
     return;                     // don't process dead nodes
   }
 
@@ -1727,8 +1661,8 @@ void Node::dump(const char* suffix, outputStream *st) const {
       }
     }
   }
-  if (suffix) st->print("%s", suffix);
-  C->_in_dump_cnt--;
+  if (suffix) st->print(suffix);
+  _in_dump_cnt--;
 }
 
 //------------------------------dump_req--------------------------------------
@@ -1787,7 +1721,7 @@ static void dump_nodes(const Node* start, int d, bool only_ctrl) {
   uint depth = (uint)ABS(d);
   int direction = d;
   Compile* C = Compile::current();
-  GrowableArray <Node *> nstack(C->live_nodes());
+  GrowableArray <Node *> nstack(C->unique());
 
   nstack.append(s);
   int begin = 0;
@@ -2117,17 +2051,6 @@ void Node_List::dump() const {
     if( _nodes[i] ) {
       tty->print("%5d--> ",i);
       _nodes[i]->dump();
-    }
-#endif
-}
-
-void Node_List::dump_simple() const {
-#ifndef PRODUCT
-  for( uint i = 0; i < _cnt; i++ )
-    if( _nodes[i] ) {
-      tty->print(" %d", _nodes[i]->_idx);
-    } else {
-      tty->print(" NULL");
     }
 #endif
 }

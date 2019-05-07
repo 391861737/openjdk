@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 1997, 2016, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 1997, 2011, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -29,14 +29,12 @@ import java.util.*;
 import java.util.jar.*;
 import java.io.*;
 import java.net.URL;
-import java.nio.file.*;
 import java.security.*;
 
 import java.security.Provider.Service;
 
 import sun.security.jca.*;
 import sun.security.jca.GetInstance.Instance;
-import sun.security.util.Debug;
 
 /**
  * This class instantiates implementations of JCE engine classes from
@@ -66,10 +64,8 @@ final class JceSecurity {
     private final static Map<Provider, Object> verifyingProviders =
             new IdentityHashMap<>();
 
-    private static final boolean isRestricted;
-
-    private static final Debug debug =
-                        Debug.getInstance("jca", "Cipher");
+    // Set the default value. May be changed in the static initializer.
+    private static boolean isRestricted = true;
 
     /*
      * Don't let anyone instantiate this.
@@ -209,7 +205,7 @@ final class JceSecurity {
 
     static {
         try {
-            NULL_URL = new URL("http://null.oracle.com/");
+            NULL_URL = new URL("http://null.sun.com/");
         } catch (Exception e) {
             throw new RuntimeException(e);
         }
@@ -220,94 +216,36 @@ final class JceSecurity {
             new WeakHashMap<>();
 
     /*
-     * Returns the CodeBase for the given class.
+     * Retuns the CodeBase for the given class.
      */
     static URL getCodeBase(final Class<?> clazz) {
-        synchronized (codeBaseCacheRef) {
-            URL url = codeBaseCacheRef.get(clazz);
-            if (url == null) {
-                url = AccessController.doPrivileged(new PrivilegedAction<URL>() {
-                    public URL run() {
-                        ProtectionDomain pd = clazz.getProtectionDomain();
-                        if (pd != null) {
-                            CodeSource cs = pd.getCodeSource();
-                            if (cs != null) {
-                                return cs.getLocation();
-                            }
+        URL url = codeBaseCacheRef.get(clazz);
+        if (url == null) {
+            url = AccessController.doPrivileged(new PrivilegedAction<URL>() {
+                public URL run() {
+                    ProtectionDomain pd = clazz.getProtectionDomain();
+                    if (pd != null) {
+                        CodeSource cs = pd.getCodeSource();
+                        if (cs != null) {
+                            return cs.getLocation();
                         }
-                        return NULL_URL;
                     }
-                });
-                codeBaseCacheRef.put(clazz, url);
-            }
-            return (url == NULL_URL) ? null : url;
+                    return NULL_URL;
+                }
+            });
+            codeBaseCacheRef.put(clazz, url);
         }
+        return (url == NULL_URL) ? null : url;
     }
 
-    /*
-     * This is called from within an doPrivileged block.
-     *
-     * Following logic is used to decide what policy files are selected.
-     *
-     * If the new Security property (crypto.policy) is set in the
-     * java.security file, or has been set dynamically using the
-     * Security.setProperty() call before the JCE framework has
-     * been initialized, that setting will be used.
-     * Remember - this property is not defined by default. A conscious
-     * user edit or an application call is required.
-     *
-     * Otherwise, if user has policy jar files installed in the legacy
-     * jre/lib/security/ directory, the JDK will honor whatever
-     * setting is set by those policy files. (legacy/current behavior)
-     *
-     * If none of the above 2 conditions are met, the JDK will default
-     * to using the limited crypto policy files found in the
-     * jre/lib/security/policy/limited/ directory
-     */
     private static void setupJurisdictionPolicies() throws Exception {
-        // Sanity check the crypto.policy Security property.  Single
-        // directory entry, no pseudo-directories (".", "..", leading/trailing
-        // path separators). normalize()/getParent() will help later.
-        String javaHomeProperty = System.getProperty("java.home");
-        String cryptoPolicyProperty = Security.getProperty("crypto.policy");
-        Path cpPath = (cryptoPolicyProperty == null) ? null :
-                Paths.get(cryptoPolicyProperty);
+        String javaHomeDir = System.getProperty("java.home");
+        String sep = File.separator;
+        String pathToPolicyJar = javaHomeDir + sep + "lib" + sep +
+            "security" + sep;
 
-        if ((cpPath != null) && ((cpPath.getNameCount() != 1) ||
-                (cpPath.compareTo(cpPath.getFileName())) != 0)) {
-            throw new SecurityException(
-                    "Invalid policy directory name format: " +
-                            cryptoPolicyProperty);
-        }
-
-        if (cpPath == null) {
-            // Security property is not set, use default path
-            cpPath = Paths.get(javaHomeProperty, "lib", "security");
-        } else {
-            // populate with java.home
-            cpPath = Paths.get(javaHomeProperty, "lib", "security",
-                    "policy", cryptoPolicyProperty);
-        }
-
-        if (debug != null) {
-            debug.println("crypto policy directory: " + cpPath);
-        }
-
-        File exportJar = new File(cpPath.toFile(),"US_export_policy.jar");
-        File importJar = new File(cpPath.toFile(),"local_policy.jar");
-
-        if (cryptoPolicyProperty == null && (!exportJar.exists() ||
-                !importJar.exists())) {
-            // Compatibility set up. If crypto.policy is not defined.
-            // check to see if legacy jars exist in lib directory. If
-            // they don't exist, we default to limited policy mode.
-            cpPath = Paths.get(
-                    javaHomeProperty, "lib", "security", "policy", "limited");
-            // point to the new jar files in limited directory
-            exportJar = new File(cpPath.toFile(),"US_export_policy.jar");
-            importJar = new File(cpPath.toFile(),"local_policy.jar");
-        }
-
+        File exportJar = new File(pathToPolicyJar, "US_export_policy.jar");
+        File importJar = new File(pathToPolicyJar, "local_policy.jar");
         URL jceCipherURL = ClassLoader.getSystemResource
                 ("javax/crypto/Cipher.class");
 

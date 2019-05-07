@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 1995, 2015, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 1995, 2013, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -41,9 +41,7 @@ public
 class ZipEntry implements ZipConstants, Cloneable {
 
     String name;        // entry name
-    long xdostime = -1; // last modification time (in extended DOS time,
-                        // where milliseconds lost in conversion might
-                        // be encoded into the upper half)
+    long time = -1;     // last modification time
     FileTime mtime;     // last modification time, from extra field data
     FileTime atime;     // last access time, from extra field data
     FileTime ctime;     // creation time, from extra field data
@@ -64,28 +62,6 @@ class ZipEntry implements ZipConstants, Cloneable {
      * Compression method for compressed (deflated) entries.
      */
     public static final int DEFLATED = 8;
-
-    /**
-     * DOS time constant for representing timestamps before 1980.
-     */
-    static final long DOSTIME_BEFORE_1980 = (1 << 21) | (1 << 16);
-
-    /**
-     * Approximately 128 years, in milliseconds (ignoring leap years etc).
-     *
-     * This establish an approximate high-bound value for DOS times in
-     * milliseconds since epoch, used to enable an efficient but
-     * sufficient bounds check to avoid generating extended last modified
-     * time entries.
-     *
-     * Calculating the exact number is locale dependent, would require loading
-     * TimeZone data eagerly, and would make little practical sense. Since DOS
-     * times theoretically go to 2107 - with compatibility not guaranteed
-     * after 2099 - setting this to a time that is before but near 2099
-     * should be sufficient.
-     */
-    private static final long UPPER_DOSTIME_BOUND =
-            128L * 365 * 24 * 60 * 60 * 1000;
 
     /**
      * Creates a new zip entry with the specified name.
@@ -117,7 +93,7 @@ class ZipEntry implements ZipConstants, Cloneable {
     public ZipEntry(ZipEntry e) {
         Objects.requireNonNull(e, "entry");
         name = e.name;
-        xdostime = e.xdostime;
+        time = e.time;
         mtime = e.mtime;
         atime = e.atime;
         ctime = e.ctime;
@@ -161,14 +137,8 @@ class ZipEntry implements ZipConstants, Cloneable {
      * @see #getLastModifiedTime()
      */
     public void setTime(long time) {
-        this.xdostime = javaToExtendedDosTime(time);
-        // Avoid setting the mtime field if time is in the valid
-        // range for a DOS time
-        if (xdostime != DOSTIME_BEFORE_1980 && time <= UPPER_DOSTIME_BOUND) {
-            this.mtime = null;
-        } else {
-            this.mtime = FileTime.from(time, TimeUnit.MILLISECONDS);
-        }
+        this.time = time;
+        this.mtime = null;
     }
 
     /**
@@ -188,10 +158,7 @@ class ZipEntry implements ZipConstants, Cloneable {
      * @see #setLastModifiedTime(FileTime)
      */
     public long getTime() {
-        if (mtime != null) {
-            return mtime.toMillis();
-        }
-        return (xdostime != -1) ? extendedDosToJavaTime(xdostime) : -1;
+        return time;
     }
 
     /**
@@ -213,8 +180,9 @@ class ZipEntry implements ZipConstants, Cloneable {
      * @since 1.8
      */
     public ZipEntry setLastModifiedTime(FileTime time) {
-        this.mtime = Objects.requireNonNull(time, "lastModifiedTime");
-        this.xdostime = javaToExtendedDosTime(time.to(TimeUnit.MILLISECONDS));
+        Objects.requireNonNull(name, "time");
+        this.mtime = time;
+        this.time = time.to(TimeUnit.MILLISECONDS);
         return this;
     }
 
@@ -237,9 +205,9 @@ class ZipEntry implements ZipConstants, Cloneable {
     public FileTime getLastModifiedTime() {
         if (mtime != null)
             return mtime;
-        if (xdostime == -1)
+        if (time == -1)
             return null;
-        return FileTime.from(getTime(), TimeUnit.MILLISECONDS);
+        return FileTime.from(time, TimeUnit.MILLISECONDS);
     }
 
     /**
@@ -259,7 +227,8 @@ class ZipEntry implements ZipConstants, Cloneable {
      * @since 1.8
      */
     public ZipEntry setLastAccessTime(FileTime time) {
-        this.atime = Objects.requireNonNull(time, "lastAccessTime");
+        Objects.requireNonNull(name, "time");
+        this.atime = time;
         return this;
     }
 
@@ -296,7 +265,8 @@ class ZipEntry implements ZipConstants, Cloneable {
      * @since 1.8
      */
     public ZipEntry setCreationTime(FileTime time) {
-        this.ctime = Objects.requireNonNull(time, "creationTime");
+        Objects.requireNonNull(name, "time");
+        this.ctime = time;
         return this;
     }
 
@@ -481,8 +451,6 @@ class ZipEntry implements ZipConstants, Cloneable {
                     }
                     break;
                 case EXTID_NTFS:
-                    if (sz < 32) // reserved  4 bytes + tag 2 bytes + size 2 bytes
-                        break;   // m[a|c]time 24 bytes
                     int pos = off + 4;               // reserved 4 bytes
                     if (get16(extra, pos) !=  0x0001 || get16(extra, pos + 2) != 24)
                         break;

@@ -90,14 +90,14 @@ import java.util.HashMap;
 import java.util.Map;
 
 class StaticClassIntrospector extends FacetIntrospector {
-    StaticClassIntrospector(final Class<?> clazz) {
+    StaticClassIntrospector(Class<?> clazz) {
         super(clazz, false);
     }
 
     @Override
     Map<String, MethodHandle> getInnerClassGetters() {
         final Map<String, MethodHandle> map = new HashMap<>();
-        for(final Class<?> innerClass: membersLookup.getInnerClasses()) {
+        for(Class<?> innerClass: membersLookup.getInnerClasses()) {
             map.put(innerClass.getSimpleName(), editMethodHandle(MethodHandles.constant(StaticClass.class,
                     StaticClass.forClass(innerClass))));
         }
@@ -105,15 +105,15 @@ class StaticClassIntrospector extends FacetIntrospector {
     }
 
     @Override
-    MethodHandle editMethodHandle(final MethodHandle mh) {
+    MethodHandle editMethodHandle(MethodHandle mh) {
         return editStaticMethodHandle(mh);
     }
 
-    static MethodHandle editStaticMethodHandle(final MethodHandle mh) {
+    static MethodHandle editStaticMethodHandle(MethodHandle mh) {
         return dropReceiver(mh, Object.class);
     }
 
-    static MethodHandle editConstructorMethodHandle(final MethodHandle cmh) {
+    static MethodHandle editConstructorMethodHandle(MethodHandle cmh) {
         return dropReceiver(cmh, StaticClass.class);
     }
 

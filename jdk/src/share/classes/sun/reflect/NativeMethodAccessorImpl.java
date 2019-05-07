@@ -32,7 +32,7 @@ import sun.reflect.misc.ReflectUtil;
     switches to bytecode-based implementation */
 
 class NativeMethodAccessorImpl extends MethodAccessorImpl {
-    private final Method method;
+    private Method method;
     private DelegatingMethodAccessorImpl parent;
     private int numInvocations;
 

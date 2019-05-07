@@ -35,9 +35,6 @@ SPLASHEXPORT int SplashLoadFile(const char *filename);  // FIXME: range checking
 SPLASHEXPORT void SplashInit(void);
 SPLASHEXPORT void SplashClose(void);
 
-SPLASHEXPORT void SplashSetScaleFactor(float);
-SPLASHEXPORT char* SplashGetScaledImageName(const char*, const char*, float*);
-
 SPLASHEXPORT void
 SplashSetFileJarName(const char* fileName, const char* jarName);
 
@@ -82,7 +79,6 @@ typedef struct Splash
     int         fileNameLen;
     char*       jarName;        /* stored in 16-bit unicode (jchars) */
     int         jarNameLen;
-    float       scaleFactor;
 #if defined(WITH_WIN32)
     BOOL isLayered;
     HWND hWnd;
@@ -119,8 +115,6 @@ void SplashDonePlatform(Splash * splash);
 
 unsigned SplashTime();
 char* SplashConvertStringAlloc(const char* in, int *size);
-char* SplashGetScaledImageName(const char* jarName,
-                               const char* fileName, float *scaleFactor);
 
 void SplashLock(Splash * splash);
 void SplashUnlock(Splash * splash);
@@ -144,7 +138,6 @@ void SplashDone(Splash * splash);
 void SplashUpdateScreenData(Splash * splash);
 
 void SplashCleanup(Splash * splash);
-void SplashSetScaleFactor(float scaleFactor);
 
 
 typedef struct SplashStream {

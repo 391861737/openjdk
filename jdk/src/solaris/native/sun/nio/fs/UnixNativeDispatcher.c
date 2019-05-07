@@ -42,7 +42,7 @@
 #include <strings.h>
 #endif
 
-#if defined(__linux__) || defined(_AIX)
+#ifdef __linux__
 #include <string.h>
 #endif
 
@@ -179,64 +179,46 @@ Java_sun_nio_fs_UnixNativeDispatcher_init(JNIEnv* env, jclass this)
     jclass clazz;
 
     clazz = (*env)->FindClass(env, "sun/nio/fs/UnixFileAttributes");
-    CHECK_NULL_RETURN(clazz, 0);
+    if (clazz == NULL) {
+        return 0;
+    }
     attrs_st_mode = (*env)->GetFieldID(env, clazz, "st_mode", "I");
-    CHECK_NULL_RETURN(attrs_st_mode, 0);
     attrs_st_ino = (*env)->GetFieldID(env, clazz, "st_ino", "J");
-    CHECK_NULL_RETURN(attrs_st_ino, 0);
     attrs_st_dev = (*env)->GetFieldID(env, clazz, "st_dev", "J");
-    CHECK_NULL_RETURN(attrs_st_dev, 0);
     attrs_st_rdev = (*env)->GetFieldID(env, clazz, "st_rdev", "J");
-    CHECK_NULL_RETURN(attrs_st_rdev, 0);
     attrs_st_nlink = (*env)->GetFieldID(env, clazz, "st_nlink", "I");
-    CHECK_NULL_RETURN(attrs_st_nlink, 0);
     attrs_st_uid = (*env)->GetFieldID(env, clazz, "st_uid", "I");
-    CHECK_NULL_RETURN(attrs_st_uid, 0);
     attrs_st_gid = (*env)->GetFieldID(env, clazz, "st_gid", "I");
-    CHECK_NULL_RETURN(attrs_st_gid, 0);
     attrs_st_size = (*env)->GetFieldID(env, clazz, "st_size", "J");
-    CHECK_NULL_RETURN(attrs_st_size, 0);
     attrs_st_atime_sec = (*env)->GetFieldID(env, clazz, "st_atime_sec", "J");
-    CHECK_NULL_RETURN(attrs_st_atime_sec, 0);
     attrs_st_atime_nsec = (*env)->GetFieldID(env, clazz, "st_atime_nsec", "J");
-    CHECK_NULL_RETURN(attrs_st_atime_nsec, 0);
     attrs_st_mtime_sec = (*env)->GetFieldID(env, clazz, "st_mtime_sec", "J");
-    CHECK_NULL_RETURN(attrs_st_mtime_sec, 0);
     attrs_st_mtime_nsec = (*env)->GetFieldID(env, clazz, "st_mtime_nsec", "J");
-    CHECK_NULL_RETURN(attrs_st_mtime_nsec, 0);
     attrs_st_ctime_sec = (*env)->GetFieldID(env, clazz, "st_ctime_sec", "J");
-    CHECK_NULL_RETURN(attrs_st_ctime_sec, 0);
     attrs_st_ctime_nsec = (*env)->GetFieldID(env, clazz, "st_ctime_nsec", "J");
-    CHECK_NULL_RETURN(attrs_st_ctime_nsec, 0);
 
 #ifdef _DARWIN_FEATURE_64_BIT_INODE
     attrs_st_birthtime_sec = (*env)->GetFieldID(env, clazz, "st_birthtime_sec", "J");
-    CHECK_NULL_RETURN(attrs_st_birthtime_sec, 0);
 #endif
 
     clazz = (*env)->FindClass(env, "sun/nio/fs/UnixFileStoreAttributes");
-    CHECK_NULL_RETURN(clazz, 0);
+    if (clazz == NULL) {
+        return 0;
+    }
     attrs_f_frsize = (*env)->GetFieldID(env, clazz, "f_frsize", "J");
-    CHECK_NULL_RETURN(attrs_f_frsize, 0);
     attrs_f_blocks = (*env)->GetFieldID(env, clazz, "f_blocks", "J");
-    CHECK_NULL_RETURN(attrs_f_blocks, 0);
     attrs_f_bfree = (*env)->GetFieldID(env, clazz, "f_bfree", "J");
-    CHECK_NULL_RETURN(attrs_f_bfree, 0);
     attrs_f_bavail = (*env)->GetFieldID(env, clazz, "f_bavail", "J");
-    CHECK_NULL_RETURN(attrs_f_bavail, 0);
 
     clazz = (*env)->FindClass(env, "sun/nio/fs/UnixMountEntry");
-    CHECK_NULL_RETURN(clazz, 0);
+    if (clazz == NULL) {
+        return 0;
+    }
     entry_name = (*env)->GetFieldID(env, clazz, "name", "[B");
-    CHECK_NULL_RETURN(entry_name, 0);
     entry_dir = (*env)->GetFieldID(env, clazz, "dir", "[B");
-    CHECK_NULL_RETURN(entry_dir, 0);
     entry_fstype = (*env)->GetFieldID(env, clazz, "fstype", "[B");
-    CHECK_NULL_RETURN(entry_fstype, 0);
     entry_options = (*env)->GetFieldID(env, clazz, "opts", "[B");
-    CHECK_NULL_RETURN(entry_options, 0);
     entry_dev = (*env)->GetFieldID(env, clazz, "dev", "J");
-    CHECK_NULL_RETURN(entry_dev, 0);
 
     /* system calls that might not be available at run time */
 
@@ -308,15 +290,15 @@ Java_sun_nio_fs_UnixNativeDispatcher_getcwd(JNIEnv* env, jclass this) {
 JNIEXPORT jbyteArray
 Java_sun_nio_fs_UnixNativeDispatcher_strerror(JNIEnv* env, jclass this, jint error)
 {
-    char tmpbuf[1024];
+    char* msg;
     jsize len;
     jbyteArray bytes;
 
-    getErrorString((int)errno, tmpbuf, sizeof(tmpbuf));
-    len = strlen(tmpbuf);
+    msg = strerror((int)error);
+    len = strlen(msg);
     bytes = (*env)->NewByteArray(env, len);
     if (bytes != NULL) {
-        (*env)->SetByteArrayRegion(env, bytes, 0, len, (jbyte*)tmpbuf);
+        (*env)->SetByteArrayRegion(env, bytes, 0, len, (jbyte*)msg);
     }
     return bytes;
 }
@@ -327,7 +309,7 @@ Java_sun_nio_fs_UnixNativeDispatcher_dup(JNIEnv* env, jclass this, jint fd) {
     int res = -1;
 
     RESTARTABLE(dup((int)fd), res);
-    if (res == -1) {
+    if (fd == -1) {
         throwUnixException(env, errno);
     }
     return (jint)res;
@@ -355,14 +337,13 @@ Java_sun_nio_fs_UnixNativeDispatcher_fopen0(JNIEnv* env, jclass this,
 JNIEXPORT void JNICALL
 Java_sun_nio_fs_UnixNativeDispatcher_fclose(JNIEnv* env, jclass this, jlong stream)
 {
+    int res;
     FILE* fp = jlong_to_ptr(stream);
 
-    /* NOTE: fclose() wrapper is only used with read-only streams.
-     * If it ever is used with write streams, it might be better to add
-     * RESTARTABLE(fflush(fp)) before closing, to make sure the stream
-     * is completely written even if fclose() failed.
-     */
-    if (fclose(fp) == EOF && errno != EINTR) {
+    do {
+        res = fclose(fp);
+    } while (res == EOF && errno == EINTR);
+    if (res == EOF) {
         throwUnixException(env, errno);
     }
 }
@@ -670,9 +651,11 @@ Java_sun_nio_fs_UnixNativeDispatcher_fdopendir(JNIEnv* env, jclass this, int dfd
 
 JNIEXPORT void JNICALL
 Java_sun_nio_fs_UnixNativeDispatcher_closedir(JNIEnv* env, jclass this, jlong dir) {
+    int err;
     DIR* dirp = jlong_to_ptr(dir);
 
-    if (closedir(dirp) == -1 && errno != EINTR) {
+    RESTARTABLE(closedir(dirp), err);
+    if (errno == -1) {
         throwUnixException(env, errno);
     }
 }
@@ -691,15 +674,6 @@ Java_sun_nio_fs_UnixNativeDispatcher_readdir(JNIEnv* env, jclass this, jlong val
     /* EINTR not listed as a possible error */
     /* TDB: reentrant version probably not required here */
     res = readdir64_r(dirp, ptr, &result);
-
-#ifdef _AIX
-    /* On AIX, readdir_r() returns EBADF (i.e. '9') and sets 'result' to NULL for the */
-    /* directory stream end. Otherwise, 'errno' will contain the error code. */
-    if (res != 0) {
-        res = (result == NULL && res == EBADF) ? 0 : errno;
-    }
-#endif
-
     if (res != 0) {
         throwUnixException(env, res);
         return NULL;
@@ -903,18 +877,6 @@ Java_sun_nio_fs_UnixNativeDispatcher_statvfs0(JNIEnv* env, jclass this,
     if (err == -1) {
         throwUnixException(env, errno);
     } else {
-#ifdef _AIX
-        /* AIX returns ULONG_MAX in buf.f_blocks for the /proc file system. */
-        /* This is too big for a Java signed long and fools various tests.  */
-        if (buf.f_blocks == ULONG_MAX) {
-            buf.f_blocks = 0;
-        }
-        /* The number of free or available blocks can never exceed the total number of blocks */
-        if (buf.f_blocks == 0) {
-            buf.f_bfree = 0;
-            buf.f_bavail = 0;
-        }
-#endif
         (*env)->SetLongField(env, attrs, attrs_f_frsize, long_to_jlong(buf.f_frsize));
         (*env)->SetLongField(env, attrs, attrs_f_blocks, long_to_jlong(buf.f_blocks));
         (*env)->SetLongField(env, attrs, attrs_f_bfree,  long_to_jlong(buf.f_bfree));

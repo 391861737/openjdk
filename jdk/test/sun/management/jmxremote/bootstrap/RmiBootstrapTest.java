@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2003, 2015, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2003, 2013, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -42,8 +42,6 @@ import javax.management.remote.*;
 import javax.management.*;
 
 import sun.management.AgentConfigurationError;
-
-import java.security.Security;
 
 import util.TestLogger;
 
@@ -135,8 +133,6 @@ public class RmiBootstrapTest {
             "com.sun.management.jmxremote.ssl.enabled.protocols";
         public static final String SSL_NEED_CLIENT_AUTH =
             "com.sun.management.jmxremote.ssl.need.client.auth";
-        public static final String SSL_CLIENT_ENABLED_CIPHER_SUITES =
-            "javax.rmi.ssl.client.enabledCipherSuites";
     }
 
     /**
@@ -438,7 +434,7 @@ public class RmiBootstrapTest {
     }
 
 
-    private void setSslProperties(String clientEnabledCipherSuites) {
+    private void setSslProperties() {
         final String defaultKeyStore =
             getDefaultStoreName(DefaultValues.KEYSTORE);
         final String defaultTrustStore =
@@ -469,13 +465,6 @@ public class RmiBootstrapTest {
         System.setProperty(PropertyNames.TRUSTSTORE_PASSWD,trustword);
         log.trace("setSslProperties",
                   PropertyNames.TRUSTSTORE_PASSWD+"="+trustword);
-
-        if (clientEnabledCipherSuites != null) {
-            System.setProperty("javax.rmi.ssl.client.enabledCipherSuites",
-                    clientEnabledCipherSuites);
-        } else {
-            System.clearProperty("javax.rmi.ssl.client.enabledCipherSuites");
-        }
     }
 
     private void checkSslConfiguration() {
@@ -528,10 +517,7 @@ public class RmiBootstrapTest {
                       PropertyNames.SSL_ENABLED_PROTOCOLS + "=" +
                       sslProtocols);
 
-            if (useSsl) {
-                setSslProperties(props.getProperty(
-                        PropertyNames.SSL_CLIENT_ENABLED_CIPHER_SUITES));
-            }
+            if (useSsl) setSslProperties();
         } catch (Exception x) {
             System.out.println("Failed to setup SSL configuration: " + x);
             log.debug("checkSslConfiguration",x);
@@ -885,8 +871,6 @@ public class RmiBootstrapTest {
      * exit(1) if the test fails.
      **/
     public static void main(String args[]) throws Exception {
-        Security.setProperty("jdk.tls.disabledAlgorithms", "");
-
         setupBasePort();
         RmiBootstrapTest manager = new RmiBootstrapTest();
         try {

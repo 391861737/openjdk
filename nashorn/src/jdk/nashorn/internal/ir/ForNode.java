@@ -33,26 +33,23 @@ import jdk.nashorn.internal.ir.visitor.NodeVisitor;
  */
 @Immutable
 public final class ForNode extends LoopNode {
-    private static final long serialVersionUID = 1L;
-
-    /** Initialize expression for an ordinary for statement, or the LHS expression receiving iterated-over values in a
-     * for-in statement. */
+    /** Initialize expression. */
     private final Expression init;
 
-    /** Modify expression for an ordinary statement, or the source of the iterator in the for-in statement. */
-    private final JoinPredecessorExpression modify;
+    /** Test expression. */
+    private final Expression modify;
 
     /** Iterator symbol. */
-    private final Symbol iterator;
+    private Symbol iterator;
+
+    /** Is this a normal for loop? */
+    public static final int IS_FOR      = 1 << 0;
 
     /** Is this a normal for in loop? */
-    public static final int IS_FOR_IN           = 1 << 0;
+    public static final int IS_FOR_IN   = 1 << 1;
 
     /** Is this a normal for each in loop? */
-    public static final int IS_FOR_EACH         = 1 << 1;
-
-    /** Does this loop need a per-iteration scope because its init contain a LET declaration? */
-    public static final int PER_ITERATION_SCOPE = 1 << 2;
+    public static final int IS_FOR_EACH = 1 << 2;
 
     private final int flags;
 
@@ -62,30 +59,30 @@ public final class ForNode extends LoopNode {
      * @param lineNumber line number
      * @param token      token
      * @param finish     finish
+     * @param init       initialization expression
+     * @param test       test
      * @param body       body
+     * @param modify     modify
      * @param flags      flags
      */
-    public ForNode(final int lineNumber, final long token, final int finish, final Block body, final int flags) {
-        super(lineNumber, token, finish, body, false);
-        this.flags  = flags;
-        this.init = null;
-        this.modify = null;
-        this.iterator = null;
-    }
-
-    private ForNode(final ForNode forNode, final Expression init, final JoinPredecessorExpression test,
-            final Block body, final JoinPredecessorExpression modify, final int flags,
-            final boolean controlFlowEscapes, final LocalVariableConversion conversion, final Symbol iterator) {
-        super(forNode, test, body, controlFlowEscapes, conversion);
+    public ForNode(final int lineNumber, final long token, final int finish, final Expression init, final Expression test, final Block body, final Expression modify, final int flags) {
+        super(lineNumber, token, finish, test, body, false);
         this.init   = init;
         this.modify = modify;
         this.flags  = flags;
-        this.iterator = iterator;
+    }
+
+    private ForNode(final ForNode forNode, final Expression init, final Expression test, final Block body, final Expression modify, final int flags, final boolean controlFlowEscapes) {
+        super(forNode, test, body, controlFlowEscapes);
+        this.init   = init;
+        this.modify = modify;
+        this.flags  = flags;
+        this.iterator = forNode.iterator; //TODO is this acceptable? symbols are never cloned, just copied as references
     }
 
     @Override
-    public Node ensureUniqueLabels(final LexicalContext lc) {
-        return Node.replaceInLexicalContext(lc, this, new ForNode(this, init, test, body, modify, flags, controlFlowEscapes, conversion, iterator));
+    public Node ensureUniqueLabels(LexicalContext lc) {
+        return Node.replaceInLexicalContext(lc, this, new ForNode(this, init, test, body, modify, flags, controlFlowEscapes));
     }
 
     @Override
@@ -93,8 +90,8 @@ public final class ForNode extends LoopNode {
         if (visitor.enterForNode(this)) {
             return visitor.leaveForNode(
                 setInit(lc, init == null ? null : (Expression)init.accept(visitor)).
-                setTest(lc, test == null ? null : (JoinPredecessorExpression)test.accept(visitor)).
-                setModify(lc, modify == null ? null : (JoinPredecessorExpression)modify.accept(visitor)).
+                setTest(lc, test == null ? null : (Expression)test.accept(visitor)).
+                setModify(lc, modify == null ? null : (Expression)modify.accept(visitor)).
                 setBody(lc, (Block)body.accept(visitor)));
         }
 
@@ -102,25 +99,24 @@ public final class ForNode extends LoopNode {
     }
 
     @Override
-    public void toString(final StringBuilder sb, final boolean printTypes) {
-        sb.append("for");
-        LocalVariableConversion.toString(conversion, sb).append(' ');
+    public void toString(final StringBuilder sb) {
+        sb.append("for (");
 
         if (isForIn()) {
-            init.toString(sb, printTypes);
+            init.toString(sb);
             sb.append(" in ");
-            modify.toString(sb, printTypes);
+            modify.toString(sb);
         } else {
             if (init != null) {
-                init.toString(sb, printTypes);
+                init.toString(sb);
             }
             sb.append("; ");
             if (test != null) {
-                test.toString(sb, printTypes);
+                test.toString(sb);
             }
             sb.append("; ");
             if (modify != null) {
-                modify.toString(sb, printTypes);
+                modify.toString(sb);
             }
         }
 
@@ -158,7 +154,7 @@ public final class ForNode extends LoopNode {
         if (this.init == init) {
             return this;
         }
-        return Node.replaceInLexicalContext(lc, this, new ForNode(this, init, test, body, modify, flags, controlFlowEscapes, conversion, iterator));
+        return Node.replaceInLexicalContext(lc, this, new ForNode(this, init, test, body, modify, flags, controlFlowEscapes));
     }
 
     /**
@@ -206,22 +202,17 @@ public final class ForNode extends LoopNode {
 
     /**
      * Assign an iterator symbol to this ForNode. Used for for in and for each constructs
-     * @param lc the current lexical context
      * @param iterator the iterator symbol
-     * @return a ForNode with the iterator set
      */
-    public ForNode setIterator(final LexicalContext lc, final Symbol iterator) {
-        if (this.iterator == iterator) {
-            return this;
-        }
-        return Node.replaceInLexicalContext(lc, this, new ForNode(this, init, test, body, modify, flags, controlFlowEscapes, conversion, iterator));
+    public void setIterator(final Symbol iterator) {
+        this.iterator = iterator;
     }
 
     /**
      * Get the modification expression for this ForNode
      * @return the modification expression
      */
-    public JoinPredecessorExpression getModify() {
+    public Expression getModify() {
         return modify;
     }
 
@@ -231,19 +222,24 @@ public final class ForNode extends LoopNode {
      * @param modify new modification expression
      * @return new for node if changed or existing if not
      */
-    public ForNode setModify(final LexicalContext lc, final JoinPredecessorExpression modify) {
+    public ForNode setModify(final LexicalContext lc, final Expression modify) {
         if (this.modify == modify) {
             return this;
         }
-        return Node.replaceInLexicalContext(lc, this, new ForNode(this, init, test, body, modify, flags, controlFlowEscapes, conversion, iterator));
+        return Node.replaceInLexicalContext(lc, this, new ForNode(this, init, test, body, modify, flags, controlFlowEscapes));
     }
 
     @Override
-    public ForNode setTest(final LexicalContext lc, final JoinPredecessorExpression test) {
+    public Expression getTest() {
+        return test;
+    }
+
+    @Override
+    public ForNode setTest(final LexicalContext lc, final Expression test) {
         if (this.test == test) {
             return this;
         }
-        return Node.replaceInLexicalContext(lc, this, new ForNode(this, init, test, body, modify, flags, controlFlowEscapes, conversion, iterator));
+        return Node.replaceInLexicalContext(lc, this, new ForNode(this, init, test, body, modify, flags, controlFlowEscapes));
     }
 
     @Override
@@ -256,7 +252,7 @@ public final class ForNode extends LoopNode {
         if (this.body == body) {
             return this;
         }
-        return Node.replaceInLexicalContext(lc, this, new ForNode(this, init, test, body, modify, flags, controlFlowEscapes, conversion, iterator));
+        return Node.replaceInLexicalContext(lc, this, new ForNode(this, init, test, body, modify, flags, controlFlowEscapes));
     }
 
     @Override
@@ -264,32 +260,14 @@ public final class ForNode extends LoopNode {
         if (this.controlFlowEscapes == controlFlowEscapes) {
             return this;
         }
-        return Node.replaceInLexicalContext(lc, this, new ForNode(this, init, test, body, modify, flags, controlFlowEscapes, conversion, iterator));
+        return Node.replaceInLexicalContext(lc, this, new ForNode(this, init, test, body, modify, flags, controlFlowEscapes));
     }
 
     private ForNode setFlags(final LexicalContext lc, final int flags) {
         if (this.flags == flags) {
             return this;
         }
-        return Node.replaceInLexicalContext(lc, this, new ForNode(this, init, test, body, modify, flags, controlFlowEscapes, conversion, iterator));
+        return Node.replaceInLexicalContext(lc, this, new ForNode(this, init, test, body, modify, flags, controlFlowEscapes));
     }
 
-    @Override
-    JoinPredecessor setLocalVariableConversionChanged(final LexicalContext lc, final LocalVariableConversion conversion) {
-        return Node.replaceInLexicalContext(lc, this, new ForNode(this, init, test, body, modify, flags, controlFlowEscapes, conversion, iterator));
-    }
-
-    @Override
-    public boolean hasPerIterationScope() {
-        return (flags & PER_ITERATION_SCOPE) != 0;
-    }
-
-    /**
-     * Set the per-iteration-scope flag on this node.
-     * @param lc lexical context
-     * @return the node with flag set
-     */
-    public ForNode setPerIterationScope(final LexicalContext lc) {
-        return setFlags(lc, flags | PER_ITERATION_SCOPE);
-    }
 }

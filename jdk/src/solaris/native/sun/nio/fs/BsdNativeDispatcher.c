@@ -72,15 +72,13 @@ Java_sun_nio_fs_BsdNativeDispatcher_initIDs(JNIEnv* env, jclass this)
     jclass clazz;
 
     clazz = (*env)->FindClass(env, "sun/nio/fs/UnixMountEntry");
-    CHECK_NULL(clazz);
+    if (clazz == NULL) {
+        return;
+    }
     entry_name = (*env)->GetFieldID(env, clazz, "name", "[B");
-    CHECK_NULL(entry_name);
     entry_dir = (*env)->GetFieldID(env, clazz, "dir", "[B");
-    CHECK_NULL(entry_dir);
     entry_fstype = (*env)->GetFieldID(env, clazz, "fstype", "[B");
-    CHECK_NULL(entry_fstype);
     entry_options = (*env)->GetFieldID(env, clazz, "opts", "[B");
-    CHECK_NULL(entry_options);
 }
 
 JNIEXPORT jlong JNICALL
@@ -203,3 +201,4 @@ Java_sun_nio_fs_BsdNativeDispatcher_endfsstat(JNIEnv* env, jclass this, jlong va
         free(iter);
     }
 }
+

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2001, 2014, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2001, 2013, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -32,8 +32,6 @@
 #include "runtime/thread.hpp"
 #endif // INCLUDE_ALL_GCS
 
-PRAGMA_FORMAT_MUTE_WARNINGS_FOR_GCC
-
 MutableSpace::MutableSpace(size_t alignment): ImmutableSpace(), _top(NULL), _alignment(alignment) {
   assert(MutableSpace::alignment() >= 0 &&
          MutableSpace::alignment() % os::vm_page_size() == 0,
@@ -62,7 +60,9 @@ void MutableSpace::numa_setup_pages(MemRegion mr, bool clear_space) {
 }
 
 void MutableSpace::pretouch_pages(MemRegion mr) {
-  os::pretouch_memory((char*)mr.start(), (char*)mr.end());
+  for (volatile char *p = (char*)mr.start(); p < (char*)mr.end(); p += os::vm_page_size()) {
+    char t = *p; *p = t;
+  }
 }
 
 void MutableSpace::initialize(MemRegion mr,

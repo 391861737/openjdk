@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 1997, 2017, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 1997, 2011, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -27,7 +27,6 @@ package com.sun.xml.internal.bind.v2.runtime.output;
 
 import javax.xml.stream.XMLStreamException;
 
-import com.sun.xml.internal.bind.marshaller.NoEscapeHandler;
 import com.sun.xml.internal.bind.v2.runtime.unmarshaller.Base64Data;
 
 import com.sun.xml.internal.org.jvnet.staxex.XMLStreamWriterEx;
@@ -41,7 +40,7 @@ public final class StAXExStreamWriterOutput extends XMLStreamWriterOutput {
     private final XMLStreamWriterEx out;
 
     public StAXExStreamWriterOutput(XMLStreamWriterEx out) {
-        super(out, NoEscapeHandler.theInstance);
+        super(out);
         this.out = out;
     }
 

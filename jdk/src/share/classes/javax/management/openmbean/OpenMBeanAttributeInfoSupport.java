@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2000, 2015, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2000, 2013, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -45,6 +45,7 @@ import javax.management.DescriptorRead;
 import javax.management.ImmutableDescriptor;
 import javax.management.MBeanAttributeInfo;
 import com.sun.jmx.remote.util.EnvHelp;
+import sun.reflect.misc.ConstructorUtil;
 import sun.reflect.misc.MethodUtil;
 import sun.reflect.misc.ReflectUtil;
 
@@ -691,9 +692,8 @@ public class OpenMBeanAttributeInfoSupport
     private static <T> T convertFromString(String s, OpenType<T> openType) {
         Class<T> c;
         try {
-            String className = openType.safeGetClassName();
-            ReflectUtil.checkPackageAccess(className);
-            c = cast(Class.forName(className));
+            ReflectUtil.checkPackageAccess(openType.safeGetClassName());
+            c = cast(Class.forName(openType.safeGetClassName()));
         } catch (ClassNotFoundException e) {
             throw new NoClassDefFoundError(e.toString());  // can't happen
         }
@@ -761,15 +761,11 @@ public class OpenMBeanAttributeInfoSupport
         Class<?> stringArrayClass;
         Class<?> targetArrayClass;
         try {
-            String baseClassName = baseType.safeGetClassName();
-
-            // check access to the provided base type class name and bail out early
-            ReflectUtil.checkPackageAccess(baseClassName);
-
             stringArrayClass =
                 Class.forName(squareBrackets + "Ljava.lang.String;");
             targetArrayClass =
-                Class.forName(squareBrackets + "L" + baseClassName + ";");
+                Class.forName(squareBrackets + "L" + baseType.safeGetClassName() +
+                              ";");
         } catch (ClassNotFoundException e) {
             throw new NoClassDefFoundError(e.toString());  // can't happen
         }

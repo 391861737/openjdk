@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2003, 2015, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2003, 2013, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -30,11 +30,23 @@
 #include <stdint.h>
 #include "proc_service.h"
 
-#ifdef ALT_SASRCDIR
+#if defined(arm) || defined(ppc)
 #include "libproc_md.h"
 #endif
 
-#include <sys/ptrace.h>
+#if defined(sparc) || defined(sparcv9)
+/*
+  If _LP64 is defined ptrace.h should be taken from /usr/include/asm-sparc64
+  otherwise it should be from /usr/include/asm-sparc
+  These two files define pt_regs structure differently
+*/
+#ifdef _LP64
+#include "asm-sparc64/ptrace.h"
+#else
+#include "asm-sparc/ptrace.h"
+#endif
+
+#endif //sparc or sparcv9
 
 /************************************************************************************
 
@@ -68,8 +80,7 @@ combination of ptrace and /proc calls.
 *************************************************************************************/
 
 
-#if defined(sparc) || defined(sparcv9) || defined(ppc64)
-#include <asm/ptrace.h>
+#if defined(sparc)  || defined(sparcv9)
 #define user_regs_struct  pt_regs
 #endif
 
@@ -83,7 +94,7 @@ typedef int bool;
 struct ps_prochandle;
 
 // attach to a process
-struct ps_prochandle* Pgrab(pid_t pid, char* err_buf, size_t err_buf_len);
+struct ps_prochandle* Pgrab(pid_t pid);
 
 // attach to a core dump
 struct ps_prochandle* Pgrab_core(const char* execfile, const char* corefile);

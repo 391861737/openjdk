@@ -195,9 +195,45 @@ public class JavapTask implements DisassemblerTool.DisassemblerTask, Messages {
             }
         },
 
+//        new Option(false, "-all") {
+//            void process(JavapTask task, String opt, String arg) {
+//                task.options.showAllAttrs = true;
+//            }
+//        },
+
+        new Option(false, "-h") {
+            void process(JavapTask task, String opt, String arg) throws BadArgs {
+                throw task.new BadArgs("err.h.not.supported");
+            }
+        },
+
+        new Option(false, "-verify", "-verify-verbose") {
+            void process(JavapTask task, String opt, String arg) throws BadArgs {
+                throw task.new BadArgs("err.verify.not.supported");
+            }
+        },
+
         new Option(false, "-sysinfo") {
             void process(JavapTask task, String opt, String arg) {
                 task.options.sysInfo = true;
+            }
+        },
+
+        new Option(false, "-Xold") {
+            void process(JavapTask task, String opt, String arg) throws BadArgs {
+                task.log.println(task.getMessage("warn.Xold.not.supported"));
+            }
+        },
+
+        new Option(false, "-Xnew") {
+            void process(JavapTask task, String opt, String arg) throws BadArgs {
+                // ignore: this _is_ the new version
+            }
+        },
+
+        new Option(false, "-XDcompat") {
+            void process(JavapTask task, String opt, String arg) {
+                task.options.compat = true;
             }
         },
 
@@ -273,9 +309,7 @@ public class JavapTask implements DisassemblerTool.DisassemblerTask, Messages {
             void process(JavapTask task, String opt, String arg) throws BadArgs {
                 int sep = opt.indexOf(":");
                 try {
-                    int i = Integer.valueOf(opt.substring(sep + 1));
-                    if (i > 0) // silently ignore invalid values
-                        task.options.indentWidth = i;
+                    task.options.indentWidth = Integer.valueOf(opt.substring(sep + 1));
                 } catch (NumberFormatException e) {
                 }
             }
@@ -291,9 +325,7 @@ public class JavapTask implements DisassemblerTool.DisassemblerTask, Messages {
             void process(JavapTask task, String opt, String arg) throws BadArgs {
                 int sep = opt.indexOf(":");
                 try {
-                    int i = Integer.valueOf(opt.substring(sep + 1));
-                    if (i > 0) // silently ignore invalid values
-                        task.options.tabColumn = i;
+                    task.options.tabColumn = Integer.valueOf(opt.substring(sep + 1));
                 } catch (NumberFormatException e) {
                 }
             }
@@ -434,7 +466,7 @@ public class JavapTask implements DisassemblerTool.DisassemblerTask, Messages {
         } catch (BadArgs e) {
             reportError(e.key, e.args);
             if (e.showUsage) {
-                printLines(getMessage("main.usage.summary", progname));
+                log.println(getMessage("main.usage.summary", progname));
             }
             return EXIT_CMDERR;
         } catch (InternalError e) {
@@ -488,7 +520,7 @@ public class JavapTask implements DisassemblerTool.DisassemblerTask, Messages {
                 throw new BadArgs("err.unknown.option", arg).showUsage(true);
         }
 
-        if (options.accessOptions.size() > 1) {
+        if (!options.compat && options.accessOptions.size() > 1) {
             StringBuilder sb = new StringBuilder();
             for (String opt: options.accessOptions) {
                 if (sb.length() > 0)
@@ -529,12 +561,8 @@ public class JavapTask implements DisassemblerTool.DisassemblerTask, Messages {
             }
         }
 
-        try {
-            if (fileManager.handleOption(name, rest))
-                return;
-        } catch (IllegalArgumentException e) {
-            throw new BadArgs("err.invalid.use.of.option", name).showUsage(true);
-        }
+        if (fileManager.handleOption(name, rest))
+            return;
 
         throw new BadArgs("err.unknown.option", name).showUsage(true);
     }
@@ -552,6 +580,8 @@ public class JavapTask implements DisassemblerTool.DisassemblerTask, Messages {
         ClassWriter classWriter = ClassWriter.instance(context);
         SourceWriter sourceWriter = SourceWriter.instance(context);
         sourceWriter.setFileManager(fileManager);
+
+        attributeFactory.setCompat(options.compat);
 
         int result = EXIT_OK;
 
@@ -848,32 +878,26 @@ public class JavapTask implements DisassemblerTool.DisassemblerTask, Messages {
     }
 
     private void showHelp() {
-        printLines(getMessage("main.usage", progname));
+        log.println(getMessage("main.usage", progname));
         for (Option o: recognizedOptions) {
             String name = o.aliases[0].substring(1); // there must always be at least one name
             if (name.startsWith("X") || name.equals("fullversion") || name.equals("h") || name.equals("verify"))
                 continue;
-            printLines(getMessage("main.opt." + name));
+            log.println(getMessage("main.opt." + name));
         }
         String[] fmOptions = { "-classpath", "-cp", "-bootclasspath" };
         for (String o: fmOptions) {
             if (fileManager.isSupportedOption(o) == -1)
                 continue;
             String name = o.substring(1);
-            printLines(getMessage("main.opt." + name));
+            log.println(getMessage("main.opt." + name));
         }
 
     }
 
     private void showVersion(boolean full) {
-        printLines(version(full ? "full" : "release"));
+        log.println(version(full ? "full" : "release"));
     }
-
-    private void printLines(String msg) {
-        log.println(msg.replace("\n", nl));
-    }
-
-    private static final String nl = System.getProperty("line.separator");
 
     private static final String versionRBName = "com.sun.tools.javap.resources.version";
     private static ResourceBundle versionRB;

@@ -37,7 +37,6 @@ import com.sun.org.apache.xml.internal.security.exceptions.XMLSecurityException;
 import com.sun.org.apache.xml.internal.security.signature.XMLSignature;
 import com.sun.org.apache.xml.internal.security.signature.XMLSignatureException;
 import com.sun.org.apache.xml.internal.security.utils.Constants;
-import com.sun.org.apache.xml.internal.security.utils.JavaUtils;
 import org.w3c.dom.Attr;
 import org.w3c.dom.Document;
 import org.w3c.dom.Element;
@@ -315,21 +314,18 @@ public class SignatureAlgorithm extends Algorithm {
     }
 
     /**
-     * Registers implementing class of the SignatureAlgorithm with algorithmURI
+     * Registers implementing class of the Transform algorithm with algorithmURI
      *
-     * @param algorithmURI algorithmURI URI representation of <code>SignatureAlgorithm</code>.
+     * @param algorithmURI algorithmURI URI representation of <code>Transform algorithm</code>.
      * @param implementingClass <code>implementingClass</code> the implementing class of
      * {@link SignatureAlgorithmSpi}
      * @throws AlgorithmAlreadyRegisteredException if specified algorithmURI is already registered
      * @throws XMLSignatureException
-     * @throws SecurityException if a security manager is installed and the
-     *    caller does not have permission to register the signature algorithm
      */
     @SuppressWarnings("unchecked")
     public static void register(String algorithmURI, String implementingClass)
        throws AlgorithmAlreadyRegisteredException, ClassNotFoundException,
            XMLSignatureException {
-        JavaUtils.checkRegisterPermission();
         if (log.isLoggable(java.util.logging.Level.FINE)) {
             log.log(java.util.logging.Level.FINE, "Try to register " + algorithmURI + " " + implementingClass);
         }
@@ -356,18 +352,15 @@ public class SignatureAlgorithm extends Algorithm {
     /**
      * Registers implementing class of the Transform algorithm with algorithmURI
      *
-     * @param algorithmURI algorithmURI URI representation of <code>SignatureAlgorithm</code>.
+     * @param algorithmURI algorithmURI URI representation of <code>Transform algorithm</code>.
      * @param implementingClass <code>implementingClass</code> the implementing class of
      * {@link SignatureAlgorithmSpi}
      * @throws AlgorithmAlreadyRegisteredException if specified algorithmURI is already registered
      * @throws XMLSignatureException
-     * @throws SecurityException if a security manager is installed and the
-     *    caller does not have permission to register the signature algorithm
      */
     public static void register(String algorithmURI, Class<? extends SignatureAlgorithmSpi> implementingClass)
        throws AlgorithmAlreadyRegisteredException, ClassNotFoundException,
            XMLSignatureException {
-        JavaUtils.checkRegisterPermission();
         if (log.isLoggable(java.util.logging.Level.FINE)) {
             log.log(java.util.logging.Level.FINE, "Try to register " + algorithmURI + " " + implementingClass);
         }
@@ -387,12 +380,7 @@ public class SignatureAlgorithm extends Algorithm {
      * This method registers the default algorithms.
      */
     public static void registerDefaultAlgorithms() {
-        algorithmHash.put(
-            XMLSignature.ALGO_ID_SIGNATURE_DSA, SignatureDSA.class
-        );
-        algorithmHash.put(
-            XMLSignature.ALGO_ID_SIGNATURE_DSA_SHA256, SignatureDSA.SHA256.class
-        );
+        algorithmHash.put(SignatureDSA.URI, SignatureDSA.class);
         algorithmHash.put(
             XMLSignature.ALGO_ID_SIGNATURE_RSA_SHA1, SignatureBaseRSA.SignatureRSASHA1.class
         );

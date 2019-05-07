@@ -31,20 +31,17 @@ DEST=`pwd`
 
 OS=`uname -s`
 case "$OS" in
-  SunOS | Linux | Darwin | AIX )
+  SunOS | Linux | Darwin )
     PS=":"
     FS="/"
-    CHMOD="${FS}bin${FS}chmod"
     ;;
   Windows* )
     PS=";"
     FS="\\"
-    CHMOD="chmod"
     ;;
   CYGWIN* )
     PS=";"
     FS="/"
-    CHMOD="chmod"
     #
     # javac does not like /cygdrive produced by `pwd`.
     #
@@ -62,7 +59,6 @@ esac
 mkdir -p ${DEST}${FS}jar1
 cd ${TESTSRC}${FS}etc${FS}jar1
 cp -r . ${DEST}${FS}jar1
-${CHMOD} -R u+w ${DEST}${FS}jar1
 ${COMPILEJAVA}${FS}bin${FS}javac ${TESTJAVACOPTS} ${TESTTOOLVMOPTS} -d ${DEST}${FS}jar1 \
     ${TESTSRC}${FS}src${FS}jar1${FS}LoadResourceBundle.java
 ${COMPILEJAVA}${FS}bin${FS}javac ${TESTJAVACOPTS} ${TESTTOOLVMOPTS} -d ${DEST}${FS}jar1 \

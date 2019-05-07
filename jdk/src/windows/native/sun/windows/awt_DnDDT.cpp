@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 1997, 2014, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 1997, 2013, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -603,10 +603,6 @@ jobject AwtDropTarget::ConvertNativeData(JNIEnv* env, jlong fmt, STGMEDIUM *pmed
             jobject local = JNU_NewStringPlatform(
                 env,
                 pmedium->lpszFileName);
-            if (env->ExceptionCheck()) {
-                hr = E_OUTOFMEMORY;
-                break;
-            }
             jstring fileName = (jstring)env->NewGlobalRef(local);
             env->DeleteLocalRef(local);
 
@@ -1224,6 +1220,8 @@ AwtDropTarget::call_dTCgetis(JNIEnv* env, jlong istream) {
 
 /*****************************************************************************/
 
+jclass WDTCPIStreamWrapper::javaIOExceptionClazz = (jclass)NULL;
+
 /**
  * construct a wrapper
  */
@@ -1235,6 +1233,16 @@ WDTCPIStreamWrapper::WDTCPIStreamWrapper(STGMEDIUM* stgmedium) {
     m_istream   = stgmedium->pstm;
     m_istream->AddRef();
     m_mutex     = ::CreateMutex(NULL, FALSE, NULL);
+
+    if (javaIOExceptionClazz == (jclass)NULL) {
+        javaIOExceptionClazz = env->FindClass("java/io/IOException");
+
+        if (JNU_IsNull(env, javaIOExceptionClazz)) {
+            env->ThrowNew(env->FindClass("java/lang/ClassNotFoundException"),
+                          "Cant find java/io/IOException"
+            );
+        }
+    }
 }
 
 /**
@@ -1283,12 +1291,12 @@ jint WDTCPIStreamWrapper::Available() {
     JNIEnv* env = (JNIEnv *)JNU_GetEnv(jvm, JNI_VERSION_1_2);
 
     if (m_istream->Stat(&m_statstg, STATFLAG_NONAME) != S_OK) {
-        JNU_ThrowIOException(env, "IStream::Stat() failed");
+        env->ThrowNew(javaIOExceptionClazz, "IStream::Stat() failed");
         return 0;
     }
 
     if (m_statstg.cbSize.QuadPart > 0x7ffffffL) {
-        JNU_ThrowIOException(env, "IStream::Stat() cbSize > 0x7ffffff");
+        env->ThrowNew(javaIOExceptionClazz, "IStream::Stat() cbSize > 0x7ffffff");
         return 0;
     }
 
@@ -1341,7 +1349,7 @@ jint WDTCPIStreamWrapper::Read() {
             return (jint)(actual == 0 ? -1 : b);
 
         default:
-            JNU_ThrowIOException(env, "IStream::Read failed");
+            env->ThrowNew(javaIOExceptionClazz, "IStream::Read failed");
     }
     return (jint)-1;
 }
@@ -1386,7 +1394,6 @@ jint WDTCPIStreamWrapper::ReadBytes(jbyteArray buf, jint off, jint len) {
     ULONG    actual  = 0;
     jbyte*   local   = env->GetByteArrayElements(buf, &isCopy);
     HRESULT  res;
-    CHECK_NULL_RETURN(local, (jint)-1);
 
     switch (res = m_istream->Read((void *)(local + off), (ULONG)len, &actual)) {
         case S_FALSE:
@@ -1399,7 +1406,7 @@ jint WDTCPIStreamWrapper::ReadBytes(jbyteArray buf, jint off, jint len) {
 
         default:
             env->ReleaseByteArrayElements(buf, local, JNI_ABORT);
-            JNU_ThrowIOException(env, "IStream::Read failed");
+            env->ThrowNew(javaIOExceptionClazz, "IStream::Read failed");
     }
 
     return (jint)-1;

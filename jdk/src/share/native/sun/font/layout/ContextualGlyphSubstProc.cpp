@@ -46,7 +46,6 @@ UOBJECT_DEFINE_RTTI_IMPLEMENTATION(ContextualGlyphSubstitutionProcessor)
 ContextualGlyphSubstitutionProcessor::ContextualGlyphSubstitutionProcessor(const LEReferenceTo<MorphSubtableHeader> &morphSubtableHeader, LEErrorCode &success)
   : StateTableProcessor(morphSubtableHeader, success), entryTable(), contextualGlyphSubstitutionHeader(morphSubtableHeader, success)
 {
-  if (LE_FAILURE(success)) return;
   contextualGlyphSubstitutionHeader.orphan();
   substitutionTableOffset = SWAPW(contextualGlyphSubstitutionHeader->substitutionTableOffset);
 
@@ -67,20 +66,16 @@ void ContextualGlyphSubstitutionProcessor::beginStateTable()
     markGlyph = 0;
 }
 
-ByteOffset ContextualGlyphSubstitutionProcessor::processStateEntry(LEGlyphStorage &glyphStorage, le_int32 &currGlyph, EntryTableIndex index, LEErrorCode &success)
+ByteOffset ContextualGlyphSubstitutionProcessor::processStateEntry(LEGlyphStorage &glyphStorage, le_int32 &currGlyph, EntryTableIndex index)
 {
+  LEErrorCode success = LE_NO_ERROR;
   const ContextualGlyphSubstitutionStateEntry *entry = entryTable.getAlias(index, success);
-  if (LE_FAILURE(success)) return 0;
   ByteOffset newState = SWAPW(entry->newStateOffset);
   le_int16 flags = SWAPW(entry->flags);
   WordOffset markOffset = SWAPW(entry->markOffset);
   WordOffset currOffset = SWAPW(entry->currOffset);
 
   if (markOffset != 0 && LE_SUCCESS(success)) {
-    if (markGlyph < 0 || markGlyph >= glyphStorage.getGlyphCount()) {
-       success = LE_INDEX_OUT_OF_BOUNDS_ERROR;
-       return 0;
-    }
     LEGlyphID mGlyph = glyphStorage[markGlyph];
     TTGlyphID newGlyph = SWAPW(int16Table.getObject(markOffset + LE_GET_GLYPH(mGlyph), success)); // whew.
 
@@ -88,10 +83,6 @@ ByteOffset ContextualGlyphSubstitutionProcessor::processStateEntry(LEGlyphStorag
   }
 
   if (currOffset != 0) {
-    if (currGlyph < 0 || currGlyph >= glyphStorage.getGlyphCount()) {
-       success = LE_INDEX_OUT_OF_BOUNDS_ERROR;
-       return 0;
-    }
     LEGlyphID thisGlyph = glyphStorage[currGlyph];
     TTGlyphID newGlyph = SWAPW(int16Table.getObject(currOffset + LE_GET_GLYPH(thisGlyph), success)); // whew.
 

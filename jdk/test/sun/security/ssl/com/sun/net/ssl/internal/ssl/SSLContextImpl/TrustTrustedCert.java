@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2011, 2015, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2011, 2013, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -23,20 +23,17 @@
  * questions.
  */
 
-//
-// SunJSSE does not support dynamic system properties, no way to re-use
-// system properties in samevm/agentvm mode.
-//
-
 /*
  * @test
- * @bug 7113275 8164846
+ * @bug 7113275
  * @summary compatibility issue with MD2 trust anchor and old X509TrustManager
- * @run main/othervm TrustTrustedCert PKIX TLSv1.1 true
- * @run main/othervm TrustTrustedCert PKIX TLSv1.1 false
- * @run main/othervm TrustTrustedCert SunX509 TLSv1.1 false
- * @run main/othervm TrustTrustedCert PKIX TLSv1.2 false
- * @run main/othervm TrustTrustedCert SunX509 TLSv1.2 false
+ *
+ *     SunJSSE does not support dynamic system properties, no way to re-use
+ *     system properties in samevm/agentvm mode.
+ * @run main/othervm TrustTrustedCert PKIX TLSv1.1
+ * @run main/othervm TrustTrustedCert SunX509 TLSv1.1
+ * @run main/othervm TrustTrustedCert PKIX TLSv1.2
+ * @run main/othervm TrustTrustedCert SunX509 TLSv1.2
  */
 
 import java.net.*;
@@ -182,32 +179,23 @@ public class TrustTrustedCert {
             Thread.sleep(50);
         }
 
-        SSLSocket sslSocket = null;
-        try {
-            SSLContext context = generateSSLContext();
-            SSLSocketFactory sslsf = context.getSocketFactory();
+        SSLContext context = generateSSLContext();
+        SSLSocketFactory sslsf = context.getSocketFactory();
 
-            sslSocket = (SSLSocket)sslsf.createSocket("localhost", serverPort);
+        SSLSocket sslSocket =
+            (SSLSocket)sslsf.createSocket("localhost", serverPort);
 
-            // enable the specified TLS protocol
-            sslSocket.setEnabledProtocols(new String[] {tlsProtocol});
+        // enable the specified TLS protocol
+        sslSocket.setEnabledProtocols(new String[] {tlsProtocol});
 
-            InputStream sslIS = sslSocket.getInputStream();
-            OutputStream sslOS = sslSocket.getOutputStream();
-            sslOS.write('B');
-            sslOS.flush();
-            sslIS.read();
-        } catch (SSLHandshakeException e) {
-            // focus in on the CertPathValidatorException
-            Throwable t = e.getCause().getCause();
-            if ((t == null) || (expectFail &&
-                !t.toString().contains("MD5withRSA"))) {
-                throw new RuntimeException(
-                    "Expected to see MD5withRSA in exception output " + t);
-            }
-        } finally {
-            if (sslSocket != null) sslSocket.close();
-        }
+        InputStream sslIS = sslSocket.getInputStream();
+        OutputStream sslOS = sslSocket.getOutputStream();
+
+        sslOS.write('B');
+        sslOS.flush();
+        sslIS.read();
+
+        sslSocket.close();
     }
 
     /*
@@ -216,13 +204,10 @@ public class TrustTrustedCert {
      */
     private static String tmAlgorithm;        // trust manager
     private static String tlsProtocol;        // trust manager
-    // set this flag to test context of CertificateException
-    private static boolean expectFail;
 
     private static void parseArguments(String[] args) {
         tmAlgorithm = args[0];
         tlsProtocol = args[1];
-        expectFail = Boolean.parseBoolean(args[2]);
     }
 
     private static SSLContext generateSSLContext() throws Exception {
@@ -245,7 +230,7 @@ public class TrustTrustedCert {
 
         // generate the private key.
         PKCS8EncodedKeySpec priKeySpec = new PKCS8EncodedKeySpec(
-                            Base64.getMimeDecoder().decode(targetPrivateKey));
+                                Base64.getMimeDecoder().decode(targetPrivateKey));
         KeyFactory kf = KeyFactory.getInstance("RSA");
         RSAPrivateKey priKey =
                 (RSAPrivateKey)kf.generatePrivate(priKeySpec);
@@ -351,24 +336,13 @@ public class TrustTrustedCert {
     volatile Exception clientException = null;
 
     public static void main(String[] args) throws Exception {
+        if (debug)
+            System.setProperty("javax.net.debug", "all");
+
         /*
          * Get the customized arguments.
          */
         parseArguments(args);
-
-        /*
-         * MD5 is used in this test case, don't disable MD5 algorithm.
-         * if expectFail is set, we're testing exception message
-         */
-        if (!expectFail) {
-            Security.setProperty("jdk.certpath.disabledAlgorithms",
-                "MD2, RSA keySize < 1024");
-        }
-        Security.setProperty("jdk.tls.disabledAlgorithms",
-                "SSLv3, RC4, DH keySize < 768");
-
-        if (debug)
-            System.setProperty("javax.net.debug", "all");
 
         /*
          * Start the tests.
@@ -394,8 +368,7 @@ public class TrustTrustedCert {
                 startServer(false);
             }
         } catch (Exception e) {
-            System.out.println("Unexpected exception: ");
-            e.printStackTrace();
+            // swallow for now.  Show later
         }
 
         /*
@@ -459,11 +432,7 @@ public class TrustTrustedCert {
                          */
                         System.err.println("Server died...");
                         serverReady = true;
-                        if (!expectFail) {
-                            // only record if we weren't expecting.
-                            // client side will record exception
-                            serverException = e;
-                        }
+                        serverException = e;
                     }
                 }
             };
@@ -472,11 +441,7 @@ public class TrustTrustedCert {
             try {
                 doServerSide();
             } catch (Exception e) {
-                // only record if we weren't expecting.
-                // client side will record exception
-                if (!expectFail) {
-                    serverException = e;
-                }
+                serverException = e;
             } finally {
                 serverReady = true;
             }

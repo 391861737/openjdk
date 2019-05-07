@@ -715,7 +715,6 @@ final class Streams {
 
         @Override
         public T_SPLITR trySplit() {
-            @SuppressWarnings("unchecked")
             T_SPLITR ret = beforeSplit ? aSpliterator : (T_SPLITR) bSpliterator.trySplit();
             beforeSplit = false;
             return ret;

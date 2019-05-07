@@ -169,9 +169,10 @@ public final class ContentModel implements Serializable {
           case '|':
           case '&': {
             Element e = (Element) token;
-            if (valSet == null || valSet.length <= Element.getMaxIndex()) {
+            if (valSet == null) {
                 valSet = new boolean[Element.getMaxIndex() + 1];
                 val = new boolean[valSet.length];
+                // All Element instances are created before this ever executes
             }
             if (valSet[e.index]) {
                 return val[e.index];

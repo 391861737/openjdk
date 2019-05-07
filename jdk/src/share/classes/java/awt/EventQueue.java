@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 1996, 2014, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 1996, 2013, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -182,14 +182,7 @@ public class EventQueue {
 
     private FwDispatcher fwDispatcher;
 
-    private static volatile PlatformLogger eventLog;
-
-    private static final PlatformLogger getEventLog() {
-        if(eventLog == null) {
-            eventLog = PlatformLogger.getLogger("java.awt.event.EventQueue");
-        }
-        return eventLog;
-    }
+    private static final PlatformLogger eventLog = PlatformLogger.getLogger("java.awt.event.EventQueue");
 
     static {
         AWTAccessor.setEventQueueAccessor(
@@ -220,11 +213,6 @@ public class EventQueue {
                 public void setFwDispatcher(EventQueue eventQueue,
                                             FwDispatcher dispatcher) {
                     eventQueue.setFwDispatcher(dispatcher);
-                }
-
-                @Override
-                public long getMostRecentEventTime(EventQueue eventQueue) {
-                    return eventQueue.getMostRecentEventTimeImpl();
                 }
             });
     }
@@ -766,8 +754,8 @@ public class EventQueue {
                 dispatchThread.stopDispatching();
             }
         } else {
-            if (getEventLog().isLoggable(PlatformLogger.Level.FINE)) {
-                getEventLog().fine("Unable to dispatch event: " + event);
+            if (eventLog.isLoggable(PlatformLogger.Level.FINE)) {
+                eventLog.fine("Unable to dispatch event: " + event);
             }
         }
     }
@@ -864,8 +852,8 @@ public class EventQueue {
      * @since           1.2
      */
     public void push(EventQueue newEventQueue) {
-        if (getEventLog().isLoggable(PlatformLogger.Level.FINE)) {
-            getEventLog().fine("EventQueue.push(" + newEventQueue + ")");
+        if (eventLog.isLoggable(PlatformLogger.Level.FINE)) {
+            eventLog.fine("EventQueue.push(" + newEventQueue + ")");
         }
 
         pushPopLock.lock();
@@ -890,19 +878,17 @@ public class EventQueue {
                     // Use getNextEventPrivate() as it doesn't call flushPendingEvents()
                     newEventQueue.postEventPrivate(topQueue.getNextEventPrivate());
                 } catch (InterruptedException ie) {
-                    if (getEventLog().isLoggable(PlatformLogger.Level.FINE)) {
-                        getEventLog().fine("Interrupted push", ie);
+                    if (eventLog.isLoggable(PlatformLogger.Level.FINE)) {
+                        eventLog.fine("Interrupted push", ie);
                     }
                 }
             }
 
-            if (topQueue.dispatchThread != null) {
-                // Wake up EDT waiting in getNextEvent(), so it can
-                // pick up a new EventQueue. Post the waking event before
-                // topQueue.nextQueue is assigned, otherwise the event would
-                // go newEventQueue
-                topQueue.postEventPrivate(new InvocationEvent(topQueue, dummyRunnable));
-            }
+            // Wake up EDT waiting in getNextEvent(), so it can
+            // pick up a new EventQueue. Post the waking event before
+            // topQueue.nextQueue is assigned, otherwise the event would
+            // go newEventQueue
+            topQueue.postEventPrivate(new InvocationEvent(topQueue, dummyRunnable));
 
             newEventQueue.previousQueue = topQueue;
             topQueue.nextQueue = newEventQueue;
@@ -931,8 +917,8 @@ public class EventQueue {
      * @since           1.2
      */
     protected void pop() throws EmptyStackException {
-        if (getEventLog().isLoggable(PlatformLogger.Level.FINE)) {
-            getEventLog().fine("EventQueue.pop(" + this + ")");
+        if (eventLog.isLoggable(PlatformLogger.Level.FINE)) {
+            eventLog.fine("EventQueue.pop(" + this + ")");
         }
 
         pushPopLock.lock();
@@ -954,8 +940,8 @@ public class EventQueue {
                 try {
                     prevQueue.postEventPrivate(topQueue.getNextEventPrivate());
                 } catch (InterruptedException ie) {
-                    if (getEventLog().isLoggable(PlatformLogger.Level.FINE)) {
-                        getEventLog().fine("Interrupted pop", ie);
+                    if (eventLog.isLoggable(PlatformLogger.Level.FINE)) {
+                        eventLog.fine("Interrupted pop", ie);
                     }
                 }
             }
@@ -1076,11 +1062,11 @@ public class EventQueue {
                             t.setContextClassLoader(classLoader);
                             t.setPriority(Thread.NORM_PRIORITY + 1);
                             t.setDaemon(false);
-                            AWTAutoShutdown.getInstance().notifyThreadBusy(t);
                             return t;
                         }
                     }
                 );
+                AWTAutoShutdown.getInstance().notifyThreadBusy(dispatchThread);
                 dispatchThread.start();
             }
         } finally {
@@ -1107,13 +1093,6 @@ public class EventQueue {
                 dispatchThread = null;
             }
             AWTAutoShutdown.getInstance().notifyThreadFree(edt);
-            /*
-             * Event was posted after EDT events pumping had stopped, so start
-             * another EDT to handle this event
-             */
-            if (peekEvent() != null) {
-                initDispatchThread();
-            }
         } finally {
             pushPopLock.unlock();
         }

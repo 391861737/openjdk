@@ -33,7 +33,6 @@ import java.security.cert.CertificateExpiredException;
 import java.security.cert.CertificateNotYetValidException;
 import java.util.Date;
 import java.util.Enumeration;
-import java.util.Objects;
 
 import sun.security.util.*;
 
@@ -207,17 +206,16 @@ implements CertAttrSet<String> {
      */
     public void valid(Date now)
     throws CertificateNotYetValidException, CertificateExpiredException {
-        Objects.requireNonNull(now);
         /*
          * we use the internal Dates rather than the passed in Date
          * because someone could override the Date methods after()
          * and before() to do something entirely different.
          */
-        if (notBefore != null && notBefore.after(now)) {
+        if (notBefore.after(now)) {
             throw new CertificateNotYetValidException("NotBefore: " +
                                                       notBefore.toString());
         }
-        if (notAfter != null && notAfter.before(now)) {
+        if (notAfter.before(now)) {
             throw new CertificateExpiredException("NotAfter: " +
                                                   notAfter.toString());
         }
