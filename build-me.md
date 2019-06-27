@@ -6,7 +6,7 @@
 * 下载 <http://www.cygwin.com/setup-x86_64.exe> 并安装  
 * 然后通过`cygwin`包管理器添加如下包  
 
-> Binary-Name&nbsp;|Category&nbsp;|Package&nbsp;|Description
+Binary-Name&nbsp;|Category&nbsp;|Package&nbsp;|Description
 :---|:---|:---|:---
 ar.exe|Devel|binutils|The GNU assembler, linker and binary utilities
 make.exe|Devel|make|The GNU version of the 'make' utility built for CYGWIN
