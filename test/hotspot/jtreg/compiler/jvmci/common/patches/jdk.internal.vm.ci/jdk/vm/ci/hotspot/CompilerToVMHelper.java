@@ -101,11 +101,6 @@ public class CompilerToVMHelper {
         }
     }
 
-    public static Object resolveConstantInPool(ConstantPool constantPool, int cpi) {
-        DirectHotSpotObjectConstantImpl obj = (DirectHotSpotObjectConstantImpl) CTVM.resolveConstantInPool((HotSpotConstantPool) constantPool, cpi);
-        return obj.object;
-    }
-
     public static Object resolvePossiblyCachedConstantInPool(ConstantPool constantPool, int cpi) {
         DirectHotSpotObjectConstantImpl obj = (DirectHotSpotObjectConstantImpl) CTVM.resolvePossiblyCachedConstantInPool((HotSpotConstantPool) constantPool, cpi);
         return obj.object;
@@ -301,7 +296,7 @@ public class CompilerToVMHelper {
     }
 
     public static void writeDebugOutput(byte[] bytes, int offset, int length) {
-        CTVM.writeDebugOutput(bytes, offset, length);
+        CTVM.writeDebugOutput(bytes, offset, length, true, true);
     }
 
     public static void flushDebugOutput() {

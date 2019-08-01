@@ -48,6 +48,7 @@
 #include "memory/allocation.inline.hpp"
 #include "memory/oopFactory.hpp"
 #include "memory/resourceArea.hpp"
+#include "memory/universe.hpp"
 #include "oops/access.inline.hpp"
 #include "oops/objArrayOop.inline.hpp"
 #include "oops/objArrayKlass.hpp"
@@ -291,6 +292,12 @@ const char* Runtime1::name_for(StubID id) {
 const char* Runtime1::name_for_address(address entry) {
   for (int id = 0; id < number_of_ids; id++) {
     if (entry == entry_for((StubID)id)) return name_for((StubID)id);
+  }
+
+  BarrierSetC1* bsc1 = BarrierSet::barrier_set()->barrier_set_c1();
+  const char* name = bsc1->rtcall_name_for_address(entry);
+  if (name != NULL) {
+    return name;
   }
 
 #define FUNCTION_CASE(a, f) \
@@ -574,7 +581,7 @@ JRT_ENTRY_NO_ASYNC(static address, exception_handler_for_pc_helper(JavaThread* t
       tempst.print("compiled method <%s>\n"
                    " at PC" INTPTR_FORMAT " for thread " INTPTR_FORMAT,
                    nm->method()->print_value_string(), p2i(pc), p2i(thread));
-      Exceptions::log_exception(exception, tempst);
+      Exceptions::log_exception(exception, tempst.as_string());
     }
     // for AbortVMOnException flag
     Exceptions::debug_check_abort(exception);

@@ -201,7 +201,7 @@ void os::init_system_properties_values() {
     char *home_path;
     char *dll_path;
     char *pslash;
-    char *bin = "\\bin";
+    const char *bin = "\\bin";
     char home_dir[MAX_PATH + 1];
     char *alt_home_dir = ::getenv("_ALT_JAVA_HOME_DIR");
 
@@ -1367,12 +1367,18 @@ static int _print_module(const char* fname, address base_address,
 void * os::dll_load(const char *name, char *ebuf, int ebuflen) {
   void * result = LoadLibrary(name);
   if (result != NULL) {
+    Events::log(NULL, "Loaded shared library %s", name);
     // Recalculate pdb search path if a DLL was loaded successfully.
     SymbolEngine::recalc_search_path();
     return result;
   }
-
   DWORD errcode = GetLastError();
+  // Read system error message into ebuf
+  // It may or may not be overwritten below (in the for loop and just above)
+  lasterror(ebuf, (size_t) ebuflen);
+  ebuf[ebuflen - 1] = '\0';
+  Events::log(NULL, "Loading shared library %s failed, error code %lu", name, errcode);
+
   if (errcode == ERROR_MOD_NOT_FOUND) {
     strncpy(ebuf, "Can't find dependent libraries", ebuflen - 1);
     ebuf[ebuflen - 1] = '\0';
@@ -1384,11 +1390,6 @@ void * os::dll_load(const char *name, char *ebuf, int ebuflen) {
   // for an architecture other than Hotspot is running in
   // - then print to buffer "DLL was built for a different architecture"
   // else call os::lasterror to obtain system error message
-
-  // Read system error message into ebuf
-  // It may or may not be overwritten below (in the for loop and just above)
-  lasterror(ebuf, (size_t) ebuflen);
-  ebuf[ebuflen - 1] = '\0';
   int fd = ::open(name, O_RDONLY | O_BINARY, 0);
   if (fd < 0) {
     return NULL;
@@ -2185,7 +2186,7 @@ extern "C" void events();
 
 #define def_excpt(val) { #val, (val) }
 
-static const struct { char* name; uint number; } exceptlabels[] = {
+static const struct { const char* name; uint number; } exceptlabels[] = {
     def_excpt(EXCEPTION_ACCESS_VIOLATION),
     def_excpt(EXCEPTION_DATATYPE_MISALIGNMENT),
     def_excpt(EXCEPTION_BREAKPOINT),
@@ -2580,10 +2581,18 @@ LONG WINAPI topLevelExceptionFilter(struct _EXCEPTION_POINTERS* exceptionInfo) {
         CodeBlob* cb = CodeCache::find_blob_unsafe(pc);
         nm = (cb != NULL) ? cb->as_compiled_method_or_null() : NULL;
       }
-      if ((thread->thread_state() == _thread_in_vm &&
+
+      bool is_unsafe_arraycopy = (thread->thread_state() == _thread_in_native || in_java) && UnsafeCopyMemory::contains_pc(pc);
+      if (((thread->thread_state() == _thread_in_vm ||
+           thread->thread_state() == _thread_in_native ||
+           is_unsafe_arraycopy) &&
           thread->doing_unsafe_access()) ||
           (nm != NULL && nm->has_unsafe_access())) {
-        return Handle_Exception(exceptionInfo, SharedRuntime::handle_unsafe_access(thread, (address)Assembler::locate_next_instruction(pc)));
+        address next_pc =  Assembler::locate_next_instruction(pc);
+        if (is_unsafe_arraycopy) {
+          next_pc = UnsafeCopyMemory::page_error_continue_pc(pc);
+        }
+        return Handle_Exception(exceptionInfo, SharedRuntime::handle_unsafe_access(thread, next_pc));
       }
     }
 
@@ -4072,7 +4081,7 @@ void os::init(void) {
   init_page_sizes((size_t) win32::vm_page_size());
 
   // This may be overridden later when argument processing is done.
-  FLAG_SET_ERGO(bool, UseLargePagesIndividualAllocation, false);
+  FLAG_SET_ERGO(UseLargePagesIndividualAllocation, false);
 
   // Initialize main_process and main_thread
   main_process = GetCurrentProcess();  // Remember main_process is a pseudo handle
@@ -4356,6 +4365,88 @@ int os::stat(const char *path, struct stat *sbuf) {
   }
   os::free(pathbuf);
   return ret;
+}
+
+static HANDLE create_read_only_file_handle(const char* file) {
+  if (file == NULL) {
+    return INVALID_HANDLE_VALUE;
+  }
+
+  char* nativepath = (char*)os::strdup(file, mtInternal);
+  if (nativepath == NULL) {
+    errno = ENOMEM;
+    return INVALID_HANDLE_VALUE;
+  }
+  os::native_path(nativepath);
+
+  size_t len = strlen(nativepath);
+  HANDLE handle = INVALID_HANDLE_VALUE;
+
+  if (len < MAX_PATH) {
+    handle = ::CreateFile(nativepath, 0, FILE_SHARE_READ,
+                          NULL, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
+  } else {
+    errno_t err = ERROR_SUCCESS;
+    wchar_t* wfile = create_unc_path(nativepath, err);
+    if (err != ERROR_SUCCESS) {
+      if (wfile != NULL) {
+        destroy_unc_path(wfile);
+      }
+      os::free(nativepath);
+      return INVALID_HANDLE_VALUE;
+    }
+    handle = ::CreateFileW(wfile, 0, FILE_SHARE_READ,
+                           NULL, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
+    destroy_unc_path(wfile);
+  }
+
+  os::free(nativepath);
+  return handle;
+}
+
+bool os::same_files(const char* file1, const char* file2) {
+
+  if (file1 == NULL && file2 == NULL) {
+    return true;
+  }
+
+  if (file1 == NULL || file2 == NULL) {
+    return false;
+  }
+
+  if (strcmp(file1, file2) == 0) {
+    return true;
+  }
+
+  HANDLE handle1 = create_read_only_file_handle(file1);
+  HANDLE handle2 = create_read_only_file_handle(file2);
+  bool result = false;
+
+  // if we could open both paths...
+  if (handle1 != INVALID_HANDLE_VALUE && handle2 != INVALID_HANDLE_VALUE) {
+    BY_HANDLE_FILE_INFORMATION fileInfo1;
+    BY_HANDLE_FILE_INFORMATION fileInfo2;
+    if (::GetFileInformationByHandle(handle1, &fileInfo1) &&
+      ::GetFileInformationByHandle(handle2, &fileInfo2)) {
+      // the paths are the same if they refer to the same file (fileindex) on the same volume (volume serial number)
+      if (fileInfo1.dwVolumeSerialNumber == fileInfo2.dwVolumeSerialNumber &&
+        fileInfo1.nFileIndexHigh == fileInfo2.nFileIndexHigh &&
+        fileInfo1.nFileIndexLow == fileInfo2.nFileIndexLow) {
+        result = true;
+      }
+    }
+  }
+
+  //free the handles
+  if (handle1 != INVALID_HANDLE_VALUE) {
+    ::CloseHandle(handle1);
+  }
+
+  if (handle2 != INVALID_HANDLE_VALUE) {
+    ::CloseHandle(handle2);
+  }
+
+  return result;
 }
 
 
@@ -4910,6 +5001,9 @@ char* os::pd_map_memory(int fd, const char* file_name, size_t file_offset,
       return NULL;
     }
 
+    // Record virtual memory allocation
+    MemTracker::record_virtual_memory_reserve_and_commit((address)addr, bytes, CALLER_PC);
+
     DWORD bytes_read;
     OVERLAPPED overlapped;
     overlapped.Offset = (DWORD)file_offset;
@@ -5335,7 +5429,7 @@ int os::fork_and_exec(char* cmd, bool use_vfork_if_available) {
   DWORD exit_code;
 
   char * cmd_string;
-  char * cmd_prefix = "cmd /C ";
+  const char * cmd_prefix = "cmd /C ";
   size_t len = strlen(cmd) + strlen(cmd_prefix) + 1;
   cmd_string = NEW_C_HEAP_ARRAY_RETURN_NULL(char, len, mtInternal);
   if (cmd_string == NULL) {
@@ -5674,8 +5768,8 @@ void TestReserveMemorySpecial_test() {
 */
 int os::get_signal_number(const char* name) {
   static const struct {
-    char* name;
-    int   number;
+    const char* name;
+    int         number;
   } siglabels [] =
     // derived from version 6.0 VC98/include/signal.h
   {"ABRT",      SIGABRT,        // abnormal termination triggered by abort cl

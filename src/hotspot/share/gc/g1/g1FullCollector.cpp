@@ -39,6 +39,7 @@
 #include "gc/shared/gcTraceTime.inline.hpp"
 #include "gc/shared/preservedMarks.hpp"
 #include "gc/shared/referenceProcessor.hpp"
+#include "gc/shared/verifyOption.hpp"
 #include "gc/shared/weakProcessor.inline.hpp"
 #include "gc/shared/workerPolicy.hpp"
 #include "logging/log.hpp"
@@ -182,7 +183,6 @@ void G1FullCollector::complete_collection() {
   update_derived_pointers();
 
   BiasedLocking::restore_marks();
-  JvmtiExport::gc_epilogue();
 
   _heap->prepare_heap_for_mutators();
 

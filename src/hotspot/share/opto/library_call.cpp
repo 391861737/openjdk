@@ -227,6 +227,7 @@ class LibraryCallKit : public GraphKit {
   bool runtime_math(const TypeFunc* call_type, address funcAddr, const char* funcName);
   bool inline_math_native(vmIntrinsics::ID id);
   bool inline_math(vmIntrinsics::ID id);
+  bool inline_double_math(vmIntrinsics::ID id);
   template <typename OverflowOp>
   bool inline_math_overflow(Node* arg1, Node* arg2);
   void inline_math_mathExact(Node* math, Node* test);
@@ -533,6 +534,9 @@ bool LibraryCallKit::try_to_inline(int predicate) {
   case vmIntrinsics::_dcos:
   case vmIntrinsics::_dtan:
   case vmIntrinsics::_dabs:
+  case vmIntrinsics::_fabs:
+  case vmIntrinsics::_iabs:
+  case vmIntrinsics::_labs:
   case vmIntrinsics::_datan2:
   case vmIntrinsics::_dsqrt:
   case vmIntrinsics::_dexp:
@@ -1793,12 +1797,29 @@ Node* LibraryCallKit::round_double_node(Node* n) {
 // public static double Math.sqrt(double)
 // public static double Math.log(double)
 // public static double Math.log10(double)
-bool LibraryCallKit::inline_math(vmIntrinsics::ID id) {
+bool LibraryCallKit::inline_double_math(vmIntrinsics::ID id) {
   Node* arg = round_double_node(argument(0));
   Node* n = NULL;
   switch (id) {
   case vmIntrinsics::_dabs:   n = new AbsDNode(                arg);  break;
   case vmIntrinsics::_dsqrt:  n = new SqrtDNode(C, control(),  arg);  break;
+  default:  fatal_unexpected_iid(id);  break;
+  }
+  set_result(_gvn.transform(n));
+  return true;
+}
+
+//------------------------------inline_math-----------------------------------
+// public static float Math.abs(float)
+// public static int Math.abs(int)
+// public static long Math.abs(long)
+bool LibraryCallKit::inline_math(vmIntrinsics::ID id) {
+  Node* arg = argument(0);
+  Node* n = NULL;
+  switch (id) {
+  case vmIntrinsics::_fabs:   n = new AbsFNode(                arg);  break;
+  case vmIntrinsics::_iabs:   n = new AbsINode(                arg);  break;
+  case vmIntrinsics::_labs:   n = new AbsLNode(                arg);  break;
   default:  fatal_unexpected_iid(id);  break;
   }
   set_result(_gvn.transform(n));
@@ -1855,8 +1876,11 @@ bool LibraryCallKit::inline_math_native(vmIntrinsics::ID id) {
       runtime_math(OptoRuntime::Math_D_D_Type(), FN_PTR(SharedRuntime::dlog10), "LOG10");
 
     // These intrinsics are supported on all hardware
-  case vmIntrinsics::_dsqrt:  return Matcher::match_rule_supported(Op_SqrtD) ? inline_math(id) : false;
-  case vmIntrinsics::_dabs:   return Matcher::has_match_rule(Op_AbsD)   ? inline_math(id) : false;
+  case vmIntrinsics::_dsqrt:  return Matcher::match_rule_supported(Op_SqrtD) ? inline_double_math(id) : false;
+  case vmIntrinsics::_dabs:   return Matcher::has_match_rule(Op_AbsD)   ? inline_double_math(id) : false;
+  case vmIntrinsics::_fabs:   return Matcher::match_rule_supported(Op_AbsF)   ? inline_math(id) : false;
+  case vmIntrinsics::_iabs:   return Matcher::match_rule_supported(Op_AbsI)   ? inline_math(id) : false;
+  case vmIntrinsics::_labs:   return Matcher::match_rule_supported(Op_AbsL)   ? inline_math(id) : false;
 
   case vmIntrinsics::_dexp:
     return StubRoutines::dexp() != NULL ?
@@ -2415,7 +2439,10 @@ bool LibraryCallKit::inline_unsafe_access(bool is_store, const BasicType type, c
 
   val = is_store ? argument(4) : NULL;
 
-  const TypePtr *adr_type = _gvn.type(adr)->isa_ptr();
+  const TypePtr* adr_type = _gvn.type(adr)->isa_ptr();
+  if (adr_type == TypePtr::NULL_PTR) {
+    return false; // off-heap access with zero address
+  }
 
   // Try to categorize the address.
   Compile::AliasType* alias_type = C->alias_type(adr_type);
@@ -4213,6 +4240,14 @@ bool LibraryCallKit::inline_unsafe_copyMemory() {
   // Do not let writes of the copy source or destination float below the copy.
   insert_mem_bar(Op_MemBarCPUOrder);
 
+  Node* thread = _gvn.transform(new ThreadLocalNode());
+  Node* doing_unsafe_access_addr = basic_plus_adr(top(), thread, in_bytes(JavaThread::doing_unsafe_access_offset()));
+  BasicType doing_unsafe_access_bt = T_BYTE;
+  assert((sizeof(bool) * CHAR_BIT) == 8, "not implemented");
+
+  // update volatile field
+  store_to_memory(control(), doing_unsafe_access_addr, intcon(1), doing_unsafe_access_bt, Compile::AliasIdxRaw, MemNode::unordered);
+
   // Call it.  Note that the length argument is not scaled.
   make_runtime_call(RC_LEAF|RC_NO_FP,
                     OptoRuntime::fast_arraycopy_Type(),
@@ -4220,6 +4255,8 @@ bool LibraryCallKit::inline_unsafe_copyMemory() {
                     "unsafe_arraycopy",
                     TypeRawPtr::BOTTOM,
                     src, dst, size XTOP);
+
+  store_to_memory(control(), doing_unsafe_access_addr, intcon(0), doing_unsafe_access_bt, Compile::AliasIdxRaw, MemNode::unordered);
 
   // Do not let reads of the copy destination float above the copy.
   insert_mem_bar(Op_MemBarCPUOrder);
@@ -4474,8 +4511,8 @@ JVMState* LibraryCallKit::arraycopy_restore_alloc_state(AllocateArrayNode* alloc
     ciMethod* trap_method = alloc->jvms()->method();
     int trap_bci = alloc->jvms()->bci();
 
-    if (!C->too_many_traps(trap_method, trap_bci, Deoptimization::Reason_intrinsic) &
-          !C->too_many_traps(trap_method, trap_bci, Deoptimization::Reason_null_check)) {
+    if (!C->too_many_traps(trap_method, trap_bci, Deoptimization::Reason_intrinsic) &&
+        !C->too_many_traps(trap_method, trap_bci, Deoptimization::Reason_null_check)) {
       // Make sure there's no store between the allocation and the
       // arraycopy otherwise visible side effects could be rexecuted
       // in case of deoptimization and cause incorrect execution.
@@ -6668,9 +6705,6 @@ bool LibraryCallKit::inline_fp_min_max(vmIntrinsics::ID id) {
   default:
     fatal_unexpected_iid(id);
     break;
-  }
-  if (a->is_Con() || b->is_Con()) {
-    return false;
   }
   switch (id) {
   case vmIntrinsics::_maxF:  n = new MaxFNode(a, b);  break;

@@ -25,7 +25,7 @@
  * @summary Test selective barrier enabling works, by aggressively compiling HelloWorld with combinations
  *          of barrier flags
  * @key gc
- * @requires vm.gc.Shenandoah
+ * @requires vm.gc.Shenandoah & !vm.graal.enabled
  * @library /test/lib
  * @run main/othervm TestSelectiveBarrierFlags -Xint
  * @run main/othervm TestSelectiveBarrierFlags -Xbatch -XX:CompileThreshold=100 -XX:TieredStopAtLevel=1
@@ -65,7 +65,7 @@ public class TestSelectiveBarrierFlags {
             conf.add("-XX:+UnlockDiagnosticVMOptions");
             conf.add("-XX:+UnlockExperimentalVMOptions");
             conf.add("-XX:+UseShenandoahGC");
-            conf.add("-XX:ShenandoahGCHeuristics=passive");
+            conf.add("-XX:ShenandoahGCMode=passive");
 
             StringBuilder sb = new StringBuilder();
             for (String[] l : opts) {

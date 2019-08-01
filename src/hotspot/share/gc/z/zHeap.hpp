@@ -66,6 +66,7 @@ private:
   ZServiceability     _serviceability;
 
   size_t heap_min_size() const;
+  size_t heap_initial_size() const;
   size_t heap_max_size() const;
   size_t heap_max_reserve_size() const;
 
@@ -88,7 +89,7 @@ public:
   // Heap metrics
   size_t min_capacity() const;
   size_t max_capacity() const;
-  size_t current_max_capacity() const;
+  size_t soft_max_capacity() const;
   size_t capacity() const;
   size_t max_reserve() const;
   size_t used_high() const;
@@ -129,6 +130,9 @@ public:
   void undo_alloc_page(ZPage* page);
   void free_page(ZPage* page, bool reclaimed);
 
+  // Uncommit memory
+  uint64_t uncommit(uint64_t delay);
+
   // Object allocation
   uintptr_t alloc_tlab(size_t size);
   uintptr_t alloc_object(size_t size);
@@ -157,7 +161,7 @@ public:
   void relocate();
 
   // Iteration
-  void object_iterate(ObjectClosure* cl, bool visit_referents);
+  void object_iterate(ObjectClosure* cl, bool visit_weaks);
 
   // Serviceability
   void serviceability_initialize();

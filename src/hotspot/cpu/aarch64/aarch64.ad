@@ -957,6 +957,146 @@ reg_class v3_reg(
     V3, V3_H
 );
 
+// Class for 128 bit register v4
+reg_class v4_reg(
+    V4, V4_H
+);
+
+// Class for 128 bit register v5
+reg_class v5_reg(
+    V5, V5_H
+);
+
+// Class for 128 bit register v6
+reg_class v6_reg(
+    V6, V6_H
+);
+
+// Class for 128 bit register v7
+reg_class v7_reg(
+    V7, V7_H
+);
+
+// Class for 128 bit register v8
+reg_class v8_reg(
+    V8, V8_H
+);
+
+// Class for 128 bit register v9
+reg_class v9_reg(
+    V9, V9_H
+);
+
+// Class for 128 bit register v10
+reg_class v10_reg(
+    V10, V10_H
+);
+
+// Class for 128 bit register v11
+reg_class v11_reg(
+    V11, V11_H
+);
+
+// Class for 128 bit register v12
+reg_class v12_reg(
+    V12, V12_H
+);
+
+// Class for 128 bit register v13
+reg_class v13_reg(
+    V13, V13_H
+);
+
+// Class for 128 bit register v14
+reg_class v14_reg(
+    V14, V14_H
+);
+
+// Class for 128 bit register v15
+reg_class v15_reg(
+    V15, V15_H
+);
+
+// Class for 128 bit register v16
+reg_class v16_reg(
+    V16, V16_H
+);
+
+// Class for 128 bit register v17
+reg_class v17_reg(
+    V17, V17_H
+);
+
+// Class for 128 bit register v18
+reg_class v18_reg(
+    V18, V18_H
+);
+
+// Class for 128 bit register v19
+reg_class v19_reg(
+    V19, V19_H
+);
+
+// Class for 128 bit register v20
+reg_class v20_reg(
+    V20, V20_H
+);
+
+// Class for 128 bit register v21
+reg_class v21_reg(
+    V21, V21_H
+);
+
+// Class for 128 bit register v22
+reg_class v22_reg(
+    V22, V22_H
+);
+
+// Class for 128 bit register v23
+reg_class v23_reg(
+    V23, V23_H
+);
+
+// Class for 128 bit register v24
+reg_class v24_reg(
+    V24, V24_H
+);
+
+// Class for 128 bit register v25
+reg_class v25_reg(
+    V25, V25_H
+);
+
+// Class for 128 bit register v26
+reg_class v26_reg(
+    V26, V26_H
+);
+
+// Class for 128 bit register v27
+reg_class v27_reg(
+    V27, V27_H
+);
+
+// Class for 128 bit register v28
+reg_class v28_reg(
+    V28, V28_H
+);
+
+// Class for 128 bit register v29
+reg_class v29_reg(
+    V29, V29_H
+);
+
+// Class for 128 bit register v30
+reg_class v30_reg(
+    V30, V30_H
+);
+
+// Class for 128 bit register v31
+reg_class v31_reg(
+    V31, V31_H
+);
+
 // Singleton class for condition codes
 reg_class int_flags(RFLAGS);
 
@@ -1502,7 +1642,7 @@ int MachCallRuntimeNode::ret_addr_offset() {
   //   adr(rscratch2, retaddr)
   //   lea(rscratch1, RuntimeAddress(addr)
   //   stp(zr, rscratch2, Address(__ pre(sp, -2 * wordSize)))
-  //   blrt rscratch1
+  //   blr(rscratch1)
   CodeBlob *cb = CodeCache::find_blob(_entry_point);
   if (cb) {
     return MacroAssembler::far_branch_size();
@@ -1621,15 +1761,22 @@ void MachPrologNode::emit(CodeBuffer &cbuf, PhaseRegAlloc *ra_) const {
   // branch if we need to invalidate the method later
   __ nop();
 
+  if (C->clinit_barrier_on_entry()) {
+    assert(!C->method()->holder()->is_not_initialized(), "initialization should have been started");
+
+    Label L_skip_barrier;
+
+    __ mov_metadata(rscratch2, C->method()->holder()->constant_encoding());
+    __ clinit_barrier(rscratch2, rscratch1, &L_skip_barrier);
+    __ far_jump(RuntimeAddress(SharedRuntime::get_handle_wrong_method_stub()));
+    __ bind(L_skip_barrier);
+  }
+  
   int bangsize = C->bang_size_in_bytes();
   if (C->need_stack_bang(bangsize) && UseStackBanging)
     __ generate_stack_overflow_check(bangsize);
 
   __ build_frame(framesize);
-
-  if (NotifySimulator) {
-    __ notify(Assembler::method_entry);
-  }
 
   if (VerifyStackAtCalls) {
     Unimplemented();
@@ -1690,10 +1837,6 @@ void MachEpilogNode::emit(CodeBuffer &cbuf, PhaseRegAlloc *ra_) const {
   int framesize = C->frame_slots() << LogBytesPerInt;
 
   __ remove_frame(framesize);
-
-  if (NotifySimulator) {
-    __ notify(Assembler::method_reentry);
-  }
 
   if (StackReservedPages > 0 && C->has_reserved_stack_access()) {
     __ reserved_stack_check();
@@ -1962,7 +2105,7 @@ void MachUEPNode::format(PhaseRegAlloc* ra_, outputStream* st) const
   st->print_cr("# MachUEPNode");
   if (UseCompressedClassPointers) {
     st->print_cr("\tldrw rscratch1, j_rarg0 + oopDesc::klass_offset_in_bytes()]\t# compressed klass");
-    if (Universe::narrow_klass_shift() != 0) {
+    if (CompressedKlassPointers::shift() != 0) {
       st->print_cr("\tdecode_klass_not_null rscratch1, rscratch1");
     }
   } else {
@@ -2183,7 +2326,7 @@ const bool Matcher::need_masked_shift_count = false;
 // Implicit_null_check optimization moves the Decode along with the
 // memory operation back up before the NullCheck.
 bool Matcher::narrow_oop_use_complex_address() {
-  return Universe::narrow_oop_shift() == 0;
+  return CompressedOops::shift() == 0;
 }
 
 bool Matcher::narrow_klass_use_complex_address() {
@@ -2194,12 +2337,12 @@ bool Matcher::narrow_klass_use_complex_address() {
 
 bool Matcher::const_oop_prefer_decode() {
   // Prefer ConN+DecodeN over ConP in simple compressed oops mode.
-  return Universe::narrow_oop_base() == NULL;
+  return CompressedOops::base() == NULL;
 }
 
 bool Matcher::const_klass_prefer_decode() {
   // Prefer ConNKlass+DecodeNKlass over ConP in simple compressed klass mode.
-  return Universe::narrow_klass_base() == NULL;
+  return CompressedKlassPointers::base() == NULL;
 }
 
 // Is it better to copy float constants, or load them directly from
@@ -2356,47 +2499,6 @@ bool Matcher::clone_address_expressions(AddPNode* m, Matcher::MStack& mstack, Ve
 void Compile::reshape_address(AddPNode* addp) {
 }
 
-// helper for encoding java_to_runtime calls on sim
-//
-// this is needed to compute the extra arguments required when
-// planting a call to the simulator blrt instruction. the TypeFunc
-// can be queried to identify the counts for integral, and floating
-// arguments and the return type
-
-static void getCallInfo(const TypeFunc *tf, int &gpcnt, int &fpcnt, int &rtype)
-{
-  int gps = 0;
-  int fps = 0;
-  const TypeTuple *domain = tf->domain();
-  int max = domain->cnt();
-  for (int i = TypeFunc::Parms; i < max; i++) {
-    const Type *t = domain->field_at(i);
-    switch(t->basic_type()) {
-    case T_FLOAT:
-    case T_DOUBLE:
-      fps++;
-    default:
-      gps++;
-    }
-  }
-  gpcnt = gps;
-  fpcnt = fps;
-  BasicType rt = tf->return_type();
-  switch (rt) {
-  case T_VOID:
-    rtype = MacroAssembler::ret_type_void;
-    break;
-  default:
-    rtype = MacroAssembler::ret_type_integral;
-    break;
-  case T_FLOAT:
-    rtype = MacroAssembler::ret_type_float;
-    break;
-  case T_DOUBLE:
-    rtype = MacroAssembler::ret_type_double;
-    break;
-  }
-}
 
 #define MOV_VOLATILE(REG, BASE, INDEX, SCALE, DISP, SCRATCH, INSN)      \
   MacroAssembler _masm(&cbuf);                                          \
@@ -3346,7 +3448,7 @@ encode %{
 
     // some calls to generated routines (arraycopy code) are scheduled
     // by C2 as runtime calls. if so we can call them using a br (they
-    // will be in a reachable segment) otherwise we have to use a blrt
+    // will be in a reachable segment) otherwise we have to use a blr
     // which loads the absolute address into a register.
     address entry = (address)$meth$$method;
     CodeBlob *cb = CodeCache::find_blob(entry);
@@ -3357,16 +3459,12 @@ encode %{
         return;
       }
     } else {
-      int gpcnt;
-      int fpcnt;
-      int rtype;
-      getCallInfo(tf(), gpcnt, fpcnt, rtype);
       Label retaddr;
       __ adr(rscratch2, retaddr);
       __ lea(rscratch1, RuntimeAddress(entry));
       // Leave a breadcrumb for JavaFrameAnchor::capture_last_Java_pc()
       __ stp(zr, rscratch2, Address(__ pre(sp, -2 * wordSize)));
-      __ blrt(rscratch1, gpcnt, fpcnt, rtype);
+      __ blr(rscratch1);
       __ bind(retaddr);
       __ add(sp, sp, 2 * wordSize);
     }
@@ -4774,6 +4872,258 @@ operand vRegD_V3()
   interface(REG_INTER);
 %}
 
+operand vRegD_V4()
+%{
+  constraint(ALLOC_IN_RC(v4_reg));
+  match(RegD);
+  op_cost(0);
+  format %{ %}
+  interface(REG_INTER);
+%}
+
+operand vRegD_V5()
+%{
+  constraint(ALLOC_IN_RC(v5_reg));
+  match(RegD);
+  op_cost(0);
+  format %{ %}
+  interface(REG_INTER);
+%}
+
+operand vRegD_V6()
+%{
+  constraint(ALLOC_IN_RC(v6_reg));
+  match(RegD);
+  op_cost(0);
+  format %{ %}
+  interface(REG_INTER);
+%}
+
+operand vRegD_V7()
+%{
+  constraint(ALLOC_IN_RC(v7_reg));
+  match(RegD);
+  op_cost(0);
+  format %{ %}
+  interface(REG_INTER);
+%}
+
+operand vRegD_V8()
+%{
+  constraint(ALLOC_IN_RC(v8_reg));
+  match(RegD);
+  op_cost(0);
+  format %{ %}
+  interface(REG_INTER);
+%}
+
+operand vRegD_V9()
+%{
+  constraint(ALLOC_IN_RC(v9_reg));
+  match(RegD);
+  op_cost(0);
+  format %{ %}
+  interface(REG_INTER);
+%}
+
+operand vRegD_V10()
+%{
+  constraint(ALLOC_IN_RC(v10_reg));
+  match(RegD);
+  op_cost(0);
+  format %{ %}
+  interface(REG_INTER);
+%}
+
+operand vRegD_V11()
+%{
+  constraint(ALLOC_IN_RC(v11_reg));
+  match(RegD);
+  op_cost(0);
+  format %{ %}
+  interface(REG_INTER);
+%}
+
+operand vRegD_V12()
+%{
+  constraint(ALLOC_IN_RC(v12_reg));
+  match(RegD);
+  op_cost(0);
+  format %{ %}
+  interface(REG_INTER);
+%}
+
+operand vRegD_V13()
+%{
+  constraint(ALLOC_IN_RC(v13_reg));
+  match(RegD);
+  op_cost(0);
+  format %{ %}
+  interface(REG_INTER);
+%}
+
+operand vRegD_V14()
+%{
+  constraint(ALLOC_IN_RC(v14_reg));
+  match(RegD);
+  op_cost(0);
+  format %{ %}
+  interface(REG_INTER);
+%}
+
+operand vRegD_V15()
+%{
+  constraint(ALLOC_IN_RC(v15_reg));
+  match(RegD);
+  op_cost(0);
+  format %{ %}
+  interface(REG_INTER);
+%}
+
+operand vRegD_V16()
+%{
+  constraint(ALLOC_IN_RC(v16_reg));
+  match(RegD);
+  op_cost(0);
+  format %{ %}
+  interface(REG_INTER);
+%}
+
+operand vRegD_V17()
+%{
+  constraint(ALLOC_IN_RC(v17_reg));
+  match(RegD);
+  op_cost(0);
+  format %{ %}
+  interface(REG_INTER);
+%}
+
+operand vRegD_V18()
+%{
+  constraint(ALLOC_IN_RC(v18_reg));
+  match(RegD);
+  op_cost(0);
+  format %{ %}
+  interface(REG_INTER);
+%}
+
+operand vRegD_V19()
+%{
+  constraint(ALLOC_IN_RC(v19_reg));
+  match(RegD);
+  op_cost(0);
+  format %{ %}
+  interface(REG_INTER);
+%}
+
+operand vRegD_V20()
+%{
+  constraint(ALLOC_IN_RC(v20_reg));
+  match(RegD);
+  op_cost(0);
+  format %{ %}
+  interface(REG_INTER);
+%}
+
+operand vRegD_V21()
+%{
+  constraint(ALLOC_IN_RC(v21_reg));
+  match(RegD);
+  op_cost(0);
+  format %{ %}
+  interface(REG_INTER);
+%}
+
+operand vRegD_V22()
+%{
+  constraint(ALLOC_IN_RC(v22_reg));
+  match(RegD);
+  op_cost(0);
+  format %{ %}
+  interface(REG_INTER);
+%}
+
+operand vRegD_V23()
+%{
+  constraint(ALLOC_IN_RC(v23_reg));
+  match(RegD);
+  op_cost(0);
+  format %{ %}
+  interface(REG_INTER);
+%}
+
+operand vRegD_V24()
+%{
+  constraint(ALLOC_IN_RC(v24_reg));
+  match(RegD);
+  op_cost(0);
+  format %{ %}
+  interface(REG_INTER);
+%}
+
+operand vRegD_V25()
+%{
+  constraint(ALLOC_IN_RC(v25_reg));
+  match(RegD);
+  op_cost(0);
+  format %{ %}
+  interface(REG_INTER);
+%}
+
+operand vRegD_V26()
+%{
+  constraint(ALLOC_IN_RC(v26_reg));
+  match(RegD);
+  op_cost(0);
+  format %{ %}
+  interface(REG_INTER);
+%}
+
+operand vRegD_V27()
+%{
+  constraint(ALLOC_IN_RC(v27_reg));
+  match(RegD);
+  op_cost(0);
+  format %{ %}
+  interface(REG_INTER);
+%}
+
+operand vRegD_V28()
+%{
+  constraint(ALLOC_IN_RC(v28_reg));
+  match(RegD);
+  op_cost(0);
+  format %{ %}
+  interface(REG_INTER);
+%}
+
+operand vRegD_V29()
+%{
+  constraint(ALLOC_IN_RC(v29_reg));
+  match(RegD);
+  op_cost(0);
+  format %{ %}
+  interface(REG_INTER);
+%}
+
+operand vRegD_V30()
+%{
+  constraint(ALLOC_IN_RC(v30_reg));
+  match(RegD);
+  op_cost(0);
+  format %{ %}
+  interface(REG_INTER);
+%}
+
+operand vRegD_V31()
+%{
+  constraint(ALLOC_IN_RC(v31_reg));
+  match(RegD);
+  op_cost(0);
+  format %{ %}
+  interface(REG_INTER);
+%}
+
 // Flags register, used as output of signed compare instructions
 
 // note that on AArch64 we also use this register as the output for
@@ -5044,7 +5394,7 @@ operand indOffL16(iRegP reg, immLoffset16 off)
 
 operand indirectN(iRegN reg)
 %{
-  predicate(Universe::narrow_oop_shift() == 0);
+  predicate(CompressedOops::shift() == 0);
   constraint(ALLOC_IN_RC(ptr_reg));
   match(DecodeN reg);
   op_cost(0);
@@ -5059,7 +5409,7 @@ operand indirectN(iRegN reg)
 
 operand indIndexScaledI2LN(iRegN reg, iRegI ireg, immIScale scale)
 %{
-  predicate(Universe::narrow_oop_shift() == 0 && size_fits_all_mem_uses(n->as_AddP(), n->in(AddPNode::Offset)->in(2)->get_int()));
+  predicate(CompressedOops::shift() == 0 && size_fits_all_mem_uses(n->as_AddP(), n->in(AddPNode::Offset)->in(2)->get_int()));
   constraint(ALLOC_IN_RC(ptr_reg));
   match(AddP (DecodeN reg) (LShiftL (ConvI2L ireg) scale));
   op_cost(0);
@@ -5074,7 +5424,7 @@ operand indIndexScaledI2LN(iRegN reg, iRegI ireg, immIScale scale)
 
 operand indIndexScaledN(iRegN reg, iRegL lreg, immIScale scale)
 %{
-  predicate(Universe::narrow_oop_shift() == 0 && size_fits_all_mem_uses(n->as_AddP(), n->in(AddPNode::Offset)->in(2)->get_int()));
+  predicate(CompressedOops::shift() == 0 && size_fits_all_mem_uses(n->as_AddP(), n->in(AddPNode::Offset)->in(2)->get_int()));
   constraint(ALLOC_IN_RC(ptr_reg));
   match(AddP (DecodeN reg) (LShiftL lreg scale));
   op_cost(0);
@@ -5089,7 +5439,7 @@ operand indIndexScaledN(iRegN reg, iRegL lreg, immIScale scale)
 
 operand indIndexI2LN(iRegN reg, iRegI ireg)
 %{
-  predicate(Universe::narrow_oop_shift() == 0);
+  predicate(CompressedOops::shift() == 0);
   constraint(ALLOC_IN_RC(ptr_reg));
   match(AddP (DecodeN reg) (ConvI2L ireg));
   op_cost(0);
@@ -5104,7 +5454,7 @@ operand indIndexI2LN(iRegN reg, iRegI ireg)
 
 operand indIndexN(iRegN reg, iRegL lreg)
 %{
-  predicate(Universe::narrow_oop_shift() == 0);
+  predicate(CompressedOops::shift() == 0);
   constraint(ALLOC_IN_RC(ptr_reg));
   match(AddP (DecodeN reg) lreg);
   op_cost(0);
@@ -5119,7 +5469,7 @@ operand indIndexN(iRegN reg, iRegL lreg)
 
 operand indOffIN(iRegN reg, immIOffset off)
 %{
-  predicate(Universe::narrow_oop_shift() == 0);
+  predicate(CompressedOops::shift() == 0);
   constraint(ALLOC_IN_RC(ptr_reg));
   match(AddP (DecodeN reg) off);
   op_cost(0);
@@ -5134,7 +5484,7 @@ operand indOffIN(iRegN reg, immIOffset off)
 
 operand indOffLN(iRegN reg, immLoffset off)
 %{
-  predicate(Universe::narrow_oop_shift() == 0);
+  predicate(CompressedOops::shift() == 0);
   constraint(ALLOC_IN_RC(ptr_reg));
   match(AddP (DecodeN reg) off);
   op_cost(0);
@@ -7039,8 +7389,8 @@ instruct storeN(iRegN src, memory mem)
 instruct storeImmN0(iRegIHeapbase heapbase, immN0 zero, memory mem)
 %{
   match(Set mem (StoreN mem zero));
-  predicate(Universe::narrow_oop_base() == NULL &&
-            Universe::narrow_klass_base() == NULL &&
+  predicate(CompressedOops::base() == NULL &&
+            CompressedKlassPointers::base() == NULL &&
             (!needs_releasing_store(n)));
 
   ins_cost(INSN_COST);
@@ -7822,7 +8172,7 @@ instruct convP2I(iRegINoSp dst, iRegP src) %{
 // in case of 32bit oops (heap < 4Gb).
 instruct convN2I(iRegINoSp dst, iRegN src)
 %{
-  predicate(Universe::narrow_oop_shift() == 0);
+  predicate(CompressedOops::shift() == 0);
   match(Set dst (ConvL2I (CastP2X (DecodeN src))));
 
   ins_cost(INSN_COST);
@@ -13863,7 +14213,7 @@ instruct compF_reg_zero(rFlagsReg cr, vRegF src1, immF0 src2)
   format %{ "fcmps $src1, 0.0" %}
 
   ins_encode %{
-    __ fcmps(as_FloatRegister($src1$$reg), 0.0D);
+    __ fcmps(as_FloatRegister($src1$$reg), 0.0);
   %}
 
   ins_pipe(pipe_class_compare);
@@ -13892,7 +14242,7 @@ instruct compD_reg_zero(rFlagsReg cr, vRegD src1, immD0 src2)
   format %{ "fcmpd $src1, 0.0" %}
 
   ins_encode %{
-    __ fcmpd(as_FloatRegister($src1$$reg), 0.0D);
+    __ fcmpd(as_FloatRegister($src1$$reg), 0.0);
   %}
 
   ins_pipe(pipe_class_compare);
@@ -13968,7 +14318,7 @@ instruct compF3_reg_immF0(iRegINoSp dst, vRegF src1, immF0 zero, rFlagsReg cr)
     Label done;
     FloatRegister s1 = as_FloatRegister($src1$$reg);
     Register d = as_Register($dst$$reg);
-    __ fcmps(s1, 0.0D);
+    __ fcmps(s1, 0.0);
     // installs 0 if EQ else -1
     __ csinvw(d, zr, zr, Assembler::EQ);
     // keeps -1 if less or unordered else installs 1
@@ -13995,7 +14345,7 @@ instruct compD3_reg_immD0(iRegINoSp dst, vRegD src1, immD0 zero, rFlagsReg cr)
     Label done;
     FloatRegister s1 = as_FloatRegister($src1$$reg);
     Register d = as_Register($dst$$reg);
-    __ fcmpd(s1, 0.0D);
+    __ fcmpd(s1, 0.0);
     // installs 0 if EQ else -1
     __ csinvw(d, zr, zr, Assembler::EQ);
     // keeps -1 if less or unordered else installs 1
@@ -14551,9 +14901,10 @@ instruct cmpFastUnlock(rFlagsReg cr, iRegP object, iRegP box, iRegPNoSp tmp, iRe
 // TODO
 // provide a near and far version of this code
 
-instruct safePoint(iRegP poll)
+instruct safePoint(rFlagsReg cr, iRegP poll)
 %{
   match(SafePoint poll);
+  effect(KILL cr);
 
   format %{
     "ldrw zr, [$poll]\t# Safepoint: poll for GC"

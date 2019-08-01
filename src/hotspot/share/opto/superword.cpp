@@ -2453,6 +2453,7 @@ void SuperWord::output() {
         }
       } else if (opc == Op_SqrtF || opc == Op_SqrtD ||
                  opc == Op_AbsF || opc == Op_AbsD ||
+                 opc == Op_AbsI || opc == Op_AbsL ||
                  opc == Op_NegF || opc == Op_NegD ||
                  opc == Op_PopCountI) {
         assert(n->req() == 2, "only one input expected");
@@ -3295,7 +3296,14 @@ LoadNode::ControlDependency SuperWord::control_dependency(Node_List* p) {
     Node* n = p->at(i);
     assert(n->is_Load(), "only meaningful for loads");
     if (!n->depends_only_on_test()) {
-      dep = LoadNode::Pinned;
+      if (n->as_Load()->has_unknown_control_dependency() &&
+          dep != LoadNode::Pinned) {
+        // Upgrade to unknown control...
+        dep = LoadNode::UnknownControl;
+      } else {
+        // Otherwise, we must pin it.
+        dep = LoadNode::Pinned;
+      }
     }
   }
   return dep;

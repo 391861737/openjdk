@@ -375,18 +375,14 @@ class Thread: public ThreadShadow {
   // GC points in the VM can happen because of allocation, invoking a VM operation, or blocking on
   // mutex, or blocking on an object synchronizer (Java locking).
   // If !allow_safepoint(), then an assertion failure will happen in any of the above cases
-  // If !allow_allocation(), then an assertion failure will happen during allocation
-  // (Hence, !allow_safepoint() => !allow_allocation()).
   //
-  // The two classes NoSafepointVerifier and No_Allocation_Verifier are used to set these counters.
+  // The class NoSafepointVerifier is used to set this counter.
   //
   NOT_PRODUCT(int _allow_safepoint_count;)      // If 0, thread allow a safepoint to happen
-  debug_only(int _allow_allocation_count;)     // If 0, the thread is allowed to allocate oops.
 
   // Used by SkipGCALot class.
   NOT_PRODUCT(bool _skip_gcalot;)               // Should we elide gc-a-lot?
 
-  friend class NoAllocVerifier;
   friend class NoSafepointVerifier;
   friend class PauseNoSafepointVerifier;
   friend class GCLocker;
@@ -732,7 +728,7 @@ protected:
   // Printing
   void print_on(outputStream* st, bool print_extended_info) const;
   virtual void print_on(outputStream* st) const { print_on(st, false); }
-  void print() const { print_on(tty); }
+  void print() const;
   virtual void print_on_error(outputStream* st, char* buf, int buflen) const;
   void print_value_on(outputStream* st) const;
 
@@ -754,7 +750,6 @@ protected:
   bool owns_locks_but_compiled_lock() const;
 
   // Deadlock detection
-  bool allow_allocation()                        { return _allow_allocation_count == 0; }
   ResourceMark* current_resource_mark()          { return _current_resource_mark; }
   void set_current_resource_mark(ResourceMark* rm) { _current_resource_mark = rm; }
 #endif
@@ -983,7 +978,6 @@ class JavaThread: public Thread {
   friend class JVMCIVMStructs;
   friend class WhiteBox;
  private:
-  JavaThread*    _next;                          // The next thread in the Threads list
   bool           _on_thread_list;                // Is set when this JavaThread is added to the Threads list
   oop            _threadObj;                     // The Java level thread object
 
@@ -1152,7 +1146,12 @@ class JavaThread: public Thread {
 
  public:
   static jlong* _jvmci_old_thread_counters;
-  static void collect_counters(JVMCIEnv* JVMCIENV, JVMCIPrimitiveArray array);
+  static void collect_counters(jlong* array, int length);
+
+  bool resize_counters(int current_size, int new_size);
+
+  static bool resize_all_jvmci_counters(int new_size);
+
  private:
 #endif // INCLUDE_JVMCI
 
@@ -1246,10 +1245,6 @@ class JavaThread: public Thread {
   // Testers
   virtual bool is_Java_thread() const            { return true;  }
   virtual bool can_call_java() const             { return true; }
-
-  // Thread chain operations
-  JavaThread* next() const                       { return _next; }
-  void set_next(JavaThread* p)                   { _next = p; }
 
   // Thread oop. threadObj() can be NULL for initial JavaThread
   // (or for threads attached via JNI)
@@ -1794,6 +1789,7 @@ class JavaThread: public Thread {
   static ByteSize should_post_on_exceptions_flag_offset() {
     return byte_offset_of(JavaThread, _should_post_on_exceptions_flag);
   }
+  static ByteSize doing_unsafe_access_offset() { return byte_offset_of(JavaThread, _doing_unsafe_access); }
 
   // Returns the jni environment for this thread
   JNIEnv* jni_environment()                      { return &_jni_environment; }
@@ -1874,6 +1870,7 @@ class JavaThread: public Thread {
   char* name() const { return (char*)get_thread_name(); }
   void print_on(outputStream* st, bool print_extended_info) const;
   void print_on(outputStream* st) const { print_on(st, false); }
+  void print() const;
   void print_value();
   void print_thread_state_on(outputStream*) const      PRODUCT_RETURN;
   void print_thread_state() const                      PRODUCT_RETURN;
@@ -2212,7 +2209,6 @@ inline CompilerThread* CompilerThread::current() {
 class Threads: AllStatic {
   friend class VMStructs;
  private:
-  static JavaThread* _thread_list;
   static int         _number_of_threads;
   static int         _number_of_non_daemon_threads;
   static int         _return_code;

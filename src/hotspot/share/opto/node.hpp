@@ -83,8 +83,8 @@ class JumpProjNode;
 class LoadNode;
 class LoadBarrierNode;
 class LoadBarrierSlowRegNode;
-class LoadBarrierWeakSlowRegNode;
 class LoadStoreNode;
+class LoadStoreConditionalNode;
 class LockNode;
 class LoopNode;
 class MachBranchNode;
@@ -456,10 +456,10 @@ protected:
   void setup_is_top();
 
   // Strip away casting.  (It is depth-limited.)
-  Node* uncast() const;
+  Node* uncast(bool keep_deps = false) const;
   // Return whether two Nodes are equivalent, after stripping casting.
-  bool eqv_uncast(const Node* n) const {
-    return (this->uncast() == n->uncast());
+  bool eqv_uncast(const Node* n, bool keep_deps = false) const {
+    return (this->uncast(keep_deps) == n->uncast(keep_deps));
   }
 
   // Find out of current node that matches opcode.
@@ -470,7 +470,7 @@ protected:
   bool has_out_with(int opcode1, int opcode2, int opcode3, int opcode4);
 
 private:
-  static Node* uncast_helper(const Node* n);
+  static Node* uncast_helper(const Node* n, bool keep_deps);
 
   // Add an output edge to the end of the list
   void add_out( Node *n ) {
@@ -675,6 +675,7 @@ public:
       DEFINE_CLASS_ID(EncodeNarrowPtr, Type, 6)
         DEFINE_CLASS_ID(EncodeP, EncodeNarrowPtr, 0)
         DEFINE_CLASS_ID(EncodePKlass, EncodeNarrowPtr, 1)
+      DEFINE_CLASS_ID(LoadBarrierSlowReg, Type, 7)
 
     DEFINE_CLASS_ID(Proj,  Node, 3)
       DEFINE_CLASS_ID(CatchProj, Proj, 0)
@@ -688,8 +689,6 @@ public:
     DEFINE_CLASS_ID(Mem,   Node, 4)
       DEFINE_CLASS_ID(Load,  Mem, 0)
         DEFINE_CLASS_ID(LoadVector,  Load, 0)
-          DEFINE_CLASS_ID(LoadBarrierSlowReg, Load, 1)
-          DEFINE_CLASS_ID(LoadBarrierWeakSlowReg, Load, 2)
       DEFINE_CLASS_ID(Store, Mem, 1)
         DEFINE_CLASS_ID(StoreVector, Store, 0)
       DEFINE_CLASS_ID(LoadStore, Mem, 2)
@@ -830,9 +829,9 @@ public:
   DEFINE_CLASS_QUERY(JumpProj)
   DEFINE_CLASS_QUERY(Load)
   DEFINE_CLASS_QUERY(LoadStore)
+  DEFINE_CLASS_QUERY(LoadStoreConditional)
   DEFINE_CLASS_QUERY(LoadBarrier)
   DEFINE_CLASS_QUERY(LoadBarrierSlowReg)
-  DEFINE_CLASS_QUERY(LoadBarrierWeakSlowReg)
   DEFINE_CLASS_QUERY(Lock)
   DEFINE_CLASS_QUERY(Loop)
   DEFINE_CLASS_QUERY(Mach)
@@ -998,7 +997,7 @@ public:
   // the node is guaranteed never to compare equal to any other node.
   // If we accidentally generate a hash with value NO_HASH the node
   // won't go into the table and we'll lose a little optimization.
-  enum { NO_HASH = 0 };
+  static const uint NO_HASH = 0;
   virtual uint hash() const;
   virtual bool cmp( const Node &n ) const;
 

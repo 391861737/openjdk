@@ -46,6 +46,8 @@ extern Mutex*   JNIWeakActive_lock;              // JNI weak storage active list
 extern Mutex*   StringTableWeakAlloc_lock;       // StringTable weak storage allocate list lock
 extern Mutex*   StringTableWeakActive_lock;      // STringTable weak storage active list lock
 extern Mutex*   JNIHandleBlockFreeList_lock;     // a lock on the JNI handle block free list
+extern Mutex*   VMGlobalAlloc_lock;              // VM Global Handles storage allocate list lock
+extern Mutex*   VMGlobalActive_lock;             // VM Global Handles storage active list lock
 extern Mutex*   VMWeakAlloc_lock;                // VM Weak Handles storage allocate list lock
 extern Mutex*   VMWeakActive_lock;               // VM Weak Handles storage active list lock
 extern Mutex*   ResolvedMethodTableWeakAlloc_lock;  // ResolvedMethodTable weak storage allocate list
@@ -66,7 +68,6 @@ extern Monitor* CodeCache_lock;                  // a lock on the CodeCache, ran
 extern Mutex*   MethodData_lock;                 // a lock on installation of method data
 extern Mutex*   TouchedMethodLog_lock;           // a lock on allocation of LogExecutedMethods info
 extern Mutex*   RetData_lock;                    // a lock on installation of RetData inside method data
-extern Mutex*   DerivedPointerTableGC_lock;      // a lock to protect the derived pointer table
 extern Monitor* CGCPhaseManager_lock;            // a lock to protect a concurrent GC's phase management
 extern Monitor* VMOperationQueue_lock;           // a lock on queue of vm_operations waiting to execute
 extern Monitor* VMOperationRequest_lock;         // a lock on Threads waiting for a vm_operation to terminate
@@ -78,8 +79,6 @@ extern Monitor* CGC_lock;                        // used for coordination betwee
                                                  // fore- & background GC threads.
 extern Monitor* STS_lock;                        // used for joining/leaving SuspendibleThreadSet.
 extern Monitor* FullGCCount_lock;                // in support of "concurrent" full gc
-extern Monitor* SATB_Q_CBL_mon;                  // Protects SATB Q
-                                                 // completed buffer queue.
 extern Monitor* DirtyCardQ_CBL_mon;              // Protects dirty card Q
                                                  // completed buffer queue.
 extern Mutex*   Shared_DirtyCardQ_lock;          // Lock protecting dirty card
@@ -133,9 +132,12 @@ extern Mutex*   DCmdFactory_lock;                // serialize access to DCmdFact
 #if INCLUDE_NMT
 extern Mutex*   NMTQuery_lock;                   // serialize NMT Dcmd queries
 #endif
-#if INCLUDE_CDS && INCLUDE_JVMTI
+#if INCLUDE_CDS
+#if INCLUDE_JVMTI
 extern Mutex*   CDSClassFileStream_lock;         // FileMapInfo::open_stream_for_jvmti
 #endif
+extern Mutex*   DumpTimeTable_lock;              // SystemDictionaryShared::find_or_allocate_info_for
+#endif // INCLUDE_CDS
 #if INCLUDE_JFR
 extern Mutex*   JfrStacktrace_lock;              // used to guard access to the JFR stacktrace table
 extern Monitor* JfrMsg_lock;                     // protects JFR messaging
@@ -157,8 +159,6 @@ extern Monitor* CodeHeapStateAnalytics_lock;     // lock print functions against
 
 #if INCLUDE_JVMCI
 extern Monitor* JVMCI_lock;                      // Monitor to control initialization of JVMCI
-extern Mutex*   JVMCIGlobalAlloc_lock;           // JVMCI global storage allocate list lock
-extern Mutex*   JVMCIGlobalActive_lock;          // JVMCI global storage active list lock
 #endif
 
 // A MutexLocker provides mutual exclusion with respect to a given mutex

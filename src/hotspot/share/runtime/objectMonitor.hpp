@@ -139,6 +139,7 @@ class ObjectMonitor {
   friend class ObjectSynchronizer;
   friend class ObjectWaiter;
   friend class VMStructs;
+  JVMCI_ONLY(friend class JVMCIVMStructs;)
 
   volatile markOop   _header;       // displaced object header word - mark
   void*     volatile _object;       // backward object pointer - strong root
@@ -234,6 +235,7 @@ class ObjectMonitor {
     // TODO-FIXME: assert _owner == null implies _recursions = 0
     return _contentions|_waiters|intptr_t(_owner)|intptr_t(_cxq)|intptr_t(_EntryList);
   }
+  const char* is_busy_to_string(stringStream* ss);
 
   intptr_t  is_entered(Thread* current) const;
 
@@ -267,7 +269,9 @@ class ObjectMonitor {
     // _cxq == 0 _succ == NULL _owner == NULL _waiters == 0
     // _contentions == 0 EntryList  == NULL
     // _recursions == 0 _WaitSet == NULL
-    assert(((is_busy()|_recursions) == 0), "freeing inuse monitor");
+    DEBUG_ONLY(stringStream ss;)
+    assert((is_busy() | _recursions) == 0, "freeing in-use monitor: %s, "
+           "recursions=" INTPTR_FORMAT, is_busy_to_string(&ss), _recursions);
     _succ          = NULL;
     _EntryList     = NULL;
     _cxq           = NULL;
@@ -290,6 +294,9 @@ class ObjectMonitor {
   void      wait(jlong millis, bool interruptable, TRAPS);
   void      notify(TRAPS);
   void      notifyAll(TRAPS);
+
+  void      print() const;
+  void      print_on(outputStream* st) const;
 
 // Use the following at your own risk
   intptr_t  complete_exit(TRAPS);

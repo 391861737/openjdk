@@ -121,7 +121,7 @@ void G1CollectionSet::add_old_region(HeapRegion* hr) {
   assert(hr->is_old(), "the region should be old");
 
   assert(!hr->in_collection_set(), "should not already be in the collection set");
-  _g1h->register_old_region_with_cset(hr);
+  _g1h->register_old_region_with_region_attr(hr);
 
   _collection_set_regions[_collection_set_cur_length++] = hr->hrm_index();
   assert(_collection_set_cur_length <= _collection_set_max_length, "Collection set now larger than maximum size.");
@@ -137,7 +137,7 @@ void G1CollectionSet::add_optional_region(HeapRegion* hr) {
   assert(hr->is_old(), "the region should be old");
   assert(!hr->in_collection_set(), "should not already be in the CSet");
 
-  _g1h->register_optional_region_with_cset(hr);
+  _g1h->register_optional_region_with_region_attr(hr);
 
   hr->set_index_in_opt_cset(_num_optional_regions++);
 }
@@ -217,10 +217,13 @@ void G1CollectionSet::iterate_optional(HeapRegionClosure* cl) const {
   }
 }
 
-void G1CollectionSet::iterate_incremental_part_from(HeapRegionClosure* cl, uint worker_id, uint total_workers) const {
+void G1CollectionSet::iterate_incremental_part_from(HeapRegionClosure* cl,
+                                                    HeapRegionClaimer* hr_claimer,
+                                                    uint worker_id,
+                                                    uint total_workers) const {
   assert_at_safepoint();
 
-  size_t len = _collection_set_cur_length - _inc_part_start;
+  size_t len = increment_length();
   if (len == 0) {
     return;
   }
@@ -229,9 +232,12 @@ void G1CollectionSet::iterate_incremental_part_from(HeapRegionClosure* cl, uint 
   size_t cur_pos = start_pos;
 
   do {
-    HeapRegion* r = _g1h->region_at(_collection_set_regions[cur_pos + _inc_part_start]);
-    bool result = cl->do_heap_region(r);
-    guarantee(!result, "Must not cancel iteration");
+    uint region_idx = _collection_set_regions[cur_pos + _inc_part_start];
+    if (hr_claimer == NULL || hr_claimer->claim_region(region_idx)) {
+      HeapRegion* r = _g1h->region_at(region_idx);
+      bool result = cl->do_heap_region(r);
+      guarantee(!result, "Must not cancel iteration");
+    }
 
     cur_pos++;
     if (cur_pos == len) {
@@ -316,7 +322,7 @@ void G1CollectionSet::add_young_region_common(HeapRegion* hr) {
   }
 
   assert(!hr->in_collection_set(), "invariant");
-  _g1h->register_young_region_with_cset(hr);
+  _g1h->register_young_region_with_region_attr(hr);
 }
 
 void G1CollectionSet::add_survivor_regions(HeapRegion* hr) {
@@ -492,7 +498,7 @@ void G1CollectionSet::move_candidates_to_collection_set(uint num_old_candidate_r
     HeapRegion* r = candidates()->at(candidate_idx + i);
     // This potentially optional candidate region is going to be an actual collection
     // set region. Clear cset marker.
-    _g1h->clear_in_cset(r);
+    _g1h->clear_region_attr(r);
     add_old_region(r);
   }
   candidates()->remove(num_old_candidate_regions);
@@ -519,6 +525,9 @@ bool G1CollectionSet::finalize_optional_for_evacuation(double remaining_pause_ti
   _num_optional_regions -= num_selected_regions;
 
   stop_incremental_building();
+
+  _g1h->verify_region_attr_remset_update();
+
   return num_selected_regions > 0;
 }
 
@@ -526,10 +535,15 @@ void G1CollectionSet::abandon_optional_collection_set(G1ParScanThreadStateSet* p
   for (uint i = 0; i < _num_optional_regions; i++) {
     HeapRegion* r = candidates()->at(candidates()->cur_idx() + i);
     pss->record_unused_optional_region(r);
-    _g1h->clear_in_cset(r);
+    // Clear collection set marker and make sure that the remembered set information
+    // is correct as we still need it later.
+    _g1h->clear_region_attr(r);
+    _g1h->register_region_with_region_attr(r);
     r->clear_index_in_opt_cset();
   }
   free_optional_regions();
+
+  _g1h->verify_region_attr_remset_update();
 }
 
 #ifdef ASSERT

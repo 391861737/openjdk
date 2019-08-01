@@ -388,7 +388,6 @@ class JvmtiExport : public AllStatic {
 
   static void oops_do(OopClosure* f) NOT_JVMTI_RETURN;
   static void weak_oops_do(BoolObjectClosure* b, OopClosure* f) NOT_JVMTI_RETURN;
-  static void gc_epilogue() NOT_JVMTI_RETURN;
 
   static void transition_pending_onload_raw_monitors() NOT_JVMTI_RETURN;
 
@@ -420,7 +419,7 @@ class JvmtiCodeBlobDesc : public CHeapObj<mtInternal> {
  public:
   JvmtiCodeBlobDesc(const char *name, address code_begin, address code_end) {
     assert(name != NULL, "all code blobs must be named");
-    strncpy(_name, name, sizeof(_name));
+    strncpy(_name, name, sizeof(_name) - 1);
     _name[sizeof(_name)-1] = '\0';
     _code_begin = code_begin;
     _code_end = code_end;

@@ -65,6 +65,7 @@
 #include "memory/iterator.inline.hpp"
 #include "memory/padded.hpp"
 #include "memory/resourceArea.hpp"
+#include "memory/universe.hpp"
 #include "oops/access.inline.hpp"
 #include "oops/oop.inline.hpp"
 #include "prims/jvmtiExport.hpp"
@@ -4249,7 +4250,6 @@ void CMSCollector::checkpointRootsFinalWork() {
   if (should_unload_classes()) {
     heap->prune_scavengable_nmethods();
   }
-  JvmtiExport::gc_epilogue();
 
   // If we encountered any (marking stack / work queue) overflow
   // events during the current CMS cycle, take appropriate

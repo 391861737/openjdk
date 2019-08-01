@@ -49,12 +49,14 @@ ShenandoahCompactHeuristics::ShenandoahCompactHeuristics() : ShenandoahHeuristic
   SHENANDOAH_CHECK_FLAG_SET(ShenandoahCloneBarrier);
 }
 
-bool ShenandoahCompactHeuristics::should_start_normal_gc() const {
+bool ShenandoahCompactHeuristics::should_start_gc() const {
   ShenandoahHeap* heap = ShenandoahHeap::heap();
 
+  size_t capacity = heap->max_capacity();
   size_t available = heap->free_set()->available();
-  size_t threshold_bytes_allocated = heap->max_capacity() * ShenandoahAllocationThreshold / 100;
-  size_t min_threshold = ShenandoahMinFreeThreshold * heap->max_capacity() / 100;
+
+  size_t threshold_bytes_allocated = capacity / 100 * ShenandoahAllocationThreshold;
+  size_t min_threshold = capacity / 100 * ShenandoahMinFreeThreshold;
 
   if (available < min_threshold) {
     log_info(gc)("Trigger: Free (" SIZE_FORMAT "M) is below minimum threshold (" SIZE_FORMAT "M)",
@@ -75,7 +77,7 @@ bool ShenandoahCompactHeuristics::should_start_normal_gc() const {
     return true;
   }
 
-  return ShenandoahHeuristics::should_start_normal_gc();
+  return ShenandoahHeuristics::should_start_gc();
 }
 
 void ShenandoahCompactHeuristics::choose_collection_set_from_regiondata(ShenandoahCollectionSet* cset,

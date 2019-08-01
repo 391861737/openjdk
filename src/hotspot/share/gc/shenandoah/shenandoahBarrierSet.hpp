@@ -32,12 +32,13 @@
 class ShenandoahBarrierSetAssembler;
 
 class ShenandoahBarrierSet: public BarrierSet {
-private:
+public:
   enum ArrayCopyStoreValMode {
     NONE,
-    READ_BARRIER,
-    WRITE_BARRIER
+    RESOLVE_BARRIER,
+    EVAC_BARRIER
   };
+private:
 
   ShenandoahHeap* _heap;
   ShenandoahSATBMarkQueueSet _satb_mark_queue_set;
@@ -81,6 +82,8 @@ public:
 
   void write_ref_field_work(void* v, oop o, bool release = false);
   void write_region(MemRegion mr);
+
+  oop oop_load_from_native_barrier(oop obj);
 
   virtual void on_thread_create(Thread* thread);
   virtual void on_thread_destroy(Thread* thread);
@@ -175,6 +178,10 @@ public:
     // Needed for loads on non-heap weak references
     template <typename T>
     static oop oop_load_not_in_heap(T* addr);
+
+    // Used for catching bad stores
+    template <typename T>
+    static void oop_store_not_in_heap(T* addr, oop value);
 
     template <typename T>
     static oop oop_atomic_cmpxchg_not_in_heap(oop new_value, T* addr, oop compare_value);

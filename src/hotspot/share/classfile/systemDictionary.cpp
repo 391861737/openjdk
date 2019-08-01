@@ -40,6 +40,7 @@
 #include "classfile/protectionDomainCache.hpp"
 #include "classfile/resolutionErrors.hpp"
 #include "classfile/stringTable.hpp"
+#include "classfile/symbolTable.hpp"
 #include "classfile/systemDictionary.hpp"
 #include "classfile/vmSymbols.hpp"
 #include "code/codeCache.hpp"
@@ -56,6 +57,7 @@
 #include "memory/metaspaceClosure.hpp"
 #include "memory/oopFactory.hpp"
 #include "memory/resourceArea.hpp"
+#include "memory/universe.hpp"
 #include "oops/access.inline.hpp"
 #include "oops/instanceKlass.hpp"
 #include "oops/instanceRefKlass.hpp"
@@ -96,7 +98,6 @@ ResolutionErrorTable*  SystemDictionary::_resolution_errors   = NULL;
 SymbolPropertyTable*   SystemDictionary::_invoke_method_table = NULL;
 ProtectionDomainCacheTable*   SystemDictionary::_pd_cache_table = NULL;
 
-int         SystemDictionary::_number_of_modifications = 0;
 oop         SystemDictionary::_system_loader_lock_obj     =  NULL;
 
 InstanceKlass*      SystemDictionary::_well_known_klasses[SystemDictionary::WKID_LIMIT]
@@ -113,6 +114,7 @@ bool        SystemDictionary::_has_checkPackageAccess     =  false;
 
 const int defaultProtectionDomainCacheSize = 1009;
 
+OopStorage* SystemDictionary::_vm_global_oop_storage = NULL;
 OopStorage* SystemDictionary::_vm_weak_oop_storage = NULL;
 
 
@@ -261,7 +263,7 @@ InstanceKlass* SystemDictionary::resolve_instance_class_or_null_helper(Symbol* c
     ResourceMark rm(THREAD);
     // Ignore wrapping L and ;.
     TempNewSymbol name = SymbolTable::new_symbol(class_name->as_C_string() + 1,
-                                   class_name->utf8_length() - 2, CHECK_NULL);
+                                                 class_name->utf8_length() - 2);
     return resolve_instance_class_or_null(name, class_loader, protection_domain, THREAD);
   } else {
     return resolve_instance_class_or_null(class_name, class_loader, protection_domain, THREAD);
@@ -1037,11 +1039,7 @@ InstanceKlass* SystemDictionary::parse_stream(Symbol* class_name,
       // Add to class hierarchy, initialize vtables, and do possible
       // deoptimizations.
       add_to_hierarchy(k, CHECK_NULL); // No exception, but can block
-
       // But, do not add to dictionary.
-
-      // compiled code dependencies need to be validated anyway
-      notice_modification();
     }
 
     // Rewrite and patch constant pool here.
@@ -1847,7 +1845,7 @@ bool SystemDictionary::do_unloading(GCTimer* gc_timer) {
   return unloading_occurred;
 }
 
-void SystemDictionary::oops_do(OopClosure* f) {
+void SystemDictionary::oops_do(OopClosure* f, bool include_handles) {
   f->do_oop(&_java_system_loader);
   f->do_oop(&_java_platform_loader);
   f->do_oop(&_system_loader_lock_obj);
@@ -1855,6 +1853,10 @@ void SystemDictionary::oops_do(OopClosure* f) {
 
   // Visit extra methods
   invoke_method_table()->oops_do(f);
+
+  if (include_handles) {
+    vm_global_oop_storage()->oops_do(f);
+  }
 }
 
 // CDS: scan and relocate all classes referenced by _well_known_klasses[].
@@ -1878,7 +1880,6 @@ void SystemDictionary::methods_do(void f(Method*)) {
 void SystemDictionary::initialize(TRAPS) {
   // Allocate arrays
   _placeholders        = new PlaceholderTable(_placeholder_table_size);
-  _number_of_modifications = 0;
   _loader_constraints  = new LoaderConstraintTable(_loader_constraint_size);
   _resolution_errors   = new ResolutionErrorTable(_resolution_error_size);
   _invoke_method_table = new SymbolPropertyTable(_invoke_method_size);
@@ -2140,7 +2141,7 @@ void SystemDictionary::update_dictionary(unsigned int d_hash,
     // See whether biased locking is enabled and if so set it for this
     // klass.
     // Note that this must be done past the last potential blocking
-    // point / safepoint. We enable biased locking lazily using a
+    // point / safepoint. We might enable biased locking lazily using a
     // VM_Operation to iterate the SystemDictionary and installing the
     // biasable mark word into each InstanceKlass's prototype header.
     // To avoid race conditions where we accidentally miss enabling the
@@ -2162,8 +2163,6 @@ void SystemDictionary::update_dictionary(unsigned int d_hash,
     InstanceKlass* sd_check = find_class(d_hash, name, dictionary);
     if (sd_check == NULL) {
       dictionary->add_klass(d_hash, name, k);
-
-      notice_modification();
     }
   #ifdef ASSERT
     sd_check = find_class(d_hash, name, dictionary);
@@ -2354,7 +2353,7 @@ Symbol* SystemDictionary::check_signature_loaders(Symbol* signature,
   SignatureStream sig_strm(signature, is_method);
   while (!sig_strm.is_done()) {
     if (sig_strm.is_object()) {
-      Symbol* sig = sig_strm.as_symbol(CHECK_NULL);
+      Symbol* sig = sig_strm.as_symbol();
       if (!add_loader_constraint(sig, loader1, loader2, THREAD)) {
         return sig;
       }
@@ -2624,7 +2623,7 @@ Handle SystemDictionary::find_method_handle_type(Symbol* signature,
       mirror = ss.as_java_mirror(class_loader, protection_domain,
                                  SignatureStream::NCDFError, CHECK_(empty));
     }
-    assert(mirror != NULL, "%s", ss.as_symbol(THREAD)->as_C_string());
+    assert(mirror != NULL, "%s", ss.as_symbol()->as_C_string());
     if (ss.at_return_type())
       rt = Handle(THREAD, mirror);
     else
@@ -2823,6 +2822,8 @@ void SystemDictionary::print_on(outputStream *st) {
   st->cr();
 }
 
+void SystemDictionary::print() { print_on(tty); }
+
 void SystemDictionary::verify() {
   guarantee(constraints() != NULL,
             "Verify of loader constraints failed");
@@ -2849,11 +2850,26 @@ void SystemDictionary::dump(outputStream *st, bool verbose) {
     print_on(st);
   } else {
     CDS_ONLY(SystemDictionaryShared::print_table_statistics(st));
-    ClassLoaderDataGraph::print_dictionary_statistics(st);
+    ClassLoaderDataGraph::print_table_statistics(st);
     placeholders()->print_table_statistics(st, "Placeholder Table");
     constraints()->print_table_statistics(st, "LoaderConstraints Table");
-    _pd_cache_table->print_table_statistics(st, "ProtectionDomainCache Table");
+    pd_cache_table()->print_table_statistics(st, "ProtectionDomainCache Table");
   }
+}
+
+TableStatistics SystemDictionary::placeholders_statistics() {
+  MutexLocker ml(SystemDictionary_lock);
+  return placeholders()->statistics_calculate();
+}
+
+TableStatistics SystemDictionary::loader_constraints_statistics() {
+  MutexLocker ml(SystemDictionary_lock);
+  return constraints()->statistics_calculate();
+}
+
+TableStatistics SystemDictionary::protection_domain_cache_statistics() {
+  MutexLocker ml(SystemDictionary_lock);
+  return pd_cache_table()->statistics_calculate();
 }
 
 // Utility for dumping dictionaries.
@@ -2882,10 +2898,20 @@ int SystemDictionaryDCmd::num_arguments() {
 }
 
 void SystemDictionary::initialize_oop_storage() {
+  _vm_global_oop_storage =
+    new OopStorage("VM Global Oop Handles",
+                   VMGlobalAlloc_lock,
+                   VMGlobalActive_lock);
+
   _vm_weak_oop_storage =
     new OopStorage("VM Weak Oop Handles",
                    VMWeakAlloc_lock,
                    VMWeakActive_lock);
+}
+
+OopStorage* SystemDictionary::vm_global_oop_storage() {
+  assert(_vm_global_oop_storage != NULL, "Uninitialized");
+  return _vm_global_oop_storage;
 }
 
 OopStorage* SystemDictionary::vm_weak_oop_storage() {

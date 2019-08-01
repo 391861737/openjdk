@@ -211,20 +211,13 @@ final class CompilerToVM {
     native HotSpotResolvedJavaType lookupClass(Class<?> javaClass);
 
     /**
-     * Resolves the entry at index {@code cpi} in {@code constantPool} to an object.
-     *
-     * The behavior of this method is undefined if {@code cpi} does not denote one of the following
-     * entry types: {@code JVM_CONSTANT_MethodHandle}, {@code JVM_CONSTANT_MethodHandleInError},
-     * {@code JVM_CONSTANT_MethodType} and {@code JVM_CONSTANT_MethodTypeInError}.
-     */
-    native HotSpotObjectConstantImpl resolveConstantInPool(HotSpotConstantPool constantPool, int cpi);
-
-    /**
      * Resolves the entry at index {@code cpi} in {@code constantPool} to an object, looking in the
      * constant pool cache first.
      *
-     * The behavior of this method is undefined if {@code cpi} does not denote a
-     * {@code JVM_CONSTANT_String} entry.
+     * The behavior of this method is undefined if {@code cpi} does not denote one of the following
+     * entry types: {@code JVM_CONSTANT_String}, {@code JVM_CONSTANT_MethodHandle},
+     * {@code JVM_CONSTANT_MethodHandleInError}, {@code JVM_CONSTANT_MethodType} and
+     * {@code JVM_CONSTANT_MethodTypeInError}.
      */
     native HotSpotObjectConstantImpl resolvePossiblyCachedConstantInPool(HotSpotConstantPool constantPool, int cpi);
 
@@ -560,6 +553,18 @@ final class CompilerToVM {
     native long[] collectCounters();
 
     /**
+     * Get the current number of counters allocated for use by JVMCI. Should be the same value as
+     * the flag {@code JVMCICounterSize}.
+     */
+    native int getCountersSize();
+
+    /**
+     * Attempt to change the size of the counters allocated for JVMCI. This requires a safepoint to
+     * safely reallocate the storage but it's advisable to increase the size in reasonable chunks.
+     */
+    native boolean setCountersSize(int newSize);
+
+    /**
      * Determines if {@code metaspaceMethodData} is mature.
      */
     native boolean isMature(long metaspaceMethodData);
@@ -612,10 +617,15 @@ final class CompilerToVM {
      * Writes {@code length} bytes from {@code bytes} starting at offset {@code offset} to HotSpot's
      * log stream.
      *
+     * @param flush specifies if the log stream should be flushed after writing
+     * @param canThrow specifies if an error in the {@code bytes}, {@code offset} or {@code length}
+     *            arguments should result in an exception or a negative return value
+     * @return 0 on success, -1 if {@code bytes == null && !canThrow}, -2 if {@code !canThrow} and
+     *         copying would cause access of data outside array bounds
      * @throws NullPointerException if {@code bytes == null}
      * @throws IndexOutOfBoundsException if copying would cause access of data outside array bounds
      */
-    native void writeDebugOutput(byte[] bytes, int offset, int length);
+    native int writeDebugOutput(byte[] bytes, int offset, int length, boolean flush, boolean canThrow);
 
     /**
      * Flush HotSpot's log stream.
@@ -752,6 +762,12 @@ final class CompilerToVM {
      * @see ResolvedJavaType#getComponentType()
      */
     native HotSpotResolvedJavaType getComponentType(HotSpotResolvedObjectTypeImpl type);
+
+    /**
+     * Get the array class for {@code type}. This can't be done symbolically since anonymous types
+     * can't be looked up by name.
+     */
+    native HotSpotResolvedObjectTypeImpl getArrayType(HotSpotResolvedJavaType type);
 
     /**
      * Forces initialization of {@code type}.
@@ -947,4 +963,23 @@ final class CompilerToVM {
      */
     native boolean addFailedSpeculation(long failedSpeculationsAddress, byte[] speculation);
 
+    /**
+     * @see HotSpotJVMCIRuntime#isCurrentThreadAttached()
+     */
+    native boolean isCurrentThreadAttached();
+
+    /**
+     * @see HotSpotJVMCIRuntime#attachCurrentThread
+     */
+    native boolean attachCurrentThread(boolean asDaemon);
+
+    /**
+     * @see HotSpotJVMCIRuntime#detachCurrentThread()
+     */
+    native void detachCurrentThread();
+
+    /**
+     * @see HotSpotJVMCIRuntime#exitHotSpot(int)
+     */
+    native void callSystemExit(int status);
 }
